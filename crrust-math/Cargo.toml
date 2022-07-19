@@ -10,6 +10,7 @@ repository = "https://github.com/tlepoint/crrust"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
+itertools = "0.10.3"
 num-bigint = "0.4.3"
 num-traits = "0.2.15"
 rand = "0.8.5"
