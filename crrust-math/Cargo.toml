@@ -1,6 +1,6 @@
 [package]
-name = "crrust"
-description = "Cryptographic building blocks for research prototypes"
+name = "crrust-math"
+description = "Mathematical utilities for the crrust library"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -10,4 +10,6 @@ repository = "https://github.com/tlepoint/crrust"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-crrust-math = { version = "0.1.0", path = "../crrust-math" }
+num-bigint = "0.4.3"
+num-traits = "0.2.15"
+rand = "0.8.5"
