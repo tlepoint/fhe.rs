@@ -194,8 +194,8 @@ impl NttOperator {
 
 	/// Inverse NTT butterfly.
 	fn inv_butterfly(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
-		debug_assert!(*x < 2 * self.p.p);
-		debug_assert!(*y < 2 * self.p.p);
+		debug_assert!(*x < self.p_twice);
+		debug_assert!(*y < self.p_twice);
 		debug_assert!(z < self.p.p);
 		debug_assert_eq!(self.p.shoup(z), z_shoup);
 
@@ -203,8 +203,8 @@ impl NttOperator {
 		*x = Modulus::reduce1(*y + t, self.p_twice);
 		*y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
 
-		debug_assert!(*x < 2 * self.p.p);
-		debug_assert!(*y < 2 * self.p.p);
+		debug_assert!(*x < self.p_twice);
+		debug_assert!(*y < self.p_twice);
 	}
 
 	/// Returns a 2n-th primitive root modulo p.
