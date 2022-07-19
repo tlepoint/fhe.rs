@@ -1,12 +1,12 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Ring operations for moduli up to 63 bits.
+//! Ring operations for moduli up to 62 bits.
 
 use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
-/// Structure holding a modulus up to 63 bits.
+/// Structure holding a modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
@@ -18,9 +18,9 @@ pub struct Modulus {
 }
 
 impl Modulus {
-	/// Create a modulus from a prime number of at most 63 bits.
+	/// Create a modulus from a prime number of at most 62 bits.
 	pub fn new(p: u64) -> std::option::Option<Self> {
-		if p < 2 || (p >> 63) != 0 {
+		if p < 2 || (p >> 62) != 0 {
 			None
 		} else {
 			let p_twice = 2 * p;
