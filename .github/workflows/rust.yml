@@ -1,5 +1,5 @@
 # https://github.com/actions-rs/meta/blob/master/recipes/quickstart.md
-on: [push, pull_request]
+on: push
 
 name: Continuous integration
 
@@ -63,3 +63,24 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+  
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      # Run cargo bench on `main`
+      - uses: actions/checkout@v2
+        with:
+          ref: refs/heads/main
+      - run: "cargo bench"
+      # Run cargo bench on the current branch
+      - uses: actions/checkout@v2
+      - run: "cargo bench | tee bench_result"
+      # Check that there is no error and no regression.
+      - run: "! grep -q error bench_result"
+      - run: "! grep -q regressed bench_result"
