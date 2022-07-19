@@ -251,9 +251,7 @@ impl Modulus {
         let q = ((self.barrett_lo * (a >> 64)) + (a << self.leading_zeros)) >> 64;
         let r = (a - q * self.p_128) as u64;
 
-        debug_assert!(
-            (a % self.p_128) as u64 == r || (a % self.p_128) as u64 + self.p == r
-        );
+        debug_assert!((a % self.p_128) as u64 == r || (a % self.p_128) as u64 + self.p == r);
 
         r
     }
