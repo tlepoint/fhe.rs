@@ -1,22 +1,23 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Ring operations for primes up to 62 bits.
+//! Ring operations for moduli up to 63 bits.
 
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
-/// Structure holding a prime modulus up to 62 bits.
+/// Structure holding a modulus up to 63 bits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
     p: u64,
     p_twice: u64,
     barrett: u128,
+    is_prime: bool,
 }
 
 impl Modulus {
     /// Create a modulus from a prime number of at most 63 bits.
     pub fn new(p: u64) -> std::option::Option<Self> {
-        if !Self::is_prime(p) || (p >> 63) != 0 {
+        if p < 2 || (p >> 63) != 0 {
             None
         } else {
             let p_twice = 2 * p;
@@ -26,6 +27,7 @@ impl Modulus {
                 p,
                 p_twice,
                 barrett,
+                is_prime: Self::is_prime(p),
             })
         }
     }
@@ -40,7 +42,7 @@ impl Modulus {
 
     /// Modular addition of a and b in variable time.
     ///
-    /// Aborts if a or b >= p in debug mode.
+    /// Aborts if a >= p or b >= p in debug mode.
     pub fn add(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
 
@@ -54,7 +56,7 @@ impl Modulus {
 
     /// Modular subtraction of a and b in variable time.
     ///
-    /// Aborts if a or b >= p in debug mode.
+    /// Aborts if a >= p or b >= p in debug mode.
     pub fn sub(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
 
@@ -68,14 +70,52 @@ impl Modulus {
 
     /// Modular multiplication of a and b in variable time.
     ///
-    /// Aborts if a or b >= p in debug mode.
+    /// Aborts if a >= p or b >= p in debug mode.
     pub fn mul(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
 
         self.reduce_u128((a as u128) * (b as u128))
     }
 
-    /// Modular reduction of a in variable time.
+    /// Modular exponentiation in variable time.
+    ///
+    /// Aborts if a >= p or n >= p in debug mode.
+    pub fn pow(&self, a: u64, n: u64) -> u64 {
+        debug_assert!(a < self.p && n < self.p);
+
+        if n == 0 {
+            1
+        } else if n == 1 {
+            a
+        } else {
+            let mut r = a;
+            let mut i = (62 - n.leading_zeros()) as isize;
+            while i >= 0 {
+                r = self.mul(r, r);
+                if (n >> i) & 1 == 1 {
+                    r = self.mul(r, a);
+                }
+                i -= 1;
+            }
+            r
+        }
+    }
+
+    /// Modular inversion in variable time.
+    ///
+    /// Returns None if p is not prime.
+    /// Aborts if a >= p in debug mode.
+    pub fn inv(&self, a: u64) -> std::option::Option<u64> {
+        if !self.is_prime || a == 0 {
+            None
+        } else {
+            let r = self.pow(a, self.p - 2);
+            debug_assert_eq!(self.mul(a, r), 1);
+            Some(r)
+        }
+    }
+
+    /// Modular reduction of a u128 in variable time.
     fn reduce_u128(&self, a: u128) -> u64 {
         let r = self.lazy_reduce_u128(a);
         if r >= self.p {
@@ -133,11 +173,9 @@ mod tests {
         }
 
         // Initialize using out-of-bound numbers.
-        for p in [0u64, 1, 9223372036854775837] {
+        for p in [0u64, 1, 9223372036854775837 /* = next_prime(2**63) */] {
             assert!(Modulus::new(p).is_none())
         }
-
-        // TODO: Verifies that it fails when p is not prime.
     }
 
     #[test]
@@ -216,6 +254,68 @@ mod tests {
                 let b = rng.next_u64() % p;
                 let ab = (a as u128) * (b as u128);
                 assert_eq!(q.mul(a, b), (ab % (p as u128)) as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn test_pow() {
+        let ntests = 10;
+        let mut rng = rand::thread_rng();
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+
+            assert_eq!(q.pow(p - 1, 0), 1);
+            assert_eq!(q.pow(p - 1, 1), p - 1);
+            assert_eq!(q.pow(p - 1, 2 % p), 1);
+            assert_eq!(q.pow(1, p - 2), 1);
+            assert_eq!(q.pow(1, p - 1), 1);
+
+            assert!(catch_unwind(|| q.pow(p, 1)).is_err());
+            assert!(catch_unwind(|| q.pow(p << 1, 1)).is_err());
+            assert!(catch_unwind(|| q.pow(0, p)).is_err());
+            assert!(catch_unwind(|| q.pow(0, p << 1)).is_err());
+
+            for _ in 0..ntests {
+                let a = rng.next_u64() % p;
+                let b = (rng.next_u64() % p) % 1000;
+                let mut c = b;
+                let mut r = 1;
+                while c > 0 {
+                    r = q.mul(r, a);
+                    c -= 1;
+                }
+                assert_eq!(q.pow(a, b), r);
+            }
+        }
+    }
+
+    #[test]
+    fn test_inv() {
+        let ntests = 100;
+        let mut rng = rand::thread_rng();
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+
+            assert!(q.inv(0).is_none());
+            assert_eq!(q.inv(1).unwrap(), 1);
+            assert_eq!(q.inv(p - 1).unwrap(), p - 1);
+
+            assert!(catch_unwind(|| q.inv(p)).is_err());
+            assert!(catch_unwind(|| q.inv(p << 1)).is_err());
+
+            for _ in 0..ntests {
+                let a = rng.next_u64() % p;
+                let b = q.inv(a);
+
+                if a == 0 {
+                    assert!(b.is_none())
+                } else {
+                    assert!(b.is_some());
+                    assert_eq!(q.mul(a, b.unwrap()), 1)
+                }
             }
         }
     }
