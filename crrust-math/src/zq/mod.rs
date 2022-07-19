@@ -11,7 +11,10 @@ use num_traits::cast::ToPrimitive;
 pub struct Modulus {
     p: u64,
     p_twice: u64,
+    p_128: u128,
     barrett: u128,
+    barrett_lo: u128,
+    leading_zeros: u32,
     is_prime: bool,
 }
 
@@ -27,10 +30,32 @@ impl Modulus {
             Some(Self {
                 p,
                 p_twice,
+                p_128: p as u128,
                 barrett,
+                barrett_lo: (barrett as u64) as u128,
+                leading_zeros: p.leading_zeros(),
                 is_prime: Self::is_prime(p),
             })
         }
+    }
+
+    /// Returns whether the modulus supports optimized multiplication and reduction.
+    /// These optimized operations are possible when the modulus verifies
+    /// Equation (1) of <https://hal.archives-ouvertes.fr/hal-01242273/document>.
+    pub fn supports_opt(&self) -> bool {
+        if self.leading_zeros < 1 {
+            return false;
+        }
+
+        // Let's multiply the inequality by (2^s0+1)*2^(3s0):
+        // we want to output true when
+        //    (2^(3s0)+1) * 2^64 < 2^(3s0) * (2^s0+1) * p
+        let mut middle = BigUint::from(1u64) << (3 * self.leading_zeros);
+        let left_side = (&middle + 1u64) << 64;
+        middle *= (1u64 << self.leading_zeros) + 1;
+        middle *= self.p;
+
+        left_side < middle
     }
 
     /// Returns whether the modulus p supports the Number Theoretic Transform of size 2^n.
@@ -78,6 +103,16 @@ impl Modulus {
         self.reduce_u128((a as u128) * (b as u128))
     }
 
+    /// Optimized modular multiplication of a and b in variable time.
+    ///
+    /// Aborts if a >= p or b >= p in debug mode.
+    pub fn mul_opt(&self, a: u64, b: u64) -> u64 {
+        debug_assert!(self.supports_opt());
+        debug_assert!(a < self.p && b < self.p);
+
+        self.reduce_opt_u128((a as u128) * (b as u128))
+    }
+
     /// Modular negation in variable time.
     ///
     /// Aborts if a >= p in debug mode.
@@ -110,6 +145,16 @@ impl Modulus {
         debug_assert_eq!(a.len(), b.len());
 
         izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+    }
+
+    /// Optimized modular multiplication of vectors in place.
+    ///
+    /// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+    pub fn mul_opt_vec(&self, a: &mut [u64], b: &[u64]) {
+        debug_assert!(self.supports_opt());
+        debug_assert_eq!(a.len(), b.len());
+
+        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
     }
 
     /// Modular negation of a vector in place.
@@ -167,18 +212,48 @@ impl Modulus {
         }
     }
 
+    /// Optimized modular reduction of a u128 in variable time.
+    fn reduce_opt_u128(&self, a: u128) -> u64 {
+        debug_assert!(self.supports_opt());
+
+        let r = self.lazy_reduce_opt_u128(a);
+        if r >= self.p {
+            r - self.p
+        } else {
+            r
+        }
+    }
+
     /// Lazy modular reduction of a in variable time. The output is in the interval [0, 2 * p).
     fn lazy_reduce_u128(&self, a: u128) -> u64 {
         let a_lo = a as u64;
         let a_hi = (a >> 64) as u64;
-        let p_lo_lo = ((a_lo as u128) * ((self.barrett as u64) as u128)) >> 64;
+        let p_lo_lo = ((a_lo as u128) * self.barrett_lo) >> 64;
+        let p_hi_lo = (a_hi as u128) * self.barrett_lo;
         let p_lo_hi = (a_lo as u128) * (self.barrett >> 64);
-        let p_hi_lo = (a_hi as u128) * ((self.barrett as u64) as u128);
         let mut q = (p_lo_hi + p_hi_lo + p_lo_lo) >> 64;
         q += (a_hi as u128) * (self.barrett >> 64);
 
-        let r = (a - q * (self.p as u128)) as u64;
+        let r = (a - q * self.p_128) as u64;
         debug_assert!(r < 2 * self.p);
+
+        r
+    }
+
+    /// Lazy optimized modular reduction of a in variable time.
+    /// The output is in the interval [0, 2 * p).
+    ///
+    /// Aborts if the input is >= 2 * p in debug mode.
+    fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
+        debug_assert!(a < self.p_128 * self.p_128);
+        debug_assert!(self.supports_opt());
+
+        let q = ((self.barrett_lo * (a >> 64)) + (a << self.leading_zeros)) >> 64;
+        let r = (a - q * self.p_128) as u64;
+
+        debug_assert!(
+            (a % self.p_128) as u64 == r || (a % self.p_128) as u64 + self.p == r
+        );
 
         r
     }
@@ -298,6 +373,35 @@ mod tests {
                 let b = rng.next_u64() % p;
                 let ab = (a as u128) * (b as u128);
                 assert_eq!(q.mul(a, b), (ab % (p as u128)) as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mul_opt() {
+        let ntests = 100;
+        let mut rng = rand::thread_rng();
+
+        for p in [4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            assert!(q.supports_opt());
+
+            assert_eq!(q.mul_opt(0, 1), 0);
+            assert_eq!(q.mul_opt(1, 1), 1);
+            assert_eq!(q.mul_opt(2 % p, 3 % p), 6 % p);
+            assert_eq!(q.mul_opt(p - 1, 1), p - 1);
+            assert_eq!(q.mul_opt(p - 1, 2 % p), p - 2);
+
+            assert!(catch_unwind(|| q.mul_opt(p, 1)).is_err());
+            assert!(catch_unwind(|| q.mul_opt(p << 1, 1)).is_err());
+            assert!(catch_unwind(|| q.mul_opt(0, p)).is_err());
+            assert!(catch_unwind(|| q.mul_opt(0, p << 1)).is_err());
+
+            for _ in 0..ntests {
+                let a = rng.next_u64() % p;
+                let b = rng.next_u64() % p;
+                let ab = (a as u128) * (b as u128);
+                assert_eq!(q.mul_opt(a, b), (ab % (p as u128)) as u64);
             }
         }
     }
@@ -484,6 +588,39 @@ mod tests {
                 assert_eq!(c.len(), a.len());
                 izip!(a.iter(), b.iter(), c.iter())
                     .for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul(*ai, *bi)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_mul_opt_vec() {
+        let ntests = 100;
+
+        for p in [4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            assert!(q.supports_opt());
+
+            let mut a = [0u64, 1, p - 1];
+
+            q.mul_opt_vec(&mut a, &[1u64, 1, 1]);
+            assert_eq!(&a, &[0u64, 1, p - 1]);
+
+            q.mul_opt_vec(&mut a, &[0, p - 1, p - 1]);
+            assert_eq!(&a, &[0, p - 1, 1]);
+
+            q.mul_opt_vec(&mut a, &[0u64, 0, 0]);
+            assert_eq!(&a, &[0u64, 0, 0]);
+
+            for _ in 0..ntests {
+                let a = random_vector(128, p);
+                let b = random_vector(128, p);
+                let mut c = a.clone();
+
+                q.mul_opt_vec(&mut c, &b);
+
+                assert_eq!(c.len(), a.len());
+                izip!(a.iter(), b.iter(), c.iter())
+                    .for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul_opt(*ai, *bi)));
             }
         }
     }
