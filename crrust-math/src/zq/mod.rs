@@ -1,12 +1,12 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Ring operations for moduli up to 63 bits.
+//! Ring operations for moduli up to 62 bits.
 
 use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
-/// Structure holding a modulus up to 63 bits.
+/// Structure holding a modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
@@ -18,9 +18,9 @@ pub struct Modulus {
 }
 
 impl Modulus {
-	/// Create a modulus from a prime number of at most 63 bits.
+	/// Create a modulus from a prime number of at most 62 bits.
 	pub fn new(p: u64) -> std::option::Option<Self> {
-		if p < 2 || (p >> 63) != 0 {
+		if p < 2 || (p >> 62) != 0 {
 			None
 		} else {
 			let p_twice = 2 * p;
@@ -109,6 +109,38 @@ impl Modulus {
 		self.reduce1(self.p - a)
 	}
 
+	/// Compute the Shoup representation of a.
+	///
+	/// Aborts if a >= p in debug mode.
+	pub fn shoup(&self, a: u64) -> u64 {
+		debug_assert!(a < self.p);
+
+		(((a as u128) << 64) / (self.p as u128)) as u64
+	}
+
+	/// Shoup multiplication of a and b.
+	///
+	/// Aborts if a >= p or b >= p or b_shoup != shoup(b) in debug mode.
+	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+		self.reduce1(self.lazy_mul_shoup(a, b, b_shoup))
+	}
+
+	/// Lazy Shoup multiplication of a and b.
+	/// The output is in the interval [0, 2 * p).
+	///
+	/// Aborts if a >= p or b >= p or b_shoup != shoup(b) in debug mode.
+	pub fn lazy_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+		debug_assert_eq!(b_shoup, self.shoup(b));
+
+		let q = ((a as u128) * (b_shoup as u128)) >> 64;
+		let r = ((a as u128) * (b as u128) - q * (self.p as u128)) as u64;
+
+		debug_assert!(r < 2 * self.p);
+
+		r
+	}
+
 	/// Modular addition of vectors in place.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
@@ -144,6 +176,27 @@ impl Modulus {
 		debug_assert_eq!(a.len(), b.len());
 
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+	}
+
+	/// Compute the Shoup representation of a vector.
+	///
+	/// Aborts if any of the values of the vector is >= p in debug mode.
+	pub fn shoup_vec(&self, a: &[u64]) -> Vec<u64> {
+		let mut a_shoup = Vec::with_capacity(a.len());
+		a.iter().for_each(|ai| a_shoup.push(self.shoup(*ai)));
+		a_shoup
+	}
+
+	/// Shoup modular multiplication of vectors in place.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub fn mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+		debug_assert_eq!(a.len(), b_shoup.len());
+		debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
+
+		izip!(a.iter_mut(), b.iter(), b_shoup.iter())
+			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
 	/// Modular negation of a vector in place.
@@ -361,8 +414,43 @@ mod tests {
 			for _ in 0..ntests {
 				let a = rng.next_u64() % p;
 				let b = rng.next_u64() % p;
-				let ab = (a as u128) * (b as u128);
-				assert_eq!(q.mul(a, b), (ab % (p as u128)) as u64);
+				assert_eq!(
+					q.mul(a, b),
+					(((a as u128) * (b as u128)) % (p as u128)) as u64
+				);
+			}
+		}
+	}
+
+	#[test]
+	fn test_mul_shoup() {
+		let ntests = 100;
+		let mut rng = rand::thread_rng();
+
+		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+			let q = Modulus::new(p).unwrap();
+
+			assert_eq!(q.mul_shoup(0, 1, q.shoup(1)), 0);
+			assert_eq!(q.mul_shoup(1, 1, q.shoup(1)), 1);
+			assert_eq!(q.mul_shoup(2 % p, 3 % p, q.shoup(3 % p)), 6 % p);
+			assert_eq!(q.mul_shoup(p - 1, 1, q.shoup(1)), p - 1);
+			assert_eq!(q.mul_shoup(p - 1, 2 % p, q.shoup(2 % p)), p - 2);
+
+			assert!(catch_unwind(|| q.shoup(p)).is_err());
+			assert!(catch_unwind(|| q.shoup(p << 1)).is_err());
+			assert!(catch_unwind(|| q.mul_shoup(p, 1, q.shoup(1))).is_err());
+			assert!(catch_unwind(|| q.mul_shoup(p << 1, 1, q.shoup(1))).is_err());
+			assert!(catch_unwind(|| q.mul_shoup(0, p, q.shoup(p))).is_err());
+			assert!(catch_unwind(|| q.mul_shoup(0, p << 1, q.shoup(p << 1))).is_err());
+
+			for _ in 0..ntests {
+				let a = rng.next_u64() % p;
+				let b = rng.next_u64() % p;
+				let b_shoup = q.shoup(b);
+				assert_eq!(
+					q.mul_shoup(a, b, b_shoup),
+					(((a as u128) * (b as u128)) % (p as u128)) as u64
+				);
 			}
 		}
 	}
@@ -390,8 +478,10 @@ mod tests {
 			for _ in 0..ntests {
 				let a = rng.next_u64() % p;
 				let b = rng.next_u64() % p;
-				let ab = (a as u128) * (b as u128);
-				assert_eq!(q.mul_opt(a, b), (ab % (p as u128)) as u64);
+				assert_eq!(
+					q.mul_opt(a, b),
+					(((a as u128) * (b as u128)) % (p as u128)) as u64
+				);
 			}
 		}
 	}
@@ -574,6 +664,44 @@ mod tests {
 				let mut c = a.clone();
 
 				q.mul_vec(&mut c, &b);
+
+				assert_eq!(c.len(), a.len());
+				izip!(a.iter(), b.iter(), c.iter())
+					.for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul(*ai, *bi)));
+			}
+		}
+	}
+
+	#[test]
+	fn test_mul_shoup_vec() {
+		let ntests = 100;
+
+		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+			let q = Modulus::new(p).unwrap();
+			let mut a = [0u64, 1, p - 1];
+
+			let mut b = vec![1u64, 1, 1];
+			let mut b_shoup = q.shoup_vec(&b);
+			q.mul_shoup_vec(&mut a, &b, &b_shoup);
+			assert_eq!(&a, &[0u64, 1, p - 1]);
+
+			b = vec![0, p - 1, p - 1];
+			b_shoup = q.shoup_vec(&b);
+			q.mul_shoup_vec(&mut a, &b, &b_shoup);
+			assert_eq!(&a, &[0, p - 1, 1]);
+
+			b = vec![0u64, 0, 0];
+			b_shoup = q.shoup_vec(&b);
+			q.mul_shoup_vec(&mut a, &b, &b_shoup);
+			assert_eq!(&a, &[0u64, 0, 0]);
+
+			for _ in 0..ntests {
+				let a = random_vector(128, p);
+				let b = random_vector(128, p);
+				let b_shoup = q.shoup_vec(&b);
+				let mut c = a.clone();
+
+				q.mul_shoup_vec(&mut c, &b, &b_shoup);
 
 				assert_eq!(c.len(), a.len());
 				izip!(a.iter(), b.iter(), c.iter())

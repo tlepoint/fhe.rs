@@ -21,6 +21,7 @@ pub fn zq_benchmark(c: &mut Criterion) {
 		let mut a = random_vector(*vector_size, p);
 		let c = random_vector(*vector_size, p);
 		let q = Modulus::new(p).unwrap();
+		let c_shoup = q.shoup_vec(&c);
 
 		group.bench_function(BenchmarkId::new("add_vec", vector_size), |b| {
 			b.iter(|| q.add_vec(&mut a, &c));
@@ -40,6 +41,10 @@ pub fn zq_benchmark(c: &mut Criterion) {
 
 		group.bench_function(BenchmarkId::new("mul_opt_vec", vector_size), |b| {
 			b.iter(|| q.mul_opt_vec(&mut a, &c));
+		});
+
+		group.bench_function(BenchmarkId::new("mul_shoup_vec", vector_size), |b| {
+			b.iter(|| q.mul_shoup_vec(&mut a, &c, &c_shoup));
 		});
 	}
 
