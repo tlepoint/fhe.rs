@@ -1,2 +1,2 @@
 [workspace]
-members = ["crrust"]
+members = ["crrust", "crrust-math"]
