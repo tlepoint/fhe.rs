@@ -76,7 +76,7 @@ jobs:
       # Run cargo bench on `main`
       - uses: actions/checkout@v3
         with:
-          ref: refs/origin/main
+          ref: main
       - run: "cargo bench"
       # Run cargo bench on the current branch
       - uses: actions/checkout@v3
