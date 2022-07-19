@@ -105,6 +105,7 @@ impl Modulus {
 	///
 	/// Aborts if a >= p in debug mode.
 	pub fn neg(&self, a: u64) -> u64 {
+		debug_assert!(a < self.p);
 		self.reduce1(self.p - a)
 	}
 
