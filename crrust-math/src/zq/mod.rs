@@ -2,6 +2,7 @@
 
 //! Ring operations for moduli up to 63 bits.
 
+use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
@@ -77,6 +78,47 @@ impl Modulus {
         self.reduce_u128((a as u128) * (b as u128))
     }
 
+    /// Modular negation in variable time.
+    ///
+    /// Aborts if a >= p in debug mode.
+    pub fn neg(&self, a: u64) -> u64 {
+        self.sub(0, a)
+    }
+
+    /// Modular addition of vectors in place.
+    ///
+    /// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+    pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
+        debug_assert_eq!(a.len(), b.len());
+
+        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
+    }
+
+    /// Modular subtraction of vectors in place.
+    ///
+    /// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+    pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
+        debug_assert_eq!(a.len(), b.len());
+
+        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
+    }
+
+    /// Modular multiplication of vectors in place.
+    ///
+    /// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+    pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
+        debug_assert_eq!(a.len(), b.len());
+
+        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+    }
+
+    /// Modular negation of a vector in place.
+    ///
+    /// Aborts if any of the values in the vector is >= p in debug mode.
+    pub fn neg_vec(&self, a: &mut [u64]) {
+        izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
+    }
+
     /// Modular exponentiation in variable time.
     ///
     /// Aborts if a >= p or n >= p in debug mode.
@@ -103,7 +145,7 @@ impl Modulus {
 
     /// Modular inversion in variable time.
     ///
-    /// Returns None if p is not prime.
+    /// Returns None if p is not prime or a = 0.
     /// Aborts if a >= p in debug mode.
     pub fn inv(&self, a: u64) -> std::option::Option<u64> {
         if !self.is_prime || a == 0 {
@@ -141,6 +183,7 @@ impl Modulus {
         r
     }
 
+    /// Returns whether p is prime.
     fn is_prime(p: u64) -> bool {
         // TODO: To implement
         !(p < 2 || (p != 2 && p & 1 == 0))
@@ -150,6 +193,7 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
     use super::Modulus;
+    use itertools::izip;
     use rand::RngCore;
     use std::panic::UnwindSafe;
 
@@ -259,6 +303,28 @@ mod tests {
     }
 
     #[test]
+    fn test_neg() {
+        let ntests = 100;
+        let mut rng = rand::thread_rng();
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+
+            assert_eq!(q.neg(0), 0);
+            assert_eq!(q.neg(1), p - 1);
+            assert_eq!(q.neg(2 % p), p - 2);
+
+            assert!(catch_unwind(|| q.neg(p)).is_err());
+            assert!(catch_unwind(|| q.neg(p << 1)).is_err());
+
+            for _ in 0..ntests {
+                let a = rng.next_u64() % p;
+                assert_eq!(q.add(q.neg(a), a), 0);
+            }
+        }
+    }
+
+    #[test]
     fn test_pow() {
         let ntests = 10;
         let mut rng = rand::thread_rng();
@@ -316,6 +382,131 @@ mod tests {
                     assert!(b.is_some());
                     assert_eq!(q.mul(a, b.unwrap()), 1)
                 }
+            }
+        }
+    }
+
+    fn random_vector(size: usize, p: u64) -> Vec<u64> {
+        let mut rng = rand::thread_rng();
+        let mut v = vec![];
+        for _ in 0..size {
+            v.push(rng.next_u64() % p)
+        }
+        v
+    }
+
+    #[test]
+    fn test_add_vec() {
+        let ntests = 100;
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            let mut a = [0u64, 1, p - 1];
+
+            q.add_vec(&mut a, &[0u64, 0, 0]);
+            assert_eq!(&a, &[0u64, 1, p - 1]);
+
+            q.add_vec(&mut a, &[1u64, 1, 1]);
+            assert_eq!(&a, &[1u64, 2 % p, 0]);
+
+            q.add_vec(&mut a, &[1, p - 1, p - 1]);
+            assert_eq!(&a, &[2 % p, 1, p - 1]);
+
+            for _ in 0..ntests {
+                let a = random_vector(128, p);
+                let b = random_vector(128, p);
+                let mut c = a.clone();
+
+                q.add_vec(&mut c, &b);
+
+                assert_eq!(c.len(), a.len());
+                izip!(a.iter(), b.iter(), c.iter())
+                    .for_each(|(ai, bi, ci)| assert_eq!(*ci, q.add(*ai, *bi)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_sub_vec() {
+        let ntests = 100;
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            let mut a = [0u64, 1, p - 1];
+
+            q.sub_vec(&mut a, &[0u64, 0, 0]);
+            assert_eq!(&a, &[0u64, 1, p - 1]);
+
+            q.sub_vec(&mut a, &[1u64, 1, 1]);
+            assert_eq!(&a, &[p - 1, 0, p - 2]);
+
+            q.sub_vec(&mut a, &[1, p - 1, p - 1]);
+            assert_eq!(&a, &[p - 2, 1, p - 1]);
+
+            for _ in 0..ntests {
+                let a = random_vector(128, p);
+                let b = random_vector(128, p);
+                let mut c = a.clone();
+
+                q.sub_vec(&mut c, &b);
+
+                assert_eq!(c.len(), a.len());
+                izip!(a.iter(), b.iter(), c.iter())
+                    .for_each(|(ai, bi, ci)| assert_eq!(*ci, q.sub(*ai, *bi)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_mul_vec() {
+        let ntests = 100;
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            let mut a = [0u64, 1, p - 1];
+
+            q.mul_vec(&mut a, &[1u64, 1, 1]);
+            assert_eq!(&a, &[0u64, 1, p - 1]);
+
+            q.mul_vec(&mut a, &[0, p - 1, p - 1]);
+            assert_eq!(&a, &[0, p - 1, 1]);
+
+            q.mul_vec(&mut a, &[0u64, 0, 0]);
+            assert_eq!(&a, &[0u64, 0, 0]);
+
+            for _ in 0..ntests {
+                let a = random_vector(128, p);
+                let b = random_vector(128, p);
+                let mut c = a.clone();
+
+                q.mul_vec(&mut c, &b);
+
+                assert_eq!(c.len(), a.len());
+                izip!(a.iter(), b.iter(), c.iter())
+                    .for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul(*ai, *bi)));
+            }
+        }
+    }
+
+    #[test]
+    fn test_neg_vec() {
+        let ntests = 100;
+
+        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+            let q = Modulus::new(p).unwrap();
+            let mut a = [0u64, 1, p - 1];
+
+            q.neg_vec(&mut a);
+            assert_eq!(&a, &[0, p - 1, 1]);
+
+            for _ in 0..ntests {
+                let a = random_vector(128, p);
+                let mut b = a.clone();
+
+                q.neg_vec(&mut b);
+                assert_eq!(b.len(), a.len());
+
+                izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.add(*ai, *bi), 0));
             }
         }
     }
