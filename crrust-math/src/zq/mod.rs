@@ -13,7 +13,7 @@ use num_traits::cast::ToPrimitive;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
-	barrett: u128,
+	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
 }
@@ -28,7 +28,7 @@ impl Modulus {
 
 			Some(Self {
 				p,
-				barrett,
+				barrett_hi: (barrett >> 64) as u64,
 				barrett_lo: barrett as u64,
 				leading_zeros: p.leading_zeros(),
 			})
@@ -275,9 +275,9 @@ impl Modulus {
 		let a_hi = (a >> 64) as u64;
 		let p_lo_lo = ((a_lo as u128) * (self.barrett_lo as u128)) >> 64;
 		let p_hi_lo = (a_hi as u128) * (self.barrett_lo as u128);
-		let p_lo_hi = (a_lo as u128) * (self.barrett >> 64);
+		let p_lo_hi = (a_lo as u128) * (self.barrett_hi as u128);
 
-		let q = ((p_lo_hi + p_hi_lo + p_lo_lo) >> 64) + (a_hi as u128) * (self.barrett >> 64);
+		let q = ((p_lo_hi + p_hi_lo + p_lo_lo) >> 64) + (a_hi as u128) * (self.barrett_hi as u128);
 		let r = (a - q * (self.p as u128)) as u64;
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
