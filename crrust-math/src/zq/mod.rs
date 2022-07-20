@@ -5,6 +5,7 @@
 pub mod ntt;
 
 use itertools::izip;
+use num_bigint::prime::probably_prime;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
@@ -15,7 +16,6 @@ pub struct Modulus {
 	barrett: u128,
 	barrett_lo: u64,
 	leading_zeros: u32,
-	is_prime: bool,
 }
 
 impl Modulus {
@@ -24,14 +24,13 @@ impl Modulus {
 		if p < 2 || (p >> 62) != 0 {
 			None
 		} else {
-			let barrett = ((BigUint::from(1u64) << 128u64) / p).to_u128().unwrap(); // 2^128 / p
+			let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
 
 			Some(Self {
 				p,
 				barrett,
 				barrett_lo: barrett as u64,
 				leading_zeros: p.leading_zeros(),
-				is_prime: Self::is_prime(p),
 			})
 		}
 	}
@@ -47,7 +46,7 @@ impl Modulus {
 		// Let's multiply the inequality by (2^s0+1)*2^(3s0):
 		// we want to output true when
 		//    (2^(3s0)+1) * 2^64 < 2^(3s0) * (2^s0+1) * p
-		let mut middle = BigUint::from(1u64) << (3 * self.leading_zeros);
+		let mut middle = BigUint::from(1u64) << (3 * self.leading_zeros as usize);
 		let left_side = (&middle + 1u64) << 64;
 		middle *= (1u64 << self.leading_zeros) + 1;
 		middle *= self.p;
@@ -55,12 +54,13 @@ impl Modulus {
 		left_side < middle
 	}
 
-	/// Returns whether the modulus p supports the Number Theoretic Transform of size n.
+	/// Returns whether the modulus p is prime and supports the Number Theoretic Transform of size n.
+	///
 	/// Aborts if n is not a power of 2 that is >= 8.
 	pub fn supports_ntt(&self, n: usize) -> bool {
 		assert!(n >= 8 && n.is_power_of_two());
 
-		self.p % ((n as u64) << 1) == 1
+		self.p % ((n as u64) << 1) == 1 && self.is_prime()
 	}
 
 	/// Modular addition of a and b in variable time.
@@ -234,7 +234,7 @@ impl Modulus {
 	/// Returns None if p is not prime or a = 0.
 	/// Aborts if a >= p in debug mode.
 	pub fn inv(&self, a: u64) -> std::option::Option<u64> {
-		if !self.is_prime || a == 0 {
+		if !self.is_prime() || a == 0 {
 			None
 		} else {
 			let r = self.pow(a, self.p - 2);
@@ -302,10 +302,10 @@ impl Modulus {
 		r
 	}
 
-	/// Returns whether p is prime.
-	fn is_prime(p: u64) -> bool {
-		// TODO: To implement
-		!(p < 2 || (p != 2 && p & 1 == 0))
+	/// Returns whether the modulus is prime; this function is 100% accurate.
+	pub fn is_prime(&self) -> bool {
+		let p_biguint = BigUint::from(self.p);
+		probably_prime(&p_biguint, 0)
 	}
 }
 
@@ -762,6 +762,19 @@ mod tests {
 
 				izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.add(*ai, *bi), 0));
 			}
+		}
+	}
+
+	#[test]
+	fn test_is_prime() {
+		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+			let q = Modulus::new(p).unwrap();
+			assert!(q.is_prime())
+		}
+
+		for p in [4, 6, 15, 1977, 4611686018326724611] {
+			let q = Modulus::new(p).unwrap();
+			assert!(!q.is_prime())
 		}
 	}
 }

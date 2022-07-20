@@ -11,7 +11,7 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 itertools = "0.10.3"
-num-bigint = "0.4.3"
+num-bigint = {version = "0.8.1", package = "num-bigint-dig", features = ["prime"]}
 num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
