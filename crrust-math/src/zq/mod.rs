@@ -19,7 +19,7 @@ pub struct Modulus {
 }
 
 impl Modulus {
-	/// Create a modulus from a prime number of at most 62 bits.
+	/// Create a modulus from an integer of at most 62 bits.
 	pub fn new(p: u64) -> std::option::Option<Self> {
 		if p < 2 || (p >> 62) != 0 {
 			None
