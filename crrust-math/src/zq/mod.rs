@@ -2,6 +2,8 @@
 
 //! Ring operations for moduli up to 62 bits.
 
+pub mod ntt;
+
 use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -10,7 +12,6 @@ use num_traits::cast::ToPrimitive;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
-	p_twice: u64,
 	barrett: u128,
 	barrett_lo: u64,
 	leading_zeros: u32,
@@ -23,12 +24,10 @@ impl Modulus {
 		if p < 2 || (p >> 62) != 0 {
 			None
 		} else {
-			let p_twice = 2 * p;
 			let barrett = ((BigUint::from(1u64) << 128u64) / p).to_u128().unwrap(); // 2^128 / p
 
 			Some(Self {
 				p,
-				p_twice,
 				barrett,
 				barrett_lo: barrett as u64,
 				leading_zeros: p.leading_zeros(),
@@ -56,12 +55,12 @@ impl Modulus {
 		left_side < middle
 	}
 
-	/// Returns whether the modulus p supports the Number Theoretic Transform of size 2^n.
-	/// Aborts if n >= 63.
+	/// Returns whether the modulus p supports the Number Theoretic Transform of size n.
+	/// Aborts if n is not a power of 2 that is >= 8.
 	pub fn supports_ntt(&self, n: usize) -> bool {
-		assert!(n <= 62);
+		assert!(n >= 8 && n.is_power_of_two());
 
-		self.p % (1 << (n + 1)) == 1
+		self.p % ((n as u64) << 1) == 1
 	}
 
 	/// Modular addition of a and b in variable time.
@@ -70,7 +69,7 @@ impl Modulus {
 	pub fn add(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 
-		self.reduce1(a + b)
+		Self::reduce1(a + b, self.p)
 	}
 
 	/// Modular subtraction of a and b in variable time.
@@ -79,7 +78,7 @@ impl Modulus {
 	pub fn sub(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 
-		self.reduce1(a + self.p - b)
+		Self::reduce1(a + self.p - b, self.p)
 	}
 
 	/// Modular multiplication of a and b in variable time.
@@ -106,7 +105,7 @@ impl Modulus {
 	/// Aborts if a >= p in debug mode.
 	pub fn neg(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
-		self.reduce1(self.p - a)
+		Self::reduce1(self.p - a, self.p)
 	}
 
 	/// Compute the Shoup representation of a.
@@ -120,17 +119,17 @@ impl Modulus {
 
 	/// Shoup multiplication of a and b.
 	///
-	/// Aborts if a >= p or b >= p or b_shoup != shoup(b) in debug mode.
+	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
 	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
-		self.reduce1(self.lazy_mul_shoup(a, b, b_shoup))
+		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
 	/// Lazy Shoup multiplication of a and b.
 	/// The output is in the interval [0, 2 * p).
 	///
-	/// Aborts if a >= p or b >= p or b_shoup != shoup(b) in debug mode.
+	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
 	pub fn lazy_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
-		debug_assert!(a < self.p && b < self.p);
+		debug_assert!(b < self.p);
 		debug_assert_eq!(b_shoup, self.shoup(b));
 
 		let q = ((a as u128) * (b_shoup as u128)) >> 64;
@@ -246,22 +245,24 @@ impl Modulus {
 
 	/// Modular reduction of a u128 in variable time.
 	fn reduce_u128(&self, a: u128) -> u64 {
-		self.reduce1(self.lazy_reduce_u128(a))
+		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in variable time.
 	fn reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt());
-		self.reduce1(self.lazy_reduce_opt_u128(a))
+		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
 	/// Return x mod p.
+	///
 	/// Aborts if x >= 2 * p in debug mode.
-	fn reduce1(&self, x: u64) -> u64 {
-		debug_assert!(x < 2 * self.p);
+	fn reduce1(x: u64, p: u64) -> u64 {
+		debug_assert!(p >> 63 == 0);
+		debug_assert!(x < 2 * p);
 
-		if x >= self.p {
-			x - self.p
+		if x >= p {
+			x - p
 		} else {
 			x
 		}
@@ -438,8 +439,6 @@ mod tests {
 
 			assert!(catch_unwind(|| q.shoup(p)).is_err());
 			assert!(catch_unwind(|| q.shoup(p << 1)).is_err());
-			assert!(catch_unwind(|| q.mul_shoup(p, 1, q.shoup(1))).is_err());
-			assert!(catch_unwind(|| q.mul_shoup(p << 1, 1, q.shoup(1))).is_err());
 			assert!(catch_unwind(|| q.mul_shoup(0, p, q.shoup(p))).is_err());
 			assert!(catch_unwind(|| q.mul_shoup(0, p << 1, q.shoup(p << 1))).is_err());
 

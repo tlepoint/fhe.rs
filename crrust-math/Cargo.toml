@@ -14,10 +14,15 @@ itertools = "0.10.3"
 num-bigint = "0.4.3"
 num-traits = "0.2.15"
 rand = "0.8.5"
+rand_chacha = "0.3.1"
 
 [dev-dependencies]
 criterion = "0.3.6"
 
 [[bench]]
 name = "zq"
+harness = false
+
+[[bench]]
+name = "ntt"
 harness = false
