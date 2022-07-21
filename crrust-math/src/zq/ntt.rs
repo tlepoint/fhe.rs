@@ -6,7 +6,7 @@ use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
 
 /// Number-Theoretic Transform operator.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
 	p: Rc<Modulus>,
 	p_twice: u64,

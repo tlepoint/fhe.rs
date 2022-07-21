@@ -1,6 +1,6 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Internal 192-bit signed integer.
+//! Internal 193-bit signed integer.
 
 /// Structure holding a 193-bit signed integer.
 #[derive(Debug, Clone, PartialEq, Eq)]
