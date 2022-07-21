@@ -105,11 +105,11 @@ impl RnsExtender {
 		) {
 			let mut x = (2 * p_j.modulus()
 				- p_j.lazy_mul_shoup(value as u64, *q_mod_p_j, *q_mod_p_shoup_j)) as u128;
-			for (yi, q_star_mod_p_j_i, q_star_mod_p_shoup_j_i) in
-				izip!(&y, q_star_mod_p_j, q_star_mod_p_shoup_j,)
-			{
-				x += p_j.lazy_mul_shoup(*yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128;
-			}
+			izip!(&y, q_star_mod_p_j, q_star_mod_p_shoup_j).for_each(
+				|(yi, q_star_mod_p_j_i, q_star_mod_p_shoup_j_i)| {
+					x += p_j.lazy_mul_shoup(*yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128
+				},
+			);
 			rests_to.push(p_j.reduce_u128(x));
 		}
 
