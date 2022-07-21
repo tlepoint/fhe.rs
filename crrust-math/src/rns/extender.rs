@@ -76,31 +76,24 @@ impl RnsExtender {
 
 		let mut rests_to = Vec::with_capacity(self.to.moduli_u64.len());
 
-		// let mut y = Vec::with_capacity(rests_from.len());
-		// let mut sum = Int193::zero();
-		// for (
-		// 	rests_from_i,
-		// 	theta_lo,
-		// 	theta_hi,
-		// 	q_tilde,
-		// 	q_tilde_shoup,
-		// 	qi,
-		// ) in izip!(
-		// 	rests_from,
-		// 	&self.theta_lo,
-		// 	&self.theta_hi,
-		// 	&self.from.q_tilde,
-		// 	&self.from.q_tilde_shoup,
-		// 	&self.from.moduli,
-		// ) {
-		// 	let yi = qi.mul_shoup(*rests_from_i, *q_tilde, *q_tilde_shoup);
-		// 	y.push(yi);
-		// 	let lo = (*theta_lo as u128) * (yi as u128);
-		// 	let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
-		// 	sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
-		// }
-
-		// sum >>= 128;
+		let mut y = Vec::with_capacity(rests_from.len());
+		let mut sum = Int193::zero();
+		for (rests_from_i, theta_lo, theta_hi, q_tilde, q_tilde_shoup, qi) in izip!(
+			rests_from,
+			&self.theta_lo,
+			&self.theta_hi,
+			&self.from.q_tilde,
+			&self.from.q_tilde_shoup,
+			&self.from.moduli,
+		) {
+			let yi = qi.mul_shoup(*rests_from_i, *q_tilde, *q_tilde_shoup);
+			y.push(yi);
+			let lo = (*theta_lo as u128) * (yi as u128);
+			let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
+			sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
+		}
+		sum >>= 128;
+		let value: i128 = (&sum).into();
 
 		for (q_star_mod_p_j, q_star_mod_p_shoup_j, p_j, q_mod_p_j, q_mod_p_shoup_j) in izip!(
 			&self.q_star_mod_p,
@@ -110,35 +103,12 @@ impl RnsExtender {
 			&self.q_mod_p_shoup,
 		) {
 			let mut x = 0u128;
-			let mut sum = Int193::zero();
-			for (
-				rests_from_i,
-				q_star_mod_p_j_i,
-				q_star_mod_p_shoup_j_i,
-				theta_lo,
-				theta_hi,
-				q_tilde,
-				q_tilde_shoup,
-				qi,
-			) in izip!(
-				rests_from,
-				q_star_mod_p_j,
-				q_star_mod_p_shoup_j,
-				&self.theta_lo,
-				&self.theta_hi,
-				&self.from.q_tilde,
-				&self.from.q_tilde_shoup,
-				&self.from.moduli,
-			) {
-				let yi = qi.mul_shoup(*rests_from_i, *q_tilde, *q_tilde_shoup);
-				x += p_j.lazy_mul_shoup(yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128;
-				let lo = (*theta_lo as u128) * (yi as u128);
-				let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
-				sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
+			for (yi, q_star_mod_p_j_i, q_star_mod_p_shoup_j_i) in
+				izip!(&y, q_star_mod_p_j, q_star_mod_p_shoup_j,)
+			{
+				x += p_j.lazy_mul_shoup(*yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128;
 			}
 
-			sum >>= 128;
-			let value: i128 = (&sum).into();
 			rests_to.push(p_j.sub(
 				p_j.reduce_u128(x),
 				p_j.mul_shoup(value as u64, *q_mod_p_j, *q_mod_p_shoup_j),
