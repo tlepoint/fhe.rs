@@ -88,6 +88,7 @@ impl RnsExtender {
 		) {
 			let yi = qi.mul_shoup(*rests_from_i, *q_tilde, *q_tilde_shoup);
 			y.push(yi);
+			// Compute yi * theta
 			let lo = (*theta_lo as u128) * (yi as u128);
 			let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
 			sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
@@ -109,10 +110,8 @@ impl RnsExtender {
 				x += p_j.lazy_mul_shoup(*yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128;
 			}
 
-			rests_to.push(p_j.sub(
-				p_j.reduce_u128(x),
-				p_j.mul_shoup(value as u64, *q_mod_p_j, *q_mod_p_shoup_j),
-			));
+			x += (p_j.modulus() - p_j.mul_shoup(value as u64, *q_mod_p_j, *q_mod_p_shoup_j)) as u128;
+			rests_to.push(p_j.reduce_u128(x));
 		}
 
 		rests_to
