@@ -76,7 +76,7 @@ impl RnsContext {
 
 			Some(Self {
 				moduli_u64: moduli_u64.to_owned(),
-				moduli: moduli,
+				moduli,
 				q_tilde,
 				q_tilde_shoup,
 				q_star,
