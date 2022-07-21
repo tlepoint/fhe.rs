@@ -35,6 +35,11 @@ impl Modulus {
 		}
 	}
 
+	/// Returns the value of the modulus.
+	pub fn modulus(&self) -> u64 {
+		self.p
+	}
+
 	/// Returns whether the modulus supports optimized multiplication and reduction.
 	/// These optimized operations are possible when the modulus verifies
 	/// Equation (1) of <https://hal.archives-ouvertes.fr/hal-01242273/document>.
@@ -244,7 +249,7 @@ impl Modulus {
 	}
 
 	/// Modular reduction of a u128 in variable time.
-	fn reduce_u128(&self, a: u128) -> u64 {
+	pub fn reduce_u128(&self, a: u128) -> u64 {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
