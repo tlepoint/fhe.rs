@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
 /// Structure holding a modulus up to 62 bits.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Modulus {
 	p: u64,
 	barrett_hi: u64,
