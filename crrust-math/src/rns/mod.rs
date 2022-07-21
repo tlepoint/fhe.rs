@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 mod i193;
 
 /// Context for a Residue Number System.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RnsContext {
 	moduli: Vec<u64>,
 	q_tilde: Vec<u64>,

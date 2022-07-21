@@ -3,7 +3,7 @@
 //! Internal 192-bit signed integer.
 
 /// Structure holding a 193-bit signed integer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Int193 {
 	lo: u64,
 	mi: u64,
