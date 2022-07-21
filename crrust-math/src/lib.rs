@@ -4,4 +4,5 @@
 
 //! Mathematical utilities for the crrust library.
 
+pub mod rns;
 pub mod zq;
