@@ -244,7 +244,7 @@ impl Modulus {
 	}
 
 	/// Modular reduction of a u128 in variable time.
-	fn reduce_u128(&self, a: u128) -> u64 {
+	pub fn reduce_u128(&self, a: u128) -> u64 {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 

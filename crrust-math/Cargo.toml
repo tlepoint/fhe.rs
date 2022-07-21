@@ -26,3 +26,7 @@ harness = false
 [[bench]]
 name = "ntt"
 harness = false
+
+[[bench]]
+name = "rns"
+harness = false
