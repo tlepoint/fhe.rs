@@ -1,5 +1,6 @@
 #![warn(missing_docs, unused_imports)]
 
+//! Converter from one RNS basis to another RNS basis. The converter uses the
 //! RNS Basis Extension algorithm described in Section 2.2 of <https://eprint.iacr.org/2018/117.pdf>.
 
 use super::RnsContext;
@@ -8,9 +9,9 @@ use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
-/// Extender for the RNS Basis Extension algorithm.
+/// Converter from one RNS basis to another.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RnsExtender {
+pub struct RnsConverter {
 	from: RnsContext, // Moduli q
 	to: RnsContext,   // Moduli p
 	q_star_mod_p: Vec<Vec<u64>>,
@@ -21,8 +22,8 @@ pub struct RnsExtender {
 	q_mod_p_shoup: Vec<u64>,
 }
 
-impl RnsExtender {
-	/// Create a RNS basis extender from a RNS context to a new modulus.
+impl RnsConverter {
+	/// Create a RNS basis converter between two RNS contexts.
 	pub fn new(from: &RnsContext, to: &RnsContext) -> Self {
 		// Store the product of the moduli in `from` modulo the moduli of `to`.
 		let mut q_mod_p = Vec::with_capacity(to.moduli_u64.len());
@@ -68,10 +69,10 @@ impl RnsExtender {
 		}
 	}
 
-	/// Extend rests in context `from` into rests in context `to`.
+	/// Convert a RNS representation in context `from` into a representation in context `to`.
 	///
 	/// Aborts if the number of rests is different than the number of moduli in debug mode.
-	pub fn extend(&self, rests_from: &[u64]) -> Vec<u64> {
+	pub fn convert(&self, rests_from: &[u64]) -> Vec<u64> {
 		debug_assert_eq!(rests_from.len(), self.from.moduli_u64.len());
 
 		let mut rests_to = Vec::with_capacity(self.to.moduli_u64.len());
@@ -119,7 +120,7 @@ impl RnsExtender {
 
 #[cfg(test)]
 mod tests {
-	use super::RnsExtender;
+	use super::RnsConverter;
 	use crate::rns::RnsContext;
 	use num_bigint::BigUint;
 	use rand::{thread_rng, RngCore};
@@ -128,26 +129,26 @@ mod tests {
 	fn test_constructor() {
 		let q = RnsContext::new(&[4, 15, 1153]).unwrap();
 		let p = RnsContext::new(&[7, 13, 907]).unwrap();
-		let extender = RnsExtender::new(&q, &p);
-		assert_eq!(extender.from, q);
-		assert_eq!(extender.to, p);
+		let converter = RnsConverter::new(&q, &p);
+		assert_eq!(converter.from, q);
+		assert_eq!(converter.to, p);
 	}
 
 	#[test]
-	fn test_extender() {
+	fn test_converter() {
 		let ntests = 100;
 		let q = RnsContext::new(&[4, 15, 1153]).unwrap();
 		let q_product = 4u64 * 15 * 1153;
 		let p = RnsContext::new(&[7, 13, 907]).unwrap();
-		let extender = RnsExtender::new(&q, &p);
+		let converter = RnsConverter::new(&q, &p);
 
-		let a = extender.extend(&[0, 0, 0]);
+		let a = converter.convert(&[0, 0, 0]);
 		assert_eq!(a, &[0, 0, 0]);
 
 		let mut rng = thread_rng();
 		for _ in 0..ntests {
 			let u = BigUint::from(rng.next_u64() % q_product);
-			let a = extender.extend(&q.project(&u));
+			let a = converter.convert(&q.project(&u));
 			let b = p.project(&u);
 			assert_eq!(&a, &b);
 		}

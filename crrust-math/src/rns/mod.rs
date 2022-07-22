@@ -8,9 +8,12 @@ use num_bigint::{BigInt, BigUint, ExtendedGcd, ModInverse};
 use num_traits::{cast::ToPrimitive, One, Zero};
 use std::cmp::Ordering;
 
-mod extender;
+mod converter;
 mod i193;
-pub use extender::RnsExtender;
+mod scaler;
+
+pub use converter::RnsConverter;
+pub use scaler::RnsScaler;
 
 /// Context for a Residue Number System.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,6 +2,7 @@
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 #![feature(bigint_helper_methods)]
+#![feature(int_roundings)]
 
 //! Mathematical utilities for the crrust library.
 
