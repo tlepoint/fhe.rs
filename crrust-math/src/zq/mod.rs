@@ -203,6 +203,11 @@ impl Modulus {
 			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
+	/// Reduce a vector in place.
+	pub fn reduce_vec(&self, a: &mut [u64]) {
+		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
+	}
+
 	/// Modular negation of a vector in place.
 	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
@@ -253,10 +258,20 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
+	/// Modular reduction of a u64 in variable time.
+	pub fn reduce(&self, a: u64) -> u64 {
+		self.lazy_reduce(a)
+	}
+
 	/// Optimized modular reduction of a u128 in variable time.
 	fn reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt());
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
+	}
+
+	/// Optimized modular reduction of a u64 in variable time.
+	pub fn reduce_opt(&self, a: u64) -> u64 {
+		self.lazy_reduce_opt(a)
 	}
 
 	/// Return x mod p.
@@ -275,7 +290,7 @@ impl Modulus {
 
 	/// Lazy modular reduction of a in variable time.
 	/// The output is in the interval [0, 2 * p).
-	fn lazy_reduce_u128(&self, a: u128) -> u64 {
+	pub fn lazy_reduce_u128(&self, a: u128) -> u64 {
 		let a_lo = a as u64;
 		let a_hi = (a >> 64) as u64;
 		let p_lo_lo = ((a_lo as u128) * (self.barrett_lo as u128)) >> 64;
@@ -287,6 +302,21 @@ impl Modulus {
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
 		debug_assert_eq!(r % self.p, (a % (self.p as u128)) as u64);
+
+		r
+	}
+
+	/// Lazy modular reduction of a in variable time.
+	/// The output is in the interval [0, 2 * p).
+	pub fn lazy_reduce(&self, a: u64) -> u64 {
+		let p_lo_lo = ((a as u128) * (self.barrett_lo as u128)) >> 64;
+		let p_lo_hi = (a as u128) * (self.barrett_hi as u128);
+
+		let q = (p_lo_hi + p_lo_lo) >> 64;
+		let r = (a as u128 - q * (self.p as u128)) as u64;
+
+		debug_assert!((r as u128) < 2 * (self.p as u128));
+		debug_assert_eq!(r % self.p, a % self.p);
 
 		r
 	}
@@ -303,6 +333,20 @@ impl Modulus {
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
 		debug_assert_eq!(r % self.p, (a % (self.p as u128)) as u64);
+
+		r
+	}
+
+	/// Lazy optimized modular reduction of a in variable time.
+	/// The output is in the interval [0, 2 * p).
+	///
+	/// Aborts if the input is >= 2 * p in debug mode.
+	fn lazy_reduce_opt(&self, a: u64) -> u64 {
+		let q = a >> (64 - self.leading_zeros);
+		let r = ((a as u128) - (q as u128) * (self.p as u128)) as u64;
+
+		debug_assert!((r as u128) < 2 * (self.p as u128));
+		debug_assert_eq!(r % self.p, a % self.p);
 
 		r
 	}
@@ -766,6 +810,29 @@ mod tests {
 				assert_eq!(b.len(), a.len());
 
 				izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.add(*ai, *bi), 0));
+			}
+		}
+	}
+
+	#[test]
+	fn test_reduce() {
+		let ntests = 100;
+		let mut rng = rand::thread_rng();
+
+		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
+			let q = Modulus::new(p).unwrap();
+
+			for _ in 0..ntests {
+				let mut a = vec![];
+				for _ in 0..128 {
+					a.push(rng.next_u64());
+				}
+				let mut b = a.clone();
+
+				q.reduce_vec(&mut b);
+				assert_eq!(b.len(), a.len());
+
+				izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.reduce(*ai), *bi));
 			}
 		}
 	}

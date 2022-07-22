@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use crrust_math::rns::{RnsContext, RnsExtender};
+use crrust_math::rns::{RnsContext, RnsConverter, RnsScaler};
+use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
 pub fn rns_benchmark(c: &mut Criterion) {
@@ -26,14 +27,23 @@ pub fn rns_benchmark(c: &mut Criterion) {
 
 	let rns_q = RnsContext::new(&q).unwrap();
 	let rns_p = RnsContext::new(&p).unwrap();
-	let extender = RnsExtender::new(&rns_q, &rns_p);
+	let converter = RnsConverter::new(&rns_q, &rns_p);
+	let scaler = RnsScaler::new(
+		&rns_q,
+		&BigUint::from(1u64),
+		&BigUint::from(46116860181065u64),
+	);
 
 	group.bench_function(
-		BenchmarkId::new("extender", format!("{}->{}", q.len(), p.len())),
+		BenchmarkId::new("converter", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| extender.extend(&x));
+			b.iter(|| converter.convert(&x));
 		},
 	);
+
+	group.bench_function(BenchmarkId::new("scaler", q.len()), |b| {
+		b.iter(|| scaler.scale(&x, x.len(), true));
+	});
 
 	group.finish();
 }

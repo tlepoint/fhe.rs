@@ -50,52 +50,97 @@ impl Int193 {
 	pub fn is_negative(&self) -> bool {
 		self.sign
 	}
+
+	/// Returns the least significant bit.
+	pub fn lsb(&self) -> u64 {
+		self.lo & 1
+	}
+}
+
+impl std::ops::Shr<usize> for &Int193 {
+	type Output = Int193;
+
+	fn shr(self, rhs: usize) -> Self::Output {
+		let mut clone = self.clone();
+		clone >>= rhs;
+		clone
+	}
 }
 
 impl std::ops::ShrAssign<usize> for Int193 {
 	fn shr_assign(&mut self, rhs: usize) {
 		debug_assert!(rhs <= 191);
 
-		if rhs >= 128 {
-			self.lo = self.hi >> (rhs - 128);
-			self.mi = 0;
-			self.hi = 0;
+		if rhs > 128 {
+			let shift = rhs - 128;
+			self.lo = if self.sign {
+				(self.hi >> shift) | (u64::MAX << (64 - shift))
+			} else {
+				self.hi >> shift
+			};
+			self.mi = if self.sign { u64::MAX } else { 0 };
+			self.hi = if self.sign { u64::MAX } else { 0 };
+		} else if rhs == 128 {
+			self.lo = self.hi;
+			self.mi = if self.sign { u64::MAX } else { 0 };
+			self.hi = if self.sign { u64::MAX } else { 0 };
 		} else if rhs > 64 {
 			let shift = rhs - 64;
 			self.lo = (self.mi >> shift) | (self.hi << (64 - shift));
-			self.mi = self.hi >> shift;
-			self.hi = 0;
+			self.mi = if self.sign {
+				(self.hi >> shift) | (u64::MAX << (64 - shift))
+			} else {
+				self.hi >> shift
+			};
+			self.hi = if self.sign { u64::MAX } else { 0 };
 		} else if rhs == 64 {
 			self.lo = self.mi;
 			self.mi = self.hi;
-			self.hi = 0;
+			self.hi = if self.sign { u64::MAX } else { 0 };
 		} else if rhs > 0 {
 			self.lo = (self.lo >> rhs) | (self.mi << (64 - rhs));
 			self.mi = (self.mi >> rhs) | (self.hi << (64 - rhs));
-			self.hi >>= rhs;
+			self.hi = if self.sign {
+				(self.hi >> rhs) | (u64::MAX << (64 - rhs))
+			} else {
+				self.hi >> rhs
+			};
 		}
 	}
 }
+
 impl From<&Int193> for i128 {
 	fn from(a: &Int193) -> Self {
-		let abs = (a.lo as i128) + (((a.mi << 1) as i128) << 63);
 		if a.sign {
-			-abs
+			debug_assert_eq!(a.hi, u64::MAX);
+			debug_assert_eq!(a.mi >> 63, 1);
+			-(1i128 + (!a.lo as i128) + ((!a.mi as i128) << 64))
 		} else {
-			abs
+			debug_assert_eq!(a.hi, 0);
+			debug_assert_eq!(a.mi >> 63, 0);
+			(a.lo as i128) + (((a.mi << 1) as i128) << 63)
 		}
 	}
 }
 
 impl From<i128> for Int193 {
 	fn from(a: i128) -> Self {
-		let abs = a.abs();
-		// println!("{}", abs);
-		Self {
-			lo: abs as u64,
-			mi: (abs >> 64) as u64,
-			hi: 0,
-			sign: a.is_negative(),
+		let mut abs = a.unsigned_abs();
+		if a.is_negative() {
+			abs -= 1;
+			Self {
+				lo: !abs as u64,
+				mi: !((abs >> 64) as u64),
+				hi: u64::MAX,
+				sign: a.is_negative(),
+			}
+		} else {
+			Self {
+				lo: abs as u64,
+				mi: (abs >> 64) as u64,
+				hi: 0,
+				sign: false,
+			}
 		}
 	}
 }
@@ -148,43 +193,27 @@ mod tests {
 		assert_eq!(c, 0i128);
 
 		a = Int193::zero();
-		a.add(u64::MAX, u64::MAX, u64::MAX, true);
+		a.add(1, 0, 0, true);
 		c = (&a).into();
 		assert!(a.is_negative());
 		assert_eq!(c, -1);
 
 		a = Int193::zero();
-		a.add(1, 0, 0, true);
-		c = (&a).into();
+		a.add(1, 1, 0, true);
 		assert!(a.is_negative());
-		assert_eq!(
-			c,
-			-170141183460469231731687303715884105727 /* (-1) * (-1 % (2**193)) % 2**127 */
-		);
+		c = (&a).into();
+		assert_eq!(c, -((1i128 << 64) + 1));
 
-		a = Int193::zero();
-		a.add(1, 0, u64::MAX, true);
-		assert!(a.is_negative());
-		c = (&a).into();
-		assert_eq!(
-			c,
-			-170141183460469231731687303715884105727 /* (-1) * ((-1 -2**128 * (2**64-1)) % (2**193)) % 2**127 */
-		);
+		for lo in [0u64, 1u64, u64::MAX] {
+			for mi in [0u64, 1u64, u64::MAX >> 1] {
+				let mut a = Int193::zero();
+				a.add(lo, mi, 0, true);
+				let c: i128 = (&a).into();
 
-		a = Int193::zero();
-		a.add(1, 1, u64::MAX, true);
-		assert!(a.is_negative());
-		c = (&a).into();
-		assert_eq!(
-			c,
-			-170141183460469231713240559642174554111 /* (-1) * ((-1 - 2**64-2**128 * (2**64-1)) % (2**193)) % 2**127 */
-		);
-
-		a = Int193::zero();
-		a.add(1, u64::MAX, u64::MAX, true);
-		assert!(a.is_negative());
-		c = (&a).into();
-		assert_eq!(c, -(u64::MAX as i128));
+				assert_eq!(a.is_negative(), lo != 0 || mi != 0);
+				assert_eq!(-c, (lo as i128) + ((mi as i128) << 64));
+			}
+		}
 	}
 
 	#[test]
