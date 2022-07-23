@@ -8,3 +8,7 @@
 
 pub mod rns;
 pub mod zq;
+
+#[cfg(test)]
+#[macro_use]
+extern crate proptest;
