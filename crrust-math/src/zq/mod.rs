@@ -361,7 +361,9 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
 	use super::Modulus;
-	use itertools::izip;
+	use itertools::{izip, Itertools};
+	use proptest::collection::vec as prop_vec;
+	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
 	use rand::RngCore;
 	use std::panic::UnwindSafe;
 
@@ -791,49 +793,115 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn test_neg_vec() {
-		let ntests = 100;
-
-		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-			let q = Modulus::new(p).unwrap();
-			let mut a = [0u64, 1, p - 1];
-
-			q.neg_vec(&mut a);
-			assert_eq!(&a, &[0, p - 1, 1]);
-
-			for _ in 0..ntests {
-				let a = random_vector(128, p);
-				let mut b = a.clone();
-
-				q.neg_vec(&mut b);
-				assert_eq!(b.len(), a.len());
-
-				izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.add(*ai, *bi), 0));
-			}
-		}
+	fn valid_moduli() -> impl Strategy<Value = Modulus> {
+		any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p))
 	}
 
-	#[test]
-	fn test_reduce() {
-		let ntests = 100;
-		let mut rng = rand::thread_rng();
+	fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
+		prop_vec(any::<u64>(), 1..100)
+			.prop_flat_map(|vec| {
+				let len = vec.len();
+				(Just(vec), prop_vec(any::<u64>(), len))
+			})
+			.boxed()
+	}
 
-		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-			let q = Modulus::new(p).unwrap();
+	proptest! {
+		#[test]
+		fn test_reduce_proptest(p in valid_moduli(), a: u64) {
+			prop_assert_eq!(p.reduce(a), a % p.modulus());
+		}
 
-			for _ in 0..ntests {
-				let mut a = vec![];
-				for _ in 0..128 {
-					a.push(rng.next_u64());
-				}
-				let mut b = a.clone();
+		#[test]
+		fn test_reduce_128_proptest(p in valid_moduli(), a: u128) {
+			prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
+		}
 
-				q.reduce_vec(&mut b);
-				assert_eq!(b.len(), a.len());
+		#[test]
+		fn test_neg_proptest(p in valid_moduli(), mut a: u64) {
+			a = p.reduce(a);
+			prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
+		}
 
-				izip!(a.iter(), b.iter()).for_each(|(ai, bi)| assert_eq!(q.reduce(*ai), *bi));
-			}
+		#[test]
+		fn test_add_proptest(p in valid_moduli(), mut a: u64, mut b: u64) {
+			a = p.reduce(a);
+			b = p.reduce(b);
+			prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
+		}
+
+		#[test]
+		fn test_sub_proptest(p in valid_moduli(), mut a: u64, mut b: u64) {
+			a = p.reduce(a);
+			b = p.reduce(b);
+			prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
+		}
+
+		#[test]
+		fn test_mul_proptest(p in valid_moduli(), mut a: u64, mut b: u64) {
+			a = p.reduce(a);
+			b = p.reduce(b);
+			prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
+		}
+
+		#[test]
+		fn test_mul_shoup_proptest(p in valid_moduli(), mut a: u64, mut b: u64) {
+			a = p.reduce(a);
+			b = p.reduce(b);
+			let b_shoup = p.shoup(b);
+			prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
+		}
+
+		#[test]
+		fn test_reduce_vec_proptest(p in valid_moduli(), a: Vec<u64>) {
+			let mut b = a.clone();
+			p.reduce_vec(&mut b);
+			prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+		}
+
+		#[test]
+		fn test_neg_vec_proptest(p in valid_moduli(), mut a: Vec<u64>) {
+			p.reduce_vec(&mut a);
+			let mut b = a.clone();
+			p.neg_vec(&mut b);
+			prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
+		}
+
+		#[test]
+		fn test_add_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+			p.reduce_vec(&mut a);
+			p.reduce_vec(&mut b);
+			let c = a.clone();
+			p.add_vec(&mut a, &b);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
+		}
+
+		#[test]
+		fn test_sub_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+			p.reduce_vec(&mut a);
+			p.reduce_vec(&mut b);
+			let c = a.clone();
+			p.sub_vec(&mut a, &b);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
+		}
+
+		#[test]
+		fn test_mul_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+			p.reduce_vec(&mut a);
+			p.reduce_vec(&mut b);
+			let c = a.clone();
+			p.mul_vec(&mut a, &b);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+		}
+
+		#[test]
+		fn test_mul_shoup_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+			p.reduce_vec(&mut a);
+			p.reduce_vec(&mut b);
+			let b_shoup = p.shoup_vec(&b);
+			let c = a.clone();
+			p.mul_shoup_vec(&mut a, &b, &b_shoup);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
 		}
 	}
 
