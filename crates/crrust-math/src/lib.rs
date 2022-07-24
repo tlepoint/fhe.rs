@@ -7,8 +7,8 @@
 //! Mathematical utilities for the crrust library.
 
 pub mod rns;
-pub mod zq;
 pub mod u256;
+pub mod zq;
 
 #[cfg(test)]
 #[macro_use]

@@ -1,6 +1,6 @@
 //! Unsigned 256-bit integer.
 
-use std::ops::{Shr, ShrAssign};
+use std::ops::{Not, Shr, ShrAssign};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
@@ -28,14 +28,39 @@ impl U256 {
 		(self.0, carry) = self.0.carrying_add(other.0, carry);
 		(self.1, carry) = self.1.carrying_add(other.1, carry);
 		(self.2, carry) = self.2.carrying_add(other.2, carry);
-		(self.3, _) = self.3.carrying_add(other.3, carry);
+		(self.3, carry) = self.3.carrying_add(other.3, carry);
 	}
 	pub fn overflowing_sub(&mut self, other: U256) {
 		let mut borrow = false;
 		(self.0, borrow) = self.0.borrowing_sub(other.0, borrow);
 		(self.1, borrow) = self.1.borrowing_sub(other.1, borrow);
 		(self.2, borrow) = self.2.borrowing_sub(other.2, borrow);
-		(self.3, _) = self.3.borrowing_sub(other.3, borrow);
+		(self.3, borrow) = self.3.borrowing_sub(other.3, borrow);
+	}
+
+	pub fn as_u64(self) -> u64 {
+		self.0
+	}
+
+	pub fn as_u128(self) -> u128 {
+		(self.0 as u128) + ((self.1 as u128) << 64)
+	}
+
+	pub fn msb(self) -> u64 {
+		self.3 >> 63
+	}
+}
+
+impl Not for U256 {
+	type Output = Self;
+
+	fn not(self) -> Self {
+		Self {
+			0: !self.0,
+			1: !self.1,
+			2: !self.2,
+			3: !self.3,
+		}
 	}
 }
 

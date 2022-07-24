@@ -4,6 +4,7 @@
 
 use super::RnsContext;
 use crate::rns::i193::Int193;
+use crate::u256::U256;
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
@@ -170,8 +171,10 @@ impl RnsScaler {
 		let mut out = Vec::with_capacity(size);
 
 		// First, let's compute the inner product of the rests with theta_omega and theta_garner.
-		let mut sum_theta_garner = Int193::zero();
-		let mut sum_theta_omega = Int193::zero();
+		// let mut sum_theta_garner = Int193::zero();
+		// let mut sum_theta_omega = Int193::zero();
+		let mut sum_theta_garner2 = U256::zero();
+		let mut sum_theta_omega2 = U256::zero();
 		for (thetag_lo, thetag_hi, thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
 			&self.theta_garner_lo,
 			&self.theta_garner_hi,
@@ -182,15 +185,29 @@ impl RnsScaler {
 		) {
 			let mut lo = (*ri as u128) * (*thetag_lo as u128);
 			let mut hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-			sum_theta_garner.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
+			// sum_theta_garner.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
+			sum_theta_garner2.overflowing_add(U256::new([
+				lo as u64,
+				hi as u64,
+				(hi >> 64) as u64,
+				0,
+			]));
 			lo = (*ri as u128) * (*thetao_lo as u128);
 			hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
-			sum_theta_omega.add(lo as u64, hi as u64, (hi >> 64) as u64, *thetao_sign);
+			// sum_theta_omega.add(lo as u64, hi as u64, (hi >> 64) as u64, *thetao_sign);
+			if *thetao_sign {
+				sum_theta_omega2.overflowing_sub(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
+			} else {
+				sum_theta_omega2.overflowing_add(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
+			}
 		}
 
 		// Let's compute v = floor(sum_theta_garner / 2^112)
-		sum_theta_garner >>= 112;
-		let v = i128::from(&sum_theta_garner) as u128;
+		// sum_theta_garner >>= 112;
+		// let v = i128::from(&sum_theta_garner) as u128;
+		sum_theta_garner2 >>= 112;
+		let v = sum_theta_garner2.as_u128();
+		// assert_eq!(v, v2);
 
 		// Let's substract v * theta_gamma to sum_theta_omega.
 		let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
@@ -199,31 +216,47 @@ impl RnsScaler {
 		let vt_hi_hi = ((v >> 64) as u128) * (self.theta_gamma_hi as u128);
 		let vt_mi = (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
 		let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
-		sum_theta_omega.add(
-			vt_lo_lo as u64,
-			vt_mi as u64,
-			vt_hi as u64,
-			!self.theta_gamma_sign,
-		);
-
-		// Let's compute w = round(sum_theta_omega / 2^112).
-		sum_theta_omega >>= 111;
-		let mut w = i128::from(&sum_theta_omega);
-		if !floor {
-			w = w.div_floor(2) + (w & 1)
+		// sum_theta_omega.add(
+		// 	vt_lo_lo as u64,
+		// 	vt_mi as u64,
+		// 	vt_hi as u64,
+		// 	!self.theta_gamma_sign,
+		// );
+		if self.theta_gamma_sign {
+			sum_theta_omega2.overflowing_add(U256::new([vt_lo_lo as u64,
+				vt_mi as u64,
+				vt_hi as u64,0]))
 		} else {
-			w = w.div_floor(2)
+			sum_theta_omega2.overflowing_sub(U256::new([vt_lo_lo as u64,
+				vt_mi as u64,
+				vt_hi as u64,0]))
 		}
 
-		let w_u128 = w.unsigned_abs();
-		let w_sign = sum_theta_omega.is_negative();
+		// Let's compute w = round(sum_theta_omega / 2^112).
+		let w2_sign = sum_theta_omega2.msb() > 0;
+		let mut w2_u128: u128;
+		if w2_sign {
+			w2_u128 = ((!sum_theta_omega2) >> 111).as_u128() + 1;
+			if !floor {
+				w2_u128 = w2_u128.div_ceil(2) - (w2_u128 & 1);
+			} else {
+				w2_u128 = w2_u128.div_ceil(2);
+			}
+		} else {
+			w2_u128 = (sum_theta_omega2 >> 111).as_u128();
+			if !floor {
+				w2_u128 = w2_u128.div_floor(2) + (w2_u128 & 1)
+			} else {
+				w2_u128 = w2_u128.div_floor(2)
+			}
+		}
 
 		// Let's compute [ sum(r_j * omega_j) - v * gamma + w] mod q_i
 		for i in 0..size {
 			let qi = &self.ctx.moduli[i];
 			let vi = qi.lazy_reduce_u128(v);
-			let wi = qi.lazy_reduce_u128(w_u128);
-			let mut yi = if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
+			let wi = qi.lazy_reduce_u128(w2_u128);
+			let mut yi = if w2_sign { qi.modulus() * 2 - wi } else { wi } as u128;
 
 			yi += (qi.modulus() * 2 - qi.lazy_mul_shoup(vi, self.gamma[i], self.gamma_shoup[i]))
 				as u128;

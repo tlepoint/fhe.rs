@@ -4,7 +4,7 @@
 //! RNS Basis Extension algorithm described in Section 2.2 of <https://eprint.iacr.org/2018/117.pdf>.
 
 use super::RnsContext;
-use crate::{rns::i193::Int193, zq::Modulus, u256::U256};
+use crate::{rns::i193::Int193, u256::U256, zq::Modulus};
 use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
