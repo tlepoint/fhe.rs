@@ -8,6 +8,7 @@
 
 pub mod rns;
 pub mod zq;
+pub mod u256;
 
 #[cfg(test)]
 #[macro_use]
