@@ -22,10 +22,7 @@ impl U256 {
 		let mut ret = [0u64; 4];
 		let mut carry = false;
 		for i in 0..4 {
-			let (v, o1) = me[i].overflowing_add(you[i]);
-			let (v, o2) = v.overflowing_add(if carry { 1 } else { 0 });
-			ret[i] = v;
-			carry = o1 || o2;
+			(ret[i], carry) = me[i].carrying_add(you[i], carry);
 		}
 
 		(U256(ret), carry)
@@ -37,10 +34,7 @@ impl U256 {
 		let mut ret = [0u64; 4];
 		let mut borrow = false;
 		for i in 0..4 {
-			let (v, o1) = me[i].overflowing_sub(you[i]);
-			let (v, o2) = v.overflowing_sub(if borrow { 1 } else { 0 });
-			ret[i] = v;
-			borrow = o1 || o2;
+			(ret[i], borrow) = me[i].borrowing_sub(you[i], borrow);
 		}
 
 		(U256(ret), borrow)
