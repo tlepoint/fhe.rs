@@ -94,7 +94,7 @@ impl RnsConverter {
 			let lo = (*theta_lo as u128) * (yi as u128);
 			let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
 			// sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
-			(sum2, _) = sum2.overflowing_add(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
+			sum2.overflowing_add(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
 		}
 		// sum >>= 128;
 		// let value: i128 = (&sum).into();
