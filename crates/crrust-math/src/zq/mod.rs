@@ -2,6 +2,7 @@
 
 //! Ring operations for moduli up to 62 bits.
 
+pub mod nfl;
 pub mod ntt;
 
 use itertools::izip;
@@ -38,25 +39,6 @@ impl Modulus {
 	/// Returns the value of the modulus.
 	pub fn modulus(&self) -> u64 {
 		self.p
-	}
-
-	/// Returns whether the modulus supports optimized multiplication and reduction.
-	/// These optimized operations are possible when the modulus verifies
-	/// Equation (1) of <https://hal.archives-ouvertes.fr/hal-01242273/document>.
-	pub fn supports_opt(&self) -> bool {
-		if self.leading_zeros < 1 {
-			return false;
-		}
-
-		// Let's multiply the inequality by (2^s0+1)*2^(3s0):
-		// we want to output true when
-		//    (2^(3s0)+1) * 2^64 < 2^(3s0) * (2^s0+1) * p
-		let mut middle = BigUint::from(1u64) << (3 * self.leading_zeros as usize);
-		let left_side = (&middle + 1u64) << 64;
-		middle *= (1u64 << self.leading_zeros) + 1;
-		middle *= self.p;
-
-		left_side < middle
 	}
 
 	/// Returns whether the modulus p is prime and supports the Number Theoretic Transform of size n.
@@ -99,7 +81,7 @@ impl Modulus {
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn mul_opt(&self, a: u64, b: u64) -> u64 {
-		debug_assert!(self.supports_opt());
+		debug_assert!(nfl::supports_opt(self.p));
 		debug_assert!(a < self.p && b < self.p);
 
 		self.reduce_opt_u128((a as u128) * (b as u128))
@@ -176,7 +158,7 @@ impl Modulus {
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn mul_opt_vec(&self, a: &mut [u64], b: &[u64]) {
-		debug_assert!(self.supports_opt());
+		debug_assert!(nfl::supports_opt(self.p));
 		debug_assert_eq!(a.len(), b.len());
 
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
@@ -265,7 +247,7 @@ impl Modulus {
 
 	/// Optimized modular reduction of a u128 in variable time.
 	fn reduce_opt_u128(&self, a: u128) -> u64 {
-		debug_assert!(self.supports_opt());
+		debug_assert!(nfl::supports_opt(self.p));
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
@@ -360,7 +342,7 @@ impl Modulus {
 
 #[cfg(test)]
 mod tests {
-	use super::Modulus;
+	use super::{nfl, Modulus};
 	use crrust_util::catch_unwind;
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
@@ -525,7 +507,7 @@ mod tests {
 
 		for p in [4611686018326724609] {
 			let q = Modulus::new(p).unwrap();
-			assert!(q.supports_opt());
+			assert!(nfl::supports_opt(p));
 
 			assert_eq!(q.mul_opt(0, 1), 0);
 			assert_eq!(q.mul_opt(1, 1), 1);
@@ -626,7 +608,7 @@ mod tests {
 
 		for p in [4611686018326724609] {
 			let q = Modulus::new(p).unwrap();
-			assert!(q.supports_opt());
+			assert!(nfl::supports_opt(p));
 
 			let mut a = [0u64, 1, p - 1];
 
