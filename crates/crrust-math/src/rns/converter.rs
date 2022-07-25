@@ -50,8 +50,8 @@ impl RnsConverter {
 		let mut theta_lo = Vec::with_capacity(from.moduli_u64.len());
 		let mut theta_hi = Vec::with_capacity(from.moduli_u64.len());
 		for q in &from.moduli_u64 {
-			let mut theta_lo_i = (BigUint::from(1u64) << 128) / *q;
-			let theta_hi_i = &theta_lo_i >> 64;
+			let mut theta_lo_i: BigUint = (BigUint::from(1u64) << 128) / *q;
+			let theta_hi_i: BigUint = &theta_lo_i >> 64;
 			theta_lo_i -= &theta_hi_i << 64;
 			theta_lo.push(theta_lo_i.to_u64().unwrap());
 			theta_hi.push(theta_hi_i.to_u64().unwrap());

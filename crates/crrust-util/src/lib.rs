@@ -4,6 +4,7 @@
 
 //! Utilities for the crrust library.
 
+use num_bigint::{prime::probably_prime, BigUint};
 use std::panic::UnwindSafe;
 
 /// Define catch_unwind to silence the panic in unit tests.
@@ -16,4 +17,9 @@ where
 	let r = std::panic::catch_unwind(f);
 	std::panic::set_hook(prev_hook);
 	r
+}
+
+/// Returns whether the modulus p is prime; this function is 100% accurate.
+pub fn is_prime(p: u64) -> bool {
+	probably_prime(&BigUint::from(p), 0)
 }
