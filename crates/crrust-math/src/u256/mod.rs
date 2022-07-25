@@ -2,20 +2,18 @@
 
 use std::ops::{Not, Shr, ShrAssign};
 
+/// Struct holding a unsigned 256-bit integer.
 #[repr(C)]
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub struct U256(u64, u64, u64, u64);
 
 impl U256 {
+	/// Returns the additive identity element, 0.
 	pub fn zero() -> U256 {
-		U256 {
-			0: 0,
-			1: 0,
-			2: 0,
-			3: 0,
-		}
+		Self(0, 0, 0, 0)
 	}
 
+	/// Add an U256 to self, allowing to overflow mod 2^256.
 	pub fn overflowing_add(&mut self, other: U256) {
 		let mut _carry = false;
 		(self.0, _carry) = self.0.carrying_add(other.0, _carry);
@@ -24,6 +22,7 @@ impl U256 {
 		(self.3, _carry) = self.3.carrying_add(other.3, _carry);
 	}
 
+	/// Subtract an U256 to self, allowing to overflow mod 2^256.
 	pub fn overflowing_sub(&mut self, other: U256) {
 		let mut _borrow = false;
 		(self.0, _borrow) = self.0.borrowing_sub(other.0, _borrow);
@@ -56,12 +55,7 @@ impl U256 {
 
 impl From<[u64; 4]> for U256 {
 	fn from(a: [u64; 4]) -> Self {
-		Self {
-			0: a[0],
-			1: a[1],
-			2: a[2],
-			3: a[3],
-		}
+		Self(a[0], a[1], a[2], a[3])
 	}
 }
 
@@ -75,12 +69,7 @@ impl Not for U256 {
 	type Output = Self;
 
 	fn not(self) -> Self {
-		Self {
-			0: !self.0,
-			1: !self.1,
-			2: !self.2,
-			3: !self.3,
-		}
+		Self(!self.0, !self.1, !self.2, !self.3)
 	}
 }
 
@@ -88,7 +77,7 @@ impl Shr<usize> for U256 {
 	type Output = Self;
 
 	fn shr(self, rhs: usize) -> Self {
-		let mut r = self.clone();
+		let mut r = self;
 		r >>= rhs;
 		r
 	}
@@ -180,10 +169,10 @@ mod tests {
 		#[test]
 		fn test_shift_assign(a: u64, b: u64, c: u64, d:u64, shift in 0..256usize) {
 			let mut u = U256::from([a, b, c, d]);
-			
+
 			u >>= 0;
 			prop_assert_eq!(<[u64; 4]>::from(u), [a, b, c, d]);
-			
+
 			u >>= 64;
 			prop_assert_eq!(<[u64; 4]>::from(u), [b, c, d, 0]);
 
@@ -194,7 +183,7 @@ mod tests {
 			u = U256::from([a, b, c, d]);
 			u >>= 192;
 			prop_assert_eq!(<[u64; 4]>::from(u), [d, 0, 0, 0]);
-			
+
 			prop_assume!(shift % 64 != 0);
 			u = U256::from([a, b, c, d]);
 			u >>= shift;
