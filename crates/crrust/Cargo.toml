@@ -11,3 +11,4 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 crrust-math = { version = "0.1.0", path = "../crrust-math" }
+crrust-util = { version = "0.1.0", path = "../crrust-util" }

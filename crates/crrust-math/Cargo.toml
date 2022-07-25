@@ -19,6 +19,7 @@ rand_chacha = "0.3.1"
 [dev-dependencies]
 criterion = "0.3.6"
 proptest = "1.0.0"
+crrust-util = { version = "0.1.0", path = "../crrust-util" }
 
 [[bench]]
 name = "zq"
