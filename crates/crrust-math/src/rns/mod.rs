@@ -9,7 +9,6 @@ use num_traits::{cast::ToPrimitive, One, Zero};
 use std::cmp::Ordering;
 
 mod converter;
-mod i193;
 mod scaler;
 
 pub use converter::RnsConverter;

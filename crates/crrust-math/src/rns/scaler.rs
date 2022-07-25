@@ -3,7 +3,6 @@
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
 use super::RnsContext;
-use crate::rns::i193::Int193;
 use crate::u256::U256;
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
@@ -75,11 +74,11 @@ impl RnsScaler {
 			theta_omega_sign.push(theta_omega_i_sign);
 		}
 
-		// Finally, define theta_garner_i = garner_i / product, also scaled by 2^112.
+		// Finally, define theta_garner_i = garner_i / product, also scaled by 2^127.
 		let mut theta_garner_lo = vec![];
 		let mut theta_garner_hi = vec![];
 		for garner_i in &ctx.garner {
-			let mut theta = ((garner_i << 112) + (&ctx.product >> 1)) / &ctx.product;
+			let mut theta = ((garner_i << 127) + (&ctx.product >> 1)) / &ctx.product;
 			let theta_hi = &theta >> 64;
 			theta -= &theta_hi << 64;
 			theta_garner_lo.push(theta.to_u64().unwrap());
@@ -107,7 +106,7 @@ impl RnsScaler {
 
 	// Let's define gamma = round(numerator * input / denominator)
 	// and theta_gamma such that theta_gamma = numerator * input / denominator - gamma.
-	// This function projects gamma in the RNS context, and scales theta_gamma by 2**112 and round.
+	// This function projects gamma in the RNS context, and scales theta_gamma by 2**128 and round.
 	// It outputs the projection of gamma in the RNS context,
 	// and theta_lo, theta_hi, theta_sign such that theta_gamma = (-1)**theta_sign * (theta_lo + 2^64 * theta_hi).
 	fn extract_projection_and_theta(
@@ -137,18 +136,18 @@ impl RnsScaler {
 				}
 			}
 		}
-		// theta = ((theta << 112) + (denominator >> 1)) / denominator;
+		// theta = ((theta << 127) + (denominator >> 1)) / denominator;
 		// We can now split theta into two u64 words.
 		if round_up {
 			if theta_sign {
-				theta = (theta << 112) / denominator;
+				theta = (theta << 127) / denominator;
 			} else {
-				theta = ((theta << 112) + denominator - BigUint::one()) / denominator;
+				theta = ((theta << 127) + denominator - BigUint::one()) / denominator;
 			}
 		} else if theta_sign {
-			theta = ((theta << 112) + denominator - BigUint::one()) / denominator;
+			theta = ((theta << 127) + denominator - BigUint::one()) / denominator;
 		} else {
-			theta = (theta << 112) / denominator;
+			theta = (theta << 127) / denominator;
 		}
 		let theta_hi_biguint = &theta >> 64;
 		theta -= &theta_hi_biguint << 64;
@@ -171,10 +170,8 @@ impl RnsScaler {
 		let mut out = Vec::with_capacity(size);
 
 		// First, let's compute the inner product of the rests with theta_omega and theta_garner.
-		// let mut sum_theta_garner = Int193::zero();
-		// let mut sum_theta_omega = Int193::zero();
-		let mut sum_theta_garner2 = U256::zero();
-		let mut sum_theta_omega2 = U256::zero();
+		let mut sum_theta_garner = U256::zero();
+		let mut sum_theta_omega = U256::zero();
 		for (thetag_lo, thetag_hi, thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
 			&self.theta_garner_lo,
 			&self.theta_garner_hi,
@@ -186,7 +183,7 @@ impl RnsScaler {
 			let mut lo = (*ri as u128) * (*thetag_lo as u128);
 			let mut hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
 			// sum_theta_garner.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
-			sum_theta_garner2.overflowing_add(U256::new([
+			sum_theta_garner.overflowing_add(U256::from([
 				lo as u64,
 				hi as u64,
 				(hi >> 64) as u64,
@@ -196,18 +193,25 @@ impl RnsScaler {
 			hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
 			// sum_theta_omega.add(lo as u64, hi as u64, (hi >> 64) as u64, *thetao_sign);
 			if *thetao_sign {
-				sum_theta_omega2.overflowing_sub(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
+				sum_theta_omega.overflowing_sub(U256::from([
+					lo as u64,
+					hi as u64,
+					(hi >> 64) as u64,
+					0,
+				]));
 			} else {
-				sum_theta_omega2.overflowing_add(U256::new([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
+				sum_theta_omega.overflowing_add(U256::from([
+					lo as u64,
+					hi as u64,
+					(hi >> 64) as u64,
+					0,
+				]));
 			}
 		}
 
-		// Let's compute v = floor(sum_theta_garner / 2^112)
-		// sum_theta_garner >>= 112;
-		// let v = i128::from(&sum_theta_garner) as u128;
-		sum_theta_garner2 >>= 112;
-		let v = sum_theta_garner2.as_u128();
-		// assert_eq!(v, v2);
+		// Let's compute v = floor(sum_theta_garner / 2^127)
+		sum_theta_garner >>= 127;
+		let v = sum_theta_garner.as_u128();
 
 		// Let's substract v * theta_gamma to sum_theta_omega.
 		let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
@@ -216,38 +220,38 @@ impl RnsScaler {
 		let vt_hi_hi = ((v >> 64) as u128) * (self.theta_gamma_hi as u128);
 		let vt_mi = (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
 		let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
-		// sum_theta_omega.add(
-		// 	vt_lo_lo as u64,
-		// 	vt_mi as u64,
-		// 	vt_hi as u64,
-		// 	!self.theta_gamma_sign,
-		// );
 		if self.theta_gamma_sign {
-			sum_theta_omega2.overflowing_add(U256::new([vt_lo_lo as u64,
+			sum_theta_omega.overflowing_add(U256::from([
+				vt_lo_lo as u64,
 				vt_mi as u64,
-				vt_hi as u64,0]))
+				vt_hi as u64,
+				0,
+			]))
 		} else {
-			sum_theta_omega2.overflowing_sub(U256::new([vt_lo_lo as u64,
+			sum_theta_omega.overflowing_sub(U256::from([
+				vt_lo_lo as u64,
 				vt_mi as u64,
-				vt_hi as u64,0]))
+				vt_hi as u64,
+				0,
+			]))
 		}
 
-		// Let's compute w = round(sum_theta_omega / 2^112).
-		let w2_sign = sum_theta_omega2.msb() > 0;
-		let mut w2_u128: u128;
-		if w2_sign {
-			w2_u128 = ((!sum_theta_omega2) >> 111).as_u128() + 1;
+		// Let's compute w = round(sum_theta_omega / 2^127).
+		let w_sign = sum_theta_omega.msb() > 0;
+		let mut w: u128;
+		if w_sign {
+			w = ((!sum_theta_omega) >> 126).as_u128() + 1;
 			if !floor {
-				w2_u128 = w2_u128.div_ceil(2) - (w2_u128 & 1);
+				w = w.div_ceil(2) - (w & 1);
 			} else {
-				w2_u128 = w2_u128.div_ceil(2);
+				w = w.div_ceil(2);
 			}
 		} else {
-			w2_u128 = (sum_theta_omega2 >> 111).as_u128();
+			w = (sum_theta_omega >> 126).as_u128();
 			if !floor {
-				w2_u128 = w2_u128.div_floor(2) + (w2_u128 & 1)
+				w = w.div_floor(2) + (w & 1)
 			} else {
-				w2_u128 = w2_u128.div_floor(2)
+				w = w.div_floor(2)
 			}
 		}
 
@@ -255,8 +259,8 @@ impl RnsScaler {
 		for i in 0..size {
 			let qi = &self.ctx.moduli[i];
 			let vi = qi.lazy_reduce_u128(v);
-			let wi = qi.lazy_reduce_u128(w2_u128);
-			let mut yi = if w2_sign { qi.modulus() * 2 - wi } else { wi } as u128;
+			let wi = qi.lazy_reduce_u128(w);
+			let mut yi = if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
 
 			yi += (qi.modulus() * 2 - qi.lazy_mul_shoup(vi, self.gamma[i], self.gamma_shoup[i]))
 				as u128;
