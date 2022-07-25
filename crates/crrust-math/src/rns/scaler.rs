@@ -279,22 +279,10 @@ impl RnsScaler {
 mod tests {
 	use super::RnsScaler;
 	use crate::rns::RnsContext;
+	use crrust_util::catch_unwind;
 	use num_bigint::BigUint;
 	use num_traits::Zero;
 	use rand::{thread_rng, RngCore};
-	use std::panic::UnwindSafe;
-
-	// Redefine catch_unwind to silence the panic.
-	pub fn catch_unwind<F, R>(f: F) -> std::thread::Result<R>
-	where
-		F: FnOnce() -> R + UnwindSafe,
-	{
-		let prev_hook = std::panic::take_hook();
-		std::panic::set_hook(Box::new(|_| {}));
-		let r = std::panic::catch_unwind(f);
-		std::panic::set_hook(prev_hook);
-		r
-	}
 
 	#[test]
 	fn test_constructor() {
