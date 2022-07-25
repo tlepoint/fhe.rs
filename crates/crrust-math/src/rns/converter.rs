@@ -4,7 +4,7 @@
 //! RNS Basis Extension algorithm described in Section 2.2 of <https://eprint.iacr.org/2018/117.pdf>.
 
 use super::RnsContext;
-use crate::{rns::i193::Int193, zq::Modulus};
+use crate::{u256::U256, zq::Modulus};
 use itertools::izip;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -78,7 +78,7 @@ impl RnsConverter {
 		let mut rests_to = Vec::with_capacity(self.to.moduli_u64.len());
 
 		let mut y = Vec::with_capacity(rests_from.len());
-		let mut sum = Int193::zero();
+		let mut sum = U256::zero();
 		for (rests_from_i, theta_lo, theta_hi, q_tilde, q_tilde_shoup, qi) in izip!(
 			rests_from,
 			&self.theta_lo,
@@ -92,10 +92,10 @@ impl RnsConverter {
 			// Compute yi * theta
 			let lo = (*theta_lo as u128) * (yi as u128);
 			let hi = (*theta_hi as u128) * (yi as u128) + (lo >> 64);
-			sum.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
+			sum.overflowing_add(U256::from([lo as u64, hi as u64, (hi >> 64) as u64, 0]));
 		}
 		sum >>= 128;
-		let value: i128 = (&sum).into();
+		let value2 = sum.as_u64();
 
 		for (q_star_mod_p_j, q_star_mod_p_shoup_j, p_j, q_mod_p_j, q_mod_p_shoup_j) in izip!(
 			&self.q_star_mod_p,
@@ -105,7 +105,7 @@ impl RnsConverter {
 			&self.q_mod_p_shoup,
 		) {
 			let mut x = (2 * p_j.modulus()
-				- p_j.lazy_mul_shoup(value as u64, *q_mod_p_j, *q_mod_p_shoup_j)) as u128;
+				- p_j.lazy_mul_shoup(value2, *q_mod_p_j, *q_mod_p_shoup_j)) as u128;
 			izip!(&y, q_star_mod_p_j, q_star_mod_p_shoup_j).for_each(
 				|(yi, q_star_mod_p_j_i, q_star_mod_p_shoup_j_i)| {
 					x += p_j.lazy_mul_shoup(*yi, *q_star_mod_p_j_i, *q_star_mod_p_shoup_j_i) as u128
