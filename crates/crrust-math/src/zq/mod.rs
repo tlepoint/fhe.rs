@@ -183,6 +183,13 @@ impl Modulus {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
 	}
 
+	/// Reduce a vector.
+	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
+		let mut b = a.to_vec();
+		b.iter_mut().for_each(|bi| *bi = self.reduce(*bi));
+		b
+	}
+
 	/// Modular negation of a vector in place.
 	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
@@ -235,7 +242,7 @@ impl Modulus {
 
 	/// Modular reduction of a u64 in variable time.
 	pub fn reduce(&self, a: u64) -> u64 {
-		self.lazy_reduce(a)
+		Self::reduce1(self.lazy_reduce(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in variable time.
@@ -246,7 +253,7 @@ impl Modulus {
 
 	/// Optimized modular reduction of a u64 in variable time.
 	pub fn reduce_opt(&self, a: u64) -> u64 {
-		self.lazy_reduce_opt(a)
+		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// Return x mod p.

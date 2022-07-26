@@ -6,7 +6,7 @@ use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
 use ndarray::Array2;
 use std::{
-	ops::{Add, AddAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 	rc::Rc,
 };
 
@@ -182,6 +182,12 @@ impl TryFrom<&[u64]> for Poly {
 	}
 }
 
+impl From<&Poly> for Vec<u64> {
+	fn from(p: &Poly) -> Vec<u64> {
+		p.coefficients.as_slice().unwrap().to_vec()
+	}
+}
+
 impl AddAssign<&Poly> for Poly {
 	fn add_assign(&mut self, p: &Poly) {
 		assert_eq!(
@@ -200,11 +206,71 @@ impl AddAssign<&Poly> for Poly {
 	}
 }
 
-impl Add<&Poly> for Poly {
-	type Output = Self;
-	fn add(self, p: &Poly) -> Self {
-		let mut q = self;
+impl Add<&Poly> for &Poly {
+	type Output = Poly;
+	fn add(self, p: &Poly) -> Poly {
+		let mut q = self.clone();
 		q += p;
+		q
+	}
+}
+
+impl SubAssign<&Poly> for Poly {
+	fn sub_assign(&mut self, p: &Poly) {
+		assert_eq!(
+			self.representation, p.representation,
+			"Incompatible representations"
+		);
+		assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		izip!(
+			self.coefficients.outer_iter_mut(),
+			p.coefficients.outer_iter(),
+			&self.ctx.q
+		)
+		.for_each(|(mut v1, v2, qi)| {
+			qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+		});
+	}
+}
+
+impl Sub<&Poly> for &Poly {
+	type Output = Poly;
+	fn sub(self, p: &Poly) -> Poly {
+		let mut q = self.clone();
+		q -= p;
+		q
+	}
+}
+
+impl MulAssign<&Poly> for Poly {
+	fn mul_assign(&mut self, p: &Poly) {
+		assert_eq!(
+			self.representation,
+			Representation::Ntt,
+			"Multiplication requires an Ntt representation."
+		);
+		assert_eq!(
+			p.representation,
+			Representation::Ntt,
+			"Multiplication requires an Ntt representation."
+		);
+		assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		izip!(
+			self.coefficients.outer_iter_mut(),
+			p.coefficients.outer_iter(),
+			&self.ctx.q
+		)
+		.for_each(|(mut v1, v2, qi)| {
+			qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+		});
+	}
+}
+
+impl Mul<&Poly> for &Poly {
+	type Output = Poly;
+	fn mul(self, p: &Poly) -> Poly {
+		let mut q = self.clone();
+		q *= p;
 		q
 	}
 }
@@ -212,7 +278,9 @@ impl Add<&Poly> for Poly {
 #[cfg(test)]
 mod tests {
 	use super::{Context, Poly, Representation, TryFrom};
-	use crate::zq::ntt::supports_ntt;
+	use crate::zq::{ntt::supports_ntt, Modulus};
+	use proptest::collection::vec as prop_vec;
+	use proptest::prelude::{any, ProptestConfig};
 	use std::rc::Rc;
 
 	// Moduli to be used in tests.
@@ -522,5 +590,120 @@ mod tests {
 		);
 		p = <Poly as TryFrom<u64>>::try_from(0, &ctx, Representation::Ntt);
 		assert!(p.is_err());
+	}
+
+	proptest! {
+		#![proptest_config(ProptestConfig::with_cases(100))]
+		#[test]
+		fn test_add(a in prop_vec(any::<u64>(), 8), b in prop_vec(any::<u64>(), 8)) {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let r = &p + &q;
+				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				m.add_vec(&mut c, &d);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let r = &p + &q;
+				prop_assert_eq!(r.representation, Representation::Ntt);
+				m.add_vec(&mut c, &d);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+			}
+
+			let mut reference = vec![];
+			for modulus in MODULI {
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+				m.add_vec(&mut c, &d);
+				reference.extend(c)
+			}
+			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let q = <Poly as TryFrom<&[u64]>>::try_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let r = &p + &q;
+			prop_assert_eq!(r.representation, Representation::PowerBasis);
+			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+		}
+
+		#[test]
+		fn test_sub(a in prop_vec(any::<u64>(), 8), b in prop_vec(any::<u64>(), 8)) {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let r = &p - &q;
+				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				m.sub_vec(&mut c, &d);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let r = &p - &q;
+				prop_assert_eq!(r.representation, Representation::Ntt);
+				m.sub_vec(&mut c, &d);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+			}
+
+			let mut reference = vec![];
+			for modulus in MODULI {
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+				m.sub_vec(&mut c, &d);
+				reference.extend(c)
+			}
+			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let q = <Poly as TryFrom<&[u64]>>::try_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let r = &p - &q;
+			prop_assert_eq!(r.representation, Representation::PowerBasis);
+			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+		}
+
+		#[test]
+		fn test_mul(a in prop_vec(any::<u64>(), 8), b in prop_vec(any::<u64>(), 8), mut a2 in prop_vec(any::<u64>(), 24), mut b2 in prop_vec(any::<u64>(), 24)) {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let r = &p * &q;
+				prop_assert_eq!(r.representation, Representation::Ntt);
+				m.mul_vec(&mut c, &d);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+			}
+
+			let mut reference = vec![];
+			for i in 0..MODULI.len() {
+				let m = Modulus::new(MODULI[i]).unwrap();
+				m.reduce_vec(&mut a2[i * 8..(i+1)*8]);
+				m.reduce_vec(&mut b2[i * 8..(i+1)*8]);
+				let mut a3 = a2[i * 8..(i+1)*8].to_vec();
+				m.mul_vec(&mut a3, &b2[i * 8..(i+1)*8]);
+				reference.extend(a3)
+			}
+			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+			let p = <Poly as TryFrom<&[u64]>>::try_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
+			let q = <Poly as TryFrom<&[u64]>>::try_from(&b2, &ctx, Representation::Ntt).ok().unwrap();
+			let r = &p * &q;
+			prop_assert_eq!(r.representation, Representation::Ntt);
+			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+		}
+
 	}
 }
