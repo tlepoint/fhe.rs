@@ -4,7 +4,7 @@
 
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
-use ndarray::{Array2, Axis};
+use ndarray::Array2;
 use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
@@ -90,97 +90,35 @@ impl Poly {
 	}
 }
 
-pub trait TryIntoPoly {
-	type Error;
-
-	fn try_into_poly(
-		self,
-		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Poly, Self::Error>;
-}
-
-impl TryIntoPoly for &[u64] {
-	type Error = &'static str;
-	fn try_into_poly(
-		self,
-		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Poly, <Self as TryIntoPoly>::Error> {
-		let v = self.to_vec();
-		v.try_into_poly(ctx, representation)
-	}
-}
-
-impl TryIntoPoly for Vec<u64> {
-	type Error = &'static str;
-	fn try_into_poly(
-		self,
-		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Poly, <Self as TryIntoPoly>::Error> {
-		match representation {
-			Representation::Ntt => {
-				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), self) {
-					Ok(Poly {
-						ctx: ctx.clone(),
-						representation,
-						coefficients,
-					})
-				} else {
-					Err("In Ntt representation, all coefficients must be specified")
-				}
-			}
-			Representation::PowerBasis => {
-				if self.len() == ctx.q.len() * ctx.degree {
-					let coefficients =
-						Array2::from_shape_vec((ctx.q.len(), ctx.degree), self).unwrap();
-					Ok(Poly {
-						ctx: ctx.clone(),
-						representation,
-						coefficients,
-					})
-				} else if self.len() <= ctx.degree {
-					let mut out = Poly::zero(ctx, representation);
-					izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
-						let wi = w.as_slice_mut().unwrap();
-						wi[..self.len()].copy_from_slice(&self);
-						qi.reduce_vec(wi);
-					});
-					Ok(out)
-				} else {
-					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree")
-				}
-			}
-		}
-	}
-}
-
-pub trait TryFrom<T>
+/// Conversions to create polynomials. We unfortunaly cannot use the `TryFrom` trait from std::convert
+/// because we need to specify additional parameters, and if we try to redefine a `TryFrom` trait here,
+/// we need to fully specify the trait when we use it because of the blanket implementation
+/// <https://github.com/rust-lang/rust/issues/50133#issuecomment-488512355>.
+pub trait TryConvertFrom<T>
 where
 	Self: Sized,
 {
+	/// The type of errors.
 	type Error;
 
-	fn try_from(
+	/// Attempt to convert the `value` into a polynomial with a specific context and under a specific representation.
+	fn try_convert_from(
 		value: T,
 		ctx: &Rc<Context>,
 		representation: Representation,
 	) -> Result<Self, Self::Error>;
 }
 
-impl TryFrom<u64> for Poly {
+impl TryConvertFrom<u64> for Poly {
 	type Error = &'static str;
 
-	fn try_from(
+	fn try_convert_from(
 		value: u64,
 		ctx: &Rc<Context>,
 		representation: Representation,
 	) -> Result<Self, Self::Error> {
 		match representation {
-			Representation::PowerBasis => {
-				<Poly as crate::rq::TryFrom<&[u64]>>::try_from(&[value], ctx, representation)
-			}
+			Representation::PowerBasis => Poly::try_convert_from(&[value], ctx, representation),
 			_ => {
 				Err("Converting from constant values is only possible in PowerBasis representation")
 			}
@@ -188,10 +126,10 @@ impl TryFrom<u64> for Poly {
 	}
 }
 
-impl TryFrom<Vec<u64>> for Poly {
+impl TryConvertFrom<Vec<u64>> for Poly {
 	type Error = &'static str;
 
-	fn try_from(
+	fn try_convert_from(
 		v: Vec<u64>,
 		ctx: &Rc<Context>,
 		representation: Representation,
@@ -233,16 +171,62 @@ impl TryFrom<Vec<u64>> for Poly {
 	}
 }
 
-impl TryFrom<&[u64]> for Poly {
+impl TryConvertFrom<Array2<u64>> for Poly {
 	type Error = &'static str;
 
-	fn try_from(
+	fn try_convert_from(
+		a: Array2<u64>,
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Self, Self::Error> {
+		if a.shape() != [ctx.q.len(), ctx.degree] {
+			Err("The array of coefficient does not have the correct shape")
+		} else {
+			Ok(Self {
+				ctx: ctx.clone(),
+				representation,
+				coefficients: a,
+			})
+		}
+	}
+}
+
+impl TryConvertFrom<&[u64]> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from(
 		v: &[u64],
 		ctx: &Rc<Context>,
 		representation: Representation,
 	) -> Result<Self, Self::Error> {
 		let v_clone: Vec<u64> = v.to_vec();
-		<Poly as crate::rq::TryFrom<Vec<u64>>>::try_from(v_clone, ctx, representation)
+		Poly::try_convert_from(v_clone, ctx, representation)
+	}
+}
+
+impl TryConvertFrom<&Vec<u64>> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from(
+		v: &Vec<u64>,
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Self, Self::Error> {
+		let v_clone: Vec<u64> = v.clone();
+		Poly::try_convert_from(v_clone, ctx, representation)
+	}
+}
+
+impl<const N: usize> TryConvertFrom<&[u64; N]> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from(
+		v: &[u64; N],
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Self, Self::Error> {
+		let v_clone: Vec<u64> = v.to_vec();
+		Poly::try_convert_from(v_clone, ctx, representation)
 	}
 }
 
@@ -363,7 +347,7 @@ impl Neg for &Poly {
 
 #[cfg(test)]
 mod tests {
-	use super::{Context, Poly, Representation, TryFrom, TryIntoPoly};
+	use super::{Context, Poly, Representation, TryConvertFrom};
 	use crate::zq::{ntt::supports_ntt, Modulus};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
@@ -371,8 +355,6 @@ mod tests {
 
 	// Moduli to be used in tests.
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
-
-	// Strategy for short and long polynomials.
 
 	#[test]
 	fn test_context_constructor() {
@@ -396,14 +378,8 @@ mod tests {
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
 			let q = Poly::zero(&ctx, Representation::Ntt);
 			assert_ne!(p, q);
-			assert_eq!(
-				p.coefficients.as_slice().unwrap(),
-				&[0, 0, 0, 0, 0, 0, 0, 0]
-			);
-			assert_eq!(
-				q.coefficients.as_slice().unwrap(),
-				&[0, 0, 0, 0, 0, 0, 0, 0]
-			);
+			assert_eq!(Vec::from(&p), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::from(&q), &[0, 0, 0, 0, 0, 0, 0, 0]);
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
@@ -411,275 +387,191 @@ mod tests {
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
 		assert_eq!(
-			p.coefficients.as_slice().unwrap(),
+			Vec::from(&p),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
 		assert_eq!(
-			q.coefficients.as_slice().unwrap(),
+			Vec::from(&q),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
 	}
 
 	#[test]
-	fn test_try_from_slice_zero() {
+	fn test_try_convert_from_slice_zero() {
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
-			let mut p = <Poly as TryFrom<&[u64]>>::try_from(&[], &ctx, Representation::PowerBasis);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<&[u64]>>::try_from(&[], &ctx, Representation::Ntt);
+			let mut p = Poly::try_convert_from(&[], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(&[], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 
-			p = <Poly as TryFrom<&[u64]>>::try_from(&[0], &ctx, Representation::PowerBasis);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<&[u64]>>::try_from(&[0], &ctx, Representation::Ntt);
+			p = Poly::try_convert_from(&[0], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(&[0], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 
-			p = <Poly as TryFrom<&[u64]>>::try_from(
-				&[0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::PowerBasis,
-			);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<&[u64]>>::try_from(
-				&[0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::Ntt,
-			);
-			assert_eq!(p.ok().unwrap(), Poly::zero(&ctx, Representation::Ntt));
+			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 
-			p = <Poly as TryFrom<&[u64]>>::try_from(
+			p = Poly::try_convert_from(
 				&[0, 0, 0, 0, 0, 0, 0, 0, 0],
 				&ctx,
 				Representation::PowerBasis,
 			);
 			assert!(p.is_err());
-			p = <Poly as TryFrom<&[u64]>>::try_from(
-				&[0, 0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::Ntt,
-			);
+			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-		let mut p = <Poly as TryFrom<&[u64]>>::try_from(&[], &ctx, Representation::PowerBasis);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<&[u64]>>::try_from(&[], &ctx, Representation::Ntt);
+		let mut p = Poly::try_convert_from(&[], &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(&[], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<&[u64]>>::try_from(&[0], &ctx, Representation::PowerBasis);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<&[u64]>>::try_from(&[0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(&[0], &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(&[0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<&[u64]>>::try_from(
-			&[0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::PowerBasis,
-		);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<&[u64]>>::try_from(
-			&[0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::Ntt,
-		);
+		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<&[u64]>>::try_from(
+		p = Poly::try_convert_from(
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0],
 			&ctx,
 			Representation::PowerBasis,
 		);
 		assert!(p.is_err());
-		p = <Poly as TryFrom<&[u64]>>::try_from(
-			&[0, 0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::Ntt,
-		);
+		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<&[u64]>>::try_from(
+		p = Poly::try_convert_from(
 			&[
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::PowerBasis,
 		);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<&[u64]>>::try_from(
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(
 			&[
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::Ntt,
 		);
-		assert_eq!(p.ok().unwrap(), Poly::zero(&ctx, Representation::Ntt));
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 	}
 
 	#[test]
-	fn test_try_from_vec_zero() {
+	fn test_try_convert_from_vec_zero() {
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
-			let mut p =
-				<Poly as TryFrom<Vec<u64>>>::try_from(vec![], &ctx, Representation::PowerBasis);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![], &ctx, Representation::Ntt);
+			let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![0], &ctx, Representation::PowerBasis);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![0], &ctx, Representation::Ntt);
+			p = Poly::try_convert_from(vec![0], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(
+			p = Poly::try_convert_from(
 				vec![0, 0, 0, 0, 0, 0, 0, 0],
 				&ctx,
 				Representation::PowerBasis,
 			);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(
-				vec![0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::Ntt,
-			);
-			assert_eq!(p.ok().unwrap(), Poly::zero(&ctx, Representation::Ntt));
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(
+			p = Poly::try_convert_from(
 				vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
 				&ctx,
 				Representation::PowerBasis,
 			);
 			assert!(p.is_err());
-			p = <Poly as TryFrom<Vec<u64>>>::try_from(
-				vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::Ntt,
-			);
+			p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-		let mut p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![], &ctx, Representation::PowerBasis);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![], &ctx, Representation::Ntt);
+		let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![0], &ctx, Representation::PowerBasis);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(vec![0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(vec![0], &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
+		p = Poly::try_convert_from(
 			vec![0, 0, 0, 0, 0, 0, 0, 0],
 			&ctx,
 			Representation::PowerBasis,
 		);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
-			vec![0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::Ntt,
-		);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
+		p = Poly::try_convert_from(
 			vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
 			&ctx,
 			Representation::PowerBasis,
 		);
 		assert!(p.is_err());
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
-			vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::Ntt,
-		);
+		p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
+		p = Poly::try_convert_from(
 			vec![
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::PowerBasis,
 		);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<Vec<u64>>>::try_from(
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(
 			vec![
 				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::Ntt,
 		);
-		assert_eq!(p.ok().unwrap(), Poly::zero(&ctx, Representation::Ntt));
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 	}
 
 	#[test]
-	fn test_try_from_u64_zero() {
+	fn test_try_convert_from_u64_zero() {
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
-			let mut p = <Poly as TryFrom<u64>>::try_from(0, &ctx, Representation::PowerBasis);
-			assert_eq!(
-				p.ok().unwrap(),
-				Poly::zero(&ctx, Representation::PowerBasis)
+			let mut p = <Poly as TryConvertFrom<u64>>::try_convert_from(
+				0,
+				&ctx,
+				Representation::PowerBasis,
 			);
-			p = <Poly as TryFrom<u64>>::try_from(0, &ctx, Representation::Ntt);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			p = <Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::Ntt);
 			assert!(p.is_err());
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-		let mut p = <Poly as TryFrom<u64>>::try_from(0, &ctx, Representation::PowerBasis);
-		assert_eq!(
-			p.ok().unwrap(),
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		p = <Poly as TryFrom<u64>>::try_from(0, &ctx, Representation::Ntt);
+		let mut p =
+			<Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::PowerBasis);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = <Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::Ntt);
 		assert!(p.is_err());
 	}
 
 	proptest! {
-		#![proptest_config(ProptestConfig::with_cases(100))]
+		#![proptest_config(ProptestConfig::with_cases(64))]
 		#[test]
 		fn test_add(a in prop_vec(any::<u64>(), 8), b in prop_vec(any::<u64>(), 8)) {
 			for modulus in MODULI {
@@ -688,19 +580,19 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
-				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
 				let r = &p + &q;
-				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
 				let r = &p + &q;
-				prop_assert_eq!(r.representation, Representation::Ntt);
+				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 			}
 
 			let mut reference = vec![];
@@ -712,11 +604,11 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
-			let q = <Poly as TryFrom<&[u64]>>::try_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
 			let r = &p + &q;
-			prop_assert_eq!(r.representation, Representation::PowerBasis);
-			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
+			prop_assert_eq!(&Vec::from(&r), &reference);
 		}
 
 		#[test]
@@ -727,19 +619,19 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
-				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
 				let r = &p - &q;
-				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
 				let r = &p - &q;
-				prop_assert_eq!(r.representation, Representation::Ntt);
+				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 			}
 
 			let mut reference = vec![];
@@ -751,11 +643,11 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
-			let q = <Poly as TryFrom<&[u64]>>::try_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
 			let r = &p - &q;
-			prop_assert_eq!(r.representation, Representation::PowerBasis);
-			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
+			prop_assert_eq!(&Vec::from(&r), &reference);
 		}
 
 		#[test]
@@ -766,12 +658,12 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = <Poly as TryFrom<&[u64]>>::try_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
 				let r = &p * &q;
-				prop_assert_eq!(r.representation, Representation::Ntt);
+				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.mul_vec(&mut c, &d);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 			}
 
 			let mut reference = vec![];
@@ -784,11 +676,11 @@ mod tests {
 				reference.extend(a3)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = <Poly as TryFrom<&[u64]>>::try_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
-			let q = <Poly as TryFrom<&[u64]>>::try_from(&b2, &ctx, Representation::Ntt).ok().unwrap();
+			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
+			let q = Poly::try_convert_from(&b2, &ctx, Representation::Ntt).ok().unwrap();
 			let r = &p * &q;
-			prop_assert_eq!(r.representation, Representation::Ntt);
-			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			prop_assert_eq!(&r.representation, &Representation::Ntt);
+			prop_assert_eq!(&Vec::from(&r), &reference);
 		}
 
 		#[test]
@@ -798,17 +690,17 @@ mod tests {
 				let m = Modulus::new(*modulus).unwrap();
 				let mut c = m.reduce_vec_new(&a);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
 				let r = -p;
-				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 
-				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
 				let r = -p;
-				prop_assert_eq!(r.representation, Representation::Ntt);
+				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+				prop_assert_eq!(&Vec::from(&r), &c);
 			}
 
 			let mut reference = vec![];
@@ -819,13 +711,13 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
 			let r = -&p;
-			prop_assert_eq!(r.representation, Representation::PowerBasis);
-			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
+			prop_assert_eq!(&Vec::from(&r), &reference);
 			let r = -p;
-			prop_assert_eq!(r.representation, Representation::PowerBasis);
-			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
+			prop_assert_eq!(&Vec::from(&r), &reference);
 		}
 	}
 }

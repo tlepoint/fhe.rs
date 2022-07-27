@@ -30,14 +30,14 @@ pub fn rq_benchmark(c: &mut Criterion) {
 		let ctx4 = Rc::new(Context::new(MODULI, *degree).unwrap());
 
 		let a = random_vector(*degree, MODULI[0]);
-		let mut p1 = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx1, Representation::Ntt)
+		let mut p1 = Poly::try_convert_from(&a, &ctx1, Representation::Ntt)
 			.ok()
 			.unwrap();
 		let q1 = p1.clone();
 
 		let mut a = random_vector(*degree, MODULI[0]);
 		a.append(&mut random_vector(*degree, MODULI[1]));
-		let mut p2 = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx2, Representation::Ntt)
+		let mut p2 = Poly::try_convert_from(&a, &ctx2, Representation::Ntt)
 			.ok()
 			.unwrap();
 		let q2 = p2.clone();
@@ -45,7 +45,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 		let mut a = random_vector(*degree, MODULI[0]);
 		a.append(&mut random_vector(*degree, MODULI[1]));
 		a.append(&mut random_vector(*degree, MODULI[2]));
-		let mut p3 = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx3, Representation::Ntt)
+		let mut p3 = Poly::try_convert_from(&a, &ctx3, Representation::Ntt)
 			.ok()
 			.unwrap();
 		let q3 = p3.clone();
@@ -54,7 +54,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 		a.append(&mut random_vector(*degree, MODULI[1]));
 		a.append(&mut random_vector(*degree, MODULI[2]));
 		a.append(&mut random_vector(*degree, MODULI[3]));
-		let mut p4 = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx4, Representation::Ntt)
+		let mut p4 = Poly::try_convert_from(&a, &ctx4, Representation::Ntt)
 			.ok()
 			.unwrap();
 		let q4 = p4.clone();

@@ -4,7 +4,6 @@ use super::Modulus;
 use crrust_util::is_prime;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::rc::Rc;
 
 /// Returns whether a modulus p is prime and supports the Number Theoretic Transform of size n.
 ///
@@ -256,7 +255,6 @@ mod tests {
 	use super::{supports_ntt, NttOperator};
 	use crate::zq::Modulus;
 	use rand::RngCore;
-	use std::rc::Rc;
 
 	#[test]
 	fn test_constructor() {
