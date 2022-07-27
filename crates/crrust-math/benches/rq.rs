@@ -29,8 +29,9 @@ pub fn rq_benchmark(c: &mut Criterion) {
 		let ctx3 = Rc::new(Context::new(&MODULI[0..3], *degree).unwrap());
 		let ctx4 = Rc::new(Context::new(MODULI, *degree).unwrap());
 
+		let a = random_vector(*degree, MODULI[0]);
 		let mut p1 = <Poly as TryFrom<&[u64]>>::try_from(
-			&random_vector(*degree, MODULI[0]),
+			&a,
 			&ctx1,
 			Representation::Ntt,
 		)
@@ -84,6 +85,56 @@ pub fn rq_benchmark(c: &mut Criterion) {
 			BenchmarkId::new("add", format!("{}/{}", degree, 4 * 62)),
 			|b| {
 				b.iter(|| p4 += &q4);
+			},
+		);
+
+		group.bench_function(BenchmarkId::new("sub", format!("{}/{}", degree, 62)), |b| {
+			b.iter(|| p1 -= &q1);
+		});
+
+		group.bench_function(
+			BenchmarkId::new("sub", format!("{}/{}", degree, 2 * 62)),
+			|b| {
+				b.iter(|| p2 -= &q2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("sub", format!("{}/{}", degree, 3 * 62)),
+			|b| {
+				b.iter(|| p3 -= &q3);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("sub", format!("{}/{}", degree, 4 * 62)),
+			|b| {
+				b.iter(|| p4 -= &q4);
+			},
+		);
+
+		group.bench_function(BenchmarkId::new("mul", format!("{}/{}", degree, 62)), |b| {
+			b.iter(|| p1 *= &q1);
+		});
+
+		group.bench_function(
+			BenchmarkId::new("mul", format!("{}/{}", degree, 2 * 62)),
+			|b| {
+				b.iter(|| p2 *= &q2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("mul", format!("{}/{}", degree, 3 * 62)),
+			|b| {
+				b.iter(|| p3 *= &q3);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("mul", format!("{}/{}", degree, 4 * 62)),
+			|b| {
+				b.iter(|| p4 *= &q4);
 			},
 		);
 	}
