@@ -6,7 +6,7 @@ use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
 use ndarray::{Array2, Axis};
 use std::{
-	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
 };
 
@@ -90,7 +90,71 @@ impl Poly {
 	}
 }
 
-// Implement our own version of TryFrom.
+pub trait TryIntoPoly {
+	type Error;
+
+	fn try_into_poly(
+		self,
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Poly, Self::Error>;
+}
+
+impl TryIntoPoly for &[u64] {
+	type Error = &'static str;
+	fn try_into_poly(
+		self,
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Poly, <Self as TryIntoPoly>::Error> {
+		let v = self.to_vec();
+		v.try_into_poly(ctx, representation)
+	}
+}
+
+impl TryIntoPoly for Vec<u64> {
+	type Error = &'static str;
+	fn try_into_poly(
+		self,
+		ctx: &Rc<Context>,
+		representation: Representation,
+	) -> Result<Poly, <Self as TryIntoPoly>::Error> {
+		match representation {
+			Representation::Ntt => {
+				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), self) {
+					Ok(Poly {
+						ctx: ctx.clone(),
+						representation,
+						coefficients,
+					})
+				} else {
+					Err("In Ntt representation, all coefficients must be specified")
+				}
+			}
+			Representation::PowerBasis => {
+				if self.len() == ctx.q.len() * ctx.degree {
+					let coefficients =
+						Array2::from_shape_vec((ctx.q.len(), ctx.degree), self).unwrap();
+					Ok(Poly {
+						ctx: ctx.clone(),
+						representation,
+						coefficients,
+					})
+				} else if self.len() <= ctx.degree {
+					let mut out = Poly::zero(ctx, representation);
+					izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
+						let wi = w.as_slice_mut().unwrap();
+						wi[..self.len()].copy_from_slice(&self);
+						qi.reduce_vec(wi);
+					});
+					Ok(out)
+				} else {
+					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree")
+				}
+			}
+		}
+	}
+}
 
 pub trait TryFrom<T>
 where
@@ -190,7 +254,7 @@ impl From<&Poly> for Vec<u64> {
 
 impl AddAssign<&Poly> for Poly {
 	fn add_assign(&mut self, p: &Poly) {
-		debug_assert_eq!(
+		assert_eq!(
 			self.representation, p.representation,
 			"Incompatible representations"
 		);
@@ -275,9 +339,31 @@ impl Mul<&Poly> for &Poly {
 	}
 }
 
+impl Neg for Poly {
+	type Output = Poly;
+
+	fn neg(self) -> Poly {
+		let mut out = self;
+		izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+			.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+		out
+	}
+}
+
+impl Neg for &Poly {
+	type Output = Poly;
+
+	fn neg(self) -> Poly {
+		let mut out = self.clone();
+		izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+			.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+		out
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use super::{Context, Poly, Representation, TryFrom};
+	use super::{Context, Poly, Representation, TryFrom, TryIntoPoly};
 	use crate::zq::{ntt::supports_ntt, Modulus};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
@@ -705,5 +791,41 @@ mod tests {
 			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
 		}
 
+		#[test]
+		fn test_neg(a in prop_vec(any::<u64>(), 8)) {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let r = -p;
+				prop_assert_eq!(r.representation, Representation::PowerBasis);
+				m.neg_vec(&mut c);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+
+				let p = <Poly as TryFrom<&[u64]>>::try_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let r = -p;
+				prop_assert_eq!(r.representation, Representation::Ntt);
+				m.neg_vec(&mut c);
+				prop_assert_eq!(r.coefficients.as_slice().unwrap(), &c);
+			}
+
+			let mut reference = vec![];
+			for modulus in MODULI {
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				m.neg_vec(&mut c);
+				reference.extend(c)
+			}
+			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+			let p = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let r = -&p;
+			prop_assert_eq!(r.representation, Representation::PowerBasis);
+			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+			let r = -p;
+			prop_assert_eq!(r.representation, Representation::PowerBasis);
+			prop_assert_eq!(r.coefficients.as_slice().unwrap(), &reference);
+		}
 	}
 }
