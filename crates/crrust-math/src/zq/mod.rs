@@ -5,8 +5,8 @@
 pub mod nfl;
 pub mod ntt;
 
+use crrust_util::is_prime;
 use itertools::izip;
-use num_bigint::prime::probably_prime;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 
@@ -17,6 +17,7 @@ pub struct Modulus {
 	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
+	supports_opt: bool,
 }
 
 impl Modulus {
@@ -32,6 +33,7 @@ impl Modulus {
 				barrett_hi: (barrett >> 64) as u64,
 				barrett_lo: barrett as u64,
 				leading_zeros: p.leading_zeros(),
+				supports_opt: nfl::supports_opt(p),
 			})
 		}
 	}
@@ -39,15 +41,6 @@ impl Modulus {
 	/// Returns the value of the modulus.
 	pub fn modulus(&self) -> u64 {
 		self.p
-	}
-
-	/// Returns whether the modulus p is prime and supports the Number Theoretic Transform of size n.
-	///
-	/// Aborts if n is not a power of 2 that is >= 8.
-	pub fn supports_ntt(&self, n: usize) -> bool {
-		assert!(n >= 8 && n.is_power_of_two());
-
-		self.p % ((n as u64) << 1) == 1 && self.is_prime()
 	}
 
 	/// Modular addition of a and b in variable time.
@@ -81,7 +74,7 @@ impl Modulus {
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn mul_opt(&self, a: u64, b: u64) -> u64 {
-		debug_assert!(nfl::supports_opt(self.p));
+		debug_assert!(self.supports_opt);
 		debug_assert!(a < self.p && b < self.p);
 
 		self.reduce_opt_u128((a as u128) * (b as u128))
@@ -151,17 +144,11 @@ impl Modulus {
 	pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
-	}
-
-	/// Optimized modular multiplication of vectors in place.
-	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
-	pub fn mul_opt_vec(&self, a: &mut [u64], b: &[u64]) {
-		debug_assert!(nfl::supports_opt(self.p));
-		debug_assert_eq!(a.len(), b.len());
-
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+		if self.supports_opt {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+		}
 	}
 
 	/// Compute the Shoup representation of a vector.
@@ -188,6 +175,13 @@ impl Modulus {
 	/// Reduce a vector in place.
 	pub fn reduce_vec(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
+	}
+
+	/// Reduce a vector.
+	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
+		let mut b = a.to_vec();
+		b.iter_mut().for_each(|bi| *bi = self.reduce(*bi));
+		b
 	}
 
 	/// Modular negation of a vector in place.
@@ -226,7 +220,7 @@ impl Modulus {
 	/// Returns None if p is not prime or a = 0.
 	/// Aborts if a >= p in debug mode.
 	pub fn inv(&self, a: u64) -> std::option::Option<u64> {
-		if !self.is_prime() || a == 0 {
+		if !is_prime(self.p) || a == 0 {
 			None
 		} else {
 			let r = self.pow(a, self.p - 2);
@@ -242,18 +236,18 @@ impl Modulus {
 
 	/// Modular reduction of a u64 in variable time.
 	pub fn reduce(&self, a: u64) -> u64 {
-		self.lazy_reduce(a)
+		Self::reduce1(self.lazy_reduce(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in variable time.
 	fn reduce_opt_u128(&self, a: u128) -> u64 {
-		debug_assert!(nfl::supports_opt(self.p));
+		debug_assert!(self.supports_opt);
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u64 in variable time.
 	pub fn reduce_opt(&self, a: u64) -> u64 {
-		self.lazy_reduce_opt(a)
+		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// Return x mod p.
@@ -331,12 +325,6 @@ impl Modulus {
 		debug_assert_eq!(r % self.p, a % self.p);
 
 		r
-	}
-
-	/// Returns whether the modulus is prime; this function is 100% accurate.
-	pub fn is_prime(&self) -> bool {
-		let p_biguint = BigUint::from(self.p);
-		probably_prime(&p_biguint, 0)
 	}
 }
 
@@ -590,61 +578,6 @@ mod tests {
 					assert_eq!(q.mul(a, b.unwrap()), 1)
 				}
 			}
-		}
-	}
-
-	fn random_vector(size: usize, p: u64) -> Vec<u64> {
-		let mut rng = rand::thread_rng();
-		let mut v = vec![];
-		for _ in 0..size {
-			v.push(rng.next_u64() % p)
-		}
-		v
-	}
-
-	#[test]
-	fn test_mul_opt_vec() {
-		let ntests = 100;
-
-		for p in [4611686018326724609] {
-			let q = Modulus::new(p).unwrap();
-			assert!(nfl::supports_opt(p));
-
-			let mut a = [0u64, 1, p - 1];
-
-			q.mul_opt_vec(&mut a, &[1u64, 1, 1]);
-			assert_eq!(&a, &[0u64, 1, p - 1]);
-
-			q.mul_opt_vec(&mut a, &[0, p - 1, p - 1]);
-			assert_eq!(&a, &[0, p - 1, 1]);
-
-			q.mul_opt_vec(&mut a, &[0u64, 0, 0]);
-			assert_eq!(&a, &[0u64, 0, 0]);
-
-			for _ in 0..ntests {
-				let a = random_vector(128, p);
-				let b = random_vector(128, p);
-				let mut c = a.clone();
-
-				q.mul_opt_vec(&mut c, &b);
-
-				assert_eq!(c.len(), a.len());
-				izip!(a.iter(), b.iter(), c.iter())
-					.for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul_opt(*ai, *bi)));
-			}
-		}
-	}
-
-	#[test]
-	fn test_is_prime() {
-		for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-			let q = Modulus::new(p).unwrap();
-			assert!(q.is_prime())
-		}
-
-		for p in [4, 6, 15, 1977, 4611686018326724611] {
-			let q = Modulus::new(p).unwrap();
-			assert!(!q.is_prime())
 		}
 	}
 }

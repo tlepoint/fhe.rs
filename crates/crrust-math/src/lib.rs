@@ -8,6 +8,7 @@
 //! Mathematical utilities for the crrust library.
 
 pub mod rns;
+pub mod rq;
 pub mod u256;
 pub mod zq;
 

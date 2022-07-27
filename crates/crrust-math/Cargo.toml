@@ -11,18 +11,24 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 itertools = "0.10.3"
-num-bigint = {version = "0.8.1", package = "num-bigint-dig", features = ["prime"]}
+num-bigint = "0.4.3"
+num-bigint-dig = "0.8.1"
 num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+ndarray = "0.15.4"
+crrust-util = { version = "0.1.0", path = "../crrust-util" }
 
 [dev-dependencies]
 criterion = "0.3.6"
 proptest = "1.0.0"
-crrust-util = { version = "0.1.0", path = "../crrust-util" }
 
 [[bench]]
 name = "zq"
+harness = false
+
+[[bench]]
+name = "rq"
 harness = false
 
 [[bench]]

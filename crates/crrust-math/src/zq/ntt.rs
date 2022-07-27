@@ -1,14 +1,23 @@
 //! Number-Theoretic Transform in ZZ_q.
 
 use super::Modulus;
+use crrust_util::is_prime;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::rc::Rc;
+
+/// Returns whether a modulus p is prime and supports the Number Theoretic Transform of size n.
+///
+/// Aborts if n is not a power of 2 that is >= 8.
+pub fn supports_ntt(p: u64, n: usize) -> bool {
+	assert!(n >= 8 && n.is_power_of_two());
+
+	p % ((n as u64) << 1) == 1 && is_prime(p)
+}
 
 /// Number-Theoretic Transform operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
-	p: Rc<Modulus>,
+	p: Modulus,
 	p_twice: u64,
 	size: usize,
 	omegas: Vec<u64>,
@@ -24,8 +33,8 @@ impl NttOperator {
 	///
 	/// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
 	/// Returns None if the modulus does not support the NTT for this specific size.
-	pub fn new(p: &Rc<Modulus>, size: usize) -> std::option::Option<Self> {
-		if !p.supports_ntt(size) {
+	pub fn new(p: &Modulus, size: usize) -> Option<Self> {
+		if !supports_ntt(p.p, size) {
 			None
 		} else {
 			let omega = Self::primitive_root(size, p);
@@ -210,8 +219,8 @@ impl NttOperator {
 	/// Returns a 2n-th primitive root modulo p.
 	///
 	/// Aborts if p is not prime or n is not a power of 2 that is >= 8.
-	fn primitive_root(n: usize, p: &Rc<Modulus>) -> u64 {
-		debug_assert!(p.supports_ntt(n));
+	fn primitive_root(n: usize, p: &Modulus) -> u64 {
+		debug_assert!(supports_ntt(p.p, n));
 
 		let lambda = (p.p - 1) / (2 * n as u64);
 
@@ -231,9 +240,9 @@ impl NttOperator {
 	/// Returns whether a is a n-th primitive root of unity.
 	///
 	/// Aborts if a >= p in debug mode.
-	fn is_primitive_root(a: u64, n: usize, p: &Rc<Modulus>) -> bool {
+	fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
 		debug_assert!(a < p.p);
-		debug_assert!(p.supports_ntt(n));
+		debug_assert!(supports_ntt(p.p, n));
 
 		// A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
 		// for all prime p dividing n.
@@ -243,19 +252,18 @@ impl NttOperator {
 
 #[cfg(test)]
 mod tests {
-	use super::NttOperator;
+	use super::{supports_ntt, NttOperator};
 	use crate::zq::Modulus;
 	use rand::RngCore;
-	use std::rc::Rc;
 
 	#[test]
 	fn test_constructor() {
 		for size in [8, 1024] {
 			for p in [1153, 4611686018326724609] {
 				let q = Modulus::new(p).unwrap();
-				let supports_ntt = q.supports_ntt(size);
+				let supports_ntt = supports_ntt(p, size);
 
-				let op = NttOperator::new(&Rc::new(q), size);
+				let op = NttOperator::new(&q, size);
 
 				if supports_ntt {
 					assert!(op.is_some());
@@ -283,8 +291,8 @@ mod tests {
 			for p in [1153, 4611686018326724609] {
 				let q = Modulus::new(p).unwrap();
 
-				if q.supports_ntt(size) {
-					let op = NttOperator::new(&Rc::new(q), size).unwrap();
+				if supports_ntt(p, size) {
+					let op = NttOperator::new(&q, size).unwrap();
 
 					for _ in 0..ntests {
 						let mut a = random_vector(size, p);

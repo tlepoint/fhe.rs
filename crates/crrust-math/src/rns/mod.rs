@@ -4,7 +4,8 @@
 
 use crate::zq::Modulus;
 use itertools::izip;
-use num_bigint::{BigInt, BigUint, ExtendedGcd, ModInverse};
+use num_bigint::BigUint;
+use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
 use num_traits::{cast::ToPrimitive, One, Zero};
 use std::cmp::Ordering;
 
@@ -30,7 +31,7 @@ impl RnsContext {
 	/// Create a RNS context from a list of moduli.
 	///
 	/// Returns None if the list is empty, or if the moduli are no coprime.
-	pub fn new(moduli_u64: &[u64]) -> std::option::Option<Self> {
+	pub fn new(moduli_u64: &[u64]) -> Option<Self> {
 		if moduli_u64.is_empty() {
 			None
 		} else {
@@ -40,20 +41,22 @@ impl RnsContext {
 			let mut q_star = Vec::with_capacity(moduli_u64.len());
 			let mut garner = Vec::with_capacity(moduli_u64.len());
 			let mut product = BigUint::one();
+			let mut product_dig = BigUintDig::one();
 
 			for i in 0..moduli_u64.len() {
 				// Return None if the moduli are not coprime.
 				for j in 0..moduli_u64.len() {
 					if i != j {
-						let (d, _, _) = BigUint::from(moduli_u64[i])
-							.extended_gcd(&BigUint::from(moduli_u64[j]));
-						if d.cmp(&BigInt::from(1)) != Ordering::Equal {
+						let (d, _, _) = BigUintDig::from(moduli_u64[i])
+							.extended_gcd(&BigUintDig::from(moduli_u64[j]));
+						if d.cmp(&BigIntDig::from(1)) != Ordering::Equal {
 							return None;
 						}
 					}
 				}
 
 				product *= &BigUint::from(moduli_u64[i]);
+				product_dig *= &BigUintDig::from(moduli_u64[i]);
 			}
 
 			for modulus in moduli_u64 {
@@ -61,12 +64,14 @@ impl RnsContext {
 				// q* = product / modulus
 				let q_star_i = &product / modulus;
 				// q~ = (product / modulus) ^ (-1) % modulus
-				let q_tilde_i = (&product / modulus)
-					.mod_inverse(&BigUint::from(*modulus))
+				let q_tilde_i = (&product_dig / modulus)
+					.mod_inverse(&BigUintDig::from(*modulus))
+					.unwrap()
+					.to_u64()
 					.unwrap();
 				// garner = (q*) * (q~)
-				let garner_i = (&q_star_i * &q_tilde_i).clone().to_biguint().unwrap();
-				q_tilde.push(q_tilde_i.to_u64().unwrap());
+				let garner_i = &q_star_i * q_tilde_i;
+				q_tilde.push(q_tilde_i);
 				garner.push(garner_i);
 				q_star.push(q_star_i);
 				q_tilde_shoup.push(

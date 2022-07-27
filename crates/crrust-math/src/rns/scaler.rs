@@ -78,8 +78,8 @@ impl RnsScaler {
 		let mut theta_garner_lo = vec![];
 		let mut theta_garner_hi = vec![];
 		for garner_i in &ctx.garner {
-			let mut theta = ((garner_i << 127) + (&ctx.product >> 1)) / &ctx.product;
-			let theta_hi = &theta >> 64;
+			let mut theta: BigUint = ((garner_i << 127) + (&ctx.product >> 1)) / &ctx.product;
+			let theta_hi: BigUint = &theta >> 64;
 			theta -= &theta_hi << 64;
 			theta_garner_lo.push(theta.to_u64().unwrap());
 			theta_garner_hi.push(theta_hi.to_u64().unwrap());
@@ -149,7 +149,7 @@ impl RnsScaler {
 		} else {
 			theta = (theta << 127) / denominator;
 		}
-		let theta_hi_biguint = &theta >> 64;
+		let theta_hi_biguint: BigUint = &theta >> 64;
 		theta -= &theta_hi_biguint << 64;
 		let theta_lo = theta.to_u64().unwrap();
 		let theta_hi = theta_hi_biguint.to_u64().unwrap();

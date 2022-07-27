@@ -1,8 +1,7 @@
 //! Optimized primes generated as in the NFLlib library.
 
-use num_bigint::prime::probably_prime;
+use crrust_util::is_prime;
 use num_bigint::BigUint;
-use std::option::Option;
 
 /// Returns whether the modulus supports optimized multiplication and reduction.
 /// These optimized operations are possible when the modulus verifies
@@ -45,7 +44,7 @@ pub fn generate_opt_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Opt
 		}
 
 		while tentative_prime.leading_zeros() == (64 - num_bits) as u32
-			&& !probably_prime(&BigUint::from(tentative_prime), 0)
+			&& !is_prime(tentative_prime)
 		{
 			tentative_prime -= modulo
 		}
