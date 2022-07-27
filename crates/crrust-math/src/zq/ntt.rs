@@ -18,7 +18,7 @@ pub fn supports_ntt(p: u64, n: usize) -> bool {
 /// Number-Theoretic Transform operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
-	p: Rc<Modulus>,
+	p: Modulus,
 	p_twice: u64,
 	size: usize,
 	omegas: Vec<u64>,
@@ -34,7 +34,7 @@ impl NttOperator {
 	///
 	/// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
 	/// Returns None if the modulus does not support the NTT for this specific size.
-	pub fn new(p: &Rc<Modulus>, size: usize) -> Option<Self> {
+	pub fn new(p: &Modulus, size: usize) -> Option<Self> {
 		if !supports_ntt(p.p, size) {
 			None
 		} else {
@@ -220,7 +220,7 @@ impl NttOperator {
 	/// Returns a 2n-th primitive root modulo p.
 	///
 	/// Aborts if p is not prime or n is not a power of 2 that is >= 8.
-	fn primitive_root(n: usize, p: &Rc<Modulus>) -> u64 {
+	fn primitive_root(n: usize, p: &Modulus) -> u64 {
 		debug_assert!(supports_ntt(p.p, n));
 
 		let lambda = (p.p - 1) / (2 * n as u64);
@@ -241,7 +241,7 @@ impl NttOperator {
 	/// Returns whether a is a n-th primitive root of unity.
 	///
 	/// Aborts if a >= p in debug mode.
-	fn is_primitive_root(a: u64, n: usize, p: &Rc<Modulus>) -> bool {
+	fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
 		debug_assert!(a < p.p);
 		debug_assert!(supports_ntt(p.p, n));
 
@@ -265,7 +265,7 @@ mod tests {
 				let q = Modulus::new(p).unwrap();
 				let supports_ntt = supports_ntt(p, size);
 
-				let op = NttOperator::new(&Rc::new(q), size);
+				let op = NttOperator::new(&q, size);
 
 				if supports_ntt {
 					assert!(op.is_some());
@@ -294,7 +294,7 @@ mod tests {
 				let q = Modulus::new(p).unwrap();
 
 				if supports_ntt(p, size) {
-					let op = NttOperator::new(&Rc::new(q), size).unwrap();
+					let op = NttOperator::new(&q, size).unwrap();
 
 					for _ in 0..ntests {
 						let mut a = random_vector(size, p);

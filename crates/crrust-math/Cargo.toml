@@ -28,6 +28,10 @@ name = "zq"
 harness = false
 
 [[bench]]
+name = "rq"
+harness = false
+
+[[bench]]
 name = "ntt"
 harness = false
 

@@ -4,7 +4,7 @@
 
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
-use ndarray::Array2;
+use ndarray::{Array2, Axis};
 use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
 	rc::Rc,
@@ -13,7 +13,7 @@ use std::{
 /// Struct that holds the context associated with elements in rq.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Context {
-	q: Vec<Rc<Modulus>>,
+	q: Vec<Modulus>,
 	ops: Vec<NttOperator>,
 	degree: usize,
 }
@@ -31,10 +31,10 @@ impl Context {
 			for modulus in moduli {
 				let qi = Modulus::new(*modulus);
 				qi.as_ref()?;
-				let rc = Rc::new(qi.unwrap());
-				let op = NttOperator::new(&rc, degree);
+				let qi = qi.unwrap();
+				let op = NttOperator::new(&qi, degree);
 				op.as_ref()?;
-				q.push(rc);
+				q.push(qi);
 				ops.push(op.unwrap());
 			}
 
@@ -56,8 +56,8 @@ pub enum Representation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Poly {
 	ctx: Rc<Context>,
-	coefficients: Array2<u64>,
 	representation: Representation,
+	coefficients: Array2<u64>,
 }
 
 impl Poly {
@@ -65,8 +65,8 @@ impl Poly {
 	pub fn zero(ctx: &Rc<Context>, representation: Representation) -> Self {
 		Self {
 			ctx: ctx.clone(),
-			coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
 			representation,
+			coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
 		}
 	}
 
@@ -190,11 +190,11 @@ impl From<&Poly> for Vec<u64> {
 
 impl AddAssign<&Poly> for Poly {
 	fn add_assign(&mut self, p: &Poly) {
-		assert_eq!(
+		debug_assert_eq!(
 			self.representation, p.representation,
 			"Incompatible representations"
 		);
-		assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		izip!(
 			self.coefficients.outer_iter_mut(),
 			p.coefficients.outer_iter(),
@@ -221,7 +221,7 @@ impl SubAssign<&Poly> for Poly {
 			self.representation, p.representation,
 			"Incompatible representations"
 		);
-		assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		izip!(
 			self.coefficients.outer_iter_mut(),
 			p.coefficients.outer_iter(),
@@ -254,7 +254,7 @@ impl MulAssign<&Poly> for Poly {
 			Representation::Ntt,
 			"Multiplication requires an Ntt representation."
 		);
-		assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		izip!(
 			self.coefficients.outer_iter_mut(),
 			p.coefficients.outer_iter(),
