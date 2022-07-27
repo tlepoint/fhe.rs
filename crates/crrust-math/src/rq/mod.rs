@@ -1,6 +1,6 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Polynomials in R_q[x] = (ZZ_q1 x ... x ZZ_qn)[x] where the qi's are prime moduli in zq.
+//! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
@@ -50,6 +50,8 @@ pub enum Representation {
 	PowerBasis,
 	/// This is the NTT representation of the PowerBasis representation.
 	Ntt,
+	/// This is a "Shoup" representation of the Ntt representation used for faster multiplication.
+	NttShoup,
 }
 
 /// Struct that holds a polynomial for a specific context.
@@ -58,6 +60,7 @@ pub struct Poly {
 	ctx: Rc<Context>,
 	representation: Representation,
 	coefficients: Array2<u64>,
+	coefficients_shoup: Option<Array2<u64>>,
 }
 
 impl Poly {
@@ -65,8 +68,13 @@ impl Poly {
 	pub fn zero(ctx: &Rc<Context>, representation: Representation) -> Self {
 		Self {
 			ctx: ctx.clone(),
-			representation,
+			representation: representation.clone(),
 			coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
+			coefficients_shoup: if representation == Representation::NttShoup {
+				Some(Array2::zeros((ctx.q.len(), ctx.degree)))
+			} else {
+				None
+			},
 		}
 	}
 
@@ -80,11 +88,55 @@ impl Poly {
 		} else if self.representation == Representation::Ntt && to == Representation::PowerBasis {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
 				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+		} else if self.representation == Representation::PowerBasis
+			&& to == Representation::NttShoup
+		{
+			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			self.compute_coefficients_shoup();
+		} else if self.representation == Representation::Ntt && to == Representation::NttShoup {
+			self.compute_coefficients_shoup();
+		} else if self.representation == Representation::NttShoup && to == Representation::Ntt {
+			self.coefficients_shoup = None;
+		} else if self.representation == Representation::NttShoup
+			&& to == Representation::PowerBasis
+		{
+			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			self.coefficients_shoup = None;
 		} else {
 			panic!(
 				"Invalid change of representation from {:?} to {:?}",
 				self.representation, to
 			)
+		}
+		self.representation = to;
+	}
+
+	/// Compute the Shoup representation of the coefficients.
+	fn compute_coefficients_shoup(&mut self) {
+		let mut coefficients_shoup = Array2::zeros((self.ctx.q.len(), self.ctx.degree));
+		izip!(
+			coefficients_shoup.outer_iter_mut(),
+			self.coefficients.outer_iter(),
+			&self.ctx.q
+		)
+		.for_each(|(mut v_shoup, v, qi)| {
+			v_shoup
+				.as_slice_mut()
+				.unwrap()
+				.copy_from_slice(&qi.shoup_vec(v.as_slice().unwrap()))
+		});
+		self.coefficients_shoup = Some(coefficients_shoup)
+	}
+
+	/// # Safety
+	///
+	/// Override the internal representation to a given representation.
+	/// If the `to` representation is NttShoup, the coefficients are still computed correctly to avoid being in an unstable state.
+	pub unsafe fn override_representation(&mut self, to: Representation) {
+		if to == Representation::NttShoup {
+			self.compute_coefficients_shoup()
 		}
 		self.representation = to;
 	}
@@ -141,9 +193,24 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						ctx: ctx.clone(),
 						representation,
 						coefficients,
+						coefficients_shoup: None,
 					})
 				} else {
 					Err("In Ntt representation, all coefficients must be specified")
+				}
+			}
+			Representation::NttShoup => {
+				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
+					let mut p = Self {
+						ctx: ctx.clone(),
+						representation,
+						coefficients,
+						coefficients_shoup: None,
+					};
+					p.compute_coefficients_shoup();
+					Ok(p)
+				} else {
+					Err("In NttShoup representation, all coefficients must be specified")
 				}
 			}
 			Representation::PowerBasis => {
@@ -154,6 +221,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						ctx: ctx.clone(),
 						representation,
 						coefficients,
+						coefficients_shoup: None,
 					})
 				} else if v.len() <= ctx.degree {
 					let mut out = Self::zero(ctx, representation);
@@ -182,11 +250,16 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 		if a.shape() != [ctx.q.len(), ctx.degree] {
 			Err("The array of coefficient does not have the correct shape")
 		} else {
-			Ok(Self {
+			let mut p = Self {
 				ctx: ctx.clone(),
-				representation,
+				representation: representation.clone(),
 				coefficients: a,
-			})
+				coefficients_shoup: None,
+			};
+			if representation == Representation::NttShoup {
+				p.compute_coefficients_shoup()
+			}
+			Ok(p)
 		}
 	}
 }
@@ -238,6 +311,11 @@ impl From<&Poly> for Vec<u64> {
 
 impl AddAssign<&Poly> for Poly {
 	fn add_assign(&mut self, p: &Poly) {
+		assert_ne!(
+			self.representation,
+			Representation::NttShoup,
+			"Cannot add to a polynomial in NttShoup representation"
+		);
 		assert_eq!(
 			self.representation, p.representation,
 			"Incompatible representations"
@@ -265,6 +343,11 @@ impl Add<&Poly> for &Poly {
 
 impl SubAssign<&Poly> for Poly {
 	fn sub_assign(&mut self, p: &Poly) {
+		assert_ne!(
+			self.representation,
+			Representation::NttShoup,
+			"Cannot subtract from a polynomial in NttShoup representation"
+		);
 		assert_eq!(
 			self.representation, p.representation,
 			"Incompatible representations"
@@ -292,25 +375,47 @@ impl Sub<&Poly> for &Poly {
 
 impl MulAssign<&Poly> for Poly {
 	fn mul_assign(&mut self, p: &Poly) {
+		assert_ne!(
+			self.representation,
+			Representation::NttShoup,
+			"Cannot multiply to a polynomial in NttShoup representation"
+		);
 		assert_eq!(
 			self.representation,
 			Representation::Ntt,
 			"Multiplication requires an Ntt representation."
 		);
-		assert_eq!(
-			p.representation,
-			Representation::Ntt,
-			"Multiplication requires an Ntt representation."
-		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		izip!(
-			self.coefficients.outer_iter_mut(),
-			p.coefficients.outer_iter(),
-			&self.ctx.q
-		)
-		.for_each(|(mut v1, v2, qi)| {
-			qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-		});
+		match p.representation {
+			Representation::Ntt => {
+				izip!(
+					self.coefficients.outer_iter_mut(),
+					p.coefficients.outer_iter(),
+					&self.ctx.q
+				)
+				.for_each(|(mut v1, v2, qi)| {
+					qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+				});
+			}
+			Representation::NttShoup => {
+				izip!(
+					self.coefficients.outer_iter_mut(),
+					p.coefficients.outer_iter(),
+					p.coefficients_shoup.as_ref().unwrap().outer_iter(),
+					&self.ctx.q
+				)
+				.for_each(|(mut v1, v2, v2_shoup, qi)| {
+					qi.mul_shoup_vec(
+						v1.as_slice_mut().unwrap(),
+						v2.as_slice().unwrap(),
+						v2_shoup.as_slice().unwrap(),
+					)
+				});
+			}
+			_ => {
+				panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
+			}
+		}
 	}
 }
 
@@ -327,6 +432,11 @@ impl Neg for Poly {
 	type Output = Poly;
 
 	fn neg(self) -> Poly {
+		assert_ne!(
+			&self.representation,
+			&Representation::NttShoup,
+			"Cannot negate a polynomial in NttShoup representation"
+		);
 		let mut out = self;
 		izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
 			.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
@@ -678,6 +788,39 @@ mod tests {
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
 			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
 			let q = Poly::try_convert_from(&b2, &ctx, Representation::Ntt).ok().unwrap();
+			let r = &p * &q;
+			prop_assert_eq!(&r.representation, &Representation::Ntt);
+			prop_assert_eq!(&Vec::from(&r), &reference);
+		}
+
+		#[test]
+		fn test_mul_shoup(a in prop_vec(any::<u64>(), 8), b in prop_vec(any::<u64>(), 8), mut a2 in prop_vec(any::<u64>(), 24), mut b2 in prop_vec(any::<u64>(), 24)) {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+				let m = Modulus::new(*modulus).unwrap();
+				let mut c = m.reduce_vec_new(&a);
+				let d = m.reduce_vec_new(&b);
+
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::NttShoup).ok().unwrap();
+				let r = &p * &q;
+				prop_assert_eq!(&r.representation, &Representation::Ntt);
+				m.mul_vec(&mut c, &d);
+				prop_assert_eq!(&Vec::from(&r), &c);
+			}
+
+			let mut reference = vec![];
+			for i in 0..MODULI.len() {
+				let m = Modulus::new(MODULI[i]).unwrap();
+				m.reduce_vec(&mut a2[i * 8..(i+1)*8]);
+				m.reduce_vec(&mut b2[i * 8..(i+1)*8]);
+				let mut a3 = a2[i * 8..(i+1)*8].to_vec();
+				m.mul_vec(&mut a3, &b2[i * 8..(i+1)*8]);
+				reference.extend(a3)
+			}
+			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
+			let q = Poly::try_convert_from(&b2, &ctx, Representation::NttShoup).ok().unwrap();
 			let r = &p * &q;
 			prop_assert_eq!(&r.representation, &Representation::Ntt);
 			prop_assert_eq!(&Vec::from(&r), &reference);
