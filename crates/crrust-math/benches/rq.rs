@@ -30,13 +30,9 @@ pub fn rq_benchmark(c: &mut Criterion) {
 		let ctx4 = Rc::new(Context::new(MODULI, *degree).unwrap());
 
 		let a = random_vector(*degree, MODULI[0]);
-		let mut p1 = <Poly as TryFrom<&[u64]>>::try_from(
-			&a,
-			&ctx1,
-			Representation::Ntt,
-		)
-		.ok()
-		.unwrap();
+		let mut p1 = <Poly as TryFrom<&[u64]>>::try_from(&a, &ctx1, Representation::Ntt)
+			.ok()
+			.unwrap();
 		let q1 = p1.clone();
 
 		let mut a = random_vector(*degree, MODULI[0]);

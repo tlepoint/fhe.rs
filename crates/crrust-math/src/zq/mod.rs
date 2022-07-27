@@ -144,17 +144,11 @@ impl Modulus {
 	pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
-	}
-
-	/// Optimized modular multiplication of vectors in place.
-	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
-	pub fn mul_opt_vec(&self, a: &mut [u64], b: &[u64]) {
-		debug_assert!(self.supports_opt);
-		debug_assert_eq!(a.len(), b.len());
-
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+		if self.supports_opt {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+		}
 	}
 
 	/// Compute the Shoup representation of a vector.
@@ -583,48 +577,6 @@ mod tests {
 					assert!(b.is_some());
 					assert_eq!(q.mul(a, b.unwrap()), 1)
 				}
-			}
-		}
-	}
-
-	fn random_vector(size: usize, p: u64) -> Vec<u64> {
-		let mut rng = rand::thread_rng();
-		let mut v = vec![];
-		for _ in 0..size {
-			v.push(rng.next_u64() % p)
-		}
-		v
-	}
-
-	#[test]
-	fn test_mul_opt_vec() {
-		let ntests = 100;
-
-		for p in [4611686018326724609] {
-			let q = Modulus::new(p).unwrap();
-			assert!(nfl::supports_opt(p));
-
-			let mut a = [0u64, 1, p - 1];
-
-			q.mul_opt_vec(&mut a, &[1u64, 1, 1]);
-			assert_eq!(&a, &[0u64, 1, p - 1]);
-
-			q.mul_opt_vec(&mut a, &[0, p - 1, p - 1]);
-			assert_eq!(&a, &[0, p - 1, 1]);
-
-			q.mul_opt_vec(&mut a, &[0u64, 0, 0]);
-			assert_eq!(&a, &[0u64, 0, 0]);
-
-			for _ in 0..ntests {
-				let a = random_vector(128, p);
-				let b = random_vector(128, p);
-				let mut c = a.clone();
-
-				q.mul_opt_vec(&mut c, &b);
-
-				assert_eq!(c.len(), a.len());
-				izip!(a.iter(), b.iter(), c.iter())
-					.for_each(|(ai, bi, ci)| assert_eq!(*ci, q.mul_opt(*ai, *bi)));
 			}
 		}
 	}
