@@ -1,17 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use crrust_math::rq::*;
-use rand::RngCore;
 use std::rc::Rc;
 use std::time::Duration;
-
-fn random_vector(size: usize, p: u64) -> Vec<u64> {
-	let mut rng = rand::thread_rng();
-	let mut v = vec![];
-	for _ in 0..size {
-		v.push(rng.next_u64() % p)
-	}
-	v
-}
 
 static MODULI: &[u64; 4] = &[
 	4611686018326724609,
@@ -33,14 +23,8 @@ pub fn rq_benchmark(c: &mut Criterion) {
 			}
 			let ctx = Rc::new(Context::new(&MODULI[0..nmoduli], *degree).unwrap());
 
-			let mut a = random_vector(*degree, MODULI[0]);
-			for i in 1..nmoduli {
-				a.append(&mut random_vector(*degree, MODULI[i]));
-			}
-			let mut p = Poly::try_convert_from(&a, &ctx, Representation::Ntt)
-				.ok()
-				.unwrap();
-			let mut q = p.clone();
+			let mut p = Poly::random(&ctx, Representation::Ntt);
+			let mut q = Poly::random(&ctx, Representation::Ntt);
 
 			group.bench_function(
 				BenchmarkId::new("add", format!("{}/{}", degree, 62 * nmoduli)),

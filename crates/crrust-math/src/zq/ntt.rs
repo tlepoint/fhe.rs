@@ -15,7 +15,7 @@ pub fn supports_ntt(p: u64, n: usize) -> bool {
 }
 
 /// Number-Theoretic Transform operator.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NttOperator {
 	p: Modulus,
 	p_twice: u64,
@@ -254,7 +254,6 @@ impl NttOperator {
 mod tests {
 	use super::{supports_ntt, NttOperator};
 	use crate::zq::Modulus;
-	use rand::RngCore;
 
 	#[test]
 	fn test_constructor() {
@@ -274,15 +273,6 @@ mod tests {
 		}
 	}
 
-	fn random_vector(size: usize, p: u64) -> Vec<u64> {
-		let mut rng = rand::thread_rng();
-		let mut v = vec![];
-		for _ in 0..size {
-			v.push(rng.next_u64() % p)
-		}
-		v
-	}
-
 	#[test]
 	fn test_bijection() {
 		let ntests = 100;
@@ -295,7 +285,7 @@ mod tests {
 					let op = NttOperator::new(&q, size).unwrap();
 
 					for _ in 0..ntests {
-						let mut a = random_vector(size, p);
+						let mut a = q.random_vec(size);
 						let a_clone = a.clone();
 
 						op.forward(&mut a);

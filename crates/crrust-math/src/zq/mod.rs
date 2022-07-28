@@ -6,18 +6,21 @@ pub mod nfl;
 pub mod ntt;
 
 use crrust_util::is_prime;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
+use rand::{distributions::Uniform, thread_rng, Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 /// Structure holding a modulus up to 62 bits.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
 	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
 	supports_opt: bool,
+	distribution: Uniform<u64>,
 }
 
 impl Modulus {
@@ -34,6 +37,7 @@ impl Modulus {
 				barrett_lo: barrett as u64,
 				leading_zeros: p.leading_zeros(),
 				supports_opt: nfl::supports_opt(p),
+				distribution: Uniform::from(0..p),
 			})
 		}
 	}
@@ -326,6 +330,28 @@ impl Modulus {
 
 		r
 	}
+
+	/// Returns a random vector and a seed that generated that random element.
+	///
+	/// Panics if the size is 0.
+	pub fn random_vec(&self, size: usize) -> Vec<u64> {
+		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
+		thread_rng().fill(&mut seed);
+		self.random_vec_from_seed(size, seed)
+	}
+
+	/// Returns a random vector generated deterministically from a seed.
+	///
+	/// Panics if the size is 0.
+	pub fn random_vec_from_seed(
+		&self,
+		size: usize,
+		seed: <ChaCha8Rng as SeedableRng>::Seed,
+	) -> Vec<u64> {
+		assert_ne!(size, 0);
+		let rng = rand_chacha::ChaCha8Rng::from_seed(seed);
+		rng.sample_iter(self.distribution).take(size).collect_vec()
+	}
 }
 
 #[cfg(test)]
@@ -335,7 +361,8 @@ mod tests {
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
-	use rand::RngCore;
+	use rand::{thread_rng, Rng, RngCore, SeedableRng};
+	use rand_chacha::ChaCha8Rng;
 
 	// Utility functions for the proptests.
 
@@ -369,7 +396,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_neg_proptest(p in valid_moduli(), mut a: u64,  mut q: u64) {
+		fn test_neg(p in valid_moduli(), mut a: u64,  mut q: u64) {
 			a = p.reduce(a);
 			prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
 
@@ -378,7 +405,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_add_proptest(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+		fn test_add(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
@@ -389,7 +416,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_sub_proptest(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+		fn test_sub(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
@@ -400,7 +427,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_mul_proptest(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+		fn test_mul(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
@@ -411,7 +438,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_mul_shoup_proptest(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+		fn test_mul_shoup(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			let b_shoup = p.shoup(b);
@@ -426,17 +453,17 @@ mod tests {
 		}
 
 		#[test]
-		fn test_reduce_proptest(p in valid_moduli(), a: u64) {
+		fn test_reduce(p in valid_moduli(), a: u64) {
 			prop_assert_eq!(p.reduce(a), a % p.modulus());
 		}
 
 		#[test]
-		fn test_reduce_128_proptest(p in valid_moduli(), a: u128) {
+		fn test_reduce_128(p in valid_moduli(), a: u128) {
 			prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
 		}
 
 		#[test]
-		fn test_add_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+		fn test_add_vec(p in valid_moduli(), (mut a, mut b) in vecs()) {
 			p.reduce_vec(&mut a);
 			p.reduce_vec(&mut b);
 			let c = a.clone();
@@ -445,7 +472,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_sub_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+		fn test_sub_vec(p in valid_moduli(), (mut a, mut b) in vecs()) {
 			p.reduce_vec(&mut a);
 			p.reduce_vec(&mut b);
 			let c = a.clone();
@@ -454,7 +481,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_mul_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+		fn test_mul_vec(p in valid_moduli(), (mut a, mut b) in vecs()) {
 			p.reduce_vec(&mut a);
 			p.reduce_vec(&mut b);
 			let c = a.clone();
@@ -463,7 +490,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_mul_shoup_vec_proptest(p in valid_moduli(), (mut a, mut b) in vecs()) {
+		fn test_mul_shoup_vec(p in valid_moduli(), (mut a, mut b) in vecs()) {
 			p.reduce_vec(&mut a);
 			p.reduce_vec(&mut b);
 			let b_shoup = p.shoup_vec(&b);
@@ -473,21 +500,45 @@ mod tests {
 		}
 
 		#[test]
-		fn test_reduce_vec_proptest(p in valid_moduli(), a: Vec<u64>) {
+		fn test_reduce_vec(p in valid_moduli(), a: Vec<u64>) {
 			let mut b = a.clone();
 			p.reduce_vec(&mut b);
 			prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
 		}
 
 		#[test]
-		fn test_neg_vec_proptest(p in valid_moduli(), mut a: Vec<u64>) {
+		fn test_neg_vec(p in valid_moduli(), mut a: Vec<u64>) {
 			p.reduce_vec(&mut a);
 			let mut b = a.clone();
 			p.neg_vec(&mut b);
 			prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
 		}
+
+		#[test]
+		fn test_random_vec(p in valid_moduli(), size in 1..1000usize) {
+			let v = p.random_vec(size);
+			prop_assert_eq!(v.len(), size);
+
+			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
+			thread_rng().fill(&mut seed);
+			let x = p.random_vec_from_seed(size, seed.clone());
+			let y = p.random_vec_from_seed(size, seed.clone());
+			prop_assert_eq!(x.len(), size);
+			prop_assert_eq!(&x, &y);
+
+			thread_rng().fill(&mut seed);
+			let y = p.random_vec_from_seed(size, seed.clone());
+			prop_assert_eq!(y.len(), size);
+			if p.modulus().leading_zeros() <= 30 {
+				prop_assert_ne!(x, y); // This will hold with probability at least 2^(-30)
+			}
+
+			prop_assert!(catch_unwind(|| p.random_vec(0)).is_err());
+			prop_assert!(catch_unwind(|| p.random_vec_from_seed(0, seed)).is_err());
+		}
 	}
 
+	// TODO: Make a proptest.
 	#[test]
 	fn test_mul_opt() {
 		let ntests = 100;
@@ -519,6 +570,7 @@ mod tests {
 		}
 	}
 
+	// TODO: Make a proptest.
 	#[test]
 	fn test_pow() {
 		let ntests = 10;
@@ -552,6 +604,7 @@ mod tests {
 		}
 	}
 
+	// TODO: Make a proptest.
 	#[test]
 	fn test_inv() {
 		let ntests = 100;

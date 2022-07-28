@@ -5,13 +5,15 @@
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
 use ndarray::Array2;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
 };
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Context {
 	q: Vec<Modulus>,
 	ops: Vec<NttOperator>,
@@ -55,7 +57,7 @@ pub enum Representation {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Poly {
 	ctx: Rc<Context>,
 	representation: Representation,
@@ -139,6 +141,41 @@ impl Poly {
 			self.compute_coefficients_shoup()
 		}
 		self.representation = to;
+	}
+
+	/// Generate a random polynomial.
+	pub fn random(ctx: &Rc<Context>, representation: Representation) -> Self {
+		let mut p = Poly::zero(ctx, representation);
+		izip!(p.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut v, qi)| {
+			v.as_slice_mut()
+				.unwrap()
+				.copy_from_slice(&qi.random_vec(ctx.degree))
+		});
+		if p.representation == Representation::NttShoup {
+			p.compute_coefficients_shoup()
+		}
+		p
+	}
+
+	/// Generate a random polynomial deterministically from a seed.
+	pub fn random_from_seed(
+		ctx: &Rc<Context>,
+		representation: Representation,
+		seed: <ChaCha8Rng as SeedableRng>::Seed,
+	) -> Self {
+		let mut rng = ChaCha8Rng::from_seed(seed);
+		let mut p = Poly::zero(ctx, representation);
+		izip!(p.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut v, qi)| {
+			let mut seed_for_vec = <ChaCha8Rng as SeedableRng>::Seed::default();
+			rng.fill(&mut seed_for_vec);
+			v.as_slice_mut()
+				.unwrap()
+				.copy_from_slice(&qi.random_vec_from_seed(ctx.degree, seed_for_vec))
+		});
+		if p.representation == Representation::NttShoup {
+			p.compute_coefficients_shoup()
+		}
+		p
 	}
 }
 
@@ -461,6 +498,8 @@ mod tests {
 	use crate::zq::{ntt::supports_ntt, Modulus};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
+	use rand::{thread_rng, Rng, SeedableRng};
+	use rand_chacha::ChaCha8Rng;
 	use std::rc::Rc;
 
 	// Moduli to be used in tests.
@@ -862,5 +901,31 @@ mod tests {
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 			prop_assert_eq!(&Vec::from(&r), &reference);
 		}
+	}
+
+	#[test]
+	fn test_random() {
+		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
+		thread_rng().fill(&mut seed);
+
+		for modulus in MODULI {
+			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+			let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+			let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+			assert_eq!(p, q);
+		}
+
+		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+		let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+		let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+		assert_eq!(p, q);
+
+		thread_rng().fill(&mut seed);
+		let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
+		assert_ne!(p, q);
+
+		let r = Poly::random(&ctx, Representation::Ntt);
+		assert_ne!(p, r);
+		assert_ne!(q, r);
 	}
 }
