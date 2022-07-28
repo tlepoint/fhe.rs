@@ -1,10 +1,10 @@
 [package]
-name = "crrust-math"
-description = "Mathematical utilities for the crrust library"
+name = "math"
+description = "Mathematical utilities for the fhers library"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tlepoint/crrust"
+repository = "https://github.com/tlepoint/fhe.rs"
 
 [lib]
 bench = false  # Disable default bench (we use criterion)
@@ -17,7 +17,7 @@ num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 ndarray = "0.15.4"
-crrust-util = { version = "0.1.0", path = "../crrust-util" }
+util = { version = "0.1.0", path = "../util" }
 zeroize = "1.5.7"
 
 [dev-dependencies]

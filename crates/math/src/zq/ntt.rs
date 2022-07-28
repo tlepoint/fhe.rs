@@ -1,9 +1,9 @@
 //! Number-Theoretic Transform in ZZ_q.
 
 use super::Modulus;
-use crrust_util::is_prime;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use util::is_prime;
 
 /// Returns whether a modulus p is prime and supports the Number Theoretic Transform of size n.
 ///

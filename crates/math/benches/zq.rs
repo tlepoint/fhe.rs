@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use crrust_math::zq::Modulus;
+use math::zq::Modulus;
 
 pub fn zq_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("zq");

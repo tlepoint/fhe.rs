@@ -1,11 +1,11 @@
-#![crate_name = "crrust_math"]
+#![crate_name = "math"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 #![feature(bigint_helper_methods)]
 #![feature(int_roundings)]
 #![feature(is_some_with)]
 
-//! Mathematical utilities for the crrust library.
+//! Mathematical utilities for the fhe.rs library.
 
 pub mod rns;
 pub mod rq;

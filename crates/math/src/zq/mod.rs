@@ -5,12 +5,12 @@
 pub mod nfl;
 pub mod ntt;
 
-use crrust_util::is_prime;
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use rand::{distributions::Uniform, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use util::is_prime;
 
 /// Structure holding a modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
@@ -412,12 +412,12 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
 	use super::{nfl, Modulus};
-	use crrust_util::catch_unwind;
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
 	use rand::{thread_rng, Rng, RngCore, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
+	use util::catch_unwind;
 
 	// Utility functions for the proptests.
 
