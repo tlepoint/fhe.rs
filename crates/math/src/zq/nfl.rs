@@ -1,7 +1,7 @@
 //! Optimized primes generated as in the NFLlib library.
 
-use util::is_prime;
 use num_bigint::BigUint;
+use util::is_prime;
 
 /// Returns whether the modulus supports optimized multiplication and reduction.
 /// These optimized operations are possible when the modulus verifies
