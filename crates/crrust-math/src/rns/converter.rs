@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
 /// Converter from one RNS basis to another.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RnsConverter {
 	from: RnsContext, // Moduli q
 	to: RnsContext,   // Moduli p

@@ -47,7 +47,7 @@ impl Modulus {
 		self.p
 	}
 
-	/// Modular addition of a and b in variable time.
+	/// Modular addition of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn add(&self, a: u64, b: u64) -> u64 {
@@ -56,7 +56,7 @@ impl Modulus {
 		Self::reduce1(a + b, self.p)
 	}
 
-	/// Modular subtraction of a and b in variable time.
+	/// Modular subtraction of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn sub(&self, a: u64, b: u64) -> u64 {
@@ -65,7 +65,7 @@ impl Modulus {
 		Self::reduce1(a + self.p - b, self.p)
 	}
 
-	/// Modular multiplication of a and b in variable time.
+	/// Modular multiplication of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn mul(&self, a: u64, b: u64) -> u64 {
@@ -74,7 +74,7 @@ impl Modulus {
 		self.reduce_u128((a as u128) * (b as u128))
 	}
 
-	/// Optimized modular multiplication of a and b in variable time.
+	/// Optimized modular multiplication of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn mul_opt(&self, a: u64, b: u64) -> u64 {
@@ -84,7 +84,7 @@ impl Modulus {
 		self.reduce_opt_u128((a as u128) * (b as u128))
 	}
 
-	/// Modular negation in variable time.
+	/// Modular negation in constant time.
 	///
 	/// Aborts if a >= p in debug mode.
 	pub fn neg(&self, a: u64) -> u64 {
@@ -101,14 +101,14 @@ impl Modulus {
 		(((a as u128) << 64) / (self.p as u128)) as u64
 	}
 
-	/// Shoup multiplication of a and b.
+	/// Shoup multiplication of a and b in constant time.
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
 	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
-	/// Lazy Shoup multiplication of a and b.
+	/// Lazy Shoup multiplication of a and b in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
@@ -124,7 +124,7 @@ impl Modulus {
 		r
 	}
 
-	/// Modular addition of vectors in place.
+	/// Modular addition of vectors in place in constant time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -133,7 +133,7 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
 	}
 
-	/// Modular subtraction of vectors in place.
+	/// Modular subtraction of vectors in place in constant time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -142,7 +142,7 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
 	}
 
-	/// Modular multiplication of vectors in place.
+	/// Modular multiplication of vectors in place in constant time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -164,7 +164,7 @@ impl Modulus {
 		a_shoup
 	}
 
-	/// Shoup modular multiplication of vectors in place.
+	/// Shoup modular multiplication of vectors in place in constant time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
@@ -176,19 +176,19 @@ impl Modulus {
 			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
-	/// Reduce a vector in place.
+	/// Reduce a vector in place in constant time.
 	pub fn reduce_vec(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
 	}
 
-	/// Reduce a vector.
+	/// Reduce a vector in constant time.
 	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
 		let mut b = a.to_vec();
 		b.iter_mut().for_each(|bi| *bi = self.reduce(*bi));
 		b
 	}
 
-	/// Modular negation of a vector in place.
+	/// Modular negation of a vector in place in constant time.
 	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
 	pub fn neg_vec(&self, a: &mut [u64]) {
@@ -233,42 +233,49 @@ impl Modulus {
 		}
 	}
 
-	/// Modular reduction of a u128 in variable time.
+	/// Modular reduction of a u128 in constant time.
 	pub fn reduce_u128(&self, a: u128) -> u64 {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
-	/// Modular reduction of a u64 in variable time.
+	/// Modular reduction of a u64 in constant time.
 	pub fn reduce(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce(a), self.p)
 	}
 
-	/// Optimized modular reduction of a u128 in variable time.
+	/// Optimized modular reduction of a u128 in constant time.
 	fn reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
-	/// Optimized modular reduction of a u64 in variable time.
+	/// Optimized modular reduction of a u64 in constant time.
 	pub fn reduce_opt(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
-	/// Return x mod p.
+	/// Return x mod p in constant time.
 	///
 	/// Aborts if x >= 2 * p in debug mode.
 	fn reduce1(x: u64, p: u64) -> u64 {
 		debug_assert!(p >> 63 == 0);
 		debug_assert!(x < 2 * p);
 
-		if x >= p {
-			x - p
-		} else {
-			x
-		}
+		let (y, _) = x.overflowing_sub(p);
+		let xp = x ^ p;
+		let yp = y ^ p;
+		let xy = xp ^ yp;
+		let xxy = x ^ xy;
+		let xxy = xxy >> 63;
+		let (c, _) = xxy.overflowing_sub(1);
+		let r = (c & y) | ((!c) & x);
+
+		debug_assert_eq!(r, x % p);
+
+		r
 	}
 
-	/// Lazy modular reduction of a in variable time.
+	/// Lazy modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	pub fn lazy_reduce_u128(&self, a: u128) -> u64 {
 		let a_lo = a as u64;
@@ -286,7 +293,7 @@ impl Modulus {
 		r
 	}
 
-	/// Lazy modular reduction of a in variable time.
+	/// Lazy modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	pub fn lazy_reduce(&self, a: u64) -> u64 {
 		let p_lo_lo = ((a as u128) * (self.barrett_lo as u128)) >> 64;
@@ -301,7 +308,7 @@ impl Modulus {
 		r
 	}
 
-	/// Lazy optimized modular reduction of a in variable time.
+	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
@@ -317,7 +324,7 @@ impl Modulus {
 		r
 	}
 
-	/// Lazy optimized modular reduction of a in variable time.
+	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
