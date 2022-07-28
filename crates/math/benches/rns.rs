@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use crrust_math::rns::{RnsContext, RnsConverter, RnsScaler};
+use math::rns::{RnsContext, RnsConverter, RnsScaler};
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 

@@ -279,7 +279,7 @@ impl RnsScaler {
 mod tests {
 	use super::RnsScaler;
 	use crate::rns::RnsContext;
-	use crrust_util::catch_unwind;
+	use util::catch_unwind;
 	use num_bigint::BigUint;
 	use num_traits::Zero;
 	use rand::{thread_rng, RngCore};

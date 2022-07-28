@@ -1,6 +1,6 @@
 //! Optimized primes generated as in the NFLlib library.
 
-use crrust_util::is_prime;
+use util::is_prime;
 use num_bigint::BigUint;
 
 /// Returns whether the modulus supports optimized multiplication and reduction.

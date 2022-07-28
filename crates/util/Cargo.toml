@@ -1,10 +1,10 @@
 [package]
-name = "crrust-util"
-description = "Utilities for the crrust library"
+name = "util"
+description = "Utilities for the fhers library"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/tlepoint/crrust"
+repository = "https://github.com/tlepoint/fhe.rs"
 
 [dependencies]
 num-bigint = {version = "0.8.1", package = "num-bigint-dig", features = ["prime"]}

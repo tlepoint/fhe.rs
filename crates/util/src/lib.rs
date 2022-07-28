@@ -1,8 +1,8 @@
-#![crate_name = "crrust_util"]
+#![crate_name = "util"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 
-//! Utilities for the crrust library.
+//! Utilities for the fhe.rs library.
 
 use num_bigint::{prime::probably_prime, BigUint};
 use std::panic::UnwindSafe;

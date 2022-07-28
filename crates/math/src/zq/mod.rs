@@ -5,7 +5,7 @@
 pub mod nfl;
 pub mod ntt;
 
-use crrust_util::is_prime;
+use util::is_prime;
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -412,7 +412,7 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
 	use super::{nfl, Modulus};
-	use crrust_util::catch_unwind;
+	use util::catch_unwind;
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};

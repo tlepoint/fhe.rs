@@ -1,7 +1,7 @@
 //! Number-Theoretic Transform in ZZ_q.
 
 use super::Modulus;
-use crrust_util::is_prime;
+use util::is_prime;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 

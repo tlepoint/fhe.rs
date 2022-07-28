@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use crrust_math::zq::{ntt::NttOperator, Modulus};
+use math::zq::{ntt::NttOperator, Modulus};
 use rand::RngCore;
 use std::{rc::Rc, vec};
 

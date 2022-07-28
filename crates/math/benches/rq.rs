@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use crrust_math::rq::*;
+use math::rq::*;
 use std::rc::Rc;
 use std::time::Duration;
 
