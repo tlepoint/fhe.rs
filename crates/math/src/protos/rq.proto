@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package fhers;
+
+message Rq {
+    enum Representation {
+        UNKNOWN = 0;
+        POWERBASIS = 1;
+        NTT = 2;
+        NTTSHOUP = 3;
+    }
+    Representation representation = 1;
+    uint32 degree = 2;
+    bytes coefficients = 3;
+}
