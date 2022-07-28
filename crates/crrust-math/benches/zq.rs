@@ -13,17 +13,17 @@ pub fn zq_benchmark(c: &mut Criterion) {
 		let c = q.random_vec(*vector_size);
 		let c_shoup = q.shoup_vec(&c);
 
-		// group.bench_function(BenchmarkId::new("add_vec", vector_size), |b| {
-		// 	b.iter(|| q.add_vec(&mut a, &c));
-		// });
+		group.bench_function(BenchmarkId::new("add_vec", vector_size), |b| {
+			b.iter(|| q.add_vec(&mut a, &c));
+		});
 
-		// group.bench_function(BenchmarkId::new("sub_vec", vector_size), |b| {
-		// 	b.iter(|| q.sub_vec(&mut a, &c));
-		// });
+		group.bench_function(BenchmarkId::new("sub_vec", vector_size), |b| {
+			b.iter(|| q.sub_vec(&mut a, &c));
+		});
 
-		// group.bench_function(BenchmarkId::new("neg_vec", vector_size), |b| {
-		// 	b.iter(|| q.neg_vec(&mut a));
-		// });
+		group.bench_function(BenchmarkId::new("neg_vec", vector_size), |b| {
+			b.iter(|| q.neg_vec(&mut a));
+		});
 
 		group.bench_function(BenchmarkId::new("mul_vec", vector_size), |b| {
 			b.iter(|| q.mul_vec(&mut a, &c));
