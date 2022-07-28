@@ -18,6 +18,7 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 ndarray = "0.15.4"
 crrust-util = { version = "0.1.0", path = "../crrust-util" }
+zeroize = "1.5.7"
 
 [dev-dependencies]
 criterion = "0.3.6"

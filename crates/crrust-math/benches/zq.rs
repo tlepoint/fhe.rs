@@ -17,40 +17,20 @@ pub fn zq_benchmark(c: &mut Criterion) {
 			b.iter(|| q.add_vec(&mut a, &c));
 		});
 
-		group.bench_function(BenchmarkId::new("ct_add_vec", vector_size), |b| {
-			b.iter(|| q.ct_add_vec(&mut a, &c));
-		});
-
 		group.bench_function(BenchmarkId::new("sub_vec", vector_size), |b| {
 			b.iter(|| q.sub_vec(&mut a, &c));
-		});
-
-		group.bench_function(BenchmarkId::new("ct_sub_vec", vector_size), |b| {
-			b.iter(|| q.ct_sub_vec(&mut a, &c));
 		});
 
 		group.bench_function(BenchmarkId::new("neg_vec", vector_size), |b| {
 			b.iter(|| q.neg_vec(&mut a));
 		});
 
-		group.bench_function(BenchmarkId::new("ct_neg_vec", vector_size), |b| {
-			b.iter(|| q.ct_neg_vec(&mut a));
-		});
-
 		group.bench_function(BenchmarkId::new("mul_vec", vector_size), |b| {
 			b.iter(|| q.mul_vec(&mut a, &c));
 		});
 
-		group.bench_function(BenchmarkId::new("ct_mul_vec", vector_size), |b| {
-			b.iter(|| q.ct_mul_vec(&mut a, &c));
-		});
-
 		group.bench_function(BenchmarkId::new("mul_shoup_vec", vector_size), |b| {
 			b.iter(|| q.mul_shoup_vec(&mut a, &c, &c_shoup));
-		});
-
-		group.bench_function(BenchmarkId::new("ct_mul_shoup_vec", vector_size), |b| {
-			b.iter(|| q.ct_mul_shoup_vec(&mut a, &c, &c_shoup));
 		});
 	}
 
