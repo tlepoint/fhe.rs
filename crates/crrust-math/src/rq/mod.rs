@@ -18,6 +18,7 @@ pub struct Context {
 	q: Vec<Modulus>,
 	ops: Vec<NttOperator>,
 	degree: usize,
+	variable_time_enabled: bool,
 }
 
 impl Context {
@@ -40,8 +41,28 @@ impl Context {
 				ops.push(op.unwrap());
 			}
 
-			Some(Self { q, ops, degree })
+			Some(Self {
+				q,
+				ops,
+				degree,
+				variable_time_enabled: false,
+			})
 		}
+	}
+
+	/// # Safety
+	///
+	/// Creates a context from a list of moduli and a polynomial degree, and enable variable-time computations.
+	/// By default, this is marked as unsafe, but is usually safe when only public data is processed.
+	///
+	/// Returns None if the moduli are not primes less than 62 bits which supports the NTT of size `degree`.
+	pub unsafe fn new_enable_variable_time_computations(
+		moduli: &[u64],
+		degree: usize,
+	) -> Option<Self> {
+		let mut ctx = Self::new(moduli, degree)?;
+		ctx.variable_time_enabled = true;
+		Some(ctx)
 	}
 }
 
@@ -425,14 +446,27 @@ impl MulAssign<&Poly> for Poly {
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		match p.representation {
 			Representation::Ntt => {
-				izip!(
-					self.coefficients.outer_iter_mut(),
-					p.coefficients.outer_iter(),
-					&self.ctx.q
-				)
-				.for_each(|(mut v1, v2, qi)| {
-					qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-				});
+				if self.ctx.variable_time_enabled {
+					unsafe {
+						izip!(
+							self.coefficients.outer_iter_mut(),
+							p.coefficients.outer_iter(),
+							&self.ctx.q
+						)
+						.for_each(|(mut v1, v2, qi)| {
+							qi.vt_mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+						});
+					}
+				} else {
+					izip!(
+						self.coefficients.outer_iter_mut(),
+						p.coefficients.outer_iter(),
+						&self.ctx.q
+					)
+					.for_each(|(mut v1, v2, qi)| {
+						qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+					});
+				}
 			}
 			Representation::NttShoup => {
 				izip!(
