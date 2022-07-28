@@ -47,6 +47,22 @@ pub fn rq_benchmark(c: &mut Criterion) {
 				},
 			);
 
+			unsafe {
+				let ctx_with_vt = Rc::new(
+					Context::new_enable_variable_time_computations(&MODULI[0..nmoduli], *degree)
+						.unwrap(),
+				);
+				let mut p_vt = Poly::random(&ctx_with_vt, Representation::Ntt);
+				let q_vt = Poly::random(&ctx_with_vt, Representation::Ntt);
+
+				group.bench_function(
+					BenchmarkId::new("vt_mul", format!("{}/{}", degree, 62 * nmoduli)),
+					|b| {
+						b.iter(|| p_vt *= &q_vt);
+					},
+				);
+			}
+
 			q.change_representation(Representation::NttShoup);
 
 			group.bench_function(

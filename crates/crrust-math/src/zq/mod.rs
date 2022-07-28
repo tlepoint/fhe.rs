@@ -74,6 +74,22 @@ impl Modulus {
 		self.reduce_u128((a as u128) * (b as u128))
 	}
 
+	/// # Safety
+	///
+	/// Modular multiplication of a and b in variable time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	unsafe fn vt_mul(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		let r = self.lazy_reduce_u128((a as u128) * (b as u128));
+		if r >= self.p {
+			r - self.p
+		} else {
+			r
+		}
+	}
+
 	/// Optimized modular multiplication of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
@@ -82,6 +98,23 @@ impl Modulus {
 		debug_assert!(a < self.p && b < self.p);
 
 		self.reduce_opt_u128((a as u128) * (b as u128))
+	}
+
+	/// # Safety
+	///
+	/// Optimized modular multiplication of a and b in variable time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	unsafe fn vt_mul_opt(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(self.supports_opt);
+		debug_assert!(a < self.p && b < self.p);
+
+		let r = self.lazy_reduce_opt_u128((a as u128) * (b as u128));
+		if r >= self.p {
+			r - self.p
+		} else {
+			r
+		}
 	}
 
 	/// Modular negation in constant time.
@@ -152,6 +185,21 @@ impl Modulus {
 			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
 		} else {
 			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+		}
+	}
+
+	/// # Safety
+	///
+	/// Modular multiplication of vectors in place in variable time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub unsafe fn vt_mul_vec(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		if self.supports_opt {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.vt_mul_opt(*ai, *bi));
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.vt_mul(*ai, *bi));
 		}
 	}
 
@@ -493,6 +541,11 @@ mod tests {
 			p.reduce_vec(&mut b);
 			let c = a.clone();
 			p.mul_vec(&mut a, &b);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+			a = c.clone();
+			unsafe {
+				p.vt_mul_vec(&mut a, &b);
+			}
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
 		}
 

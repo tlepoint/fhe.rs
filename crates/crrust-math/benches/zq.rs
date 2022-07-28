@@ -32,6 +32,10 @@ pub fn zq_benchmark(c: &mut Criterion) {
 		group.bench_function(BenchmarkId::new("mul_shoup_vec", vector_size), |b| {
 			b.iter(|| q.mul_shoup_vec(&mut a, &c, &c_shoup));
 		});
+
+		group.bench_function(BenchmarkId::new("vt_mul_vec", vector_size), |b| unsafe {
+			b.iter(|| q.vt_mul_vec(&mut a, &c));
+		});
 	}
 
 	group.finish();
