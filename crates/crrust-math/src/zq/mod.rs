@@ -56,6 +56,15 @@ impl Modulus {
 		Self::reduce1(a + b, self.p)
 	}
 
+	/// Modular addition of a and b in constant time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	pub fn ct_add(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		Self::ct_reduce1(a + b, self.p)
+	}
+
 	/// Modular subtraction of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
@@ -65,6 +74,15 @@ impl Modulus {
 		Self::reduce1(a + self.p - b, self.p)
 	}
 
+	/// Modular subtraction of a and b in constant time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	pub fn ct_sub(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		Self::ct_reduce1(a + self.p - b, self.p)
+	}
+
 	/// Modular multiplication of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
@@ -72,6 +90,15 @@ impl Modulus {
 		debug_assert!(a < self.p && b < self.p);
 
 		self.reduce_u128((a as u128) * (b as u128))
+	}
+
+	/// Modular multiplication of a and b in constant time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	pub fn ct_mul(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		self.ct_reduce_u128((a as u128) * (b as u128))
 	}
 
 	/// Optimized modular multiplication of a and b in variable time.
@@ -84,12 +111,30 @@ impl Modulus {
 		self.reduce_opt_u128((a as u128) * (b as u128))
 	}
 
+	/// Optimized modular multiplication of a and b in constant time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	pub fn ct_mul_opt(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(self.supports_opt);
+		debug_assert!(a < self.p && b < self.p);
+
+		self.ct_reduce_opt_u128((a as u128) * (b as u128))
+	}
+
 	/// Modular negation in variable time.
 	///
 	/// Aborts if a >= p in debug mode.
 	pub fn neg(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 		Self::reduce1(self.p - a, self.p)
+	}
+
+	/// Modular negation in constant time.
+	///
+	/// Aborts if a >= p in debug mode.
+	pub fn ct_neg(&self, a: u64) -> u64 {
+		debug_assert!(a < self.p);
+		Self::ct_reduce1(self.p - a, self.p)
 	}
 
 	/// Compute the Shoup representation of a.
@@ -101,14 +146,21 @@ impl Modulus {
 		(((a as u128) << 64) / (self.p as u128)) as u64
 	}
 
-	/// Shoup multiplication of a and b.
+	/// Shoup multiplication of a and b in variable time.
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
 	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
-	/// Lazy Shoup multiplication of a and b.
+	/// Shoup multiplication of a and b in constant time.
+	///
+	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
+	pub fn ct_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+		Self::ct_reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
+	}
+
+	/// Lazy Shoup multiplication of a and b in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
@@ -124,7 +176,7 @@ impl Modulus {
 		r
 	}
 
-	/// Modular addition of vectors in place.
+	/// Modular addition of vectors in place in variable time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -133,7 +185,16 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
 	}
 
-	/// Modular subtraction of vectors in place.
+	/// Modular addition of vectors in place in constant time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub fn ct_add_vec(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.ct_add(*ai, *bi));
+	}
+
+	/// Modular subtraction of vectors in place in variable time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -142,7 +203,16 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
 	}
 
-	/// Modular multiplication of vectors in place.
+	/// Modular subtraction of vectors in place in constant time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub fn ct_sub_vec(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.ct_sub(*ai, *bi));
+	}
+
+	/// Modular multiplication of vectors in place in variable time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
@@ -155,6 +225,19 @@ impl Modulus {
 		}
 	}
 
+	/// Modular multiplication of vectors in place in constant time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub fn ct_mul_vec(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		if self.supports_opt {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.ct_mul_opt(*ai, *bi));
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.ct_mul(*ai, *bi));
+		}
+	}
+
 	/// Compute the Shoup representation of a vector.
 	///
 	/// Aborts if any of the values of the vector is >= p in debug mode.
@@ -164,7 +247,7 @@ impl Modulus {
 		a_shoup
 	}
 
-	/// Shoup modular multiplication of vectors in place.
+	/// Shoup modular multiplication of vectors in place in variable time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
 	pub fn mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
@@ -176,23 +259,54 @@ impl Modulus {
 			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
-	/// Reduce a vector in place.
+	/// Shoup modular multiplication of vectors in place in constant time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub fn ct_mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+		debug_assert_eq!(a.len(), b_shoup.len());
+		debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
+
+		izip!(a.iter_mut(), b.iter(), b_shoup.iter())
+			.for_each(|(ai, bi, bi_shoup)| *ai = self.ct_mul_shoup(*ai, *bi, *bi_shoup));
+	}
+
+	/// Reduce a vector in place in variable time.
 	pub fn reduce_vec(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
 	}
 
-	/// Reduce a vector.
+	/// Reduce a vector in variable time.
 	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
 		let mut b = a.to_vec();
 		b.iter_mut().for_each(|bi| *bi = self.reduce(*bi));
 		b
 	}
 
-	/// Modular negation of a vector in place.
+	/// Reduce a vector in place in constant time.
+	pub fn ct_reduce_vec(&self, a: &mut [u64]) {
+		a.iter_mut().for_each(|ai| *ai = self.ct_reduce(*ai));
+	}
+
+	/// Reduce a vector in constant time.
+	pub fn ct_reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
+		let mut b = a.to_vec();
+		b.iter_mut().for_each(|bi| *bi = self.ct_reduce(*bi));
+		b
+	}
+
+	/// Modular negation of a vector in place in variable time.
 	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
 	pub fn neg_vec(&self, a: &mut [u64]) {
 		izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
+	}
+
+	/// Modular negation of a vector in place in constant time.
+	///
+	/// Aborts if any of the values in the vector is >= p in debug mode.
+	pub fn ct_neg_vec(&self, a: &mut [u64]) {
+		izip!(a.iter_mut()).for_each(|ai| *ai = self.ct_neg(*ai));
 	}
 
 	/// Modular exponentiation in variable time.
@@ -238,9 +352,19 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
+	/// Modular reduction of a u128 in constant time.
+	pub fn ct_reduce_u128(&self, a: u128) -> u64 {
+		Self::ct_reduce1(self.lazy_reduce_u128(a), self.p)
+	}
+
 	/// Modular reduction of a u64 in variable time.
 	pub fn reduce(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce(a), self.p)
+	}
+
+	/// Modular reduction of a u64 in constant time.
+	pub fn ct_reduce(&self, a: u64) -> u64 {
+		Self::ct_reduce1(self.lazy_reduce(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in variable time.
@@ -249,12 +373,23 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
+	/// Optimized modular reduction of a u128 in constant time.
+	fn ct_reduce_opt_u128(&self, a: u128) -> u64 {
+		debug_assert!(self.supports_opt);
+		Self::ct_reduce1(self.lazy_reduce_opt_u128(a), self.p)
+	}
+
 	/// Optimized modular reduction of a u64 in variable time.
 	pub fn reduce_opt(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
-	/// Return x mod p.
+	/// Optimized modular reduction of a u64 in constant time.
+	pub fn ct_reduce_opt(&self, a: u64) -> u64 {
+		Self::ct_reduce1(self.lazy_reduce_opt(a), self.p)
+	}
+
+	/// Return x mod p in variable time.
 	///
 	/// Aborts if x >= 2 * p in debug mode.
 	fn reduce1(x: u64, p: u64) -> u64 {
@@ -268,7 +403,19 @@ impl Modulus {
 		}
 	}
 
-	/// Lazy modular reduction of a in variable time.
+	/// Return x mod p in constant time.
+	///
+	/// Aborts if x >= 2 * p in debug mode.
+	fn ct_reduce1(x: u64, p: u64) -> u64 {
+		debug_assert!(p >> 63 == 0);
+		debug_assert!(x < 2 * p);
+
+		let (y, _) = x.overflowing_sub(p);
+		let (b, _) = 0u64.overflowing_sub((x < p) as u64);
+		(b & x) | ((!b) & y)
+	}
+
+	/// Lazy modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	pub fn lazy_reduce_u128(&self, a: u128) -> u64 {
 		let a_lo = a as u64;
@@ -301,7 +448,7 @@ impl Modulus {
 		r
 	}
 
-	/// Lazy optimized modular reduction of a in variable time.
+	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
@@ -317,7 +464,7 @@ impl Modulus {
 		r
 	}
 
-	/// Lazy optimized modular reduction of a in variable time.
+	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
