@@ -1,15 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use crrust_math::zq::Modulus;
-use rand::RngCore;
-
-fn random_vector(size: usize, p: u64) -> Vec<u64> {
-	let mut rng = rand::thread_rng();
-	let mut v = vec![];
-	for _ in 0..size {
-		v.push(rng.next_u64() % p)
-	}
-	v
-}
 
 pub fn zq_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("zq");
@@ -18,9 +8,9 @@ pub fn zq_benchmark(c: &mut Criterion) {
 	let p = 4611686018326724609;
 
 	for vector_size in [1024usize, 4096].iter() {
-		let mut a = random_vector(*vector_size, p);
-		let c = random_vector(*vector_size, p);
 		let q = Modulus::new(p).unwrap();
+		let mut a = q.random_vec(*vector_size);
+		let c = q.random_vec(*vector_size);
 		let c_shoup = q.shoup_vec(&c);
 
 		group.bench_function(BenchmarkId::new("add_vec", vector_size), |b| {
