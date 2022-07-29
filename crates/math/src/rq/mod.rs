@@ -2,6 +2,9 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
+pub mod traits;
+pub mod mod_switcher;
+
 use crate::rns::RnsContext;
 use crate::zq::{ntt::NttOperator, Modulus};
 use fhers_protos::protos::rq as proto_rq;
@@ -15,6 +18,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
 };
+use traits::TryConvertFrom;
 
 /// Struct that holds the context associated with elements in rq.
 #[derive(Debug, Clone, PartialEq)]
@@ -291,27 +295,6 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 
 		Poly::try_convert_from(coefficients, ctx, representation_from_proto)
 	}
-}
-
-/// Conversions to create polynomials. We unfortunaly cannot use the `TryFrom` trait from std::convert
-/// because we need to specify additional parameters, and if we try to redefine a `TryFrom` trait here,
-/// we need to fully specify the trait when we use it because of the blanket implementation
-/// <https://github.com/rust-lang/rust/issues/50133#issuecomment-488512355>.
-pub trait TryConvertFrom<T>
-where
-	Self: Sized,
-{
-	/// The type of errors.
-	type Error;
-
-	/// Attempt to convert the `value` into a polynomial with a specific context and under a specific representation.
-	fn try_convert_from<R>(
-		value: T,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>;
 }
 
 impl TryConvertFrom<u64> for Poly {
