@@ -2,8 +2,8 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
-use crate::protos::rq::Rq;
 use crate::zq::{ntt::NttOperator, Modulus};
+use fhers_protos::protos::rq as proto_rq;
 use itertools::izip;
 use ndarray::Array2;
 use protobuf::EnumOrUnknown;
@@ -208,21 +208,18 @@ impl Poly {
 	}
 }
 
-impl From<&Poly> for Rq {
+impl From<&Poly> for proto_rq::Rq {
 	fn from(p: &Poly) -> Self {
-		let mut proto = Rq::new();
+		let mut proto = proto_rq::Rq::new();
 		match p.representation {
 			Representation::PowerBasis => {
-				proto.representation =
-					EnumOrUnknown::new(crate::protos::rq::rq::Representation::POWERBASIS);
+				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::POWERBASIS);
 			}
 			Representation::Ntt => {
-				proto.representation =
-					EnumOrUnknown::new(crate::protos::rq::rq::Representation::NTT);
+				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::NTT);
 			}
 			Representation::NttShoup => {
-				proto.representation =
-					EnumOrUnknown::new(crate::protos::rq::rq::Representation::NTTSHOUP);
+				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::NTTSHOUP);
 			}
 		}
 		let mut serialization_length = 0;
@@ -238,11 +235,11 @@ impl From<&Poly> for Rq {
 	}
 }
 
-impl TryConvertFrom<&Rq> for Poly {
+impl TryConvertFrom<&proto_rq::Rq> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		value: &Rq,
+		value: &proto_rq::Rq,
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
@@ -251,9 +248,9 @@ impl TryConvertFrom<&Rq> for Poly {
 	{
 		let repr = value.representation.enum_value_or_default();
 		let representation_from_proto = match repr {
-			crate::protos::rq::rq::Representation::POWERBASIS => Representation::PowerBasis,
-			crate::protos::rq::rq::Representation::NTT => Representation::Ntt,
-			crate::protos::rq::rq::Representation::NTTSHOUP => Representation::NttShoup,
+			proto_rq::rq::Representation::POWERBASIS => Representation::PowerBasis,
+			proto_rq::rq::Representation::NTT => Representation::Ntt,
+			proto_rq::rq::Representation::NTTSHOUP => Representation::NttShoup,
 			_ => return Err("Unknown representation"),
 		};
 
@@ -645,8 +642,8 @@ impl Neg for &Poly {
 #[cfg(test)]
 mod tests {
 	use super::{Context, Poly, Representation, TryConvertFrom};
-	use crate::protos::rq::Rq;
 	use crate::zq::{ntt::supports_ntt, Modulus};
+	use fhers_protos::protos::rq as proto_rq;
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
 	use rand::{thread_rng, Rng, SeedableRng};
@@ -1085,7 +1082,7 @@ mod tests {
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
 			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let proto = Rq::from(&p);
+			let proto = proto_rq::Rq::from(&p);
 			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
 			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
 			assert_eq!(
@@ -1102,7 +1099,7 @@ mod tests {
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
 		let p = Poly::random(&ctx, Representation::PowerBasis);
-		let proto = Rq::from(&p);
+		let proto = proto_rq::Rq::from(&p);
 		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
 		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
 		assert_eq!(

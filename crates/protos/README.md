@@ -9,5 +9,5 @@ cargo install protobuf-codegen
 
 Run
 ```bash
-protoc --rust_out . *.proto
+protoc --rust_out src/protos src/protos/*.proto
 ```

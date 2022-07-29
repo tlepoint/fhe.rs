@@ -18,6 +18,7 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 ndarray = "0.15.4"
 util = { version = "0.1.0", path = "../util" }
+fhers_protos = { version = "0.1.0", path = "../protos" }
 protobuf = "3.1.0"
 
 [dev-dependencies]
@@ -39,7 +40,3 @@ harness = false
 [[bench]]
 name = "rns"
 harness = false
-
-[build-dependencies]
-protobuf-codegen = "3.1.0"
-protoc-rust = "2.27.1"
