@@ -18,7 +18,7 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 ndarray = "0.15.4"
 util = { version = "0.1.0", path = "../util" }
-zeroize = "1.5.7"
+protobuf = "3.1.0"
 
 [dev-dependencies]
 criterion = "0.3.6"
@@ -39,3 +39,7 @@ harness = false
 [[bench]]
 name = "rns"
 harness = false
+
+[build-dependencies]
+protobuf-codegen = "3.1.0"
+protoc-rust = "2.27.1"

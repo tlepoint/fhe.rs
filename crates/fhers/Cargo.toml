@@ -11,4 +11,5 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 math = { version = "0.1.0", path = "../math" }
+rlwe = { version = "0.1.0", path = "../rlwe" }
 util = { version = "0.1.0", path = "../util" }

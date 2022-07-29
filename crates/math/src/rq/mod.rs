@@ -2,9 +2,11 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
+use crate::protos::rq::Rq;
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
 use ndarray::Array2;
+use protobuf::{EnumOrUnknown, Message};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -198,6 +200,79 @@ impl Poly {
 		}
 		p
 	}
+
+	/// Serialize
+	pub fn serialize(&self) -> Vec<u8> {
+		let mut proto = Rq::new();
+		match self.representation {
+			Representation::PowerBasis => {
+				proto.representation =
+					EnumOrUnknown::new(crate::protos::rq::rq::Representation::POWERBASIS);
+			}
+			Representation::Ntt => {
+				proto.representation =
+					EnumOrUnknown::new(crate::protos::rq::rq::Representation::NTT);
+			}
+			Representation::NttShoup => {
+				proto.representation =
+					EnumOrUnknown::new(crate::protos::rq::rq::Representation::NTTSHOUP);
+			}
+		}
+		let mut serialization_length = 0;
+		izip!(&self.ctx.q)
+			.for_each(|qi| serialization_length += qi.serialization_length(self.ctx.degree));
+		let mut serialization = Vec::with_capacity(serialization_length);
+
+		izip!(self.coefficients.outer_iter(), &self.ctx.q)
+			.for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
+		proto.coefficients = serialization;
+		proto.degree = self.ctx.degree as u32;
+		proto.write_to_bytes().unwrap()
+	}
+
+	/// Deserialize
+	pub fn deserialize(ctx: &Rc<Context>, bytes: &[u8]) -> Option<Self> {
+		let proto = Rq::parse_from_bytes(bytes);
+		if let Ok(proto) = proto {
+			let representation = match proto.representation.unwrap() {
+				crate::protos::rq::rq::Representation::POWERBASIS => {
+					Some(Representation::PowerBasis)
+				}
+				crate::protos::rq::rq::Representation::NTT => Some(Representation::Ntt),
+				crate::protos::rq::rq::Representation::NTTSHOUP => Some(Representation::NttShoup),
+				_ => None,
+			}?;
+			let degree = proto.degree as usize;
+			if degree % 8 != 0 {
+				return None;
+			}
+
+			let mut expected_nbytes = 0;
+			izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
+			if proto.coefficients.len() != expected_nbytes {
+				return None;
+			}
+
+			let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
+			let mut index = 0;
+			for i in 0..ctx.q.len() {
+				let qi = &ctx.q[i];
+				let size = qi.serialization_length(degree);
+				let mut v = qi.deserialize_vec(&proto.coefficients[index..index + size])?;
+				coefficients.append(&mut v);
+				index += size;
+			}
+
+			let p = Poly::try_convert_from(coefficients, ctx, representation);
+			if p.is_ok() {
+				p.ok()
+			} else {
+				None
+			}
+		} else {
+			None
+		}
+	}
 }
 
 /// Conversions to create polynomials. We unfortunaly cannot use the `TryFrom` trait from std::convert
@@ -362,7 +437,7 @@ impl<const N: usize> TryConvertFrom<&[u64; N]> for Poly {
 }
 
 impl From<&Poly> for Vec<u64> {
-	fn from(p: &Poly) -> Vec<u64> {
+	fn from(p: &Poly) -> Self {
 		p.coefficients.as_slice().unwrap().to_vec()
 	}
 }
@@ -561,8 +636,8 @@ mod tests {
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
 			let q = Poly::zero(&ctx, Representation::Ntt);
 			assert_ne!(p, q);
-			assert_eq!(Vec::from(&p), &[0, 0, 0, 0, 0, 0, 0, 0]);
-			assert_eq!(Vec::from(&q), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::try_from(&p).unwrap(), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::try_from(&q).unwrap(), &[0, 0, 0, 0, 0, 0, 0, 0]);
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
@@ -570,11 +645,11 @@ mod tests {
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
 		assert_eq!(
-			Vec::from(&p),
+			Vec::try_from(&p).unwrap(),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
 		assert_eq!(
-			Vec::from(&q),
+			Vec::try_from(&q).unwrap(),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
 	}
@@ -763,19 +838,19 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).unwrap();
 				let r = &p + &q;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).unwrap();
 				let r = &p + &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -787,11 +862,11 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
-			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).unwrap();
+			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).unwrap();
 			let r = &p + &q;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -802,19 +877,19 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::PowerBasis).unwrap();
 				let r = &p - &q;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).unwrap();
 				let r = &p - &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -826,11 +901,11 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
-			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).unwrap();
+			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).unwrap();
 			let r = &p - &q;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -841,12 +916,12 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).unwrap();
 				let r = &p * &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.mul_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -859,11 +934,11 @@ mod tests {
 				reference.extend(a3)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
-			let q = Poly::try_convert_from(&b2, &ctx, Representation::Ntt).ok().unwrap();
+			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).unwrap();
+			let q = Poly::try_convert_from(&b2, &ctx, Representation::Ntt).unwrap();
 			let r = &p * &q;
 			prop_assert_eq!(&r.representation, &Representation::Ntt);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -874,12 +949,12 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 				let d = m.reduce_vec_new(&b);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
-				let q = Poly::try_convert_from(&d, &ctx, Representation::NttShoup).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
+				let q = Poly::try_convert_from(&d, &ctx, Representation::NttShoup).unwrap();
 				let r = &p * &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.mul_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -892,11 +967,11 @@ mod tests {
 				reference.extend(a3)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).ok().unwrap();
-			let q = Poly::try_convert_from(&b2, &ctx, Representation::NttShoup).ok().unwrap();
+			let p = Poly::try_convert_from(&a2, &ctx, Representation::Ntt).unwrap();
+			let q = Poly::try_convert_from(&b2, &ctx, Representation::NttShoup).unwrap();
 			let r = &p * &q;
 			prop_assert_eq!(&r.representation, &Representation::Ntt);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -906,17 +981,17 @@ mod tests {
 				let m = Modulus::new(*modulus).unwrap();
 				let mut c = m.reduce_vec_new(&a);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).unwrap();
 				let r = -p;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 
-				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).ok().unwrap();
+				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
 				let r = -p;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(&Vec::from(&r), &c);
+				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -927,13 +1002,13 @@ mod tests {
 				reference.extend(c)
 			}
 			let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).ok().unwrap();
+			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).unwrap();
 			let r = -&p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 			let r = -p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::from(&r), &reference);
+			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
 		}
 	}
 
@@ -961,5 +1036,25 @@ mod tests {
 		let r = Poly::random(&ctx, Representation::Ntt);
 		assert_ne!(p, r);
 		assert_ne!(q, r);
+	}
+
+	#[test]
+	fn test_serialize() {
+		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+
+		let p = Poly::random(&ctx, Representation::PowerBasis);
+		let bytes = p.serialize();
+		let q = Poly::deserialize(&ctx, &bytes);
+		assert!(q.is_some_and(|qq| qq == &p));
+
+		let p = Poly::random(&ctx, Representation::Ntt);
+		let bytes = p.serialize();
+		let q = Poly::deserialize(&ctx, &bytes);
+		assert!(q.is_some_and(|qq| qq == &p));
+
+		let p = Poly::random(&ctx, Representation::NttShoup);
+		let bytes = p.serialize();
+		let q = Poly::deserialize(&ctx, &bytes);
+		assert!(q.is_some_and(|qq| qq == &p));
 	}
 }
