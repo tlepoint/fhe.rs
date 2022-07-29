@@ -279,6 +279,7 @@ impl RnsScaler {
 mod tests {
 	use super::RnsScaler;
 	use crate::rns::RnsContext;
+	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
 	use num_traits::Zero;
 	use rand::{thread_rng, RngCore};
@@ -334,7 +335,7 @@ mod tests {
 				let y = scaler.scale(&x, x.len(), true);
 				let z = scaler.scale(&x, x.len(), false);
 
-				let x_lift = q.lift(&x);
+				let x_lift = q.lift(&ArrayView1::from(&x));
 				let x_scaled = &x_lift * *numerator;
 				assert_eq!(y, q.project(&x_scaled));
 				assert_eq!(z, q.project(&x_scaled));
@@ -360,7 +361,7 @@ mod tests {
 						rng.next_u64() % q.moduli_u64[1],
 						rng.next_u64() % q.moduli_u64[2],
 					];
-					let x_lift = q.lift(&x);
+					let x_lift = q.lift(&ArrayView1::from(&x));
 
 					let y = scaler.scale(&x, x.len(), true);
 					let x_scaled_floor = (&x_lift * &n) / &d;

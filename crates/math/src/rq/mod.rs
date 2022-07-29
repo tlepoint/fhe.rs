@@ -2,10 +2,12 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
+use crate::rns::RnsContext;
 use crate::zq::{ntt::NttOperator, Modulus};
 use fhers_protos::protos::rq as proto_rq;
-use itertools::izip;
-use ndarray::Array2;
+use itertools::{izip, Itertools};
+use ndarray::{Array2, ArrayView, Axis};
+use num_bigint::BigUint;
 use protobuf::EnumOrUnknown;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -18,6 +20,7 @@ use std::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct Context {
 	q: Vec<Modulus>,
+	rns: RnsContext,
 	ops: Vec<NttOperator>,
 	degree: usize,
 	variable_time_enabled: bool,
@@ -32,6 +35,7 @@ impl Context {
 			None
 		} else {
 			let mut q = Vec::with_capacity(moduli.len());
+			let rns = RnsContext::new(moduli)?;
 			let mut ops = Vec::with_capacity(moduli.len());
 			for modulus in moduli {
 				let qi = Modulus::new(*modulus);
@@ -45,6 +49,7 @@ impl Context {
 
 			Some(Self {
 				q,
+				rns,
 				ops,
 				degree,
 				variable_time_enabled: false,
@@ -442,6 +447,50 @@ impl TryConvertFrom<&[u64]> for Poly {
 	}
 }
 
+impl TryConvertFrom<&[BigUint]> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from<R>(
+		v: &[BigUint],
+		ctx: &Rc<Context>,
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		let repr = representation.into();
+
+		if v.len() > ctx.degree {
+			Err("The slice contains too many big integers compared to the polynomial degree")
+		} else if repr.is_some() {
+			let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
+
+			izip!(coefficients.axis_iter_mut(Axis(1)), v).for_each(|(mut c, vi)| {
+				// c.clone_from(&ctx.rns.project(vi));
+				c.assign(&ArrayView::from(&ctx.rns.project(vi)));
+			});
+
+			let mut p = Self {
+				ctx: ctx.clone(),
+				representation: repr.unwrap(),
+				coefficients,
+				coefficients_shoup: None,
+			};
+
+			match p.representation {
+				Representation::PowerBasis => Ok(p),
+				Representation::Ntt => Ok(p),
+				Representation::NttShoup => {
+					p.compute_coefficients_shoup();
+					Ok(p)
+				}
+			}
+		} else {
+			Err("When converting from a vector, the representation needs to be specified")
+		}
+	}
+}
+
 impl TryConvertFrom<&Vec<u64>> for Poly {
 	type Error = &'static str;
 
@@ -477,6 +526,14 @@ impl<const N: usize> TryConvertFrom<&[u64; N]> for Poly {
 impl From<&Poly> for Vec<u64> {
 	fn from(p: &Poly) -> Self {
 		p.coefficients.as_slice().unwrap().to_vec()
+	}
+}
+
+impl From<&Poly> for Vec<BigUint> {
+	fn from(p: &Poly) -> Self {
+		izip!(p.coefficients.axis_iter(Axis(1)))
+			.map(|c| p.ctx.rns.lift(&c))
+			.collect_vec()
 	}
 }
 
@@ -644,6 +701,8 @@ mod tests {
 	use super::{Context, Poly, Representation, TryConvertFrom};
 	use crate::zq::{ntt::supports_ntt, Modulus};
 	use fhers_protos::protos::rq as proto_rq;
+	use num_bigint::BigUint;
+	use num_traits::Zero;
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
 	use rand::{thread_rng, Rng, SeedableRng};
@@ -670,13 +729,24 @@ mod tests {
 
 	#[test]
 	fn test_poly_zero() {
+		let reference = &[
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+			BigUint::zero(),
+		];
+
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
 			let q = Poly::zero(&ctx, Representation::Ntt);
 			assert_ne!(p, q);
-			assert_eq!(Vec::try_from(&p).unwrap(), &[0, 0, 0, 0, 0, 0, 0, 0]);
-			assert_eq!(Vec::try_from(&q).unwrap(), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::<u64>::from(&p), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::<u64>::from(&q), &[0, 0, 0, 0, 0, 0, 0, 0]);
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
@@ -684,13 +754,15 @@ mod tests {
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
 		assert_eq!(
-			Vec::try_from(&p).unwrap(),
+			Vec::<u64>::from(&p),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
 		assert_eq!(
-			Vec::try_from(&q).unwrap(),
+			Vec::<u64>::from(&q),
 			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 		);
+		assert_eq!(Vec::<BigUint>::from(&p), reference);
+		assert_eq!(Vec::<BigUint>::from(&q), reference);
 	}
 
 	#[test]
@@ -882,14 +954,14 @@ mod tests {
 				let r = &p + &q;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 
 				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
 				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).unwrap();
 				let r = &p + &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.add_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -905,7 +977,7 @@ mod tests {
 			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).unwrap();
 			let r = &p + &q;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -921,14 +993,14 @@ mod tests {
 				let r = &p - &q;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 
 				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
 				let q = Poly::try_convert_from(&d, &ctx, Representation::Ntt).unwrap();
 				let r = &p - &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.sub_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -944,7 +1016,7 @@ mod tests {
 			let q = Poly::try_convert_from(&b, &ctx, Representation::PowerBasis).unwrap();
 			let r = &p - &q;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -960,7 +1032,7 @@ mod tests {
 				let r = &p * &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.mul_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -977,7 +1049,7 @@ mod tests {
 			let q = Poly::try_convert_from(&b2, &ctx, Representation::Ntt).unwrap();
 			let r = &p * &q;
 			prop_assert_eq!(&r.representation, &Representation::Ntt);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -993,7 +1065,7 @@ mod tests {
 				let r = &p * &q;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.mul_vec(&mut c, &d);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -1010,7 +1082,7 @@ mod tests {
 			let q = Poly::try_convert_from(&b2, &ctx, Representation::NttShoup).unwrap();
 			let r = &p * &q;
 			prop_assert_eq!(&r.representation, &Representation::Ntt);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}
 
 		#[test]
@@ -1024,13 +1096,13 @@ mod tests {
 				let r = -p;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 
 				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
 				let r = -p;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.neg_vec(&mut c);
-				prop_assert_eq!(&Vec::try_from(&r).unwrap(), &c);
+				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 			}
 
 			let mut reference = vec![];
@@ -1044,10 +1116,10 @@ mod tests {
 			let p = Poly::try_convert_from(&a, &ctx, Representation::PowerBasis).unwrap();
 			let r = -&p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 			let r = -p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
-			prop_assert_eq!(&Vec::try_from(&r).unwrap(), &reference);
+			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}
 	}
 
@@ -1119,5 +1191,25 @@ mod tests {
 				.expect_err("Should fail because of incorrect context"),
 			"Invalid coefficients"
 		);
+	}
+
+	#[test]
+	fn test_biguint() {
+		for modulus in MODULI {
+			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let p_coeffs = Vec::<BigUint>::from(&p);
+			let q = Poly::try_convert_from(p_coeffs.as_slice(), &ctx, Representation::PowerBasis)
+				.unwrap();
+			assert_eq!(p, q);
+		}
+
+		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
+		let p = Poly::random(&ctx, Representation::PowerBasis);
+		let p_coeffs = Vec::<BigUint>::from(&p);
+		assert_eq!(p_coeffs.len(), ctx.degree);
+		let q =
+			Poly::try_convert_from(p_coeffs.as_slice(), &ctx, Representation::PowerBasis).unwrap();
+		assert_eq!(p, q);
 	}
 }
