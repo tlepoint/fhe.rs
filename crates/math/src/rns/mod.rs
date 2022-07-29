@@ -4,6 +4,7 @@
 
 use crate::zq::Modulus;
 use itertools::izip;
+use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
 use num_traits::{cast::ToPrimitive, One, Zero};
@@ -110,7 +111,7 @@ impl RnsContext {
 	/// Lift rests into a BigUint.
 	///
 	/// Aborts if the number of rests is different than the number of moduli in debug mode.
-	pub fn lift(&self, rests: &[u64]) -> BigUint {
+	pub fn lift(&self, rests: &ArrayView1<u64>) -> BigUint {
 		let mut result = BigUint::zero();
 		izip!(rests.iter(), self.garner.iter())
 			.for_each(|(r_i, garner_i)| result += garner_i * *r_i);
@@ -122,6 +123,7 @@ impl RnsContext {
 mod tests {
 
 	use super::RnsContext;
+	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
 	use rand::RngCore;
 
@@ -156,30 +158,33 @@ mod tests {
 
 		let mut rests = rns.project(&BigUint::from(0u64));
 		assert_eq!(&rests, &[0u64, 0, 0]);
-		assert_eq!(rns.lift(&rests), BigUint::from(0u64));
+		assert_eq!(rns.lift(&ArrayView1::from(&rests)), BigUint::from(0u64));
 
 		rests = rns.project(&BigUint::from(4u64));
 		assert_eq!(&rests, &[0u64, 4, 4]);
-		assert_eq!(rns.lift(&rests), BigUint::from(4u64));
+		assert_eq!(rns.lift(&ArrayView1::from(&rests)), BigUint::from(4u64));
 
 		rests = rns.project(&BigUint::from(15u64));
 		assert_eq!(&rests, &[3u64, 0, 15]);
-		assert_eq!(rns.lift(&rests), BigUint::from(15u64));
+		assert_eq!(rns.lift(&ArrayView1::from(&rests)), BigUint::from(15u64));
 
 		rests = rns.project(&BigUint::from(1153u64));
 		assert_eq!(&rests, &[1u64, 13, 0]);
-		assert_eq!(rns.lift(&rests), BigUint::from(1153u64));
+		assert_eq!(rns.lift(&ArrayView1::from(&rests)), BigUint::from(1153u64));
 
 		rests = rns.project(&BigUint::from(product - 1));
 		assert_eq!(&rests, &[3u64, 14, 1152]);
-		assert_eq!(rns.lift(&rests), BigUint::from(product - 1));
+		assert_eq!(
+			rns.lift(&ArrayView1::from(&rests)),
+			BigUint::from(product - 1)
+		);
 
 		let mut rng = rand::thread_rng();
 
 		for _ in 0..ntests {
 			let b = BigUint::from(rng.next_u64() % product);
 			rests = rns.project(&b);
-			assert_eq!(rns.lift(&rests), b);
+			assert_eq!(rns.lift(&ArrayView1::from(&rests)), b);
 		}
 	}
 }
