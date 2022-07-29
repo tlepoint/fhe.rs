@@ -6,7 +6,7 @@ use crate::protos::rq::Rq;
 use crate::zq::{ntt::NttOperator, Modulus};
 use itertools::izip;
 use ndarray::Array2;
-use protobuf::{EnumOrUnknown, Message};
+use protobuf::EnumOrUnknown;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -107,6 +107,12 @@ impl Poly {
 	///
 	/// Panics if the change of representation is illegal.
 	pub fn change_representation(&mut self, to: Representation) {
+		// If we are already in the correct representation, returns immediately.
+		if self.representation == to {
+			return;
+		}
+
+		// TODO: Should we use `match` instead?
 		if self.representation == Representation::PowerBasis && to == Representation::Ntt {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
 				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
@@ -200,11 +206,12 @@ impl Poly {
 		}
 		p
 	}
+}
 
-	/// Serialize
-	pub fn serialize(&self) -> Vec<u8> {
+impl From<&Poly> for Rq {
+	fn from(p: &Poly) -> Self {
 		let mut proto = Rq::new();
-		match self.representation {
+		match p.representation {
 			Representation::PowerBasis => {
 				proto.representation =
 					EnumOrUnknown::new(crate::protos::rq::rq::Representation::POWERBASIS);
@@ -219,59 +226,68 @@ impl Poly {
 			}
 		}
 		let mut serialization_length = 0;
-		izip!(&self.ctx.q)
-			.for_each(|qi| serialization_length += qi.serialization_length(self.ctx.degree));
+		izip!(&p.ctx.q)
+			.for_each(|qi| serialization_length += qi.serialization_length(p.ctx.degree));
 		let mut serialization = Vec::with_capacity(serialization_length);
 
-		izip!(self.coefficients.outer_iter(), &self.ctx.q)
+		izip!(p.coefficients.outer_iter(), &p.ctx.q)
 			.for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
 		proto.coefficients = serialization;
-		proto.degree = self.ctx.degree as u32;
-		proto.write_to_bytes().unwrap()
+		proto.degree = p.ctx.degree as u32;
+		proto
 	}
+}
 
-	/// Deserialize
-	pub fn deserialize(ctx: &Rc<Context>, bytes: &[u8]) -> Option<Self> {
-		let proto = Rq::parse_from_bytes(bytes);
-		if let Ok(proto) = proto {
-			let representation = match proto.representation.unwrap() {
-				crate::protos::rq::rq::Representation::POWERBASIS => {
-					Some(Representation::PowerBasis)
-				}
-				crate::protos::rq::rq::Representation::NTT => Some(Representation::Ntt),
-				crate::protos::rq::rq::Representation::NTTSHOUP => Some(Representation::NttShoup),
-				_ => None,
-			}?;
-			let degree = proto.degree as usize;
-			if degree % 8 != 0 {
-				return None;
-			}
+impl TryConvertFrom<&Rq> for Poly {
+	type Error = &'static str;
 
-			let mut expected_nbytes = 0;
-			izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
-			if proto.coefficients.len() != expected_nbytes {
-				return None;
-			}
+	fn try_convert_from<R>(
+		value: &Rq,
+		ctx: &Rc<Context>,
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		let repr = value.representation.enum_value_or_default();
+		let representation_from_proto = match repr {
+			crate::protos::rq::rq::Representation::POWERBASIS => Representation::PowerBasis,
+			crate::protos::rq::rq::Representation::NTT => Representation::Ntt,
+			crate::protos::rq::rq::Representation::NTTSHOUP => Representation::NttShoup,
+			_ => return Err("Unknown representation"),
+		};
 
-			let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
-			let mut index = 0;
-			for i in 0..ctx.q.len() {
-				let qi = &ctx.q[i];
-				let size = qi.serialization_length(degree);
-				let mut v = qi.deserialize_vec(&proto.coefficients[index..index + size])?;
-				coefficients.append(&mut v);
-				index += size;
-			}
-
-			let p = Poly::try_convert_from(coefficients, ctx, representation);
-			if p.is_ok() {
-				p.ok()
-			} else {
-				None
-			}
-		} else {
-			None
+		if (representation.into() as Option<Representation>)
+			.is_some_and(|r| *r != representation_from_proto)
+		{
+			return Err("The representation asked for does not match the representation in the serialization");
 		}
+
+		let degree = value.degree as usize;
+		if degree % 8 != 0 || degree < 8 {
+			return Err("Invalid degree");
+		}
+
+		let mut expected_nbytes = 0;
+		izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
+		if value.coefficients.len() != expected_nbytes {
+			return Err("Invalid coefficients");
+		}
+
+		let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
+		let mut index = 0;
+		for i in 0..ctx.q.len() {
+			let qi = &ctx.q[i];
+			let size = qi.serialization_length(degree);
+			let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
+			if v == None {
+				return Err("Could not deserialize the polynomial coefficients");
+			}
+			coefficients.append(&mut v.unwrap());
+			index += size;
+		}
+
+		Poly::try_convert_from(coefficients, ctx, representation_from_proto)
 	}
 }
 
@@ -287,23 +303,29 @@ where
 	type Error;
 
 	/// Attempt to convert the `value` into a polynomial with a specific context and under a specific representation.
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		value: T,
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error>;
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>;
 }
 
 impl TryConvertFrom<u64> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		value: u64,
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
-		match representation {
-			Representation::PowerBasis => Poly::try_convert_from(&[value], ctx, representation),
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		let repr = representation.into();
+		match repr {
+			Some(Representation::PowerBasis) => Poly::try_convert_from(&[value], ctx, repr),
 			_ => {
 				Err("Converting from constant values is only possible in PowerBasis representation")
 			}
@@ -314,17 +336,21 @@ impl TryConvertFrom<u64> for Poly {
 impl TryConvertFrom<Vec<u64>> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		v: Vec<u64>,
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
-		match representation {
-			Representation::Ntt => {
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		let repr = representation.into();
+		match repr {
+			Some(Representation::Ntt) => {
 				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
 					Ok(Self {
 						ctx: ctx.clone(),
-						representation,
+						representation: repr.unwrap(),
 						coefficients,
 						coefficients_shoup: None,
 					})
@@ -332,11 +358,11 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					Err("In Ntt representation, all coefficients must be specified")
 				}
 			}
-			Representation::NttShoup => {
+			Some(Representation::NttShoup) => {
 				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
 					let mut p = Self {
 						ctx: ctx.clone(),
-						representation,
+						representation: repr.unwrap(),
 						coefficients,
 						coefficients_shoup: None,
 					};
@@ -346,18 +372,18 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					Err("In NttShoup representation, all coefficients must be specified")
 				}
 			}
-			Representation::PowerBasis => {
+			Some(Representation::PowerBasis) => {
 				if v.len() == ctx.q.len() * ctx.degree {
 					let coefficients =
 						Array2::from_shape_vec((ctx.q.len(), ctx.degree), v).unwrap();
 					Ok(Self {
 						ctx: ctx.clone(),
-						representation,
+						representation: repr.unwrap(),
 						coefficients,
 						coefficients_shoup: None,
 					})
 				} else if v.len() <= ctx.degree {
-					let mut out = Self::zero(ctx, representation);
+					let mut out = Self::zero(ctx, repr.unwrap());
 					izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
 						let wi = w.as_slice_mut().unwrap();
 						wi[..v.len()].copy_from_slice(&v);
@@ -368,6 +394,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree")
 				}
 			}
+			None => Err("When converting from a vector, the representation needs to be specified"),
 		}
 	}
 }
@@ -375,24 +402,29 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 impl TryConvertFrom<Array2<u64>> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		a: Array2<u64>,
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
 		if a.shape() != [ctx.q.len(), ctx.degree] {
 			Err("The array of coefficient does not have the correct shape")
-		} else {
+		} else if let Some(repr) = representation.into() {
 			let mut p = Self {
 				ctx: ctx.clone(),
-				representation: representation.clone(),
+				representation: repr,
 				coefficients: a,
 				coefficients_shoup: None,
 			};
-			if representation == Representation::NttShoup {
+			if p.representation == Representation::NttShoup {
 				p.compute_coefficients_shoup()
 			}
 			Ok(p)
+		} else {
+			Err("When converting from a 2-dimensional array, the representation needs to be specified")
 		}
 	}
 }
@@ -400,11 +432,14 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 impl TryConvertFrom<&[u64]> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		v: &[u64],
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
 		let v_clone: Vec<u64> = v.to_vec();
 		Poly::try_convert_from(v_clone, ctx, representation)
 	}
@@ -413,11 +448,14 @@ impl TryConvertFrom<&[u64]> for Poly {
 impl TryConvertFrom<&Vec<u64>> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		v: &Vec<u64>,
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
 		let v_clone: Vec<u64> = v.clone();
 		Poly::try_convert_from(v_clone, ctx, representation)
 	}
@@ -426,11 +464,14 @@ impl TryConvertFrom<&Vec<u64>> for Poly {
 impl<const N: usize> TryConvertFrom<&[u64; N]> for Poly {
 	type Error = &'static str;
 
-	fn try_convert_from(
+	fn try_convert_from<R>(
 		v: &[u64; N],
 		ctx: &Rc<Context>,
-		representation: Representation,
-	) -> Result<Self, Self::Error> {
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
 		let v_clone: Vec<u64> = v.to_vec();
 		Poly::try_convert_from(v_clone, ctx, representation)
 	}
@@ -604,6 +645,7 @@ impl Neg for &Poly {
 #[cfg(test)]
 mod tests {
 	use super::{Context, Poly, Representation, TryConvertFrom};
+	use crate::protos::rq::Rq;
 	use crate::zq::{ntt::supports_ntt, Modulus};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, ProptestConfig};
@@ -1039,22 +1081,46 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize() {
+	fn test_proto() {
+		for modulus in MODULI {
+			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
+			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let proto = Rq::from(&p);
+			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
+			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
+			assert_eq!(
+				Poly::try_convert_from(&proto, &ctx, Representation::Ntt)
+					.expect_err("Should fail because of mismatched representations"),
+				"The representation asked for does not match the representation in the serialization"
+			);
+			assert_eq!(
+				Poly::try_convert_from(&proto, &ctx, Representation::NttShoup)
+					.expect_err("Should fail because of mismatched representations"),
+				"The representation asked for does not match the representation in the serialization"
+			);
+		}
+
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-
 		let p = Poly::random(&ctx, Representation::PowerBasis);
-		let bytes = p.serialize();
-		let q = Poly::deserialize(&ctx, &bytes);
-		assert!(q.is_some_and(|qq| qq == &p));
+		let proto = Rq::from(&p);
+		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
+		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
+		assert_eq!(
+			Poly::try_convert_from(&proto, &ctx, Representation::Ntt)
+				.expect_err("Should fail because of mismatched representations"),
+			"The representation asked for does not match the representation in the serialization"
+		);
+		assert_eq!(
+			Poly::try_convert_from(&proto, &ctx, Representation::NttShoup)
+				.expect_err("Should fail because of mismatched representations"),
+			"The representation asked for does not match the representation in the serialization"
+		);
 
-		let p = Poly::random(&ctx, Representation::Ntt);
-		let bytes = p.serialize();
-		let q = Poly::deserialize(&ctx, &bytes);
-		assert!(q.is_some_and(|qq| qq == &p));
-
-		let p = Poly::random(&ctx, Representation::NttShoup);
-		let bytes = p.serialize();
-		let q = Poly::deserialize(&ctx, &bytes);
-		assert!(q.is_some_and(|qq| qq == &p));
+		let ctx = Rc::new(Context::new(&MODULI[0..1], 8).unwrap());
+		assert_eq!(
+			Poly::try_convert_from(&proto, &ctx, None)
+				.expect_err("Should fail because of incorrect context"),
+			"Invalid coefficients"
+		);
 	}
 }
