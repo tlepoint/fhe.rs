@@ -1,6 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::rns::{RnsContext, RnsConverter, RnsScaler};
-use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
@@ -35,15 +34,17 @@ pub fn rns_benchmark(c: &mut Criterion) {
 		&BigUint::from(46116860181065u64),
 	);
 
+	let mut y = vec![0; p.len()];
 	group.bench_function(
 		BenchmarkId::new("converter", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| converter.convert(&ArrayView1::from(&x)));
+			b.iter(|| converter.convert(&(&x).into(), &mut (&mut y).into()));
 		},
 	);
 
+	let mut y = x.clone();
 	group.bench_function(BenchmarkId::new("scaler", q.len()), |b| {
-		b.iter(|| scaler.scale(&x, x.len(), true));
+		b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), true));
 	});
 
 	group.finish();

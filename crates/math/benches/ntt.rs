@@ -1,16 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::zq::{ntt::NttOperator, Modulus};
-use rand::RngCore;
-use std::{rc::Rc, vec};
-
-fn random_vector(size: usize, p: u64) -> Vec<u64> {
-	let mut rng = rand::thread_rng();
-	let mut v = vec![];
-	for _ in 0..size {
-		v.push(rng.next_u64() % p)
-	}
-	v
-}
+use std::rc::Rc;
 
 pub fn ntt_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("ntt");
@@ -19,8 +9,8 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 	let p = 4611686018326724609;
 
 	for vector_size in [1024usize, 4096].iter() {
-		let mut a = random_vector(*vector_size, p);
 		let q = Modulus::new(p).unwrap();
+		let mut a = q.random_vec(*vector_size);
 		let op = NttOperator::new(&Rc::new(q), *vector_size).unwrap();
 
 		group.bench_function(BenchmarkId::new("forward", vector_size), |b| {

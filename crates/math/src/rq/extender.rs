@@ -1,12 +1,12 @@
 #![warn(missing_docs, unused_imports)]
 
 //! Context extender to switch from polynomials in R_q\[x\] into polynomials
-//! in R_q\[x\] \times R_p\[x\].
+//! in R_q\[x\] \&times R_p\[x\].
 
 use super::{traits::ContextSwitcher, Context, Poly, Representation};
 use crate::rns::{RnsContext, RnsConverter};
 use itertools::{izip, Itertools};
-use ndarray::{s, Array2, ArrayView1, Axis};
+use ndarray::{s, Array2, Axis};
 use std::rc::Rc;
 
 /// Context extender.
@@ -68,8 +68,7 @@ impl ContextSwitcher for Extender {
 				p.coefficients.axis_iter(Axis(1))
 			)
 			.for_each(|(mut n_c, p_c)| {
-				let nc = self.converter.convert(&p_c);
-				n_c.assign(&ArrayView1::from(&nc));
+				self.converter.convert(&p_c, &mut n_c);
 			});
 
 			Ok(Poly {
@@ -85,7 +84,10 @@ impl ContextSwitcher for Extender {
 #[cfg(test)]
 mod tests {
 	use super::Extender;
-	use crate::rq::{traits::ContextSwitcher, Context, Poly, Representation};
+	use crate::{
+		rns::RnsContext,
+		rq::{traits::ContextSwitcher, Context, Poly, Representation},
+	};
 	use num_bigint::BigUint;
 	use std::rc::Rc;
 
@@ -95,11 +97,12 @@ mod tests {
 		4611686018326724609,
 		4611686018309947393,
 	];
-	static P: &[u64; 4] = &[
+	static P: &[u64; 5] = &[
 		1153,
 		4611686018257518593,
 		4611686018232352769,
 		4611686018171535361,
+		4611686018106523649,
 	];
 
 	#[test]
@@ -107,6 +110,7 @@ mod tests {
 
 	#[test]
 	fn test_extender() {
+		let ntests = 100;
 		let from = Rc::new(Context::new(Q, 8).unwrap());
 		let mut all_moduli = Q.to_vec();
 		all_moduli.append(&mut P.to_vec());
@@ -116,13 +120,24 @@ mod tests {
 		assert!(extender.is_ok());
 		let extender = extender.unwrap();
 
-		let poly = Poly::random(&from, Representation::PowerBasis);
-		let extended_poly = extender.switch_context(&poly);
-		assert!(extended_poly.is_ok());
+		for _ in 0..ntests {
+			let poly = Poly::random(&from, Representation::PowerBasis);
+			let poly_biguint = Vec::<BigUint>::from(&poly);
 
-		assert_eq!(
-			Vec::<BigUint>::from(&poly),
-			Vec::<BigUint>::from(&extended_poly.unwrap())
-		);
+			let extended_poly = extender.switch_context(&poly);
+			assert!(extended_poly.is_ok());
+			let extended_poly = extended_poly.unwrap();
+
+			let mut expected_biguint = poly_biguint.clone();
+			let rns = RnsContext::new(&all_moduli).unwrap();
+			for c in &mut expected_biguint {
+				// If this is a negative coefficient, set the expected biguint
+				// with regard to the large modulus instead.
+				if *c >= (poly.ctx.rns.modulus() >> 1usize) {
+					*c += rns.modulus() - poly.ctx.rns.modulus()
+				}
+			}
+			assert_eq!(expected_biguint, Vec::<BigUint>::from(&extended_poly));
+		}
 	}
 }
