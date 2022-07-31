@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::rns::{RnsContext, RnsConverter, RnsScaler};
+use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
@@ -37,7 +38,7 @@ pub fn rns_benchmark(c: &mut Criterion) {
 	group.bench_function(
 		BenchmarkId::new("converter", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| converter.convert(&x));
+			b.iter(|| converter.convert(&ArrayView1::from(&x)));
 		},
 	);
 

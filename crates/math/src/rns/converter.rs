@@ -6,6 +6,7 @@
 use super::RnsContext;
 use crate::{u256::U256, zq::Modulus};
 use itertools::izip;
+use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
@@ -72,7 +73,7 @@ impl RnsConverter {
 	/// Convert a RNS representation in context `from` into a representation in context `to`.
 	///
 	/// Aborts if the number of rests is different than the number of moduli in debug mode.
-	pub fn convert(&self, rests_from: &[u64]) -> Vec<u64> {
+	pub fn convert(&self, rests_from: &ArrayView1<u64>) -> Vec<u64> {
 		debug_assert_eq!(rests_from.len(), self.from.moduli_u64.len());
 
 		let mut rests_to = Vec::with_capacity(self.to.moduli_u64.len());
@@ -122,6 +123,7 @@ impl RnsConverter {
 mod tests {
 	use super::RnsConverter;
 	use crate::rns::RnsContext;
+	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
 	use rand::{thread_rng, RngCore};
 
@@ -142,13 +144,13 @@ mod tests {
 		let p = RnsContext::new(&[7, 13, 907]).unwrap();
 		let converter = RnsConverter::new(&q, &p);
 
-		let a = converter.convert(&[0, 0, 0]);
+		let a = converter.convert(&ArrayView1::from(&[0, 0, 0]));
 		assert_eq!(a, &[0, 0, 0]);
 
 		let mut rng = thread_rng();
 		for _ in 0..ntests {
 			let u = BigUint::from(rng.next_u64() % q_product);
-			let a = converter.convert(&q.project(&u));
+			let a = converter.convert(&ArrayView1::from(&q.project(&u)));
 			let b = p.project(&u);
 			assert_eq!(&a, &b);
 		}
