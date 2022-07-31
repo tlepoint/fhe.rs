@@ -5,6 +5,7 @@
 use super::RnsContext;
 use crate::u256::U256;
 use itertools::{izip, Itertools};
+use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
 
@@ -157,17 +158,25 @@ impl RnsScaler {
 		(projected, theta_lo, theta_hi, theta_sign)
 	}
 
-	/// Output the RNS representation of the underlying value scaled by numerator * denominator,
+	/// Output the RNS representation of the rests scaled by numerator * denominator,
 	/// and either rounded or floored.
-	///
 	///
 	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
 	/// if the size is not in [1, ..., rests.len()].
-	pub fn scale(&self, rests: &[u64], size: usize, floor: bool) -> Vec<u64> {
-		debug_assert_eq!(rests.len(), self.ctx.moduli_u64.len());
-		debug_assert!(size >= 1 && size <= rests.len());
+	pub fn scale_new(&self, rests: &ArrayView1<u64>, size: usize, floor: bool) -> Vec<u64> {
+		let mut out = vec![0; size];
+		self.scale(rests, &mut (&mut out).into(), floor);
+		out
+	}
 
-		let mut out = Vec::with_capacity(size);
+	/// Compute the RNS representation of the rests scaled by numerator * denominator,
+	/// and either rounded or floored, and store the result in `out`.
+	///
+	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
+	/// if the size of out is not in [1, ..., rests.len()].
+	pub fn scale(&self, rests: &ArrayView1<u64>, out: &mut ArrayViewMut1<u64>, floor: bool) {
+		debug_assert_eq!(rests.len(), self.ctx.moduli_u64.len());
+		debug_assert!(!out.is_empty() && out.len() <= rests.len());
 
 		// First, let's compute the inner product of the rests with theta_omega and theta_garner.
 		let mut sum_theta_garner = U256::zero();
@@ -256,22 +265,25 @@ impl RnsScaler {
 		}
 
 		// Let's compute [ sum(r_j * omega_j) - v * gamma + w] mod q_i
-		for i in 0..size {
-			let qi = &self.ctx.moduli[i];
+		for (out_i, qi, gamma_i, gamma_shoup_i, omega_i, omega_shoup_i) in izip!(
+			out.iter_mut(),
+			&self.ctx.moduli,
+			&self.gamma,
+			&self.gamma_shoup,
+			&self.omega,
+			&self.omega_shoup
+		) {
 			let vi = qi.lazy_reduce_u128(v);
 			let wi = qi.lazy_reduce_u128(w);
 			let mut yi = if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
 
-			yi += (qi.modulus() * 2 - qi.lazy_mul_shoup(vi, self.gamma[i], self.gamma_shoup[i]))
-				as u128;
+			yi += (qi.modulus() * 2 - qi.lazy_mul_shoup(vi, *gamma_i, *gamma_shoup_i)) as u128;
 
-			for (ri, omega_i, omega_shoup_i) in izip!(rests, &self.omega[i], &self.omega_shoup[i]) {
-				yi += qi.lazy_mul_shoup(*ri, *omega_i, *omega_shoup_i) as u128;
+			for (rj, omega_i_j, omega_shoup_i_j) in izip!(rests.iter(), omega_i, omega_shoup_i) {
+				yi += qi.lazy_mul_shoup(*rj, *omega_i_j, *omega_shoup_i_j) as u128;
 			}
-			out.push(qi.reduce_u128(yi));
+			*out_i = qi.reduce_u128(yi)
 		}
-
-		out
 	}
 }
 
@@ -310,8 +322,8 @@ mod tests {
 				rng.next_u64() % q.moduli_u64[1],
 				rng.next_u64() % q.moduli_u64[2],
 			];
-			let y = identity.scale(&x, x.len(), true);
-			let z = identity.scale(&x, x.len(), true);
+			let y = identity.scale_new(&(&x).into(), x.len(), true);
+			let z = identity.scale_new(&(&x).into(), x.len(), true);
 			assert_eq!(&x, &y);
 			assert_eq!(&x, &z);
 		}
@@ -332,8 +344,8 @@ mod tests {
 					rng.next_u64() % q.moduli_u64[1],
 					rng.next_u64() % q.moduli_u64[2],
 				];
-				let y = scaler.scale(&x, x.len(), true);
-				let z = scaler.scale(&x, x.len(), false);
+				let y = scaler.scale_new(&(&x).into(), x.len(), true);
+				let z = scaler.scale_new(&(&x).into(), x.len(), false);
 
 				let x_lift = q.lift(&ArrayView1::from(&x));
 				let x_scaled = &x_lift * *numerator;
@@ -363,11 +375,11 @@ mod tests {
 					];
 					let x_lift = q.lift(&ArrayView1::from(&x));
 
-					let y = scaler.scale(&x, x.len(), true);
+					let y = scaler.scale_new(&(&x).into(), x.len(), true);
 					let x_scaled_floor = (&x_lift * &n) / &d;
 					assert_eq!(y, q.project(&x_scaled_floor));
 
-					let z = scaler.scale(&x, x.len(), false);
+					let z = scaler.scale_new(&(&x).into(), x.len(), false);
 					let x_scaled_round = (&x_lift * &n + (&d >> 1)) / &d;
 					assert_eq!(z, q.project(&x_scaled_round));
 				}
