@@ -2,8 +2,8 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
+pub mod extender;
 pub mod traits;
-pub mod mod_switcher;
 
 use crate::rns::RnsContext;
 use crate::zq::{ntt::NttOperator, Modulus};
