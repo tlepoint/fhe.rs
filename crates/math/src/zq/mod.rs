@@ -229,6 +229,16 @@ impl Modulus {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
 	}
 
+	/// Modular reduction of a i64 in constant time.
+	fn reduce_i64(&self, a: i64) -> u64 {
+		self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
+	}
+
+	/// Reduce a vector in place in constant time.
+	pub fn reduce_vec_i64(&self, a: &[i64]) -> Vec<u64> {
+		a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec()
+	}
+
 	/// Reduce a vector in constant time.
 	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
 		let mut b = a.to_vec();
@@ -586,7 +596,13 @@ mod tests {
 		}
 
 		#[test]
-		fn test_reduce_128(p in valid_moduli(), a: u128) {
+		fn test_reduce_i64(p in valid_moduli(), a: i64) {
+			let b = if a < 0 { p.neg(p.reduce(-a as u64)) } else { p.reduce(a as u64) };
+			prop_assert_eq!(p.reduce_i64(a), b);
+		}
+
+		#[test]
+		fn test_reduce_u128(p in valid_moduli(), a: u128) {
 			prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
 		}
 
@@ -637,6 +653,12 @@ mod tests {
 			let mut b = a.clone();
 			p.reduce_vec(&mut b);
 			prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+		}
+
+		#[test]
+		fn test_reduce_vec_i64(p in valid_moduli(), a: Vec<i64>) {
+			let b = p.reduce_vec_i64(&a);
+			prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
 		}
 
 		#[test]

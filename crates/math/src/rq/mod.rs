@@ -18,7 +18,7 @@ use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
 };
-use traits::TryConvertFrom;
+use traits::{TryConvertFrom, Unsigned};
 
 /// Struct that holds the context associated with elements in rq.
 #[derive(Debug, Clone, PartialEq)]
@@ -297,11 +297,16 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 	}
 }
 
-impl TryConvertFrom<u64> for Poly {
+impl Unsigned for u8 {}
+impl Unsigned for u16 {}
+impl Unsigned for u32 {}
+impl Unsigned for u64 {}
+
+impl<T: Unsigned> TryConvertFrom<T> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		value: u64,
+		value: T,
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
@@ -414,19 +419,45 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 	}
 }
 
-impl TryConvertFrom<&[u64]> for Poly {
+impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		v: &[u64],
+		v: &[T],
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>,
 	{
-		let v_clone: Vec<u64> = v.to_vec();
+		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
 		Poly::try_convert_from(v_clone, ctx, representation)
+	}
+}
+
+impl TryConvertFrom<&[i64]> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from<R>(
+		v: &[i64],
+		ctx: &Rc<Context>,
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		if representation.into() != Some(Representation::PowerBasis) {
+			Err("Converting signed integer require to import in PowerBasis representation")
+		} else if v.len() <= ctx.degree {
+			let mut out = Self::zero(ctx, Representation::PowerBasis);
+			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
+				let wi = w.as_slice_mut().unwrap();
+				wi[..v.len()].copy_from_slice(&qi.reduce_vec_i64(v));
+			});
+			Ok(out)
+		} else {
+			Err("In PowerBasis representation with signed integers, only `degree` coefficients can be specified")
+		}
 	}
 }
 
@@ -474,35 +505,49 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 	}
 }
 
-impl TryConvertFrom<&Vec<u64>> for Poly {
+impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		v: &Vec<u64>,
+		v: &Vec<T>,
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>,
 	{
-		let v_clone: Vec<u64> = v.clone();
+		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
 		Poly::try_convert_from(v_clone, ctx, representation)
 	}
 }
 
-impl<const N: usize> TryConvertFrom<&[u64; N]> for Poly {
+impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		v: &[u64; N],
+		v: &[T; N],
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>,
 	{
-		let v_clone: Vec<u64> = v.to_vec();
-		Poly::try_convert_from(v_clone, ctx, representation)
+		Poly::try_convert_from(v.as_ref(), ctx, representation)
+	}
+}
+
+impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
+	type Error = &'static str;
+
+	fn try_convert_from<R>(
+		v: &[i64; N],
+		ctx: &Rc<Context>,
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		Poly::try_convert_from(v.as_ref(), ctx, representation)
 	}
 }
 
@@ -752,59 +797,80 @@ mod tests {
 	fn test_try_convert_from_slice_zero() {
 		for modulus in MODULI {
 			let ctx = Rc::new(Context::new(&[*modulus], 8).unwrap());
-			let mut p = Poly::try_convert_from(&[], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(&[], &ctx, Representation::Ntt);
-			assert!(p.is_err());
 
-			p = Poly::try_convert_from(&[0], &ctx, Representation::PowerBasis);
+			// Power Basis
+			let p = Poly::try_convert_from(&[0u64], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(&[0], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-
-			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::PowerBasis);
+			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-
-			p = Poly::try_convert_from(
-				&[0, 0, 0, 0, 0, 0, 0, 0, 0],
+			let p = Poly::try_convert_from(
+				&[0u64, 0, 0, 0, 0, 0, 0, 0],
+				&ctx,
+				Representation::PowerBasis,
+			);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			let p = Poly::try_convert_from(
+				&[0i64, 0, 0, 0, 0, 0, 0, 0],
+				&ctx,
+				Representation::PowerBasis,
+			);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			let p = Poly::try_convert_from(
+				&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], // One too many
 				&ctx,
 				Representation::PowerBasis,
 			);
 			assert!(p.is_err());
-			p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+
+			// Ntt
+			let p = Poly::try_convert_from(&[0u64], &ctx, Representation::Ntt);
+			assert!(p.is_err());
+			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::Ntt);
+			assert!(p.is_err());
+			let p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
+			let p = Poly::try_convert_from(&[0i64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			assert!(p.is_err());
+			let p = Poly::try_convert_from(
+				&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], // One too many
+				&ctx,
+				Representation::Ntt,
+			);
 			assert!(p.is_err());
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
-		let mut p = Poly::try_convert_from(&[], &ctx, Representation::PowerBasis);
+		let mut p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(&[0], &ctx, Representation::PowerBasis);
+		p = Poly::try_convert_from(&[0u64], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(&[0u64], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
 		p = Poly::try_convert_from(
-			&[0, 0, 0, 0, 0, 0, 0, 0, 0],
+			&[0u64, 0, 0, 0, 0, 0, 0, 0],
+			&ctx,
+			Representation::PowerBasis,
+		);
+		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+		p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		assert!(p.is_err());
+
+		p = Poly::try_convert_from(
+			&[0u64, 0, 0, 0, 0, 0, 0, 0, 0],
 			&ctx,
 			Representation::PowerBasis,
 		);
 		assert!(p.is_err());
-		p = Poly::try_convert_from(&[0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
 		p = Poly::try_convert_from(
 			&[
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+				0u64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::PowerBasis,
@@ -812,7 +878,7 @@ mod tests {
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 		p = Poly::try_convert_from(
 			&[
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+				0u64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			],
 			&ctx,
 			Representation::Ntt,
