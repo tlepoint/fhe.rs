@@ -12,11 +12,11 @@ pub struct BfvParameters {
 	/// Modulus of the plaintext.
 	pub plaintext_modulus: u64,
 	/// Vector of coprime moduli q_i for the ciphertext.
-	/// One of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
+	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
 	#[builder(setter(strip_option), default)]
 	pub ciphertext_moduli: Option<Vec<u64>>,
 	/// Vector of the sized of the coprime moduli q_i for the ciphertext.
-	/// One of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
+	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
 	#[builder(setter(strip_option), default)]
 	pub ciphertext_moduli_sizes: Option<Vec<usize>>,
 }
@@ -40,7 +40,7 @@ impl BfvParametersBuilder {
 
 		if self.ciphertext_moduli.is_none() && self.ciphertext_moduli.is_none() {
 			return Err(
-				"One of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"
+				"One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"
 					.to_string(),
 			);
 		}
@@ -66,8 +66,10 @@ mod tests {
 	fn test_builder() {
 		let params = BfvParametersBuilder::default().build();
 		println!("{:?}", params);
-		assert!(params.is_err_and(|e| e.to_string()
-			== "One of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"));
+		assert!(params.is_err_and(|e| {
+			e.to_string()
+			== "One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"
+		}));
 
 		let params = BfvParametersBuilder::default()
 			.ciphertext_moduli(vec![0u64])
