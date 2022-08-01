@@ -1,0 +1,10 @@
+[package]
+name = "bfv"
+description = "The Brakerski-Fan-Vercauteren homomorphic encryption scheme"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tlepoint/fhe.rs"
+
+[lib]
+bench = false  # Disable default bench (we use criterion)
