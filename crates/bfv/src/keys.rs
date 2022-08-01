@@ -24,14 +24,14 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Rc<BfvParameters>) -> Self {
-		let s_coefficients =
-			Zeroizing::new(sample_vec_cbd(par.polynomial_degree, par.variance).unwrap());
-		let s = Poly::try_convert_from(
+		let s_coefficients = Zeroizing::new(sample_vec_cbd(par.degree(), par.variance()).unwrap());
+		let mut s = Poly::try_convert_from(
 			s_coefficients.as_ref() as &[i64],
 			par.ctx(),
 			Representation::PowerBasis,
 		)
 		.unwrap();
+		s.change_representation(Representation::NttShoup);
 		Self {
 			par: par.clone(),
 			s,
@@ -43,6 +43,7 @@ impl SecretKey {
 mod tests {
 	use super::SecretKey;
 	use crate::parameters::BfvParameters;
+	use math::rq::Representation;
 	use std::rc::Rc;
 
 	#[test]
@@ -51,12 +52,14 @@ mod tests {
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
-		let coefficients = Vec::<u64>::from(&sk.s);
+		let mut s = sk.s.clone();
+		s.change_representation(Representation::PowerBasis);
+		let coefficients = Vec::<u64>::from(&s);
 		coefficients.iter().for_each(|ci| {
 			// Check that this is a small polynomial
 			assert!(
-				*ci <= 2 * sk.par.variance as u64
-					|| *ci >= (sk.par.moduli()[0] - 2 * sk.par.variance as u64)
+				*ci <= 2 * sk.par.variance() as u64
+					|| *ci >= (sk.par.moduli()[0] - 2 * sk.par.variance() as u64)
 			)
 		})
 	}

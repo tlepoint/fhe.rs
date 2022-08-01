@@ -1,7 +1,10 @@
 //! Create parameters for the BFV encryption scheme
 
 use derive_builder::Builder;
-use math::rq::Context;
+use math::{
+	rq::Context,
+	zq::{ntt::NttOperator, Modulus},
+};
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
@@ -9,7 +12,7 @@ use std::rc::Rc;
 #[builder(build_fn(private, name = "fallible_build"))]
 pub struct BfvParameters {
 	/// Number of coefficients in a polynomial.
-	pub polynomial_degree: usize,
+	polynomial_degree: usize,
 
 	/// Modulus of the plaintext.
 	plaintext_modulus: u64,
@@ -23,14 +26,32 @@ pub struct BfvParameters {
 	ciphertext_moduli_sizes: Vec<usize>,
 
 	/// Error variance
-	pub variance: usize,
+	variance: usize,
 
 	/// Context for the underlying polynomials
 	#[builder(setter(skip))]
 	ctx: Rc<Context>,
+
+	/// Ntt operator for the SIMD plaintext, if possible.
+	op: Option<Rc<NttOperator>>,
 }
 
 impl BfvParameters {
+	/// Returns the underlying polynomial degree
+	pub fn degree(&self) -> usize {
+		self.polynomial_degree
+	}
+
+	/// Returns the underlying plaintext modulus
+	pub fn plaintext(&self) -> u64 {
+		self.plaintext_modulus
+	}
+
+	/// Returns the error variance
+	pub fn variance(&self) -> usize {
+		self.variance
+	}
+
 	/// Returns the underlying polynomial context.
 	pub fn ctx(&self) -> &Rc<Context> {
 		&self.ctx
@@ -41,12 +62,17 @@ impl BfvParameters {
 		&self.ciphertext_moduli
 	}
 
+	/// Returns a reference to the Ntt operator if it exists
+	pub fn simd_operator(&self) -> &Option<Rc<NttOperator>> {
+		&self.op
+	}
+
 	#[cfg(test)]
 	pub fn default() -> Self {
 		BfvParametersBuilder::default()
 			.polynomial_degree(8)
-			.plaintext_modulus(2)
-			.ciphertext_moduli(vec![1153])
+			.plaintext_modulus(1153)
+			.ciphertext_moduli(vec![4611686018326724609])
 			.build()
 			.unwrap()
 	}
@@ -74,8 +100,8 @@ impl BfvParametersBuilder {
 				"plaintext_modulus",
 			));
 		}
-		let plaintext_modulus = self.plaintext_modulus.unwrap();
-		if plaintext_modulus < 2 {
+		let plaintext_modulus = Modulus::new(self.plaintext_modulus.unwrap());
+		if plaintext_modulus.is_none() {
 			// TODO: More checks needed
 			return Err(BfvParametersBuilderError::ValidationError(
 				"`plaintext_modulus` must be larger or equal to 2".to_string(),
@@ -111,20 +137,24 @@ impl BfvParametersBuilder {
 			));
 		}
 
+		let plaintext_modulus = plaintext_modulus.unwrap();
+		let op = NttOperator::new(&plaintext_modulus, polynomial_degree);
+
 		Ok(BfvParameters {
 			polynomial_degree,
-			plaintext_modulus,
+			plaintext_modulus: plaintext_modulus.modulus(),
 			ciphertext_moduli,
 			ciphertext_moduli_sizes: vec![],
 			variance,
 			ctx: Rc::new(ctx.unwrap()),
+			op: op.map(Rc::new),
 		})
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use super::BfvParametersBuilder;
+	use super::{BfvParameters, BfvParametersBuilder};
 
 	#[test]
 	fn test_builder() {
@@ -202,5 +232,9 @@ mod tests {
 		assert_eq!(params.plaintext_modulus, 2);
 		assert_eq!(params.polynomial_degree, 8);
 		assert_eq!(params.variance, 1);
+		assert!(params.op.is_none());
+
+		let params = BfvParameters::default();
+		assert!(params.op.is_some());
 	}
 }

@@ -7,3 +7,8 @@
 
 pub mod keys;
 pub mod parameters;
+pub mod plaintext;
+
+#[cfg(test)]
+#[macro_use]
+extern crate proptest;
