@@ -20,6 +20,7 @@ ndarray = "0.15.4"
 util = { version = "0.0.1", path = "../util" }
 fhers_protos = { version = "0.0.1", path = "../protos" }
 protobuf = "3.1.0"
+zeroize = { version = "1.5.7", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 criterion = "0.3.6"

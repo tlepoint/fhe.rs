@@ -12,3 +12,5 @@ bench = false  # Disable default bench (we use criterion)
 [dependencies]
 derive_builder = "0.11.2"
 math = { version = "0.0.1", path = "../math" }
+util = { version = "0.0.1", path = "../util" }
+zeroize = { version = "1.5.7", features = ["zeroize_derive"] }

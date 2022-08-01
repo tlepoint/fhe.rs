@@ -17,7 +17,7 @@ pub use converter::RnsConverter;
 pub use scaler::RnsScaler;
 
 /// Context for a Residue Number System.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct RnsContext {
 	moduli_u64: Vec<u64>,
 	moduli: Vec<Modulus>,
