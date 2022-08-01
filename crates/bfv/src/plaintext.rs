@@ -1,6 +1,9 @@
 //! Plaintext type in the BFV encryption scheme.
 
 use crate::parameters::BfvParameters;
+use crate::traits::{Decoder, Encoder};
+use math::rq::traits::TryConvertFrom;
+use math::rq::{Poly, Representation};
 use std::rc::Rc;
 use zeroize::Zeroize;
 
@@ -17,41 +20,40 @@ pub enum Encoding {
 	Simd,
 }
 
-/// Encode to create plaintexts.
-pub trait Encoder<T>
-where
-	Self: Sized,
-{
-	/// The type of errors.
-	type Error;
-
-	/// Attempt to encode the value within the specified parameters.
-	fn try_encode(
-		value: T,
-		encoding: Encoding,
-		par: &Rc<BfvParameters>,
-	) -> Result<Self, Self::Error>;
-}
-
-/// Decode plaintext values.
-pub trait Decoder
-where
-	Self: Sized,
-{
-	/// The type of errors.
-	type Error;
-
-	/// Attempt to encode the value within the specified parameters.
-	fn try_decode(a: &Plaintext, encoding: Encoding) -> Result<Self, Self::Error>;
-}
-
 /// A plaintext object, that encodes a vector according to a specific encoding.
+/// TODO: Can the members be private?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
-	par: Rc<BfvParameters>,
+	pub par: Rc<BfvParameters>,
 	/// The value after encoding.
-	value: Vec<u64>,
+	pub value: Vec<u64>,
+}
+
+impl Plaintext {
+	/// Returns the plaintext as a polynomial
+	pub fn to_poly(&self) -> Poly {
+		Poly::try_convert_from(&self.value, self.par.ctx(), Representation::PowerBasis).unwrap()
+	}
+}
+
+impl TryConvertFrom<&Plaintext> for Poly {
+	type Error = String;
+
+	fn try_convert_from<R>(
+		pt: &Plaintext,
+		ctx: &Rc<math::rq::Context>,
+		_: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		if ctx != pt.par.ctx() {
+			Err("Incompatible contexts".to_string())
+		} else {
+			Poly::try_convert_from(&pt.value, ctx, Representation::PowerBasis)
+		}
+	}
 }
 
 impl Zeroize for Plaintext {
@@ -115,8 +117,9 @@ impl Decoder for Vec<u64> {
 
 #[cfg(test)]
 mod tests {
-	use super::{Decoder, Encoder, Encoding, Plaintext};
+	use super::{Encoding, Plaintext};
 	use crate::parameters::{BfvParameters, BfvParametersBuilder};
+	use crate::traits::{Decoder, Encoder};
 	use math::zq::Modulus;
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::any;
@@ -125,7 +128,7 @@ mod tests {
 	#[test]
 	fn try_encode() {
 		// The default test parameters support both Poly and Simd encodings
-		let params = Rc::new(BfvParameters::default());
+		let params = Rc::new(BfvParameters::default_one_modulus());
 		let q = Modulus::new(params.plaintext()).unwrap();
 		let a = q.random_vec(params.degree());
 
@@ -162,7 +165,7 @@ mod tests {
 	proptest! {
 		#[test]
 		fn test_encode_decode(mut a in prop_vec(any::<u64>(), 8)) {
-			let params = Rc::new(BfvParameters::default());
+			let params = Rc::new(BfvParameters::default_one_modulus());
 			let q = Modulus::new(params.plaintext()).unwrap();
 			q.reduce_vec(&mut a);
 

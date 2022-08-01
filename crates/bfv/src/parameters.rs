@@ -2,9 +2,12 @@
 
 use derive_builder::Builder;
 use math::{
-	rq::Context,
+	rns::RnsContext,
+	rq::{scaler::Scaler, Context},
 	zq::{ntt::NttOperator, Modulus},
 };
+use num_bigint::BigUint;
+use num_traits::cast::ToPrimitive;
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
@@ -34,6 +37,12 @@ pub struct BfvParameters {
 
 	/// Ntt operator for the SIMD plaintext, if possible.
 	op: Option<Rc<NttOperator>>,
+
+	/// Scaling factor for the plaintext
+	deltas: Vec<u64>,
+
+	/// Down scaler for the plaintext
+	scaler: Scaler,
 }
 
 impl BfvParameters {
@@ -67,12 +76,32 @@ impl BfvParameters {
 		&self.op
 	}
 
+	/// Returns the scaling factors for the plaintext
+	pub fn deltas(&self) -> &[u64] {
+		&self.deltas
+	}
+
+	/// Returns a reference to the scaler that enables to multiply by plaintext / ciphertext_modulus
+	pub fn scaler(&self) -> &Scaler {
+		&self.scaler
+	}
+
 	#[cfg(test)]
-	pub fn default() -> Self {
+	pub fn default_one_modulus() -> Self {
 		BfvParametersBuilder::default()
 			.polynomial_degree(8)
 			.plaintext_modulus(1153)
 			.ciphertext_moduli(vec![4611686018326724609])
+			.build()
+			.unwrap()
+	}
+
+	#[cfg(test)]
+	pub fn default_two_moduli() -> Self {
+		BfvParametersBuilder::default()
+			.polynomial_degree(8)
+			.plaintext_modulus(1153)
+			.ciphertext_moduli(vec![4611686018326724609, 4611686018309947393])
 			.build()
 			.unwrap()
 	}
@@ -140,14 +169,31 @@ impl BfvParametersBuilder {
 		let plaintext_modulus = plaintext_modulus.unwrap();
 		let op = NttOperator::new(&plaintext_modulus, polynomial_degree);
 
+		// Compute the scaling factors for the plaintext
+		let rns = RnsContext::new(&ciphertext_moduli).unwrap();
+		let delta = rns.modulus() / plaintext_modulus.modulus();
+		let mut deltas = Vec::with_capacity(ciphertext_moduli.len());
+		for qi in &ciphertext_moduli {
+			deltas.push((&delta % *qi).to_u64().unwrap())
+		}
+
+		let ctx = Rc::new(ctx.unwrap());
+		let scaler = Scaler::new(
+			&ctx,
+			&BigUint::from(plaintext_modulus.modulus()),
+			rns.modulus(),
+		)?;
+
 		Ok(BfvParameters {
 			polynomial_degree,
 			plaintext_modulus: plaintext_modulus.modulus(),
 			ciphertext_moduli,
 			ciphertext_moduli_sizes: vec![],
 			variance,
-			ctx: Rc::new(ctx.unwrap()),
+			ctx,
 			op: op.map(Rc::new),
+			deltas,
+			scaler,
 		})
 	}
 }
@@ -233,8 +279,16 @@ mod tests {
 		assert_eq!(params.polynomial_degree, 8);
 		assert_eq!(params.variance, 1);
 		assert!(params.op.is_none());
+	}
 
-		let params = BfvParameters::default();
+	#[test]
+	fn test_default() {
+		let params = BfvParameters::default_one_modulus();
+		assert_eq!(params.ciphertext_moduli.len(), 1);
+		assert!(params.op.is_some());
+
+		let params = BfvParameters::default_two_moduli();
+		assert_eq!(params.ciphertext_moduli.len(), 2);
 		assert!(params.op.is_some());
 	}
 }

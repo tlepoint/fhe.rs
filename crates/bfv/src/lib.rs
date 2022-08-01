@@ -5,9 +5,16 @@
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
-pub mod keys;
-pub mod parameters;
-pub mod plaintext;
+mod ciphertext;
+mod parameters;
+mod plaintext;
+mod secret_key;
+mod traits;
+
+pub use ciphertext::Ciphertext;
+pub use parameters::{BfvParameters, BfvParametersBuilder};
+pub use plaintext::{Encoding, Plaintext};
+pub use secret_key::SecretKey;
 
 #[cfg(test)]
 #[macro_use]

@@ -3,6 +3,7 @@
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
 pub mod extender;
+pub mod scaler;
 pub mod traits;
 
 use crate::rns::RnsContext;
@@ -19,6 +20,7 @@ use std::{
 	rc::Rc,
 };
 use traits::{TryConvertFrom, Unsigned};
+use util::sample_vec_cbd;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Struct that holds the context associated with elements in rq.
@@ -216,6 +218,43 @@ impl Poly {
 		}
 		p
 	}
+
+	/// Generate a small polynomial.
+	///
+	/// Returns an error if the variance does not belong to [1, ..., 16].
+	/// TODO: To test
+	pub fn small(
+		ctx: &Rc<Context>,
+		representation: Representation,
+		variance: usize,
+	) -> Result<Self, String> {
+		if !(1..=16).contains(&variance) {
+			Err("The variance should be an integer between 1 and 16".to_string())
+		} else {
+			let mut coeffs = sample_vec_cbd(ctx.degree, variance)?;
+			let p = Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, representation)?;
+			coeffs.zeroize();
+			Ok(p)
+		}
+	}
+
+	/// Scale a polynomial
+	///
+	/// Returns an error if the number of scaling factors is not the number of moduli
+	/// TODO: To test
+	pub fn scale(&mut self, scaling_factors: &[u64]) -> Result<(), String> {
+		if scaling_factors.len() != self.ctx.q.len() {
+			Err("The number of scaling factors is not equal to the number of moduli".to_string())
+		} else {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				&self.ctx.q,
+				scaling_factors
+			)
+			.for_each(|(mut v, qi, delta)| qi.scalar_mul_vec(v.as_slice_mut().unwrap(), *delta));
+			Ok(())
+		}
+	}
 }
 
 impl Zeroize for Poly {
@@ -255,7 +294,7 @@ impl From<&Poly> for proto_rq::Rq {
 }
 
 impl TryConvertFrom<&proto_rq::Rq> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		value: &proto_rq::Rq,
@@ -270,24 +309,24 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 			proto_rq::rq::Representation::POWERBASIS => Representation::PowerBasis,
 			proto_rq::rq::Representation::NTT => Representation::Ntt,
 			proto_rq::rq::Representation::NTTSHOUP => Representation::NttShoup,
-			_ => return Err("Unknown representation"),
+			_ => return Err("Unknown representation".to_string()),
 		};
 
 		if (representation.into() as Option<Representation>)
 			.is_some_and(|r| *r != representation_from_proto)
 		{
-			return Err("The representation asked for does not match the representation in the serialization");
+			return Err("The representation asked for does not match the representation in the serialization".to_string());
 		}
 
 		let degree = value.degree as usize;
 		if degree % 8 != 0 || degree < 8 {
-			return Err("Invalid degree");
+			return Err("Invalid degree".to_string());
 		}
 
 		let mut expected_nbytes = 0;
 		izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
 		if value.coefficients.len() != expected_nbytes {
-			return Err("Invalid coefficients");
+			return Err("Invalid coefficients".to_string());
 		}
 
 		let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
@@ -297,7 +336,7 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 			let size = qi.serialization_length(degree);
 			let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
 			if v == None {
-				return Err("Could not deserialize the polynomial coefficients");
+				return Err("Could not deserialize the polynomial coefficients".to_string());
 			}
 			coefficients.append(&mut v.unwrap());
 			index += size;
@@ -313,7 +352,7 @@ impl Unsigned for u32 {}
 impl Unsigned for u64 {}
 
 impl<T: Unsigned> TryConvertFrom<T> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		value: T,
@@ -326,15 +365,16 @@ impl<T: Unsigned> TryConvertFrom<T> for Poly {
 		let repr = representation.into();
 		match repr {
 			Some(Representation::PowerBasis) => Poly::try_convert_from(&[value], ctx, repr),
-			_ => {
-				Err("Converting from constant values is only possible in PowerBasis representation")
-			}
+			_ => Err(
+				"Converting from constant values is only possible in PowerBasis representation"
+					.to_string(),
+			),
 		}
 	}
 }
 
 impl TryConvertFrom<Vec<u64>> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		mut v: Vec<u64>,
@@ -355,7 +395,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						coefficients_shoup: None,
 					})
 				} else {
-					Err("In Ntt representation, all coefficients must be specified")
+					Err("In Ntt representation, all coefficients must be specified".to_string())
 				}
 			}
 			Some(Representation::NttShoup) => {
@@ -369,7 +409,10 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					p.compute_coefficients_shoup();
 					Ok(p)
 				} else {
-					Err("In NttShoup representation, all coefficients must be specified")
+					Err(
+						"In NttShoup representation, all coefficients must be specified"
+							.to_string(),
+					)
 				}
 			}
 			Some(Representation::PowerBasis) => {
@@ -392,16 +435,19 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					v.zeroize();
 					Ok(out)
 				} else {
-					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree")
+					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string())
 				}
 			}
-			None => Err("When converting from a vector, the representation needs to be specified"),
+			None => Err(
+				"When converting from a vector, the representation needs to be specified"
+					.to_string(),
+			),
 		}
 	}
 }
 
 impl TryConvertFrom<Array2<u64>> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		a: Array2<u64>,
@@ -412,7 +458,7 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 		R: Into<Option<Representation>>,
 	{
 		if a.shape() != [ctx.q.len(), ctx.degree] {
-			Err("The array of coefficient does not have the correct shape")
+			Err("The array of coefficient does not have the correct shape".to_string())
 		} else if let Some(repr) = representation.into() {
 			let mut p = Self {
 				ctx: ctx.clone(),
@@ -425,13 +471,13 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 			}
 			Ok(p)
 		} else {
-			Err("When converting from a 2-dimensional array, the representation needs to be specified")
+			Err("When converting from a 2-dimensional array, the representation needs to be specified".to_string())
 		}
 	}
 }
 
 impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &[T],
@@ -447,7 +493,7 @@ impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
 }
 
 impl TryConvertFrom<&[i64]> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &[i64],
@@ -458,7 +504,10 @@ impl TryConvertFrom<&[i64]> for Poly {
 		R: Into<Option<Representation>>,
 	{
 		if representation.into() != Some(Representation::PowerBasis) {
-			Err("Converting signed integer require to import in PowerBasis representation")
+			Err(
+				"Converting signed integer require to import in PowerBasis representation"
+					.to_string(),
+			)
 		} else if v.len() <= ctx.degree {
 			let mut out = Self::zero(ctx, Representation::PowerBasis);
 			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
@@ -467,13 +516,13 @@ impl TryConvertFrom<&[i64]> for Poly {
 			});
 			Ok(out)
 		} else {
-			Err("In PowerBasis representation with signed integers, only `degree` coefficients can be specified")
+			Err("In PowerBasis representation with signed integers, only `degree` coefficients can be specified".to_string())
 		}
 	}
 }
 
 impl TryConvertFrom<&[BigUint]> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &[BigUint],
@@ -486,7 +535,10 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 		let repr = representation.into();
 
 		if v.len() > ctx.degree {
-			Err("The slice contains too many big integers compared to the polynomial degree")
+			Err(
+				"The slice contains too many big integers compared to the polynomial degree"
+					.to_string(),
+			)
 		} else if repr.is_some() {
 			let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
 
@@ -511,13 +563,16 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 				}
 			}
 		} else {
-			Err("When converting from a vector, the representation needs to be specified")
+			Err(
+				"When converting from a vector, the representation needs to be specified"
+					.to_string(),
+			)
 		}
 	}
 }
 
 impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &Vec<T>,
@@ -533,7 +588,7 @@ impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
 }
 
 impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &[T; N],
@@ -548,7 +603,7 @@ impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
 }
 
 impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
-	type Error = &'static str;
+	type Error = String;
 
 	fn try_convert_from<R>(
 		v: &[i64; N],

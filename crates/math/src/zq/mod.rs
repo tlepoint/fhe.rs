@@ -188,6 +188,16 @@ impl Modulus {
 		}
 	}
 
+	/// Modular scalar multiplication of vectors in place in constant time.
+	///
+	/// Aborts if any of the values in a is >= p in debug mode.
+	/// TODO: To test
+	pub fn scalar_mul_vec(&self, a: &mut [u64], b: u64) {
+		let b_shoup = self.shoup(b);
+		a.iter_mut()
+			.for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup));
+	}
+
 	/// # Safety
 	///
 	/// Modular multiplication of vectors in place in variable time.
