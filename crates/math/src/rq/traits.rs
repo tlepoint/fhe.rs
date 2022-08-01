@@ -39,3 +39,10 @@ pub trait ContextSwitcher {
 	/// Switch the context of the polynomial.
 	fn switch_context(&self, polynomial: &Poly) -> Result<Poly, Self::Error>;
 }
+
+/// Unsigned trait.
+pub trait Unsigned
+where
+	Self: Into<u64> + Copy,
+{
+}
