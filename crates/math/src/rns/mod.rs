@@ -61,7 +61,8 @@ impl RnsContext {
 			}
 
 			for modulus in moduli_u64 {
-				moduli.push(Modulus::new(*modulus).unwrap());
+				let p = Modulus::new(*modulus)?;
+				moduli.push(p);
 				// q* = product / modulus
 				let q_star_i = &product / modulus;
 				// q~ = (product / modulus) ^ (-1) % modulus
