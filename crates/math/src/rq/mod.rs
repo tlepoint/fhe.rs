@@ -19,9 +19,10 @@ use std::{
 	rc::Rc,
 };
 use traits::{TryConvertFrom, Unsigned};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Context {
 	q: Vec<Modulus>,
 	rns: RnsContext,
@@ -217,6 +218,15 @@ impl Poly {
 	}
 }
 
+impl Zeroize for Poly {
+	fn zeroize(&mut self) {
+		self.coefficients.as_slice_mut().unwrap().zeroize();
+		if let Some(s) = self.coefficients_shoup.as_mut() {
+			s.as_slice_mut().unwrap().zeroize();
+		}
+	}
+}
+
 impl From<&Poly> for proto_rq::Rq {
 	fn from(p: &Poly) -> Self {
 		let mut proto = proto_rq::Rq::new();
@@ -327,7 +337,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 	type Error = &'static str;
 
 	fn try_convert_from<R>(
-		v: Vec<u64>,
+		mut v: Vec<u64>,
 		ctx: &Rc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
@@ -379,6 +389,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						wi[..v.len()].copy_from_slice(&v);
 						qi.reduce_vec(wi);
 					});
+					v.zeroize();
 					Ok(out)
 				} else {
 					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree")
@@ -452,7 +463,7 @@ impl TryConvertFrom<&[i64]> for Poly {
 			let mut out = Self::zero(ctx, Representation::PowerBasis);
 			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
 				let wi = w.as_slice_mut().unwrap();
-				wi[..v.len()].copy_from_slice(&qi.reduce_vec_i64(v));
+				wi[..v.len()].copy_from_slice(Zeroizing::new(qi.reduce_vec_i64(v)).as_ref());
 			});
 			Ok(out)
 		} else {

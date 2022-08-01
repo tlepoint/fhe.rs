@@ -5,4 +5,5 @@
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
+pub mod keys;
 pub mod parameters;
