@@ -20,19 +20,21 @@ pub struct Extender {
 impl Extender {
 	/// Create a context extender from a context `from` to a context `to`. The moduli used
 	/// in the context `to` must be distinct from the moduli in `from`.
-	pub fn new(from: &Rc<Context>, to: &Rc<Context>) -> Result<Self, &'static str> {
+	pub fn new(from: &Rc<Context>, to: &Rc<Context>) -> Result<Self, String> {
 		if from.degree != to.degree {
-			return Err("The context should be for polynomials of the same degree");
+			return Err("The context should be for polynomials of the same degree".to_string());
 		}
 		if to.q.len() <= from.q.len() {
-			return Err("The to context does not extend the from context");
+			return Err("The to context does not extend the from context".to_string());
 		}
 		if from.q != to.q[..from.q.len()] {
-			return Err("The moduli of from and to do not match");
+			return Err("The moduli of from and to do not match".to_string());
 		}
 		for modulus in &to.q[from.q.len()..] {
 			if from.q.contains(modulus) {
-				return Err("The new moduli in `to` must be distinct from the moduli in `from`");
+				return Err(
+					"The new moduli in `to` must be distinct from the moduli in `from`".to_string(),
+				);
 			}
 		}
 		let new_moduli = &to.q[from.q.len()..];
@@ -49,12 +51,13 @@ impl Extender {
 }
 
 impl ContextSwitcher for Extender {
-	type Error = &'static str;
+	type Error = String;
+
 	fn switch_context(&self, p: &Poly) -> Result<Poly, <Self as ContextSwitcher>::Error> {
 		if p.ctx.as_ref() != self.from.as_ref() {
-			Err("The input polynomial does not have the correct context")
+			Err("The input polynomial does not have the correct context".to_string())
 		} else if p.representation != Representation::PowerBasis {
-			Err("The input polynomial should be in power basis representation")
+			Err("The input polynomial should be in power basis representation".to_string())
 		} else {
 			let mut new_coefficients = Array2::zeros((self.to.q.len(), self.to.degree));
 			new_coefficients
@@ -106,7 +109,9 @@ mod tests {
 	];
 
 	#[test]
-	fn test_constructor() {}
+	fn test_constructor() {
+		// TODO: Fill that unit test or delete if unecessary?
+	}
 
 	#[test]
 	fn test_extender() {
