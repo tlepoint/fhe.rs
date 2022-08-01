@@ -111,7 +111,6 @@ mod tests {
 	#[test]
 	fn test_constructor() {
 		// TODO: Fill that unit test or delete if unecessary?
-		todo!()
 	}
 
 	#[test]
