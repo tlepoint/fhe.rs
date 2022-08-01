@@ -1,6 +1,6 @@
 [package]
-name = "fhers"
-description = "Fully homomorphic encryption in Rust"
+name = "bfv"
+description = "The Brakerski-Fan-Vercauteren homomorphic encryption scheme"
 version = "0.0.1"
 edition = "2021"
 license = "MIT"
@@ -10,6 +10,5 @@ repository = "https://github.com/tlepoint/fhe.rs"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-bfv = { version = "0.0.1", path = "../bfv" }
+derive_builder = "0.11.2"
 math = { version = "0.0.1", path = "../math" }
-util = { version = "0.0.1", path = "../util" }
