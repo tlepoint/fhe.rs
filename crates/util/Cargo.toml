@@ -7,4 +7,6 @@ license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
 
 [dependencies]
+itertools = "0.10.3"
 num-bigint = {version = "0.8.1", package = "num-bigint-dig", features = ["prime"]}
+rand = "0.8.5"
