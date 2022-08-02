@@ -10,7 +10,7 @@ use ndarray::{s, Array2, Axis};
 use std::rc::Rc;
 
 /// Context extender.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Extender {
 	from: Rc<Context>,
 	to: Rc<Context>,
@@ -56,27 +56,54 @@ impl ContextSwitcher for Extender {
 	fn switch_context(&self, p: &Poly) -> Result<Poly, <Self as ContextSwitcher>::Error> {
 		if p.ctx.as_ref() != self.from.as_ref() {
 			Err("The input polynomial does not have the correct context".to_string())
-		} else if p.representation != Representation::PowerBasis {
-			Err("The input polynomial should be in power basis representation".to_string())
 		} else {
 			let mut new_coefficients = Array2::zeros((self.to.q.len(), self.to.degree));
 			new_coefficients
 				.slice_mut(s![..self.from.q.len(), ..])
 				.assign(&p.coefficients);
 
-			izip!(
-				new_coefficients
-					.slice_mut(s![self.from.q.len().., ..])
-					.axis_iter_mut(Axis(1)),
-				p.coefficients.axis_iter(Axis(1))
-			)
-			.for_each(|(mut n_c, p_c)| {
-				self.converter.convert(&p_c, &mut n_c);
-			});
+			if p.representation != Representation::PowerBasis {
+				// println!("Here!");
+				// TODO: Need to be tested
+				let mut p_coefficients_powerbasis = p.coefficients.clone();
+				// Backward NTT
+				izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+					.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+				// Conversion
+				izip!(
+					new_coefficients
+						.slice_mut(s![self.from.q.len().., ..])
+						.axis_iter_mut(Axis(1)),
+					p_coefficients_powerbasis.axis_iter(Axis(1))
+				)
+				.for_each(|(mut n_c, p_c)| {
+					self.converter.convert(&p_c, &mut n_c);
+				});
+				// Forward NTT on the second half
+				izip!(
+					new_coefficients
+						.slice_mut(s![self.from.q.len().., ..])
+						.outer_iter_mut(),
+					&self.to.ops[self.from.q.len()..]
+				)
+				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			// println!("ops_from = {:?}", self.from.ops[self.from.ops.len() - 1]);
+			// println!("ops_to   = {:?}", self.to.ops[self.from.ops.len() - 1]);
+			} else {
+				izip!(
+					new_coefficients
+						.slice_mut(s![self.from.q.len().., ..])
+						.axis_iter_mut(Axis(1)),
+					p.coefficients.axis_iter(Axis(1))
+				)
+				.for_each(|(mut n_c, p_c)| {
+					self.converter.convert(&p_c, &mut n_c);
+				});
+			}
 
 			Ok(Poly {
 				ctx: self.to.clone(),
-				representation: Representation::PowerBasis,
+				representation: p.representation.clone(),
 				allow_variable_time_computations: p.allow_variable_time_computations,
 				coefficients: new_coefficients,
 				coefficients_shoup: None,

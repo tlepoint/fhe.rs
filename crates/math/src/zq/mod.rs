@@ -318,6 +318,27 @@ impl Modulus {
 
 	/// # Safety
 	///
+	/// Center a value modulo p as i64 in variable time.
+	/// TODO: To test and to make constant time?
+	unsafe fn center_vt(&self, a: u64) -> i64 {
+		debug_assert!(a < self.p);
+
+		if a >= self.p >> 1 {
+			(a as i64) - (self.p as i64)
+		} else {
+			a as i64
+		}
+	}
+
+	/// # Safety
+	///
+	/// Center a vector.
+	pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
+		a.iter().map(|ai| self.center_vt(*ai)).collect_vec()
+	}
+
+	/// # Safety
+	///
 	/// Reduce a vector in place in variable time.
 	pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai));

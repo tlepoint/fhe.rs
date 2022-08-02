@@ -2,9 +2,11 @@
 
 use derive_builder::Builder;
 use math::{
-	rns::RnsContext,
-	rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
-	zq::{ntt::NttOperator, Modulus},
+	rns::{RnsContext, RnsScaler},
+	rq::{
+		extender::Extender, scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation,
+	},
+	zq::{nfl::generate_opt_prime, ntt::NttOperator, Modulus},
 };
 use num_bigint::BigUint;
 use std::rc::Rc;
@@ -49,6 +51,14 @@ pub struct BfvParameters {
 	/// Plaintext Modulus
 	// #[builder(setter(skip))] // TODO: How can we handle this?
 	plaintext: Modulus,
+
+	/// Polynomial extender used in the homomorphic multiplication
+	#[builder(setter(skip))]
+	pub(crate) extender: Extender,
+
+	/// Down scaler used in the homomorphic multiplication
+	#[builder(setter(skip))]
+	pub(crate) extended_scaler: RnsScaler,
 }
 
 impl BfvParameters {
@@ -191,12 +201,30 @@ impl BfvParametersBuilder {
 			rns.modulus(),
 		)?;
 
-		let mut delta_vec = Vec::with_capacity(polynomial_degree);
-		for _ in 0..polynomial_degree {
-			delta_vec.push(delta.clone())
+		let mut delta_poly = Poly::try_convert_from(&[delta], &ctx, Representation::PowerBasis)?;
+		delta_poly.change_representation(Representation::NttShoup);
+
+		let mut extended_moduli = Vec::with_capacity(2 * ciphertext_moduli.len() + 1);
+		for m in &ciphertext_moduli {
+			extended_moduli.push(*m);
 		}
-		let delta_poly =
-			Poly::try_convert_from(delta_vec.as_slice(), &ctx, Representation::NttShoup)?;
+		let mut upper_bound = u64::MAX >> 2;
+		while extended_moduli.len() != 2 * ciphertext_moduli.len() + 1 {
+			upper_bound =
+				generate_opt_prime(62, 2 * polynomial_degree as u64, upper_bound).unwrap();
+			if !ciphertext_moduli.contains(&upper_bound) {
+				extended_moduli.push(upper_bound)
+			}
+		}
+		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree).unwrap());
+		let extender = Extender::new(&ctx, &to_ctx)?;
+
+		let rns_extended = RnsContext::new(&extended_moduli).unwrap();
+		let extended_scaler = RnsScaler::new(
+			&rns_extended,
+			&BigUint::from(plaintext_modulus.modulus()),
+			rns.modulus(),
+		);
 
 		Ok(BfvParameters {
 			polynomial_degree,
@@ -209,6 +237,8 @@ impl BfvParametersBuilder {
 			delta: delta_poly,
 			scaler,
 			plaintext: plaintext_modulus,
+			extender,
+			extended_scaler,
 		})
 	}
 }
@@ -289,7 +319,6 @@ mod tests {
 
 		let params = params.unwrap();
 		assert_eq!(params.ciphertext_moduli, vec![1153]);
-		assert_eq!(params.ciphertext_moduli_sizes, vec![]); // TODO: Should be fixed
 		assert_eq!(params.plaintext_modulus, 2);
 		assert_eq!(params.polynomial_degree, 8);
 		assert_eq!(params.variance, 1);

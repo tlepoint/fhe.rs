@@ -218,9 +218,10 @@ impl RnsScaler {
 			}
 		}
 
-		// Let's compute v = floor(sum_theta_garner / 2^127)
-		sum_theta_garner >>= 127;
+		// Let's compute v = round(sum_theta_garner / 2^127)
+		sum_theta_garner >>= 126;
 		let v = sum_theta_garner.as_u128();
+		let v = (v & 1) + (v >> 1);
 
 		// Let's substract v * theta_gamma to sum_theta_omega.
 		let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
@@ -293,7 +294,7 @@ mod tests {
 	use crate::rns::RnsContext;
 	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
-	use num_traits::Zero;
+	use num_traits::{ToPrimitive, Zero};
 	use rand::{thread_rng, RngCore};
 	use util::catch_unwind;
 
@@ -373,14 +374,30 @@ mod tests {
 						rng.next_u64() % q.moduli_u64[1],
 						rng.next_u64() % q.moduli_u64[2],
 					];
-					let x_lift = q.lift(&ArrayView1::from(&x));
+					let mut x_lift = q.lift(&ArrayView1::from(&x));
+					let x_sign = x_lift >= (q.modulus() >> 1);
+					if x_sign {
+						x_lift = q.modulus() - x_lift;
+					}
 
 					let y = scaler.scale_new(&(&x).into(), x.len(), true);
-					let x_scaled_floor = (&x_lift * &n) / &d;
+					let x_scaled_floor = if x_sign {
+						q.modulus() - (&(&x_lift * &n + &d - 1u64) / &d) % q.modulus()
+					} else {
+						((&x_lift * &n) / &d) % q.modulus()
+					};
 					assert_eq!(y, q.project(&x_scaled_floor));
 
 					let z = scaler.scale_new(&(&x).into(), x.len(), false);
-					let x_scaled_round = (&x_lift * &n + (&d >> 1)) / &d;
+					let x_scaled_round = if x_sign {
+						if d.to_u64().unwrap() == 2 {
+							q.modulus() - (&(&x_lift * &n) / &d) % q.modulus()
+						} else {
+							q.modulus() - (&(&x_lift * &n + (&d >> 1)) / &d) % q.modulus()
+						}
+					} else {
+						&(&x_lift * &n + (&d >> 1)) / &d
+					};
 					assert_eq!(z, q.project(&x_scaled_round));
 				}
 			}

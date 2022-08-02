@@ -17,7 +17,8 @@ num-bigint = "0.4.3"
 num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-zeroize = { version = "1.5.7", features = ["zeroize_derive"] }
+zeroize = "1.5.7"
+ndarray = "0.15.4"
 
 [dev-dependencies]
 criterion = "0.3.6"

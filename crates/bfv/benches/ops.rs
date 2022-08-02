@@ -1,9 +1,11 @@
 use bfv::{
+	mul,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
+use math::rq::{Poly, Representation};
 use std::rc::Rc;
 
 fn params() -> Vec<Rc<BfvParameters>> {
@@ -62,6 +64,30 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| c1 = -&c2);
+			},
+		);
+
+		let rk = RelinearizationKey::new(&sk).unwrap();
+		let p2 = Poly::random(par.ctx(), Representation::PowerBasis);
+		let p1 = Poly::random(par.ctx(), Representation::Ntt);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"relinearize",
+				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+			),
+			|b| {
+				b.iter(|| rk.relinearize(&p1, &p1, &p2));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul",
+				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+			),
+			|b| {
+				b.iter(|| mul(&c1, &c2, &rk));
 			},
 		);
 	}
