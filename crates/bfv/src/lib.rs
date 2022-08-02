@@ -9,8 +9,8 @@ mod ciphertext;
 mod parameters;
 mod plaintext;
 mod secret_key;
-mod traits;
 
+pub mod traits;
 pub use ciphertext::Ciphertext;
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::{Encoding, Plaintext};

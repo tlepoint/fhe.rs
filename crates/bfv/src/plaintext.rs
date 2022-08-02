@@ -122,17 +122,15 @@ mod tests {
 	use super::{Encoding, Plaintext};
 	use crate::parameters::{BfvParameters, BfvParametersBuilder};
 	use crate::traits::{Decoder, Encoder};
-	use math::zq::Modulus;
 	use proptest::collection::vec as prop_vec;
-	use proptest::prelude::any;
+	use proptest::prelude::{any, ProptestConfig};
 	use std::rc::Rc;
 
 	#[test]
 	fn try_encode() {
 		// The default test parameters support both Poly and Simd encodings
 		let params = Rc::new(BfvParameters::default_one_modulus());
-		let q = Modulus::new(params.plaintext()).unwrap();
-		let a = q.random_vec(params.degree());
+		let a = params.plaintext().random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&[0; 9], Encoding::Poly, &params);
 		assert!(plaintext.is_err());
@@ -164,11 +162,11 @@ mod tests {
 	}
 
 	proptest! {
+		#![proptest_config(ProptestConfig::with_cases(128))]
 		#[test]
 		fn test_encode_decode(mut a in prop_vec(any::<u64>(), 8)) {
 			let params = Rc::new(BfvParameters::default_one_modulus());
-			let q = Modulus::new(params.plaintext()).unwrap();
-			q.reduce_vec(&mut a);
+			params.plaintext().reduce_vec(&mut a);
 
 			let plaintext = Plaintext::try_encode(&a, Encoding::Poly, &params);
 			assert!(plaintext.is_ok_and(|pt| pt.value == a));

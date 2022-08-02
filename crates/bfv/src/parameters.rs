@@ -45,6 +45,10 @@ pub struct BfvParameters {
 	/// Down scaler for the plaintext
 	#[builder(setter(skip))]
 	scaler: Scaler,
+
+	/// Plaintext Modulus
+	// #[builder(setter(skip))] // TODO: How can we handle this?
+	plaintext: Modulus,
 }
 
 impl BfvParameters {
@@ -54,8 +58,8 @@ impl BfvParameters {
 	}
 
 	/// Returns the underlying plaintext modulus
-	pub fn plaintext(&self) -> u64 {
-		self.plaintext_modulus
+	pub fn plaintext(&self) -> &Modulus {
+		&self.plaintext
 	}
 
 	/// Returns the error variance
@@ -199,6 +203,7 @@ impl BfvParametersBuilder {
 			op: op.map(Rc::new),
 			delta: delta_poly,
 			scaler,
+			plaintext: plaintext_modulus,
 		})
 	}
 }

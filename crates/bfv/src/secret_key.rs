@@ -87,6 +87,7 @@ impl Decryptor for SecretKey {
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler().scale(&c, false)?;
 			let mut v = Vec::<u64>::from(&d);
+			self.par.plaintext().reduce_vec(&mut v);
 			let pt = Plaintext {
 				par: self.par.clone(),
 				value: v[..self.par.degree()].to_vec(),
