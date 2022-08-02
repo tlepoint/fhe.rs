@@ -191,12 +191,8 @@ impl BfvParametersBuilder {
 			rns.modulus(),
 		)?;
 
-		let mut delta_vec = Vec::with_capacity(polynomial_degree);
-		for _ in 0..polynomial_degree {
-			delta_vec.push(delta.clone())
-		}
-		let delta_poly =
-			Poly::try_convert_from(delta_vec.as_slice(), &ctx, Representation::NttShoup)?;
+		let mut delta_poly = Poly::try_convert_from(&[delta], &ctx, Representation::PowerBasis)?;
+		delta_poly.change_representation(Representation::NttShoup);
 
 		Ok(BfvParameters {
 			polynomial_degree,
@@ -289,7 +285,6 @@ mod tests {
 
 		let params = params.unwrap();
 		assert_eq!(params.ciphertext_moduli, vec![1153]);
-		assert_eq!(params.ciphertext_moduli_sizes, vec![]); // TODO: Should be fixed
 		assert_eq!(params.plaintext_modulus, 2);
 		assert_eq!(params.polynomial_degree, 8);
 		assert_eq!(params.variance, 1);

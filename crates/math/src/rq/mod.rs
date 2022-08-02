@@ -12,7 +12,7 @@ use crate::{
 };
 use fhers_protos::protos::rq as proto_rq;
 use itertools::{izip, Itertools};
-use ndarray::{Array2, ArrayView, Axis};
+use ndarray::{Array2, ArrayView, ArrayView2, Axis};
 use num_bigint::BigUint;
 use protobuf::EnumOrUnknown;
 use rand::{Rng, SeedableRng};
@@ -258,6 +258,12 @@ impl Poly {
 			coeffs.zeroize();
 			Ok(p)
 		}
+	}
+
+	/// Access the polynomial coefficients in RNS representation.
+	/// TODO: To test?
+	pub fn coefficients(&self) -> ArrayView2<u64> {
+		self.coefficients.view()
 	}
 }
 
@@ -820,12 +826,13 @@ impl MulAssign<&Poly> for Poly {
 impl MulAssign<&BigUint> for Poly {
 	fn mul_assign(&mut self, p: &BigUint) {
 		let v: Vec<BigUint> = vec![p.clone()];
-		let q = Poly::try_convert_from(
+		let mut q = Poly::try_convert_from(
 			v.as_ref() as &[BigUint],
 			&self.ctx,
 			self.representation.clone(),
 		)
 		.unwrap();
+		q.change_representation(Representation::Ntt);
 		if self.allow_variable_time_computations {
 			unsafe {
 				izip!(
@@ -857,6 +864,15 @@ impl Mul<&Poly> for &Poly {
 			Representation::NttShoup => {
 				// TODO: To test, and do the same thing for add, sub, and neg
 				let mut q = p.clone();
+				if q.representation == Representation::NttShoup {
+					q.coefficients_shoup
+						.as_mut()
+						.unwrap()
+						.as_slice_mut()
+						.unwrap()
+						.zeroize();
+					unsafe { q.override_representation(Representation::Ntt) }
+				}
 				q *= self;
 				q
 			}
