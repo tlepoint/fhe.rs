@@ -26,7 +26,7 @@ use util::sample_vec_cbd;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Context {
 	q: Vec<Modulus>,
 	rns: RnsContext,
@@ -68,16 +68,6 @@ impl Context {
 	/// TODO: To test
 	pub fn modulus(&self) -> &BigUint {
 		self.rns.modulus()
-	}
-}
-
-impl PartialEq for Context {
-	fn eq(&self, other: &Self) -> bool {
-		// Do not check for the equivalence of the variable time boolean.
-		self.q == other.q
-			&& self.rns == other.rns
-			&& self.ops == other.ops
-			&& self.degree == other.degree
 	}
 }
 
@@ -764,6 +754,7 @@ impl MulAssign<&Poly> for Poly {
 			"Multiplication requires an Ntt representation."
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+
 		match p.representation {
 			Representation::Ntt => {
 				if self.allow_variable_time_computations || p.allow_variable_time_computations {
@@ -826,12 +817,71 @@ impl MulAssign<&Poly> for Poly {
 	}
 }
 
+impl MulAssign<&BigUint> for Poly {
+	fn mul_assign(&mut self, p: &BigUint) {
+		let v: Vec<BigUint> = vec![p.clone()];
+		let q = Poly::try_convert_from(
+			v.as_ref() as &[BigUint],
+			&self.ctx,
+			self.representation.clone(),
+		)
+		.unwrap();
+		if self.allow_variable_time_computations {
+			unsafe {
+				izip!(
+					self.coefficients.outer_iter_mut(),
+					q.coefficients.outer_iter(),
+					&self.ctx.q
+				)
+				.for_each(|(mut v1, v2, qi)| {
+					qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+				});
+			}
+		} else {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				q.coefficients.outer_iter(),
+				&self.ctx.q
+			)
+			.for_each(|(mut v1, v2, qi)| {
+				qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+			});
+		}
+	}
+}
+
 impl Mul<&Poly> for &Poly {
 	type Output = Poly;
 	fn mul(self, p: &Poly) -> Poly {
+		match self.representation {
+			Representation::NttShoup => {
+				// TODO: To test, and do the same thing for add, sub, and neg
+				let mut q = p.clone();
+				q *= self;
+				q
+			}
+			_ => {
+				let mut q = self.clone();
+				q *= p;
+				q
+			}
+		}
+	}
+}
+
+impl Mul<&BigUint> for &Poly {
+	type Output = Poly;
+	fn mul(self, p: &BigUint) -> Poly {
 		let mut q = self.clone();
 		q *= p;
 		q
+	}
+}
+
+impl Mul<&Poly> for &BigUint {
+	type Output = Poly;
+	fn mul(self, p: &Poly) -> Poly {
+		p * self
 	}
 }
 

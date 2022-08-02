@@ -6,6 +6,7 @@
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
 mod ciphertext;
+mod key_switching;
 mod parameters;
 mod plaintext;
 mod secret_key;

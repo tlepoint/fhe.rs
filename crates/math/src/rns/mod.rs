@@ -118,6 +118,12 @@ impl RnsContext {
 			.for_each(|(r_i, garner_i)| result += garner_i * *r_i);
 		result % &self.product
 	}
+
+	/// Getter for the i-th garner coefficient.
+	/// TODO: To test
+	pub fn get_garner(&self, i: usize) -> Option<&BigUint> {
+		self.garner.get(i)
+	}
 }
 
 #[cfg(test)]

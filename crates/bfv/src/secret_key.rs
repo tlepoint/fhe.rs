@@ -1,12 +1,16 @@
-//! Keys for the BFV encryption scheme
+//! Secret keys for the BFV encryption scheme
 
 use crate::{
 	ciphertext::Ciphertext,
+	key_switching::KeySwitchingKey,
 	parameters::BfvParameters,
 	plaintext::Plaintext,
 	traits::{Decryptor, Encryptor},
 };
-use math::rq::{traits::TryConvertFrom, Poly, Representation};
+use math::{
+	rns::RnsContext,
+	rq::{traits::TryConvertFrom, Poly, Representation},
+};
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
@@ -39,6 +43,58 @@ impl SecretKey {
 			par: par.clone(),
 			s,
 		}
+	}
+
+	/// Generate a [`KeySwitchingKey`] to this secret key from a polynomial `from`.
+	pub fn key_switching_new(&self, from: &Poly) -> Result<KeySwitchingKey, String> {
+		let mut c0 = Vec::with_capacity(self.par.moduli().len());
+		let mut c1 = Vec::with_capacity(self.par.moduli().len());
+
+		let rns = RnsContext::new(self.par.moduli()).unwrap();
+
+		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
+		thread_rng().fill(&mut seed);
+		let mut rng = ChaCha8Rng::from_seed(seed);
+
+		for i in 0..self.par.moduli().len() {
+			let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
+			rng.fill(&mut seed_i);
+
+			let mut a = Poly::random_from_seed(self.par.ctx(), Representation::Ntt, seed_i);
+			let mut a_s = &a * &self.s;
+			a_s.change_representation(Representation::PowerBasis);
+
+			let mut b = Poly::small(
+				self.par.ctx(),
+				Representation::PowerBasis,
+				self.par.variance(),
+			)?;
+			b -= &a_s;
+
+			let gi = rns.get_garner(i).unwrap();
+			let mut g_i_from = gi * from;
+			b += &g_i_from;
+
+			a_s.zeroize();
+			g_i_from.zeroize();
+
+			// It is now safe to enable variable time computations.
+			unsafe { a.allow_variable_time_computations() }
+			unsafe { b.allow_variable_time_computations() }
+
+			a.change_representation(Representation::NttShoup);
+			b.change_representation(Representation::NttShoup);
+
+			c0.push(b);
+			c1.push(a);
+		}
+
+		Ok(KeySwitchingKey {
+			par: self.par.clone(),
+			seed: Some(seed),
+			c0,
+			c1,
+		})
 	}
 
 	/// # Safety
@@ -161,7 +217,7 @@ mod tests {
 		traits::{Decryptor, Encoder, Encryptor},
 		Encoding, Plaintext,
 	};
-	use math::rq::Representation;
+	use math::rq::{Poly, Representation};
 	use std::rc::Rc;
 
 	#[test]
@@ -184,24 +240,33 @@ mod tests {
 
 	#[test]
 	fn test_encrypt_decrypt() {
-		let params = Rc::new(BfvParameters::default_one_modulus());
-		let sk = SecretKey::random(&params);
+		for params in [
+			Rc::new(BfvParameters::default_one_modulus()),
+			Rc::new(BfvParameters::default_two_moduli()),
+		] {
+			let sk = SecretKey::random(&params);
 
-		let pt = Plaintext::try_encode(&[1, 2, 3, 4, 5, 6, 7, 8], Encoding::Poly, &params).unwrap();
-		let ct = sk.encrypt(&pt).unwrap();
-		let pt2 = sk.decrypt(&ct);
+			let pt =
+				Plaintext::try_encode(&[1, 2, 3, 4, 5, 6, 7, 8], Encoding::Poly, &params).unwrap();
+			let ct = sk.encrypt(&pt).unwrap();
+			let pt2 = sk.decrypt(&ct);
 
-		println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
-		assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
+			assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+		}
+	}
 
-		let params = Rc::new(BfvParameters::default_two_moduli());
-		let sk = SecretKey::random(&params);
+	#[test]
+	fn test_key_switching() {
+		for params in [
+			Rc::new(BfvParameters::default_one_modulus()),
+			Rc::new(BfvParameters::default_two_moduli()),
+		] {
+			let sk = SecretKey::random(&params);
 
-		let pt = Plaintext::try_encode(&[1, 2, 3, 4, 5, 6, 7, 8], Encoding::Poly, &params).unwrap();
-		let ct = sk.encrypt(&pt).unwrap();
-		let pt2 = sk.decrypt(&ct);
-
-		println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
-		assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+			let p = Poly::random(params.ctx(), Representation::PowerBasis);
+			let ksk = sk.key_switching_new(&p);
+			assert!(ksk.is_ok())
+		}
 	}
 }
