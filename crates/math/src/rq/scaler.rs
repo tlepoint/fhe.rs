@@ -52,6 +52,7 @@ impl Scaler {
 			Ok(Poly {
 				ctx: p.ctx.clone(),
 				representation: Representation::PowerBasis,
+				allow_variable_time_computations: p.allow_variable_time_computations,
 				coefficients: new_coefficients,
 				coefficients_shoup: None,
 			})

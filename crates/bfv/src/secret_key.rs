@@ -46,7 +46,7 @@ impl Encryptor for SecretKey {
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
 
-		let a = Poly::random_from_seed(self.par.ctx(), Representation::Ntt, seed);
+		let mut a = Poly::random_from_seed(self.par.ctx(), Representation::Ntt, seed);
 
 		let mut b = Poly::small(
 			self.par.ctx(),
@@ -66,6 +66,10 @@ impl Encryptor for SecretKey {
 		a_s.zeroize();
 		m.zeroize();
 
+		// It is now safe to enable variable time computations.
+		unsafe { a.allow_variable_time_computations() }
+		unsafe { b.allow_variable_time_computations() }
+
 		Ok(Ciphertext {
 			par: self.par.clone(),
 			seed: Some(seed),
@@ -82,8 +86,14 @@ impl Decryptor for SecretKey {
 		if self.par != ct.par {
 			Err("Incompatible BFV parameters".to_string())
 		} else {
-			let mut c1_s = &ct.c1 * &self.s;
-			let mut c = &ct.c0 + &c1_s;
+			// Let's disable variable time computations
+			let mut c0 = ct.c0.clone();
+			let mut c1 = ct.c1.clone();
+			c0.disallow_variable_time_computations();
+			c1.disallow_variable_time_computations();
+
+			let mut c1_s = &c1 * &self.s;
+			let mut c = &c0 + &c1_s;
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler().scale(&c, false)?;
 			let mut v = Vec::<u64>::from(&d);

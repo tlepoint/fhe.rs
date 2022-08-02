@@ -24,7 +24,6 @@ pub fn rq_benchmark(c: &mut Criterion) {
 				continue;
 			}
 			let ctx = Rc::new(Context::new(&MODULI[0..nmoduli], *degree).unwrap());
-
 			let mut p = Poly::random(&ctx, Representation::Ntt);
 			let mut q = Poly::random(&ctx, Representation::Ntt);
 
@@ -48,22 +47,6 @@ pub fn rq_benchmark(c: &mut Criterion) {
 					b.iter(|| p *= &q);
 				},
 			);
-
-			unsafe {
-				let ctx_with_vt = Rc::new(
-					Context::new_enable_variable_time_computations(&MODULI[0..nmoduli], *degree)
-						.unwrap(),
-				);
-				let mut p_vt = Poly::random(&ctx_with_vt, Representation::Ntt);
-				let q_vt = Poly::random(&ctx_with_vt, Representation::Ntt);
-
-				group.bench_function(
-					BenchmarkId::new("vt_mul", format!("{}/{}", degree, 62 * nmoduli)),
-					|b| {
-						b.iter(|| p_vt *= &q_vt);
-					},
-				);
-			}
 
 			q.change_representation(Representation::NttShoup);
 
@@ -103,6 +86,43 @@ pub fn rq_benchmark(c: &mut Criterion) {
 					});
 				},
 			);
+
+			p.change_representation(Representation::Ntt);
+			q.change_representation(Representation::Ntt);
+
+			unsafe {
+				q.allow_variable_time_computations();
+
+				group.bench_function(
+					BenchmarkId::new("add_vt", format!("{}/{}", degree, 62 * nmoduli)),
+					|b| {
+						b.iter(|| p += &q);
+					},
+				);
+
+				group.bench_function(
+					BenchmarkId::new("sub_vt", format!("{}/{}", degree, 62 * nmoduli)),
+					|b| {
+						b.iter(|| p -= &q);
+					},
+				);
+
+				group.bench_function(
+					BenchmarkId::new("mul_vt", format!("{}/{}", degree, 62 * nmoduli)),
+					|b| {
+						b.iter(|| p *= &q);
+					},
+				);
+
+				q.change_representation(Representation::NttShoup);
+
+				group.bench_function(
+					BenchmarkId::new("mul_shoup_vt", format!("{}/{}", degree, 62 * nmoduli)),
+					|b| {
+						b.iter(|| p *= &q);
+					},
+				);
+			}
 		}
 	}
 
