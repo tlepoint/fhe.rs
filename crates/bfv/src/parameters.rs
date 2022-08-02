@@ -3,11 +3,10 @@
 use derive_builder::Builder;
 use math::{
 	rns::RnsContext,
-	rq::{scaler::Scaler, Context},
+	rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
 	zq::{ntt::NttOperator, Modulus},
 };
 use num_bigint::BigUint;
-use num_traits::cast::ToPrimitive;
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
@@ -38,8 +37,8 @@ pub struct BfvParameters {
 	/// Ntt operator for the SIMD plaintext, if possible.
 	op: Option<Rc<NttOperator>>,
 
-	/// Scaling factor for the plaintext
-	deltas: Vec<u64>,
+	/// Scaling polynomial for the plaintext
+	delta: Poly,
 
 	/// Down scaler for the plaintext
 	scaler: Scaler,
@@ -76,9 +75,9 @@ impl BfvParameters {
 		&self.op
 	}
 
-	/// Returns the scaling factors for the plaintext
-	pub fn deltas(&self) -> &[u64] {
-		&self.deltas
+	/// Returns the scaling constant polynomial in NttShoup representation
+	pub fn delta(&self) -> &Poly {
+		&self.delta
 	}
 
 	/// Returns a reference to the scaler that enables to multiply by plaintext / ciphertext_modulus
@@ -172,10 +171,6 @@ impl BfvParametersBuilder {
 		// Compute the scaling factors for the plaintext
 		let rns = RnsContext::new(&ciphertext_moduli).unwrap();
 		let delta = rns.modulus() / plaintext_modulus.modulus();
-		let mut deltas = Vec::with_capacity(ciphertext_moduli.len());
-		for qi in &ciphertext_moduli {
-			deltas.push((&delta % *qi).to_u64().unwrap())
-		}
 
 		let ctx = Rc::new(ctx.unwrap());
 		let scaler = Scaler::new(
@@ -183,6 +178,13 @@ impl BfvParametersBuilder {
 			&BigUint::from(plaintext_modulus.modulus()),
 			rns.modulus(),
 		)?;
+
+		let mut delta_vec = Vec::with_capacity(polynomial_degree);
+		for _ in 0..polynomial_degree {
+			delta_vec.push(delta.clone())
+		}
+		let delta_poly =
+			Poly::try_convert_from(delta_vec.as_slice(), &ctx, Representation::NttShoup)?;
 
 		Ok(BfvParameters {
 			polynomial_degree,
@@ -192,7 +194,7 @@ impl BfvParametersBuilder {
 			variance,
 			ctx,
 			op: op.map(Rc::new),
-			deltas,
+			delta: delta_poly,
 			scaler,
 		})
 	}

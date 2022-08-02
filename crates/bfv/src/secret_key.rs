@@ -59,8 +59,8 @@ impl Encryptor for SecretKey {
 		b -= &a_s;
 
 		let mut m = Poly::try_convert_from(pt, self.par.ctx(), Representation::PowerBasis)?;
-		m.scale(self.par.deltas())?;
 		m.change_representation(Representation::Ntt);
+		m *= self.par.delta();
 		b += &m;
 
 		a_s.zeroize();
@@ -84,16 +84,17 @@ impl Decryptor for SecretKey {
 		} else {
 			let mut c1_s = &ct.c1 * &self.s;
 			let mut c = &ct.c0 + &c1_s;
-			c1_s.zeroize();
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler().scale(&c, false)?;
-			c.zeroize();
 			let mut v = Vec::<u64>::from(&d);
-			d.zeroize();
 			let pt = Plaintext {
 				par: self.par.clone(),
 				value: v[..self.par.degree()].to_vec(),
 			};
+
+			c1_s.zeroize();
+			c.zeroize();
+			d.zeroize();
 			v.zeroize();
 			Ok(pt)
 		}

@@ -21,13 +21,12 @@ pub enum Encoding {
 }
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
-/// TODO: Can the members be private?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
-	pub par: Rc<BfvParameters>,
+	pub(crate) par: Rc<BfvParameters>,
 	/// The value after encoding.
-	pub value: Vec<u64>,
+	pub(crate) value: Vec<u64>,
 }
 
 impl Plaintext {
