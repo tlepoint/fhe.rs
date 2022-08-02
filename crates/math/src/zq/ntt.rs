@@ -242,7 +242,7 @@ impl NttOperator {
 	/// Aborts if a >= p in debug mode.
 	fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
 		debug_assert!(a < p.p);
-		debug_assert!(supports_ntt(p.p, n));
+		debug_assert!(supports_ntt(p.p, n >> 1)); // TODO: This is not exactly the right condition here.
 
 		// A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
 		// for all prime p dividing n.

@@ -11,7 +11,7 @@ mod parameters;
 mod plaintext;
 
 pub mod traits;
-pub use ciphertext::Ciphertext;
+pub use ciphertext::{mul, Ciphertext};
 pub use keys::{RelinearizationKey, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::{Encoding, Plaintext};

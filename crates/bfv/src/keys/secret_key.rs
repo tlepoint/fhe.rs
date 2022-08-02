@@ -6,7 +6,11 @@ use crate::{
 	plaintext::Plaintext,
 	traits::{Decryptor, Encryptor},
 };
-use math::rq::{traits::TryConvertFrom, Poly, Representation};
+use itertools::Itertools;
+use math::{
+	rq::{traits::TryConvertFrom, Poly, Representation},
+	zq::Modulus,
+};
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
@@ -137,11 +141,21 @@ impl Decryptor for SecretKey {
 			let mut c = &c0 + &c1_s;
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler().scale(&c, false)?;
-			let mut v = Vec::<u64>::from(&d);
-			self.par.plaintext().reduce_vec(&mut v);
+			// TODO: Can we handle plaintext moduli that are BigUint?
+			let mut v = Vec::<u64>::from(&d)
+				.iter_mut()
+				.map(|vi| *vi + self.par.plaintext().modulus())
+				.collect_vec();
+			println!("V = {:?}", v);
+			let mut w = v[..self.par.degree()].to_vec();
+			let q = Modulus::new(self.par.moduli()[0]).unwrap();
+			q.reduce_vec(&mut w);
+			println!("W = {:?}", w);
+			self.par.plaintext().reduce_vec(&mut w);
+			println!("W = {:?}", w);
 			let pt = Plaintext {
 				par: self.par.clone(),
-				value: v[..self.par.degree()].to_vec(),
+				value: unsafe { self.par.plaintext().center_vec_vt(&w[..self.par.degree()]) },
 			};
 
 			c1_s.zeroize();

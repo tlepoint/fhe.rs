@@ -100,10 +100,7 @@ impl KeySwitchingKey {
 
 #[cfg(test)]
 mod tests {
-	use crate::{
-		keys::key_switching_key::KeySwitchingKey, traits::Decryptor, BfvParameters, Ciphertext,
-		SecretKey,
-	};
+	use crate::{keys::key_switching_key::KeySwitchingKey, BfvParameters, SecretKey};
 	use math::{
 		rns::RnsContext,
 		rq::{Poly, Representation},

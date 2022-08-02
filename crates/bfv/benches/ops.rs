@@ -1,4 +1,5 @@
 use bfv::{
+	mul,
 	traits::{Encoder, Encryptor},
 	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
 };
@@ -77,6 +78,16 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| rk.relinearize(&p1, &p1, &p2));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul",
+				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+			),
+			|b| {
+				b.iter(|| mul(&c1, &c2, &rk));
 			},
 		);
 	}

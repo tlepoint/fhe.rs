@@ -98,7 +98,15 @@ mod tests {
 
 					let expected = poly_biguint
 						.iter()
-						.map(|i| ((i * &n) / &d) % ctx.rns.modulus())
+						.map(|i| {
+							if i >= &(ctx.modulus() >> 1usize) {
+								ctx.modulus()
+									- (&(&(ctx.modulus() - i) * &n + &d - 1u64) / &d)
+										% ctx.modulus()
+							} else {
+								((i * &n) / &d) % ctx.modulus()
+							}
+						})
 						.collect_vec();
 					assert_eq!(expected, scaled_biguint);
 				}
