@@ -77,6 +77,11 @@ impl BfvParameters {
 		&self.ciphertext_moduli
 	}
 
+	/// Returns the ciphertext modulus as a BigUint
+	pub fn modulus(&self) -> &BigUint {
+		self.ctx.modulus()
+	}
+
 	/// Returns a reference to the Ntt operator if it exists
 	pub fn simd_operator(&self) -> &Option<Rc<NttOperator>> {
 		&self.op

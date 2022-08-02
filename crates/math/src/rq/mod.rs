@@ -63,6 +63,12 @@ impl Context {
 			})
 		}
 	}
+
+	/// Returns the modulus as a BigUint
+	/// TODO: To test
+	pub fn modulus(&self) -> &BigUint {
+		self.rns.modulus()
+	}
 }
 
 impl PartialEq for Context {

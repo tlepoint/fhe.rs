@@ -12,6 +12,9 @@ use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+#[cfg(test)]
+use num_bigint::BigUint;
+
 /// Secret key for the BFV encryption scheme.
 #[derive(Debug, PartialEq)]
 pub struct SecretKey {
@@ -36,6 +39,44 @@ impl SecretKey {
 			par: par.clone(),
 			s,
 		}
+	}
+
+	/// # Safety
+	///
+	/// Measure the noise in a [`Ciphertext`].
+	/// This operations may run in a variable time depending on the value of the noise.
+	#[cfg(test)]
+	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
+		let plaintext = self.decrypt(ct)?;
+
+		let mut m = Poly::try_convert_from(&plaintext, self.par.ctx(), Representation::PowerBasis)?;
+		m.change_representation(Representation::Ntt);
+		m *= self.par.delta();
+
+		// Let's disable variable time computations
+		let mut c0 = ct.c0.clone();
+		let mut c1 = ct.c1.clone();
+		c0.disallow_variable_time_computations();
+		c1.disallow_variable_time_computations();
+
+		let mut c1_s = &c1 * &self.s;
+		let mut c = &c0 + &c1_s;
+		c -= &m;
+		c.change_representation(Representation::PowerBasis);
+
+		let ciphertext_modulus = self.par.modulus();
+		let mut noise = 0usize;
+		for coeff in Vec::<BigUint>::from(&c) {
+			noise = std::cmp::max(
+				noise,
+				std::cmp::min(coeff.bits(), (ciphertext_modulus - &coeff).bits()) as usize,
+			)
+		}
+
+		c1_s.zeroize();
+		c.zeroize();
+
+		Ok(noise)
 	}
 }
 
@@ -150,6 +191,7 @@ mod tests {
 		let ct = sk.encrypt(&pt).unwrap();
 		let pt2 = sk.decrypt(&ct);
 
+		println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
 		assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
 
 		let params = Rc::new(BfvParameters::default_two_moduli());
@@ -159,6 +201,7 @@ mod tests {
 		let ct = sk.encrypt(&pt).unwrap();
 		let pt2 = sk.decrypt(&ct);
 
+		println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
 		assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
 	}
 }
