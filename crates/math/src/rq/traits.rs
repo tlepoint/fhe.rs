@@ -21,7 +21,7 @@ where
 	/// Attempt to convert the `value` into a polynomial with a specific context and
 	/// under a specific representation. The representation may optional and be
 	/// specified as `None`; this is useful for example when converting from a
-	/// representation that encodes the representation.
+	/// value that encodes the representation (e.g., serialization, protobuf, etc.).
 	fn try_convert_from<R>(
 		value: T,
 		ctx: &Rc<Context>,

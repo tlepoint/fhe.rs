@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
 
 /// Scaler in RNS basis.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct RnsScaler {
 	ctx: RnsContext,
 	numerator: BigUint,

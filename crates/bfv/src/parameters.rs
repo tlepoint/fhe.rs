@@ -35,12 +35,15 @@ pub struct BfvParameters {
 	ctx: Rc<Context>,
 
 	/// Ntt operator for the SIMD plaintext, if possible.
+	#[builder(setter(skip))]
 	op: Option<Rc<NttOperator>>,
 
 	/// Scaling polynomial for the plaintext
+	#[builder(setter(skip))]
 	delta: Poly,
 
 	/// Down scaler for the plaintext
+	#[builder(setter(skip))]
 	scaler: Scaler,
 }
 
