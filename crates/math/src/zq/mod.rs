@@ -191,7 +191,6 @@ impl Modulus {
 	/// Modular scalar multiplication of vectors in place in constant time.
 	///
 	/// Aborts if any of the values in a is >= p in debug mode.
-	/// TODO: To test
 	pub fn scalar_mul_vec(&self, a: &mut [u64], b: u64) {
 		let b_shoup = self.shoup(b);
 		a.iter_mut()
@@ -646,6 +645,15 @@ mod tests {
 				p.vt_mul_vec(&mut a, &b);
 			}
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+		}
+
+		#[test]
+		fn test_scalar_mul_vec(p in valid_moduli(), mut a: Vec<u64>, mut b: u64) {
+			p.reduce_vec(&mut a);
+			b = p.reduce(b);
+			let c = a.clone();
+			p.scalar_mul_vec(&mut a, b);
+			prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
 		}
 
 		#[test]

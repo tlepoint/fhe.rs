@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use std::rc::Rc;
 
 /// Context extender.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Scaler {
 	ctx: Rc<Context>,
 	scaler: RnsScaler,

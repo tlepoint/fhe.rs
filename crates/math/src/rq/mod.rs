@@ -6,8 +6,10 @@ pub mod extender;
 pub mod scaler;
 pub mod traits;
 
-use crate::rns::RnsContext;
-use crate::zq::{ntt::NttOperator, Modulus};
+use crate::{
+	rns::RnsContext,
+	zq::{ntt::NttOperator, Modulus},
+};
 use fhers_protos::protos::rq as proto_rq;
 use itertools::{izip, Itertools};
 use ndarray::{Array2, ArrayView, Axis};
@@ -81,9 +83,10 @@ impl Context {
 }
 
 /// Possible representations of the underlying polynomial.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Representation {
 	/// This is the list of coefficients ci, such that the polynomial is c0 + c1 * x + ... + c_(degree - 1) * x^(degree - 1)
+	#[default]
 	PowerBasis,
 	/// This is the NTT representation of the PowerBasis representation.
 	Ntt,
@@ -92,7 +95,7 @@ pub enum Representation {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Poly {
 	ctx: Rc<Context>,
 	representation: Representation,

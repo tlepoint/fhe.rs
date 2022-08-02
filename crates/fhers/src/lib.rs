@@ -4,4 +4,4 @@
 
 //! fhers: Fully Homomorphic Encryption in Rust.
 
-pub use math;
+pub use bfv;

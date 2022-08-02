@@ -5,7 +5,7 @@ use crate::traits::{Decoder, Encoder};
 use math::rq::traits::TryConvertFrom;
 use math::rq::{Poly, Representation};
 use std::rc::Rc;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// An encoding for the plaintext.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +61,8 @@ impl Zeroize for Plaintext {
 	}
 }
 
+impl ZeroizeOnDrop for Plaintext {}
+
 impl Encoder<&[u64]> for Plaintext {
 	type Error = String;
 
@@ -99,6 +101,7 @@ impl Encoder<&[u64]> for Plaintext {
 
 impl Decoder for Vec<u64> {
 	type Error = String;
+
 	fn try_decode(pt: &Plaintext, encoding: Encoding) -> Result<Vec<u64>, Self::Error> {
 		let mut v = pt.value.clone();
 		if encoding == Encoding::Simd {
@@ -131,8 +134,7 @@ mod tests {
 		let q = Modulus::new(params.plaintext()).unwrap();
 		let a = q.random_vec(params.degree());
 
-		let plaintext =
-			Plaintext::try_encode(&[0, 0, 0, 0, 0, 0, 0, 0, 0], Encoding::Poly, &params);
+		let plaintext = Plaintext::try_encode(&[0; 9], Encoding::Poly, &params);
 		assert!(plaintext.is_err());
 
 		let plaintext = Plaintext::try_encode(&a, Encoding::Poly, &params);
