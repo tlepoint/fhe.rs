@@ -340,6 +340,12 @@ impl Modulus {
 		debug_assert_eq!(r, x % p);
 
 		r
+		// TODO: Make two versions: ct and vt, benchmarks both up to the ciphertext operations...
+		// if x >= p {
+		// 	x - p
+		// } else {
+		// 	x
+		// }
 	}
 
 	/// Lazy modular reduction of a in constant time.
