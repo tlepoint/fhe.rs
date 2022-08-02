@@ -77,6 +77,7 @@ impl ContextSwitcher for Extender {
 			Ok(Poly {
 				ctx: self.to.clone(),
 				representation: Representation::PowerBasis,
+				allow_variable_time_computations: p.allow_variable_time_computations,
 				coefficients: new_coefficients,
 				coefficients_shoup: None,
 			})

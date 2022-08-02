@@ -56,6 +56,17 @@ impl Modulus {
 		Self::reduce1(a + b, self.p)
 	}
 
+	/// # Safety
+	///
+	/// Modular addition of a and b in variable time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		Self::reduce1_vt(a + b, self.p)
+	}
+
 	/// Modular subtraction of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
@@ -63,6 +74,17 @@ impl Modulus {
 		debug_assert!(a < self.p && b < self.p);
 
 		Self::reduce1(a + self.p - b, self.p)
+	}
+
+	/// # Safety
+	///
+	/// Modular subtraction of a and b in variable time.
+	///
+	/// Aborts if a >= p or b >= p in debug mode.
+	unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
+		debug_assert!(a < self.p && b < self.p);
+
+		Self::reduce1_vt(a + self.p - b, self.p)
 	}
 
 	/// Modular multiplication of a and b in constant time.
@@ -79,15 +101,10 @@ impl Modulus {
 	/// Modular multiplication of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	unsafe fn vt_mul(&self, a: u64, b: u64) -> u64 {
+	unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 
-		let r = self.lazy_reduce_u128((a as u128) * (b as u128));
-		if r >= self.p {
-			r - self.p
-		} else {
-			r
-		}
+		Self::reduce1_vt(self.lazy_reduce_u128((a as u128) * (b as u128)), self.p)
 	}
 
 	/// Optimized modular multiplication of a and b in constant time.
@@ -105,16 +122,11 @@ impl Modulus {
 	/// Optimized modular multiplication of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	unsafe fn vt_mul_opt(&self, a: u64, b: u64) -> u64 {
+	unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(self.supports_opt);
 		debug_assert!(a < self.p && b < self.p);
 
-		let r = self.lazy_reduce_opt_u128((a as u128) * (b as u128));
-		if r >= self.p {
-			r - self.p
-		} else {
-			r
-		}
+		self.reduce_opt_u128_vt((a as u128) * (b as u128))
 	}
 
 	/// Modular negation in constant time.
@@ -123,6 +135,16 @@ impl Modulus {
 	pub fn neg(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 		Self::reduce1(self.p - a, self.p)
+	}
+
+	/// # Safety
+	///
+	/// Modular negation in variable time.
+	///
+	/// Aborts if a >= p in debug mode.
+	unsafe fn neg_vt(&self, a: u64) -> u64 {
+		debug_assert!(a < self.p);
+		Self::reduce1_vt(self.p - a, self.p)
 	}
 
 	/// Compute the Shoup representation of a.
@@ -139,6 +161,15 @@ impl Modulus {
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
 	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
+	}
+
+	/// # Safety
+	///
+	/// Shoup multiplication of a and b in variable time.
+	///
+	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
+	unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+		Self::reduce1_vt(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
 	/// Lazy Shoup multiplication of a and b in constant time.
@@ -166,6 +197,17 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
 	}
 
+	/// # Safety
+	///
+	/// Modular addition of vectors in place in variable time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi));
+	}
+
 	/// Modular subtraction of vectors in place in constant time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
@@ -173,6 +215,17 @@ impl Modulus {
 		debug_assert_eq!(a.len(), b.len());
 
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
+	}
+
+	/// # Safety
+	///
+	/// Modular subtraction of vectors in place in variable time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+
+		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi));
 	}
 
 	/// Modular multiplication of vectors in place in constant time.
@@ -199,16 +252,27 @@ impl Modulus {
 
 	/// # Safety
 	///
+	/// Modular scalar multiplication of vectors in place in variable time.
+	///
+	/// Aborts if any of the values in a is >= p in debug mode.
+	pub unsafe fn scalar_mul_vec_vt(&self, a: &mut [u64], b: u64) {
+		let b_shoup = self.shoup(b);
+		a.iter_mut()
+			.for_each(|ai| *ai = self.mul_shoup_vt(*ai, b, b_shoup));
+	}
+
+	/// # Safety
+	///
 	/// Modular multiplication of vectors in place in variable time.
 	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
-	pub unsafe fn vt_mul_vec(&self, a: &mut [u64], b: &[u64]) {
+	pub unsafe fn mul_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
 		if self.supports_opt {
-			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.vt_mul_opt(*ai, *bi));
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt_vt(*ai, *bi));
 		} else {
-			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.vt_mul(*ai, *bi));
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_vt(*ai, *bi));
 		}
 	}
 
@@ -233,9 +297,30 @@ impl Modulus {
 			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
+	/// # Safety
+	///
+	/// Shoup modular multiplication of vectors in place in variable time.
+	///
+	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	pub unsafe fn mul_shoup_vec_vt(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
+		debug_assert_eq!(a.len(), b.len());
+		debug_assert_eq!(a.len(), b_shoup.len());
+		debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
+
+		izip!(a.iter_mut(), b.iter(), b_shoup.iter())
+			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup_vt(*ai, *bi, *bi_shoup));
+	}
+
 	/// Reduce a vector in place in constant time.
 	pub fn reduce_vec(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
+	}
+
+	/// # Safety
+	///
+	/// Reduce a vector in place in variable time.
+	pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
+		a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai));
 	}
 
 	/// Modular reduction of a i64 in constant time.
@@ -243,9 +328,23 @@ impl Modulus {
 		self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
 	}
 
+	/// # Safety
+	///
+	/// Modular reduction of a i64 in variable time.
+	unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
+		self.reduce_u128_vt((((self.p as i128) << 64) + (a as i128)) as u128)
+	}
+
 	/// Reduce a vector in place in constant time.
 	pub fn reduce_vec_i64(&self, a: &[i64]) -> Vec<u64> {
 		a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec()
+	}
+
+	/// # Safety
+	///
+	/// Reduce a vector in place in variable time.
+	pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
+		a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect_vec()
 	}
 
 	/// Reduce a vector in constant time.
@@ -255,11 +354,29 @@ impl Modulus {
 		b
 	}
 
+	/// # Safety
+	///
+	/// Reduce a vector in variable time.
+	pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
+		let mut b = a.to_vec();
+		b.iter_mut().for_each(|bi| *bi = self.reduce_vt(*bi));
+		b
+	}
+
 	/// Modular negation of a vector in place in constant time.
 	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
 	pub fn neg_vec(&self, a: &mut [u64]) {
 		izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
+	}
+
+	/// # Safety
+	///
+	/// Modular negation of a vector in place in variable time.
+	///
+	/// Aborts if any of the values in the vector is >= p in debug mode.
+	pub unsafe fn neg_vec_vt(&self, a: &mut [u64]) {
+		izip!(a.iter_mut()).for_each(|ai| *ai = self.neg_vt(*ai));
 	}
 
 	/// Modular exponentiation in variable time.
@@ -305,9 +422,23 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
+	/// # Safety
+	///
+	/// Modular reduction of a u128 in variable time.
+	pub unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
+		Self::reduce1_vt(self.lazy_reduce_u128(a), self.p)
+	}
+
 	/// Modular reduction of a u64 in constant time.
 	pub fn reduce(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce(a), self.p)
+	}
+
+	/// # Safety
+	///
+	/// Modular reduction of a u64 in constant time.
+	pub unsafe fn reduce_vt(&self, a: u64) -> u64 {
+		Self::reduce1_vt(self.lazy_reduce(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in constant time.
@@ -316,9 +447,24 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
+	/// # Safety
+	///
+	/// Optimized modular reduction of a u128 in constant time.
+	unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
+		debug_assert!(self.supports_opt);
+		Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p)
+	}
+
 	/// Optimized modular reduction of a u64 in constant time.
 	pub fn reduce_opt(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce_opt(a), self.p)
+	}
+
+	/// # Safety
+	///
+	/// Optimized modular reduction of a u64 in constant time.
+	pub unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
+		Self::reduce1_vt(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// Return x mod p in constant time.
@@ -340,12 +486,22 @@ impl Modulus {
 		debug_assert_eq!(r, x % p);
 
 		r
-		// TODO: Make two versions: ct and vt, benchmarks both up to the ciphertext operations...
-		// if x >= p {
-		// 	x - p
-		// } else {
-		// 	x
-		// }
+	}
+
+	/// # Safety
+	///
+	/// Return x mod p in variable time.
+	///
+	/// Aborts if x >= 2 * p in debug mode.
+	unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
+		debug_assert!(p >> 63 == 0);
+		debug_assert!(x < 2 * p);
+
+		if x >= p {
+			x - p
+		} else {
+			x
+		}
 	}
 
 	/// Lazy modular reduction of a in constant time.
@@ -552,6 +708,7 @@ mod tests {
 		fn test_neg(p in valid_moduli(), mut a: u64,  mut q: u64) {
 			a = p.reduce(a);
 			prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
+			unsafe { prop_assert_eq!(p.neg_vt(a), (p.modulus() - a) % p.modulus()) }
 
 			q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 			prop_assert!(catch_unwind(|| p.neg(q)).is_err());
@@ -562,6 +719,7 @@ mod tests {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
+			unsafe { prop_assert_eq!(p.add_vt(a, b), (a + b) % p.modulus()) }
 
 			q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 			prop_assert!(catch_unwind(|| p.add(q, a)).is_err());
@@ -573,6 +731,7 @@ mod tests {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
+			unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + p.modulus() - b) % p.modulus()) }
 
 			q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 			prop_assert!(catch_unwind(|| p.sub(q, a)).is_err());
@@ -584,6 +743,7 @@ mod tests {
 			a = p.reduce(a);
 			b = p.reduce(b);
 			prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
+			unsafe { prop_assert_eq!(p.mul_vt(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
 			q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 			prop_assert!(catch_unwind(|| p.mul(q, a)).is_err());
@@ -596,6 +756,7 @@ mod tests {
 			b = p.reduce(b);
 			let b_shoup = p.shoup(b);
 			prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
+			unsafe { prop_assert_eq!(p.mul_shoup_vt(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
 			q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 			prop_assert!(catch_unwind(|| p.shoup(q)).is_err());
@@ -608,17 +769,20 @@ mod tests {
 		#[test]
 		fn test_reduce(p in valid_moduli(), a: u64) {
 			prop_assert_eq!(p.reduce(a), a % p.modulus());
+			unsafe { prop_assert_eq!(p.reduce_vt(a), a % p.modulus()) }
 		}
 
 		#[test]
 		fn test_reduce_i64(p in valid_moduli(), a: i64) {
 			let b = if a < 0 { p.neg(p.reduce(-a as u64)) } else { p.reduce(a as u64) };
 			prop_assert_eq!(p.reduce_i64(a), b);
+			unsafe { prop_assert_eq!(p.reduce_i64_vt(a), b) }
 		}
 
 		#[test]
 		fn test_reduce_u128(p in valid_moduli(), a: u128) {
 			prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
+			unsafe { prop_assert_eq!(p.reduce_u128_vt(a) as u128, a % (p.modulus() as u128)) }
 		}
 
 		#[test]
@@ -628,6 +792,9 @@ mod tests {
 			let c = a.clone();
 			p.add_vec(&mut a, &b);
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
+			a = c.clone();
+			unsafe { p.add_vec_vt(&mut a, &b) }
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
 		}
 
 		#[test]
@@ -636,6 +803,9 @@ mod tests {
 			p.reduce_vec(&mut b);
 			let c = a.clone();
 			p.sub_vec(&mut a, &b);
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
+			a = c.clone();
+			unsafe { p.sub_vec_vt(&mut a, &b) }
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
 		}
 
@@ -647,9 +817,7 @@ mod tests {
 			p.mul_vec(&mut a, &b);
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
 			a = c.clone();
-			unsafe {
-				p.vt_mul_vec(&mut a, &b);
-			}
+			unsafe { p.mul_vec_vt(&mut a, &b); }
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
 		}
 
@@ -659,6 +827,9 @@ mod tests {
 			b = p.reduce(b);
 			let c = a.clone();
 			p.scalar_mul_vec(&mut a, b);
+			prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
+			a = c.clone();
+			unsafe { p.scalar_mul_vec_vt(&mut a, b) }
 			prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
 		}
 
@@ -670,6 +841,9 @@ mod tests {
 			let c = a.clone();
 			p.mul_shoup_vec(&mut a, &b, &b_shoup);
 			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+			a = c.clone();
+			unsafe { p.mul_shoup_vec_vt(&mut a, &b, &b_shoup) }
+			prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
 		}
 
 		#[test]
@@ -677,11 +851,16 @@ mod tests {
 			let mut b = a.clone();
 			p.reduce_vec(&mut b);
 			prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+			b = a.clone();
+			unsafe { p.reduce_vec_vt(&mut b) }
+			prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
 		}
 
 		#[test]
 		fn test_reduce_vec_i64(p in valid_moduli(), a: Vec<i64>) {
 			let b = p.reduce_vec_i64(&a);
+			prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
+			let b = unsafe { p.reduce_vec_i64_vt(&a) };
 			prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
 		}
 
@@ -690,6 +869,9 @@ mod tests {
 			p.reduce_vec(&mut a);
 			let mut b = a.clone();
 			p.neg_vec(&mut b);
+			prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
+			b = a.clone();
+			unsafe { p.neg_vec_vt(&mut b); }
 			prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
 		}
 

@@ -26,13 +26,12 @@ use util::sample_vec_cbd;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone)]
 pub struct Context {
 	q: Vec<Modulus>,
 	rns: RnsContext,
 	ops: Vec<NttOperator>,
 	degree: usize,
-	variable_time_enabled: bool,
 }
 
 impl Context {
@@ -61,24 +60,18 @@ impl Context {
 				rns,
 				ops,
 				degree,
-				variable_time_enabled: false,
 			})
 		}
 	}
+}
 
-	/// # Safety
-	///
-	/// Creates a context from a list of moduli and a polynomial degree, and enable variable-time computations.
-	/// By default, this is marked as unsafe, but is usually safe when only public data is processed.
-	///
-	/// Returns None if the moduli are not primes less than 62 bits which supports the NTT of size `degree`.
-	pub unsafe fn new_enable_variable_time_computations(
-		moduli: &[u64],
-		degree: usize,
-	) -> Option<Self> {
-		let mut ctx = Self::new(moduli, degree)?;
-		ctx.variable_time_enabled = true;
-		Some(ctx)
+impl PartialEq for Context {
+	fn eq(&self, other: &Self) -> bool {
+		// Do not check for the equivalence of the variable time boolean.
+		self.q == other.q
+			&& self.rns == other.rns
+			&& self.ops == other.ops
+			&& self.degree == other.degree
 	}
 }
 
@@ -99,6 +92,7 @@ pub enum Representation {
 pub struct Poly {
 	ctx: Rc<Context>,
 	representation: Representation,
+	allow_variable_time_computations: bool,
 	coefficients: Array2<u64>,
 	coefficients_shoup: Option<Array2<u64>>,
 }
@@ -109,6 +103,7 @@ impl Poly {
 		Self {
 			ctx: ctx.clone(),
 			representation: representation.clone(),
+			allow_variable_time_computations: false,
 			coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
 			coefficients_shoup: if representation == Representation::NttShoup {
 				Some(Array2::zeros((ctx.q.len(), ctx.degree)))
@@ -116,6 +111,20 @@ impl Poly {
 				None
 			},
 		}
+	}
+
+	/// # Safety
+	///
+	/// Enable variable time computations when this polynomial is involved.
+	/// By default, this is marked as unsafe, but is usually safe when only public data is processed.
+	/// TODO: To test
+	pub unsafe fn allow_variable_time_computations(&mut self) {
+		self.allow_variable_time_computations = true
+	}
+
+	/// Disable variable time computations when this polynomial is involved.
+	pub fn disallow_variable_time_computations(&mut self) {
+		self.allow_variable_time_computations = false
 	}
 
 	/// Change the representation of the underlying polynomial.
@@ -390,6 +399,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					Ok(Self {
 						ctx: ctx.clone(),
 						representation: repr.unwrap(),
+						allow_variable_time_computations: false,
 						coefficients,
 						coefficients_shoup: None,
 					})
@@ -402,6 +412,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					let mut p = Self {
 						ctx: ctx.clone(),
 						representation: repr.unwrap(),
+						allow_variable_time_computations: false,
 						coefficients,
 						coefficients_shoup: None,
 					};
@@ -421,6 +432,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					Ok(Self {
 						ctx: ctx.clone(),
 						representation: repr.unwrap(),
+						allow_variable_time_computations: false,
 						coefficients,
 						coefficients_shoup: None,
 					})
@@ -462,6 +474,7 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 			let mut p = Self {
 				ctx: ctx.clone(),
 				representation: repr,
+				allow_variable_time_computations: false,
 				coefficients: a,
 				coefficients_shoup: None,
 			};
@@ -549,6 +562,7 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 			let mut p = Self {
 				ctx: ctx.clone(),
 				representation: repr.unwrap(),
+				allow_variable_time_computations: false,
 				coefficients,
 				coefficients_shoup: None,
 			};
@@ -657,14 +671,25 @@ impl AddAssign<&Poly> for Poly {
 			"Incompatible representations"
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		izip!(
-			self.coefficients.outer_iter_mut(),
-			p.coefficients.outer_iter(),
-			&self.ctx.q
-		)
-		.for_each(|(mut v1, v2, qi)| {
-			qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-		});
+		if self.allow_variable_time_computations || p.allow_variable_time_computations {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				p.coefficients.outer_iter(),
+				&self.ctx.q
+			)
+			.for_each(|(mut v1, v2, qi)| unsafe {
+				qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+			});
+		} else {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				p.coefficients.outer_iter(),
+				&self.ctx.q
+			)
+			.for_each(|(mut v1, v2, qi)| {
+				qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+			});
+		}
 	}
 }
 
@@ -689,14 +714,25 @@ impl SubAssign<&Poly> for Poly {
 			"Incompatible representations"
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		izip!(
-			self.coefficients.outer_iter_mut(),
-			p.coefficients.outer_iter(),
-			&self.ctx.q
-		)
-		.for_each(|(mut v1, v2, qi)| {
-			qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-		});
+		if self.allow_variable_time_computations || p.allow_variable_time_computations {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				p.coefficients.outer_iter(),
+				&self.ctx.q
+			)
+			.for_each(|(mut v1, v2, qi)| unsafe {
+				qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+			});
+		} else {
+			izip!(
+				self.coefficients.outer_iter_mut(),
+				p.coefficients.outer_iter(),
+				&self.ctx.q
+			)
+			.for_each(|(mut v1, v2, qi)| {
+				qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+			});
+		}
 	}
 }
 
@@ -724,7 +760,7 @@ impl MulAssign<&Poly> for Poly {
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		match p.representation {
 			Representation::Ntt => {
-				if self.ctx.variable_time_enabled {
+				if self.allow_variable_time_computations || p.allow_variable_time_computations {
 					unsafe {
 						izip!(
 							self.coefficients.outer_iter_mut(),
@@ -732,7 +768,7 @@ impl MulAssign<&Poly> for Poly {
 							&self.ctx.q
 						)
 						.for_each(|(mut v1, v2, qi)| {
-							qi.vt_mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+							qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
 						});
 					}
 				} else {
@@ -747,19 +783,35 @@ impl MulAssign<&Poly> for Poly {
 				}
 			}
 			Representation::NttShoup => {
-				izip!(
-					self.coefficients.outer_iter_mut(),
-					p.coefficients.outer_iter(),
-					p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-					&self.ctx.q
-				)
-				.for_each(|(mut v1, v2, v2_shoup, qi)| {
-					qi.mul_shoup_vec(
-						v1.as_slice_mut().unwrap(),
-						v2.as_slice().unwrap(),
-						v2_shoup.as_slice().unwrap(),
+				if self.allow_variable_time_computations || p.allow_variable_time_computations {
+					izip!(
+						self.coefficients.outer_iter_mut(),
+						p.coefficients.outer_iter(),
+						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
+						&self.ctx.q
 					)
-				});
+					.for_each(|(mut v1, v2, v2_shoup, qi)| unsafe {
+						qi.mul_shoup_vec_vt(
+							v1.as_slice_mut().unwrap(),
+							v2.as_slice().unwrap(),
+							v2_shoup.as_slice().unwrap(),
+						)
+					});
+				} else {
+					izip!(
+						self.coefficients.outer_iter_mut(),
+						p.coefficients.outer_iter(),
+						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
+						&self.ctx.q
+					)
+					.for_each(|(mut v1, v2, v2_shoup, qi)| {
+						qi.mul_shoup_vec(
+							v1.as_slice_mut().unwrap(),
+							v2.as_slice().unwrap(),
+							v2_shoup.as_slice().unwrap(),
+						)
+					});
+				}
 			}
 			_ => {
 				panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
@@ -777,29 +829,18 @@ impl Mul<&Poly> for &Poly {
 	}
 }
 
-impl Neg for Poly {
-	type Output = Poly;
-
-	fn neg(self) -> Poly {
-		assert_ne!(
-			&self.representation,
-			&Representation::NttShoup,
-			"Cannot negate a polynomial in NttShoup representation"
-		);
-		let mut out = self;
-		izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
-			.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-		out
-	}
-}
-
 impl Neg for &Poly {
 	type Output = Poly;
 
 	fn neg(self) -> Poly {
 		let mut out = self.clone();
-		izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
-			.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+		if self.allow_variable_time_computations {
+			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+				.for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
+		} else {
+			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+				.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+		}
 		out
 	}
 }
@@ -1160,13 +1201,13 @@ mod tests {
 				let mut c = m.reduce_vec_new(&a);
 
 				let p = Poly::try_convert_from(&c, &ctx, Representation::PowerBasis).unwrap();
-				let r = -p;
+				let r = -&p;
 				prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 				m.neg_vec(&mut c);
 				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
 
 				let p = Poly::try_convert_from(&c, &ctx, Representation::Ntt).unwrap();
-				let r = -p;
+				let r = -&p;
 				prop_assert_eq!(&r.representation, &Representation::Ntt);
 				m.neg_vec(&mut c);
 				prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &c);
@@ -1184,7 +1225,7 @@ mod tests {
 			let r = -&p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
-			let r = -p;
+			let r = -&p;
 			prop_assert_eq!(&r.representation, &Representation::PowerBasis);
 			prop_assert_eq!(&Vec::<u64>::try_from(&r).unwrap(), &reference);
 		}

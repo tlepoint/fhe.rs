@@ -39,7 +39,7 @@ pub fn zq_benchmark(c: &mut Criterion) {
 		});
 
 		group.bench_function(BenchmarkId::new("vt_mul_vec", vector_size), |b| unsafe {
-			b.iter(|| q.vt_mul_vec(&mut a, &c));
+			b.iter(|| q.mul_vec_vt(&mut a, &c));
 		});
 	}
 
