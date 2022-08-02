@@ -5,7 +5,7 @@ use crate::parameters::BfvParameters;
 use crate::plaintext::{Encoding, Plaintext};
 use std::rc::Rc;
 
-/// Encode to create plaintexts.
+/// Encode values into [`Plaintext`].
 pub trait Encoder<T>
 where
 	Self: Sized,
@@ -13,7 +13,7 @@ where
 	/// The type of errors.
 	type Error;
 
-	/// Attempt to encode the value within the specified parameters.
+	/// Attempt to encode the `value` with the specified [`Encoding`] and [`BfvParameters`].
 	fn try_encode(
 		value: T,
 		encoding: Encoding,
@@ -21,7 +21,7 @@ where
 	) -> Result<Self, Self::Error>;
 }
 
-/// Decode plaintext values.
+/// Decode [`Plaintext`] values.
 pub trait Decoder
 where
 	Self: Sized,
@@ -29,24 +29,24 @@ where
 	/// The type of errors.
 	type Error;
 
-	/// Attempt to encode the value within the specified parameters.
+	/// Attempt to decode the [`Plaintext`] with the specified [`Encoding`].
 	fn try_decode(a: &Plaintext, encoding: Encoding) -> Result<Self, Self::Error>;
 }
 
-/// Encrypt a plaintext into a ciphertext
+/// Encrypt a [`Plaintext`] into a [`Ciphertext`].
 pub trait Encryptor {
 	/// The type of errors.
 	type Error;
 
-	/// Encrypt a plaintext.
+	/// Encrypt a [`Plaintext`].
 	fn encrypt(&self, plaintext: &Plaintext) -> Result<Ciphertext, Self::Error>;
 }
 
-/// Decrypt a ciphertext into a plaintext
+/// Decrypt a [`Ciphertext`] into a [`Plaintext`].
 pub trait Decryptor {
 	/// The type of errors.
 	type Error;
 
-	/// Decrypt a ciphertext
+	/// Decrypt a [`Ciphertext`].
 	fn decrypt(&self, ciphertext: &Ciphertext) -> Result<Plaintext, Self::Error>;
 }
