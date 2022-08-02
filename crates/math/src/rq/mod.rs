@@ -140,12 +140,26 @@ impl Poly {
 		} else if self.representation == Representation::Ntt && to == Representation::NttShoup {
 			self.compute_coefficients_shoup();
 		} else if self.representation == Representation::NttShoup && to == Representation::Ntt {
+			// We are not sure whether this polynomial was sensitive or not, so for security, we zeroize the Shoup coefficients.
+			self.coefficients_shoup
+				.as_mut()
+				.unwrap()
+				.as_slice_mut()
+				.unwrap()
+				.zeroize();
 			self.coefficients_shoup = None;
 		} else if self.representation == Representation::NttShoup
 			&& to == Representation::PowerBasis
 		{
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
 				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			// We are not sure whether this polynomial was sensitive or not, so for security, we zeroize the Shoup coefficients.
+			self.coefficients_shoup
+				.as_mut()
+				.unwrap()
+				.as_slice_mut()
+				.unwrap()
+				.zeroize();
 			self.coefficients_shoup = None;
 		} else {
 			panic!(
@@ -235,24 +249,6 @@ impl Poly {
 			let p = Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, representation)?;
 			coeffs.zeroize();
 			Ok(p)
-		}
-	}
-
-	/// Scale a polynomial
-	///
-	/// Returns an error if the number of scaling factors is not the number of moduli
-	/// TODO: To test
-	pub fn scale(&mut self, scaling_factors: &[u64]) -> Result<(), String> {
-		if scaling_factors.len() != self.ctx.q.len() {
-			Err("The number of scaling factors is not equal to the number of moduli".to_string())
-		} else {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				&self.ctx.q,
-				scaling_factors
-			)
-			.for_each(|(mut v, qi, delta)| qi.scalar_mul_vec(v.as_slice_mut().unwrap(), *delta));
-			Ok(())
 		}
 	}
 }
@@ -602,6 +598,21 @@ impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
 	}
 }
 
+impl<const N: usize> TryConvertFrom<&[BigUint; N]> for Poly {
+	type Error = String;
+
+	fn try_convert_from<R>(
+		v: &[BigUint; N],
+		ctx: &Rc<Context>,
+		representation: R,
+	) -> Result<Self, Self::Error>
+	where
+		R: Into<Option<Representation>>,
+	{
+		Poly::try_convert_from(v.as_ref(), ctx, representation)
+	}
+}
+
 impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
 	type Error = String;
 
@@ -839,22 +850,16 @@ mod tests {
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
 			let q = Poly::zero(&ctx, Representation::Ntt);
 			assert_ne!(p, q);
-			assert_eq!(Vec::<u64>::from(&p), &[0, 0, 0, 0, 0, 0, 0, 0]);
-			assert_eq!(Vec::<u64>::from(&q), &[0, 0, 0, 0, 0, 0, 0, 0]);
+			assert_eq!(Vec::<u64>::from(&p), &[0; 8]);
+			assert_eq!(Vec::<u64>::from(&q), &[0; 8]);
 		}
 
 		let ctx = Rc::new(Context::new(MODULI, 8).unwrap());
 		let p = Poly::zero(&ctx, Representation::PowerBasis);
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
-		assert_eq!(
-			Vec::<u64>::from(&p),
-			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-		);
-		assert_eq!(
-			Vec::<u64>::from(&q),
-			&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-		);
+		assert_eq!(Vec::<u64>::from(&p), [0; 24]);
+		assert_eq!(Vec::<u64>::from(&q), [0; 24]);
 		assert_eq!(Vec::<BigUint>::from(&p), reference);
 		assert_eq!(Vec::<BigUint>::from(&q), reference);
 	}
@@ -869,20 +874,12 @@ mod tests {
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(
-				&[0u64, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::PowerBasis,
-			);
+			let p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::PowerBasis);
+			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
+			let p = Poly::try_convert_from(&[0i64; 8], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 			let p = Poly::try_convert_from(
-				&[0i64, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::PowerBasis,
-			);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(
-				&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], // One too many
+				&[0u64; 9], // One too many
 				&ctx,
 				Representation::PowerBasis,
 			);
@@ -893,12 +890,12 @@ mod tests {
 			assert!(p.is_err());
 			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::Ntt);
 			assert!(p.is_err());
-			let p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			let p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::Ntt);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-			let p = Poly::try_convert_from(&[0i64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			let p = Poly::try_convert_from(&[0i64; 8], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 			let p = Poly::try_convert_from(
-				&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], // One too many
+				&[0u64; 9], // One too many
 				&ctx,
 				Representation::Ntt,
 			);
@@ -916,39 +913,19 @@ mod tests {
 		p = Poly::try_convert_from(&[0u64], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			&[0u64, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			&[0u64, 0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(&[0u64; 9], &ctx, Representation::PowerBasis);
 		assert!(p.is_err());
-		p = Poly::try_convert_from(&[0u64, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(&[0u64; 9], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			&[
-				0u64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(&[0u64; 24], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(
-			&[
-				0u64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			],
-			&ctx,
-			Representation::Ntt,
-		);
+		p = Poly::try_convert_from(&[0u64; 24], &ctx, Representation::Ntt);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 	}
 
@@ -966,22 +943,14 @@ mod tests {
 			p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 
-			p = Poly::try_convert_from(
-				vec![0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::PowerBasis,
-			);
+			p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::Ntt);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 
-			p = Poly::try_convert_from(
-				vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
-				&ctx,
-				Representation::PowerBasis,
-			);
+			p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::PowerBasis);
 			assert!(p.is_err());
-			p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+			p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::Ntt);
 			assert!(p.is_err());
 		}
 
@@ -996,39 +965,19 @@ mod tests {
 		p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			vec![0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::PowerBasis);
 		assert!(p.is_err());
-		p = Poly::try_convert_from(vec![0, 0, 0, 0, 0, 0, 0, 0, 0], &ctx, Representation::Ntt);
+		p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::Ntt);
 		assert!(p.is_err());
 
-		p = Poly::try_convert_from(
-			vec![
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			],
-			&ctx,
-			Representation::PowerBasis,
-		);
+		p = Poly::try_convert_from(vec![0; 24], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(
-			vec![
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-			],
-			&ctx,
-			Representation::Ntt,
-		);
+		p = Poly::try_convert_from(vec![0; 24], &ctx, Representation::Ntt);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
 	}
 

@@ -7,18 +7,17 @@ use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
 
 /// A ciphertext encrypting a plaintext.
-/// TODO: Can the members be private?
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ciphertext {
 	/// The parameters of the underlying BFV encryption scheme.
-	pub par: Rc<BfvParameters>,
+	pub(crate) par: Rc<BfvParameters>,
 
 	/// The seed that generated the polynomial c0 in a fresh ciphertext.
-	pub seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
+	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
 	/// The ciphertext element c0.
-	pub c0: Poly,
+	pub(crate) c0: Poly,
 
 	/// The ciphertext element c1.
-	pub c1: Poly,
+	pub(crate) c1: Poly,
 }
