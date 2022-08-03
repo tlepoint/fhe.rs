@@ -2,6 +2,9 @@
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
 
+mod convert;
+mod ops;
+
 pub mod extender;
 pub mod scaler;
 pub mod traits;
@@ -10,20 +13,15 @@ use crate::{
 	rns::RnsContext,
 	zq::{ntt::NttOperator, Modulus},
 };
-use fhers_protos::protos::rq as proto_rq;
-use itertools::{izip, Itertools};
-use ndarray::{Array2, ArrayView, ArrayView2, Axis};
+use itertools::izip;
+use ndarray::{Array2, ArrayView2};
 use num_bigint::BigUint;
-use protobuf::EnumOrUnknown;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::{
-	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-	rc::Rc,
-};
-use traits::{TryConvertFrom, Unsigned};
+use std::rc::Rc;
+use traits::TryConvertFrom;
 use util::sample_vec_cbd;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 /// Struct that holds the context associated with elements in rq.
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -68,7 +66,6 @@ impl Context {
 	}
 
 	/// Returns the modulus as a BigUint
-	/// TODO: To test
 	pub fn modulus(&self) -> &BigUint {
 		self.rns.modulus()
 	}
@@ -112,11 +109,11 @@ impl Poly {
 		}
 	}
 
+	/// Enable variable time computations when this polynomial is involved.
+	///
 	/// # Safety
 	///
-	/// Enable variable time computations when this polynomial is involved.
 	/// By default, this is marked as unsafe, but is usually safe when only public data is processed.
-	/// TODO: To test
 	pub unsafe fn allow_variable_time_computations(&mut self) {
 		self.allow_variable_time_computations = true
 	}
@@ -127,53 +124,45 @@ impl Poly {
 	}
 
 	/// Change the representation of the underlying polynomial.
-	///
-	/// Panics if the change of representation is illegal.
 	pub fn change_representation(&mut self, to: Representation) {
-		// If we are already in the correct representation, returns immediately.
-		if self.representation == to {
-			return;
+		match self.representation {
+			Representation::PowerBasis => {
+				match to {
+					Representation::Ntt => self.ntt_forward(),
+					Representation::NttShoup => {
+						self.ntt_forward();
+						self.compute_coefficients_shoup();
+					}
+					Representation::PowerBasis => {} // no-op
+				}
+			}
+			Representation::Ntt => {
+				match to {
+					Representation::PowerBasis => self.ntt_backward(),
+					Representation::NttShoup => self.compute_coefficients_shoup(),
+					Representation::Ntt => {} // no-op
+				}
+			}
+			Representation::NttShoup => {
+				if to != Representation::NttShoup {
+					// We are not sure whether this polynomial was sensitive or not,
+					// so for security, we zeroize the Shoup coefficients.
+					self.coefficients_shoup
+						.as_mut()
+						.unwrap()
+						.as_slice_mut()
+						.unwrap()
+						.zeroize();
+					self.coefficients_shoup = None
+				}
+				match to {
+					Representation::PowerBasis => self.ntt_backward(),
+					Representation::Ntt => {}      // no-op
+					Representation::NttShoup => {} // no-op
+				}
+			}
 		}
 
-		// TODO: Should we use `match` instead?
-		if self.representation == Representation::PowerBasis && to == Representation::Ntt {
-			self.ntt_forward()
-		} else if self.representation == Representation::Ntt && to == Representation::PowerBasis {
-			self.ntt_backward()
-		} else if self.representation == Representation::PowerBasis
-			&& to == Representation::NttShoup
-		{
-			self.ntt_forward();
-			self.compute_coefficients_shoup();
-		} else if self.representation == Representation::Ntt && to == Representation::NttShoup {
-			self.compute_coefficients_shoup();
-		} else if self.representation == Representation::NttShoup && to == Representation::Ntt {
-			// We are not sure whether this polynomial was sensitive or not, so for security, we zeroize the Shoup coefficients.
-			self.coefficients_shoup
-				.as_mut()
-				.unwrap()
-				.as_slice_mut()
-				.unwrap()
-				.zeroize();
-			self.coefficients_shoup = None;
-		} else if self.representation == Representation::NttShoup
-			&& to == Representation::PowerBasis
-		{
-			self.ntt_backward();
-			// We are not sure whether this polynomial was sensitive or not, so for security, we zeroize the Shoup coefficients.
-			self.coefficients_shoup
-				.as_mut()
-				.unwrap()
-				.as_slice_mut()
-				.unwrap()
-				.zeroize();
-			self.coefficients_shoup = None;
-		} else {
-			panic!(
-				"Invalid change of representation from {:?} to {:?}",
-				self.representation, to
-			)
-		}
 		self.representation = to;
 	}
 
@@ -194,13 +183,25 @@ impl Poly {
 		self.coefficients_shoup = Some(coefficients_shoup)
 	}
 
+	/// Override the internal representation to a given representation.
+	///
 	/// # Safety
 	///
-	/// Override the internal representation to a given representation.
-	/// If the `to` representation is NttShoup, the coefficients are still computed correctly to avoid being in an unstable state.
+	/// Prefer the `change_representation` function to safely modify the polynomial representation.
+	/// If the `to` representation is NttShoup, the coefficients are still computed correctly to
+	/// avoid being in an unstable state. Similarly, if we override a representation which was
+	/// NttShoup, we zeroize the existing Shoup coefficients.
 	pub unsafe fn override_representation(&mut self, to: Representation) {
 		if to == Representation::NttShoup {
 			self.compute_coefficients_shoup()
+		} else if self.coefficients_shoup.is_some() {
+			self.coefficients_shoup
+				.as_mut()
+				.unwrap()
+				.as_slice_mut()
+				.unwrap()
+				.zeroize();
+			self.coefficients_shoup = None
 		}
 		self.representation = to;
 	}
@@ -243,7 +244,6 @@ impl Poly {
 	/// Generate a small polynomial.
 	///
 	/// Returns an error if the variance does not belong to [1, ..., 16].
-	/// TODO: To test
 	pub fn small(
 		ctx: &Rc<Context>,
 		representation: Representation,
@@ -260,7 +260,6 @@ impl Poly {
 	}
 
 	/// Access the polynomial coefficients in RNS representation.
-	/// TODO: To test?
 	pub fn coefficients(&self) -> ArrayView2<u64> {
 		self.coefficients.view()
 	}
@@ -297,654 +296,14 @@ impl Zeroize for Poly {
 	}
 }
 
-impl From<&Poly> for proto_rq::Rq {
-	fn from(p: &Poly) -> Self {
-		let mut proto = proto_rq::Rq::new();
-		match p.representation {
-			Representation::PowerBasis => {
-				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::POWERBASIS);
-			}
-			Representation::Ntt => {
-				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::NTT);
-			}
-			Representation::NttShoup => {
-				proto.representation = EnumOrUnknown::new(proto_rq::rq::Representation::NTTSHOUP);
-			}
-		}
-		let mut serialization_length = 0;
-		izip!(&p.ctx.q)
-			.for_each(|qi| serialization_length += qi.serialization_length(p.ctx.degree));
-		let mut serialization = Vec::with_capacity(serialization_length);
-
-		izip!(p.coefficients.outer_iter(), &p.ctx.q)
-			.for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
-		proto.coefficients = serialization;
-		proto.degree = p.ctx.degree as u32;
-		proto
-	}
-}
-
-impl TryConvertFrom<&proto_rq::Rq> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		value: &proto_rq::Rq,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let repr = value.representation.enum_value_or_default();
-		let representation_from_proto = match repr {
-			proto_rq::rq::Representation::POWERBASIS => Representation::PowerBasis,
-			proto_rq::rq::Representation::NTT => Representation::Ntt,
-			proto_rq::rq::Representation::NTTSHOUP => Representation::NttShoup,
-			_ => return Err("Unknown representation".to_string()),
-		};
-
-		if (representation.into() as Option<Representation>)
-			.is_some_and(|r| *r != representation_from_proto)
-		{
-			return Err("The representation asked for does not match the representation in the serialization".to_string());
-		}
-
-		let degree = value.degree as usize;
-		if degree % 8 != 0 || degree < 8 {
-			return Err("Invalid degree".to_string());
-		}
-
-		let mut expected_nbytes = 0;
-		izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
-		if value.coefficients.len() != expected_nbytes {
-			return Err("Invalid coefficients".to_string());
-		}
-
-		let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
-		let mut index = 0;
-		for i in 0..ctx.q.len() {
-			let qi = &ctx.q[i];
-			let size = qi.serialization_length(degree);
-			let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
-			if v == None {
-				return Err("Could not deserialize the polynomial coefficients".to_string());
-			}
-			coefficients.append(&mut v.unwrap());
-			index += size;
-		}
-
-		Poly::try_convert_from(coefficients, ctx, representation_from_proto)
-	}
-}
-
-impl Unsigned for u8 {}
-impl Unsigned for u16 {}
-impl Unsigned for u32 {}
-impl Unsigned for u64 {}
-
-impl<T: Unsigned> TryConvertFrom<T> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		value: T,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let repr = representation.into();
-		match repr {
-			Some(Representation::PowerBasis) => Poly::try_convert_from(&[value], ctx, repr),
-			_ => Err(
-				"Converting from constant values is only possible in PowerBasis representation"
-					.to_string(),
-			),
-		}
-	}
-}
-
-impl TryConvertFrom<Vec<u64>> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		mut v: Vec<u64>,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let repr = representation.into();
-		match repr {
-			Some(Representation::Ntt) => {
-				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
-					Ok(Self {
-						ctx: ctx.clone(),
-						representation: repr.unwrap(),
-						allow_variable_time_computations: false,
-						coefficients,
-						coefficients_shoup: None,
-					})
-				} else {
-					Err("In Ntt representation, all coefficients must be specified".to_string())
-				}
-			}
-			Some(Representation::NttShoup) => {
-				if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
-					let mut p = Self {
-						ctx: ctx.clone(),
-						representation: repr.unwrap(),
-						allow_variable_time_computations: false,
-						coefficients,
-						coefficients_shoup: None,
-					};
-					p.compute_coefficients_shoup();
-					Ok(p)
-				} else {
-					Err(
-						"In NttShoup representation, all coefficients must be specified"
-							.to_string(),
-					)
-				}
-			}
-			Some(Representation::PowerBasis) => {
-				if v.len() == ctx.q.len() * ctx.degree {
-					let coefficients =
-						Array2::from_shape_vec((ctx.q.len(), ctx.degree), v).unwrap();
-					Ok(Self {
-						ctx: ctx.clone(),
-						representation: repr.unwrap(),
-						allow_variable_time_computations: false,
-						coefficients,
-						coefficients_shoup: None,
-					})
-				} else if v.len() <= ctx.degree {
-					let mut out = Self::zero(ctx, repr.unwrap());
-					izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
-						let wi = w.as_slice_mut().unwrap();
-						wi[..v.len()].copy_from_slice(&v);
-						qi.reduce_vec(wi);
-					});
-					v.zeroize();
-					Ok(out)
-				} else {
-					Err("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string())
-				}
-			}
-			None => Err(
-				"When converting from a vector, the representation needs to be specified"
-					.to_string(),
-			),
-		}
-	}
-}
-
-impl TryConvertFrom<Array2<u64>> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		a: Array2<u64>,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		if a.shape() != [ctx.q.len(), ctx.degree] {
-			Err("The array of coefficient does not have the correct shape".to_string())
-		} else if let Some(repr) = representation.into() {
-			let mut p = Self {
-				ctx: ctx.clone(),
-				representation: repr,
-				allow_variable_time_computations: false,
-				coefficients: a,
-				coefficients_shoup: None,
-			};
-			if p.representation == Representation::NttShoup {
-				p.compute_coefficients_shoup()
-			}
-			Ok(p)
-		} else {
-			Err("When converting from a 2-dimensional array, the representation needs to be specified".to_string())
-		}
-	}
-}
-
-impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[T],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
-		Poly::try_convert_from(v_clone, ctx, representation)
-	}
-}
-
-impl TryConvertFrom<&[i64]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[i64],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		if representation.into() != Some(Representation::PowerBasis) {
-			Err(
-				"Converting signed integer require to import in PowerBasis representation"
-					.to_string(),
-			)
-		} else if v.len() <= ctx.degree {
-			let mut out = Self::zero(ctx, Representation::PowerBasis);
-			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
-				let wi = w.as_slice_mut().unwrap();
-				wi[..v.len()].copy_from_slice(Zeroizing::new(qi.reduce_vec_i64(v)).as_ref());
-			});
-			Ok(out)
-		} else {
-			Err("In PowerBasis representation with signed integers, only `degree` coefficients can be specified".to_string())
-		}
-	}
-}
-
-impl TryConvertFrom<&[BigUint]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[BigUint],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let repr = representation.into();
-
-		if v.len() > ctx.degree {
-			Err(
-				"The slice contains too many big integers compared to the polynomial degree"
-					.to_string(),
-			)
-		} else if repr.is_some() {
-			let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
-
-			izip!(coefficients.axis_iter_mut(Axis(1)), v).for_each(|(mut c, vi)| {
-				// c.clone_from(&ctx.rns.project(vi));
-				c.assign(&ArrayView::from(&ctx.rns.project(vi)));
-			});
-
-			let mut p = Self {
-				ctx: ctx.clone(),
-				representation: repr.unwrap(),
-				allow_variable_time_computations: false,
-				coefficients,
-				coefficients_shoup: None,
-			};
-
-			match p.representation {
-				Representation::PowerBasis => Ok(p),
-				Representation::Ntt => Ok(p),
-				Representation::NttShoup => {
-					p.compute_coefficients_shoup();
-					Ok(p)
-				}
-			}
-		} else {
-			Err(
-				"When converting from a vector, the representation needs to be specified"
-					.to_string(),
-			)
-		}
-	}
-}
-
-impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &Vec<T>,
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
-		Poly::try_convert_from(v_clone, ctx, representation)
-	}
-}
-
-impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[T; N],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		Poly::try_convert_from(v.as_ref(), ctx, representation)
-	}
-}
-
-impl<const N: usize> TryConvertFrom<&[BigUint; N]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[BigUint; N],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		Poly::try_convert_from(v.as_ref(), ctx, representation)
-	}
-}
-
-impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
-	type Error = String;
-
-	fn try_convert_from<R>(
-		v: &[i64; N],
-		ctx: &Rc<Context>,
-		representation: R,
-	) -> Result<Self, Self::Error>
-	where
-		R: Into<Option<Representation>>,
-	{
-		Poly::try_convert_from(v.as_ref(), ctx, representation)
-	}
-}
-
-impl From<&Poly> for Vec<u64> {
-	fn from(p: &Poly) -> Self {
-		p.coefficients.as_slice().unwrap().to_vec()
-	}
-}
-
-impl From<&Poly> for Vec<BigUint> {
-	fn from(p: &Poly) -> Self {
-		izip!(p.coefficients.axis_iter(Axis(1)))
-			.map(|c| p.ctx.rns.lift(&c))
-			.collect_vec()
-	}
-}
-
-impl AddAssign<&Poly> for Poly {
-	fn add_assign(&mut self, p: &Poly) {
-		assert_ne!(
-			self.representation,
-			Representation::NttShoup,
-			"Cannot add to a polynomial in NttShoup representation"
-		);
-		assert_eq!(
-			self.representation, p.representation,
-			"Incompatible representations"
-		);
-		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		if self.allow_variable_time_computations || p.allow_variable_time_computations {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				p.coefficients.outer_iter(),
-				&self.ctx.q
-			)
-			.for_each(|(mut v1, v2, qi)| unsafe {
-				qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-			});
-		} else {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				p.coefficients.outer_iter(),
-				&self.ctx.q
-			)
-			.for_each(|(mut v1, v2, qi)| {
-				qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-			});
-		}
-	}
-}
-
-impl Add<&Poly> for &Poly {
-	type Output = Poly;
-	fn add(self, p: &Poly) -> Poly {
-		let mut q = self.clone();
-		q += p;
-		q
-	}
-}
-
-impl SubAssign<&Poly> for Poly {
-	fn sub_assign(&mut self, p: &Poly) {
-		assert_ne!(
-			self.representation,
-			Representation::NttShoup,
-			"Cannot subtract from a polynomial in NttShoup representation"
-		);
-		assert_eq!(
-			self.representation, p.representation,
-			"Incompatible representations"
-		);
-		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		if self.allow_variable_time_computations || p.allow_variable_time_computations {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				p.coefficients.outer_iter(),
-				&self.ctx.q
-			)
-			.for_each(|(mut v1, v2, qi)| unsafe {
-				qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-			});
-		} else {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				p.coefficients.outer_iter(),
-				&self.ctx.q
-			)
-			.for_each(|(mut v1, v2, qi)| {
-				qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-			});
-		}
-	}
-}
-
-impl Sub<&Poly> for &Poly {
-	type Output = Poly;
-	fn sub(self, p: &Poly) -> Poly {
-		let mut q = self.clone();
-		q -= p;
-		q
-	}
-}
-
-impl MulAssign<&Poly> for Poly {
-	fn mul_assign(&mut self, p: &Poly) {
-		assert_ne!(
-			self.representation,
-			Representation::NttShoup,
-			"Cannot multiply to a polynomial in NttShoup representation"
-		);
-		assert_eq!(
-			self.representation,
-			Representation::Ntt,
-			"Multiplication requires an Ntt representation."
-		);
-		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-
-		match p.representation {
-			Representation::Ntt => {
-				if self.allow_variable_time_computations || p.allow_variable_time_computations {
-					unsafe {
-						izip!(
-							self.coefficients.outer_iter_mut(),
-							p.coefficients.outer_iter(),
-							&self.ctx.q
-						)
-						.for_each(|(mut v1, v2, qi)| {
-							qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-						});
-					}
-				} else {
-					izip!(
-						self.coefficients.outer_iter_mut(),
-						p.coefficients.outer_iter(),
-						&self.ctx.q
-					)
-					.for_each(|(mut v1, v2, qi)| {
-						qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-					});
-				}
-			}
-			Representation::NttShoup => {
-				if self.allow_variable_time_computations || p.allow_variable_time_computations {
-					izip!(
-						self.coefficients.outer_iter_mut(),
-						p.coefficients.outer_iter(),
-						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-						&self.ctx.q
-					)
-					.for_each(|(mut v1, v2, v2_shoup, qi)| unsafe {
-						qi.mul_shoup_vec_vt(
-							v1.as_slice_mut().unwrap(),
-							v2.as_slice().unwrap(),
-							v2_shoup.as_slice().unwrap(),
-						)
-					});
-				} else {
-					izip!(
-						self.coefficients.outer_iter_mut(),
-						p.coefficients.outer_iter(),
-						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-						&self.ctx.q
-					)
-					.for_each(|(mut v1, v2, v2_shoup, qi)| {
-						qi.mul_shoup_vec(
-							v1.as_slice_mut().unwrap(),
-							v2.as_slice().unwrap(),
-							v2_shoup.as_slice().unwrap(),
-						)
-					});
-				}
-			}
-			_ => {
-				panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
-			}
-		}
-	}
-}
-
-impl MulAssign<&BigUint> for Poly {
-	fn mul_assign(&mut self, p: &BigUint) {
-		let v: Vec<BigUint> = vec![p.clone()];
-		let mut q = Poly::try_convert_from(
-			v.as_ref() as &[BigUint],
-			&self.ctx,
-			self.representation.clone(),
-		)
-		.unwrap();
-		q.change_representation(Representation::Ntt);
-		if self.allow_variable_time_computations {
-			unsafe {
-				izip!(
-					self.coefficients.outer_iter_mut(),
-					q.coefficients.outer_iter(),
-					&self.ctx.q
-				)
-				.for_each(|(mut v1, v2, qi)| {
-					qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-				});
-			}
-		} else {
-			izip!(
-				self.coefficients.outer_iter_mut(),
-				q.coefficients.outer_iter(),
-				&self.ctx.q
-			)
-			.for_each(|(mut v1, v2, qi)| {
-				qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-			});
-		}
-	}
-}
-
-impl Mul<&Poly> for &Poly {
-	type Output = Poly;
-	fn mul(self, p: &Poly) -> Poly {
-		match self.representation {
-			Representation::NttShoup => {
-				// TODO: To test, and do the same thing for add, sub, and neg
-				let mut q = p.clone();
-				if q.representation == Representation::NttShoup {
-					q.coefficients_shoup
-						.as_mut()
-						.unwrap()
-						.as_slice_mut()
-						.unwrap()
-						.zeroize();
-					unsafe { q.override_representation(Representation::Ntt) }
-				}
-				q *= self;
-				q
-			}
-			_ => {
-				let mut q = self.clone();
-				q *= p;
-				q
-			}
-		}
-	}
-}
-
-impl Mul<&BigUint> for &Poly {
-	type Output = Poly;
-	fn mul(self, p: &BigUint) -> Poly {
-		let mut q = self.clone();
-		q *= p;
-		q
-	}
-}
-
-impl Mul<&Poly> for &BigUint {
-	type Output = Poly;
-	fn mul(self, p: &Poly) -> Poly {
-		p * self
-	}
-}
-
-impl Neg for &Poly {
-	type Output = Poly;
-
-	fn neg(self) -> Poly {
-		let mut out = self.clone();
-		if self.allow_variable_time_computations {
-			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
-				.for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-		} else {
-			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
-				.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-		}
-		out
-	}
-}
-
 #[cfg(test)]
 mod tests {
-	use super::{Context, Poly, Representation, TryConvertFrom};
+	extern crate test;
+	use super::{Context, Poly, Representation};
 	use crate::zq::{ntt::supports_ntt, Modulus};
-	use fhers_protos::protos::rq as proto_rq;
+	use itertools::Itertools;
 	use num_bigint::BigUint;
-	use num_traits::Zero;
+	use num_traits::{One, Zero};
 	use rand::{thread_rng, Rng, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
 	use std::rc::Rc;
@@ -1002,331 +361,6 @@ mod tests {
 	}
 
 	#[test]
-	fn test_try_convert_from_slice_zero() -> Result<(), String> {
-		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-
-			// Power Basis
-			let p = Poly::try_convert_from(&[0u64], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0i64; 8], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(
-				&[0u64; 9], // One too many
-				&ctx,
-				Representation::PowerBasis,
-			);
-			assert!(p.is_err());
-
-			// Ntt
-			let p = Poly::try_convert_from(&[0u64], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(&[0i64], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::Ntt);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-			let p = Poly::try_convert_from(&[0i64; 8], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(
-				&[0u64; 9], // One too many
-				&ctx,
-				Representation::Ntt,
-			);
-			assert!(p.is_err());
-		}
-
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
-		let mut p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(&[0u64], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64; 8], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(&[0u64; 9], &ctx, Representation::PowerBasis);
-		assert!(p.is_err());
-		p = Poly::try_convert_from(&[0u64; 9], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(&[0u64; 24], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64; 24], &ctx, Representation::Ntt);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-
-		Ok(())
-	}
-
-	#[test]
-	fn test_try_convert_from_vec_zero() -> Result<(), String> {
-		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-			let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-
-			p = Poly::try_convert_from(vec![0], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-
-			p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::Ntt);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-
-			p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::PowerBasis);
-			assert!(p.is_err());
-			p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::Ntt);
-			assert!(p.is_err());
-		}
-
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
-		let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(vec![0], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0; 8], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::PowerBasis);
-		assert!(p.is_err());
-		p = Poly::try_convert_from(vec![0; 9], &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		p = Poly::try_convert_from(vec![0; 24], &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0; 24], &ctx, Representation::Ntt);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-
-		Ok(())
-	}
-
-	#[test]
-	fn test_try_convert_from_u64_zero() -> Result<(), String> {
-		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-			let mut p = <Poly as TryConvertFrom<u64>>::try_convert_from(
-				0,
-				&ctx,
-				Representation::PowerBasis,
-			);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = <Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::Ntt);
-			assert!(p.is_err());
-		}
-
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
-		let mut p =
-			<Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = <Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::Ntt);
-		assert!(p.is_err());
-
-		Ok(())
-	}
-
-	#[test]
-	fn test_add() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let m = Modulus::new(*modulus).unwrap();
-
-				let p = Poly::random(&ctx, Representation::PowerBasis);
-				let q = Poly::random(&ctx, Representation::PowerBasis);
-				let r = &p + &q;
-				assert_eq!(r.representation, Representation::PowerBasis);
-				let mut a = Vec::<u64>::from(&p);
-				m.add_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-
-				let p = Poly::random(&ctx, Representation::Ntt);
-				let q = Poly::random(&ctx, Representation::Ntt);
-				let r = &p + &q;
-				assert_eq!(r.representation, Representation::Ntt);
-				let mut a = Vec::<u64>::from(&p);
-				m.add_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-			}
-
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let q = Poly::random(&ctx, Representation::PowerBasis);
-			let mut a = Vec::<u64>::from(&p);
-			let b = Vec::<u64>::from(&q);
-			for i in 0..MODULI.len() {
-				let m = Modulus::new(MODULI[i]).unwrap();
-				m.add_vec(&mut a[i * 8..(i + 1) * 8], &b[i * 8..(i + 1) * 8])
-			}
-			let r = &p + &q;
-			assert_eq!(r.representation, Representation::PowerBasis);
-			assert_eq!(Vec::<u64>::from(&r), a);
-		}
-		Ok(())
-	}
-
-	#[test]
-	fn test_sub() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let m = Modulus::new(*modulus).unwrap();
-
-				let p = Poly::random(&ctx, Representation::PowerBasis);
-				let q = Poly::random(&ctx, Representation::PowerBasis);
-				let r = &p - &q;
-				assert_eq!(r.representation, Representation::PowerBasis);
-				let mut a = Vec::<u64>::from(&p);
-				m.sub_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-
-				let p = Poly::random(&ctx, Representation::Ntt);
-				let q = Poly::random(&ctx, Representation::Ntt);
-				let r = &p - &q;
-				assert_eq!(r.representation, Representation::Ntt);
-				let mut a = Vec::<u64>::from(&p);
-				m.sub_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-			}
-
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let q = Poly::random(&ctx, Representation::PowerBasis);
-			let mut a = Vec::<u64>::from(&p);
-			let b = Vec::<u64>::from(&q);
-			for i in 0..MODULI.len() {
-				let m = Modulus::new(MODULI[i]).unwrap();
-				m.sub_vec(&mut a[i * 8..(i + 1) * 8], &b[i * 8..(i + 1) * 8])
-			}
-			let r = &p - &q;
-			assert_eq!(r.representation, Representation::PowerBasis);
-			assert_eq!(Vec::<u64>::from(&r), a);
-		}
-		Ok(())
-	}
-
-	#[test]
-	fn test_mul() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let m = Modulus::new(*modulus).unwrap();
-
-				let p = Poly::random(&ctx, Representation::Ntt);
-				let q = Poly::random(&ctx, Representation::Ntt);
-				let r = &p * &q;
-				assert_eq!(r.representation, Representation::Ntt);
-				let mut a = Vec::<u64>::from(&p);
-				m.mul_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-			}
-
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::Ntt);
-			let q = Poly::random(&ctx, Representation::Ntt);
-			let mut a = Vec::<u64>::from(&p);
-			let b = Vec::<u64>::from(&q);
-			for i in 0..MODULI.len() {
-				let m = Modulus::new(MODULI[i]).unwrap();
-				m.mul_vec(&mut a[i * 8..(i + 1) * 8], &b[i * 8..(i + 1) * 8])
-			}
-			let r = &p * &q;
-			assert_eq!(r.representation, Representation::Ntt);
-			assert_eq!(Vec::<u64>::from(&r), a);
-		}
-		Ok(())
-	}
-
-	#[test]
-	fn test_mul_shoup() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let m = Modulus::new(*modulus).unwrap();
-
-				let p = Poly::random(&ctx, Representation::Ntt);
-				let q = Poly::random(&ctx, Representation::NttShoup);
-				let r = &p * &q;
-				assert_eq!(r.representation, Representation::Ntt);
-				let mut a = Vec::<u64>::from(&p);
-				m.mul_vec(&mut a, &Vec::<u64>::from(&q));
-				assert_eq!(Vec::<u64>::from(&r), a);
-			}
-
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::Ntt);
-			let q = Poly::random(&ctx, Representation::NttShoup);
-			let mut a = Vec::<u64>::from(&p);
-			let b = Vec::<u64>::from(&q);
-			for i in 0..MODULI.len() {
-				let m = Modulus::new(MODULI[i]).unwrap();
-				m.mul_vec(&mut a[i * 8..(i + 1) * 8], &b[i * 8..(i + 1) * 8])
-			}
-			let r = &p * &q;
-			assert_eq!(r.representation, Representation::Ntt);
-			assert_eq!(Vec::<u64>::from(&r), a);
-		}
-		Ok(())
-	}
-
-	#[test]
-	fn test_neg() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let m = Modulus::new(*modulus).unwrap();
-
-				let p = Poly::random(&ctx, Representation::PowerBasis);
-				let r = -&p;
-				assert_eq!(r.representation, Representation::PowerBasis);
-				let mut a = Vec::<u64>::from(&p);
-				m.neg_vec(&mut a);
-				assert_eq!(Vec::<u64>::from(&r), a);
-
-				let p = Poly::random(&ctx, Representation::Ntt);
-				let r = -&p;
-				assert_eq!(r.representation, Representation::Ntt);
-				let mut a = Vec::<u64>::from(&p);
-				m.neg_vec(&mut a);
-				assert_eq!(Vec::<u64>::from(&r), a);
-			}
-
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let mut a = Vec::<u64>::from(&p);
-			for i in 0..MODULI.len() {
-				let m = Modulus::new(MODULI[i]).unwrap();
-				m.neg_vec(&mut a[i * 8..(i + 1) * 8])
-			}
-			let r = -&p;
-			assert_eq!(r.representation, Representation::PowerBasis);
-			assert_eq!(Vec::<u64>::from(&r), a);
-		}
-		Ok(())
-	}
-
-	#[test]
 	fn test_random() -> Result<(), String> {
 		for _ in 0..100 {
 			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
@@ -1356,70 +390,197 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto() -> Result<(), String> {
+	fn test_coefficients() -> Result<(), String> {
+		for _ in 0..50 {
+			for modulus in MODULI {
+				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+				let p = Poly::random(&ctx, Representation::Ntt);
+				let p_coefficients = Vec::<u64>::from(&p);
+				assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
+			}
+
+			let ctx = Rc::new(Context::new(MODULI, 8)?);
+			let p = Poly::random(&ctx, Representation::Ntt);
+			let p_coefficients = Vec::<u64>::from(&p);
+			assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_modulus() -> Result<(), String> {
 		for modulus in MODULI {
+			let modulus_biguint = BigUint::from(*modulus);
 			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let proto = proto_rq::Rq::from(&p);
-			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
-			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
-			assert_eq!(
-				Poly::try_convert_from(&proto, &ctx, Representation::Ntt)
-					.expect_err("Should fail because of mismatched representations"),
-				"The representation asked for does not match the representation in the serialization"
-			);
-			assert_eq!(
-				Poly::try_convert_from(&proto, &ctx, Representation::NttShoup)
-					.expect_err("Should fail because of mismatched representations"),
-				"The representation asked for does not match the representation in the serialization"
-			);
+			assert_eq!(ctx.modulus(), &modulus_biguint)
 		}
 
+		let mut modulus_biguint = BigUint::one();
+		MODULI.iter().for_each(|m| modulus_biguint *= *m);
 		let ctx = Rc::new(Context::new(MODULI, 8)?);
-		let p = Poly::random(&ctx, Representation::PowerBasis);
-		let proto = proto_rq::Rq::from(&p);
-		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
-		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
-		assert_eq!(
-			Poly::try_convert_from(&proto, &ctx, Representation::Ntt)
-				.expect_err("Should fail because of mismatched representations"),
-			"The representation asked for does not match the representation in the serialization"
-		);
-		assert_eq!(
-			Poly::try_convert_from(&proto, &ctx, Representation::NttShoup)
-				.expect_err("Should fail because of mismatched representations"),
-			"The representation asked for does not match the representation in the serialization"
-		);
-
-		let ctx = Rc::new(Context::new(&MODULI[0..1], 8)?);
-		assert_eq!(
-			Poly::try_convert_from(&proto, &ctx, None)
-				.expect_err("Should fail because of incorrect context"),
-			"Invalid coefficients"
-		);
+		assert_eq!(ctx.modulus(), &modulus_biguint);
 
 		Ok(())
 	}
 
 	#[test]
-	fn test_biguint() -> Result<(), String> {
-		for _ in 0..100 {
-			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
-				let p = Poly::random(&ctx, Representation::PowerBasis);
-				let p_coeffs = Vec::<BigUint>::from(&p);
-				let q =
-					Poly::try_convert_from(p_coeffs.as_slice(), &ctx, Representation::PowerBasis)?;
-				assert_eq!(p, q);
-			}
+	fn test_allow_variable_time_computations() -> Result<(), String> {
+		for modulus in MODULI {
+			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let mut p = Poly::random(&ctx, Representation::default());
+			assert!(!p.allow_variable_time_computations);
 
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
-			let p_coeffs = Vec::<BigUint>::from(&p);
-			assert_eq!(p_coeffs.len(), ctx.degree);
-			let q = Poly::try_convert_from(p_coeffs.as_slice(), &ctx, Representation::PowerBasis)?;
-			assert_eq!(p, q);
+			unsafe { p.allow_variable_time_computations() }
+			assert!(p.allow_variable_time_computations);
+
+			let q = p.clone();
+			assert!(q.allow_variable_time_computations);
+
+			p.disallow_variable_time_computations();
+			assert!(!p.allow_variable_time_computations);
 		}
+
+		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let mut p = Poly::random(&ctx, Representation::default());
+		assert!(!p.allow_variable_time_computations);
+
+		unsafe { p.allow_variable_time_computations() }
+		assert!(p.allow_variable_time_computations);
+
+		let q = p.clone();
+		assert!(q.allow_variable_time_computations);
+
+		// Allowing variable time propagates.
+		let mut p = Poly::random(&ctx, Representation::Ntt);
+		unsafe { p.allow_variable_time_computations() }
+		let mut q = Poly::random(&ctx, Representation::Ntt);
+
+		assert!(!q.allow_variable_time_computations);
+		q *= &p;
+		assert!(q.allow_variable_time_computations);
+
+		q.disallow_variable_time_computations();
+		q += &p;
+		assert!(q.allow_variable_time_computations);
+
+		q.disallow_variable_time_computations();
+		q -= &p;
+		assert!(q.allow_variable_time_computations);
+
+		q = -&p;
+		assert!(q.allow_variable_time_computations);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_change_representation() -> Result<(), String> {
+		let ctx = Rc::new(Context::new(MODULI, 8)?);
+
+		let mut p = Poly::random(&ctx, Representation::default());
+		assert_eq!(p.representation, Representation::default());
+
+		p.change_representation(Representation::PowerBasis);
+		assert_eq!(p.representation, Representation::PowerBasis);
+		assert!(p.coefficients_shoup.is_none());
+		let q = p.clone();
+
+		p.change_representation(Representation::Ntt);
+		assert_eq!(p.representation, Representation::Ntt);
+		assert_ne!(p.coefficients, q.coefficients);
+		assert!(p.coefficients_shoup.is_none());
+		let q_ntt = p.clone();
+
+		p.change_representation(Representation::NttShoup);
+		assert_eq!(p.representation, Representation::NttShoup);
+		assert_ne!(p.coefficients, q.coefficients);
+		assert!(p.coefficients_shoup.is_some());
+		let q_ntt_shoup = p.clone();
+
+		p.change_representation(Representation::PowerBasis);
+		assert_eq!(p, q);
+
+		p.change_representation(Representation::NttShoup);
+		assert_eq!(p, q_ntt_shoup);
+
+		p.change_representation(Representation::Ntt);
+		assert_eq!(p, q_ntt);
+
+		p.change_representation(Representation::PowerBasis);
+		assert_eq!(p, q);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_override_representation() -> Result<(), String> {
+		let ctx = Rc::new(Context::new(MODULI, 8)?);
+
+		let mut p = Poly::random(&ctx, Representation::PowerBasis);
+		let q = p.clone();
+
+		unsafe { p.override_representation(Representation::Ntt) }
+		assert_eq!(p.representation, Representation::Ntt);
+		assert_eq!(p.coefficients, q.coefficients);
+		assert!(p.coefficients_shoup.is_none());
+
+		unsafe { p.override_representation(Representation::NttShoup) }
+		assert_eq!(p.representation, Representation::NttShoup);
+		assert_eq!(p.coefficients, q.coefficients);
+		assert!(p.coefficients_shoup.is_some());
+
+		unsafe { p.override_representation(Representation::PowerBasis) }
+		assert_eq!(p, q);
+
+		unsafe { p.override_representation(Representation::NttShoup) }
+		assert!(p.coefficients_shoup.is_some());
+
+		unsafe { p.override_representation(Representation::Ntt) }
+		assert!(p.coefficients_shoup.is_none());
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_small() -> Result<(), String> {
+		for modulus in MODULI {
+			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let q = Modulus::new(*modulus).unwrap();
+			assert!(Poly::small(&ctx, Representation::PowerBasis, 0).is_err_and(
+				|e| e.to_string() == "The variance should be an integer between 1 and 16"
+			));
+			assert!(
+				Poly::small(&ctx, Representation::PowerBasis, 17).is_err_and(
+					|e| e.to_string() == "The variance should be an integer between 1 and 16"
+				)
+			);
+			for i in 1..=16 {
+				let p = Poly::small(&ctx, Representation::PowerBasis, i)?;
+				let coefficients = p.coefficients().to_slice().unwrap();
+				let v = unsafe { q.center_vec_vt(coefficients) }
+					.iter()
+					.map(|ai| *ai as f64)
+					.collect_vec();
+				let s = test::stats::Summary::new(&v);
+				assert!(s.min >= -2.0 * (i as f64));
+				assert!(s.max <= 2.0 * (i as f64));
+			}
+		}
+
+		// Generate a very large polynomial to check the variance (here equal to 8).
+		let ctx = Rc::new(Context::new(&[4611686018326724609], 2 << 18)?);
+		let q = Modulus::new(4611686018326724609).unwrap();
+		let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
+		let coefficients = p.coefficients().to_slice().unwrap();
+		let v = unsafe { q.center_vec_vt(coefficients) }
+			.iter()
+			.map(|ai| *ai as f64)
+			.collect_vec();
+		let s = test::stats::Summary::new(&v);
+		assert!(s.min >= -16.0);
+		assert!(s.max <= 16.0);
+		assert_eq!(s.var.round(), 8.0);
+
 		Ok(())
 	}
 }

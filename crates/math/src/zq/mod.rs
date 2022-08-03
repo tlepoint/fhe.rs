@@ -19,7 +19,7 @@ pub struct Modulus {
 	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
-	pub(crate) supports_opt: bool,
+	supports_opt: bool,
 	distribution: Uniform<u64>,
 }
 

@@ -63,17 +63,12 @@ impl ContextSwitcher for Extender {
 				.assign(&p.coefficients);
 
 			if p.representation != Representation::PowerBasis {
+				// println!("Here!");
 				// TODO: Need to be tested
 				let mut p_coefficients_powerbasis = p.coefficients.clone();
 				// Backward NTT
-				if p.allow_variable_time_computations {
-					izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops).for_each(
-						|(mut v, op)| unsafe { op.backward_vt(v.as_slice_mut().unwrap()) },
-					);
-				} else {
-					izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
-						.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
-				}
+				izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+					.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
 				// Conversion
 				izip!(
 					new_coefficients
@@ -85,23 +80,15 @@ impl ContextSwitcher for Extender {
 					self.converter.convert(&p_c, &mut n_c);
 				});
 				// Forward NTT on the second half
-				if p.allow_variable_time_computations {
-					izip!(
-						new_coefficients
-							.slice_mut(s![self.from.q.len().., ..])
-							.outer_iter_mut(),
-						&self.to.ops[self.from.q.len()..]
-					)
-					.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_slice_mut().unwrap()) });
-				} else {
-					izip!(
-						new_coefficients
-							.slice_mut(s![self.from.q.len().., ..])
-							.outer_iter_mut(),
-						&self.to.ops[self.from.q.len()..]
-					)
-					.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
-				}
+				izip!(
+					new_coefficients
+						.slice_mut(s![self.from.q.len().., ..])
+						.outer_iter_mut(),
+					&self.to.ops[self.from.q.len()..]
+				)
+				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			// println!("ops_from = {:?}", self.from.ops[self.from.ops.len() - 1]);
+			// println!("ops_to   = {:?}", self.to.ops[self.from.ops.len() - 1]);
 			} else {
 				izip!(
 					new_coefficients

@@ -4,6 +4,7 @@
 #![feature(bigint_helper_methods)]
 #![feature(int_roundings)]
 #![feature(is_some_with)]
+#![feature(test)]
 
 //! Mathematical utilities for the fhe.rs library.
 
