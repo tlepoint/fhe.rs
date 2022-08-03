@@ -29,8 +29,10 @@ where
 	/// The type of errors.
 	type Error;
 
-	/// Attempt to decode the [`Plaintext`] with the specified [`Encoding`].
-	fn try_decode(a: &Plaintext, encoding: Encoding) -> Result<Self, Self::Error>;
+	/// Attempt to decode the [`Plaintext`], with an optional [`Encoding`].
+	fn try_decode<E>(a: &Plaintext, encoding: E) -> Result<Self, Self::Error>
+	where
+		E: Into<Option<Encoding>>;
 }
 
 /// Encrypt a [`Plaintext`] into a [`Ciphertext`].

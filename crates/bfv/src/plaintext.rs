@@ -8,7 +8,7 @@ use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// An encoding for the plaintext.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Encoding {
 	/// A Poly encoding encodes a vector as coefficients of a polynomial;
 	/// homomorphic operations are therefore polynomial operations.
@@ -21,12 +21,25 @@ pub enum Encoding {
 }
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Rc<BfvParameters>,
 	/// The value after encoding.
 	pub(crate) value: Vec<i64>,
+	/// The encoding of the plaintext, if known
+	pub(crate) encoding: Option<Encoding>,
+}
+
+// TODO: To test
+impl PartialEq for Plaintext {
+	fn eq(&self, other: &Self) -> bool {
+		let mut eq = self.par == other.par && self.value == other.value;
+		if self.encoding.is_some() && other.encoding.is_some() {
+			eq &= self.encoding.as_ref().unwrap() == other.encoding.as_ref().unwrap()
+		}
+		eq
+	}
 }
 
 impl TryConvertFrom<&Plaintext> for Poly {
@@ -84,6 +97,7 @@ impl Encoder<&[u64]> for Plaintext {
 		Ok(Self {
 			par: par.clone(),
 			value: w,
+			encoding: Some(encoding),
 		})
 	}
 }
@@ -116,6 +130,7 @@ impl Encoder<&[i64]> for Plaintext {
 		Ok(Self {
 			par: par.clone(),
 			value: w,
+			encoding: Some(encoding),
 		})
 	}
 }
@@ -123,9 +138,28 @@ impl Encoder<&[i64]> for Plaintext {
 impl Decoder for Vec<u64> {
 	type Error = String;
 
-	fn try_decode(pt: &Plaintext, encoding: Encoding) -> Result<Vec<u64>, Self::Error> {
+	fn try_decode<E>(pt: &Plaintext, encoding: E) -> Result<Vec<u64>, Self::Error>
+	where
+		E: Into<Option<Encoding>>,
+	{
+		let encoding = encoding.into();
+		let enc: Encoding;
+		if pt.encoding.is_none() && encoding.is_none() {
+			return Err("No encoding specified".to_string());
+		} else if pt.encoding.is_some() {
+			enc = pt.encoding.as_ref().unwrap().clone();
+			if let Some(arg_enc) = encoding && arg_enc != enc {
+				return Err("Mismatched encodings".to_string())
+			}
+		} else {
+			enc = encoding.unwrap();
+			if let Some(pt_enc) = pt.encoding.as_ref() && pt_enc != &enc {
+				return Err("Mismatched encodings".to_string())
+			}
+		}
+
 		let mut w = pt.par.plaintext.reduce_vec_i64(&pt.value);
-		if encoding == Encoding::Simd {
+		if enc == Encoding::Simd {
 			if let Some(op) = &pt.par.op {
 				op.forward(&mut w);
 				Ok(w)
@@ -141,7 +175,10 @@ impl Decoder for Vec<u64> {
 impl Decoder for Vec<i64> {
 	type Error = String;
 
-	fn try_decode(pt: &Plaintext, encoding: Encoding) -> Result<Vec<i64>, Self::Error> {
+	fn try_decode<E>(pt: &Plaintext, encoding: E) -> Result<Vec<i64>, Self::Error>
+	where
+		E: Into<Option<Encoding>>,
+	{
 		let v = Vec::<u64>::try_decode(pt, encoding)?;
 		Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
 	}

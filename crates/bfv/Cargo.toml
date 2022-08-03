@@ -18,7 +18,7 @@ num-traits = "0.2.15"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 zeroize = "1.5.7"
-ndarray = "0.15.4"
+ndarray = "0.15.6"
 
 [dev-dependencies]
 criterion = "0.3.6"
