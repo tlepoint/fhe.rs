@@ -127,37 +127,31 @@ pub fn mul(
 	// Scale
 	// TODO: This should be faster??
 	now = std::time::SystemTime::now();
+	let scaler = &ct0.par.extended_scaler;
 	let mut c0_scaled_coeffs =
 		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
+	for (mut c0_scaled_column, c0_column) in izip!(
+		c0_scaled_coeffs.axis_iter_mut(Axis(1)),
+		c0.coefficients().axis_iter(Axis(1))
+	) {
+		scaler.scale(&c0_column, &mut c0_scaled_column, false);
+	}
 	let mut c1_scaled_coeffs =
 		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
+	for (mut c1_scaled_column, c1_column) in izip!(
+		c1_scaled_coeffs.axis_iter_mut(Axis(1)),
+		c1.coefficients().axis_iter(Axis(1))
+	) {
+		scaler.scale(&c1_column, &mut c1_scaled_column, false);
+	}
 	let mut c2_scaled_coeffs =
 		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-
-	let scaler = &ct0.par.extended_scaler;
-
-	izip!(
-		c0_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c0.coefficients().axis_iter(Axis(1)),
-		c1_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c1.coefficients().axis_iter(Axis(1)),
+	for (mut c2_scaled_column, c2_column) in izip!(
 		c2_scaled_coeffs.axis_iter_mut(Axis(1)),
 		c2.coefficients().axis_iter(Axis(1))
-	)
-	.for_each(
-		|(
-			mut c0_scaled_column,
-			c0_column,
-			mut c1_scaled_column,
-			c1_column,
-			mut c2_scaled_column,
-			c2_column,
-		)| {
-			scaler.scale(&c0_column, &mut c0_scaled_column, false);
-			scaler.scale(&c1_column, &mut c1_scaled_column, false);
-			scaler.scale(&c2_column, &mut c2_scaled_column, false);
-		},
-	);
+	) {
+		scaler.scale(&c2_column, &mut c2_scaled_column, false);
+	}
 	println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
@@ -166,14 +160,21 @@ pub fn mul(
 		Poly::try_convert_from(c0_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
 	let mut c1 =
 		Poly::try_convert_from(c1_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-	let c2 = Poly::try_convert_from(c2_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-
+	unsafe {
+		c0.allow_variable_time_computations();
+		c1.allow_variable_time_computations();
+	}
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	let out = rk.relinearize(&c0, &c1, &c2);
+	rk.relinearize(&mut c0, &mut c1, &c2_scaled_coeffs.view())?;
 	println!("Relinearize: {:?}", now.elapsed().unwrap());
 
-	out
+	Ok(Ciphertext {
+		par: ct0.par.clone(),
+		seed: None,
+		c0,
+		c1,
+	})
 }
 
 #[cfg(test)]

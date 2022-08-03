@@ -71,8 +71,9 @@ pub fn ops_benchmark(c: &mut Criterion) {
 
 		let rk = RelinearizationKey::new(&sk).unwrap();
 		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
-		let p2 = Poly::random(&ctx, Representation::PowerBasis);
-		let p1 = Poly::random(&ctx, Representation::Ntt);
+		let p3 = Poly::random(&ctx, Representation::PowerBasis);
+		let mut p2 = Poly::random(&ctx, Representation::Ntt);
+		let mut p1 = Poly::random(&ctx, Representation::Ntt);
 
 		group.bench_function(
 			BenchmarkId::new(
@@ -80,7 +81,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
 			),
 			|b| {
-				b.iter(|| rk.relinearize(&p1, &p1, &p2));
+				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3.coefficients()));
 			},
 		);
 

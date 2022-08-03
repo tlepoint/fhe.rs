@@ -18,7 +18,15 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 		});
 
 		group.bench_function(BenchmarkId::new("backward", vector_size), |b| {
-			b.iter(|| op.forward(&mut a));
+			b.iter(|| op.backward(&mut a));
+		});
+
+		group.bench_function(BenchmarkId::new("forward_vt", vector_size), |b| unsafe {
+			b.iter(|| op.forward_vt(&mut a));
+		});
+
+		group.bench_function(BenchmarkId::new("backward_vt", vector_size), |b| unsafe {
+			b.iter(|| op.backward_vt(&mut a));
 		});
 	}
 

@@ -1,8 +1,9 @@
 //! Relinearization keys for the BFV encryption scheme
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::{Ciphertext, SecretKey};
+use crate::SecretKey;
 use math::rq::{Poly, Representation};
+use ndarray::ArrayView2;
 use zeroize::Zeroize;
 
 /// Relinearization key for the BFV encryption scheme.
@@ -24,17 +25,13 @@ impl RelinearizationKey {
 	}
 
 	/// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
-	pub fn relinearize(&self, c0: &Poly, c1: &Poly, c2: &Poly) -> Result<Ciphertext, String> {
-		let (mut c0_2, mut c1_2) = self.ksk.key_switch(c2)?;
-		c0_2 += c0;
-		c1_2 += c1;
-
-		Ok(Ciphertext {
-			par: self.ksk.par.clone(),
-			seed: None,
-			c0: c0_2,
-			c1: c1_2,
-		})
+	pub fn relinearize(
+		&self,
+		c0: &mut Poly,
+		c1: &mut Poly,
+		c2_coefficients: &ArrayView2<u64>,
+	) -> Result<(), String> {
+		self.ksk.key_switch(c2_coefficients, c0, c1)
 	}
 }
 
@@ -46,7 +43,7 @@ mod tests {
 	use super::RelinearizationKey;
 	use crate::{
 		traits::{Decoder, Decryptor},
-		BfvParameters, Encoding, SecretKey,
+		BfvParameters, Ciphertext, Encoding, SecretKey,
 	};
 
 	#[test]
@@ -58,7 +55,7 @@ mod tests {
 
 				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2, c1, c2) encrypting 0.
 				let mut c2 = Poly::random(&params.ctx, Representation::Ntt);
-				let c1 = Poly::random(&params.ctx, Representation::Ntt);
+				let mut c1 = Poly::random(&params.ctx, Representation::Ntt);
 				let mut c0 = Poly::small(&params.ctx, Representation::PowerBasis, 16)?;
 				c0.change_representation(Representation::Ntt);
 				c0 -= &(&c1 * &sk.s);
@@ -66,11 +63,18 @@ mod tests {
 
 				// Relinearize the extended ciphertext!
 				c2.change_representation(Representation::PowerBasis);
-				let c = rk.relinearize(&c0, &c1, &c2)?;
+				rk.relinearize(&mut c0, &mut c1, &c2.coefficients())?;
+
+				let ct = Ciphertext {
+					par: params.clone(),
+					seed: None,
+					c0,
+					c1,
+				};
 
 				// Print the noise and decrypt
-				println!("Noise: {}", unsafe { sk.measure_noise(&c)? });
-				let pt = sk.decrypt(&c)?;
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+				let pt = sk.decrypt(&ct)?;
 				assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
 			}
 		}

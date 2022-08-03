@@ -6,6 +6,7 @@ use math::{
 	rns::RnsContext,
 	rq::{traits::TryConvertFrom, Poly, Representation},
 };
+use ndarray::ArrayView2;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
@@ -43,11 +44,11 @@ impl KeySwitchingKey {
 			let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
 			rng.fill(&mut seed_i);
 
+			let mut b = Poly::small(&sk.par.ctx, Representation::PowerBasis, sk.par.variance)?;
 			let mut a = Poly::random_from_seed(&sk.par.ctx, Representation::Ntt, seed_i);
+
 			let mut a_s = &a * &sk.s;
 			a_s.change_representation(Representation::PowerBasis);
-
-			let mut b = Poly::small(&sk.par.ctx, Representation::PowerBasis, sk.par.variance)?;
 			b -= &a_s;
 
 			let gi = rns.get_garner(i).unwrap();
@@ -77,24 +78,28 @@ impl KeySwitchingKey {
 	}
 
 	/// Key switch a polynomial.
-	pub fn key_switch(&self, p: &Poly) -> Result<(Poly, Poly), String> {
+	pub fn key_switch(
+		&self,
+		p_coefficients: &ArrayView2<u64>,
+		acc_0: &mut Poly,
+		acc_1: &mut Poly,
+	) -> Result<(), String> {
 		// TODO: Check representation of input polynomials
-		let c2_coefficients = p.coefficients();
-		let mut c0 = Poly::zero(&self.par.ctx, Representation::Ntt);
-		let mut c1 = Poly::zero(&self.par.ctx, Representation::Ntt);
 		for (c2_i_coefficients, c0_i, c1_i) in
-			izip!(c2_coefficients.outer_iter(), &self.c0, &self.c1)
+			izip!(p_coefficients.outer_iter(), &self.c0, &self.c1)
 		{
 			let mut c2_i = Poly::try_convert_from(
 				c2_i_coefficients.as_slice().unwrap(),
 				&self.par.ctx,
 				Representation::PowerBasis,
 			)?;
+			unsafe { c2_i.allow_variable_time_computations() }
 			c2_i.change_representation(Representation::Ntt);
-			c0 += &(&c2_i * c0_i);
-			c1 += &(&c2_i * c1_i);
+			*acc_0 += &(&c2_i * c0_i);
+			c2_i *= c1_i;
+			*acc_1 += &c2_i;
 		}
-		Ok((c0, c1))
+		Ok(())
 	}
 }
 
@@ -131,9 +136,9 @@ mod tests {
 				let ksk = KeySwitchingKey::new(&sk, &s)?;
 
 				let mut input = Poly::random(&params.ctx, Representation::PowerBasis);
-				let output = ksk.key_switch(&input);
-				assert!(output.is_ok());
-				let (c0, c1) = output?;
+				let mut c0 = Poly::zero(&params.ctx, Representation::Ntt);
+				let mut c1 = Poly::zero(&params.ctx, Representation::Ntt);
+				ksk.key_switch(&input.coefficients(), &mut c0, &mut c1)?;
 
 				let mut c2 = &c0 + &(&c1 * &sk.s);
 				c2.change_representation(Representation::PowerBasis);
