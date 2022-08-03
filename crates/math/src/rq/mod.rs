@@ -137,16 +137,31 @@ impl Poly {
 
 		// TODO: Should we use `match` instead?
 		if self.representation == Representation::PowerBasis && to == Representation::Ntt {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			if self.allow_variable_time_computations {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_slice_mut().unwrap()) });
+			} else {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			}
 		} else if self.representation == Representation::Ntt && to == Representation::PowerBasis {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			if self.allow_variable_time_computations {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_slice_mut().unwrap()) });
+			} else {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			}
 		} else if self.representation == Representation::PowerBasis
 			&& to == Representation::NttShoup
 		{
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			if self.allow_variable_time_computations {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_slice_mut().unwrap()) });
+			} else {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+			}
 			self.compute_coefficients_shoup();
 		} else if self.representation == Representation::Ntt && to == Representation::NttShoup {
 			self.compute_coefficients_shoup();
@@ -162,8 +177,13 @@ impl Poly {
 		} else if self.representation == Representation::NttShoup
 			&& to == Representation::PowerBasis
 		{
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			if self.allow_variable_time_computations {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_slice_mut().unwrap()) });
+			} else {
+				izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+					.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+			}
 			// We are not sure whether this polynomial was sensitive or not, so for security, we zeroize the Shoup coefficients.
 			self.coefficients_shoup
 				.as_mut()

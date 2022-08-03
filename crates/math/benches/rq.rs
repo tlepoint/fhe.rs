@@ -122,6 +122,34 @@ pub fn rq_benchmark(c: &mut Criterion) {
 						b.iter(|| p *= &q);
 					},
 				);
+
+				p.allow_variable_time_computations();
+
+				group.bench_function(
+					BenchmarkId::new(
+						"change_representation/PowerBasis_to_Ntt_vt",
+						format!("{}/{}", degree, 62 * nmoduli),
+					),
+					|b| {
+						b.iter(|| {
+							p.override_representation(Representation::PowerBasis);
+							p.change_representation(Representation::Ntt)
+						});
+					},
+				);
+
+				group.bench_function(
+					BenchmarkId::new(
+						"change_representation/Ntt_to_PowerBasis_vt",
+						format!("{}/{}", degree, 62 * nmoduli),
+					),
+					|b| {
+						b.iter(|| {
+							p.override_representation(Representation::Ntt);
+							p.change_representation(Representation::PowerBasis)
+						});
+					},
+				);
 			}
 		}
 	}

@@ -175,6 +175,114 @@ impl NttOperator {
 			.for_each(|ai| *ai = self.p.mul_shoup(*ai, self.size_inv, self.size_inv_shoup));
 	}
 
+	/// # Safety
+	///
+	/// Compute the forward NTT in place in variable time.
+	///
+	/// Aborts if a is not of the size handled by the operator.
+	pub unsafe fn forward_vt(&self, a: &mut [u64]) {
+		debug_assert!(a.len() == self.size);
+
+		let n = self.size;
+		let a_ptr = a.as_mut_ptr();
+
+		let mut l = n >> 1;
+		let mut m = 1;
+		let mut k = 1;
+		while l > 0 {
+			for i in 0..m {
+				let omega = *self.omegas.get_unchecked(k);
+				let omega_shoup = *self.omegas_shoup.get_unchecked(k);
+				k += 1;
+
+				let s = 2 * i * l;
+				match l {
+					1 => {
+						let uj = a_ptr.add(s);
+						let ujl = a_ptr.add(s + l);
+						self.butterfly_vt(&mut *uj, &mut *ujl, omega, omega_shoup);
+						*uj = self.reduce3_vt(*uj);
+						*ujl = self.reduce3_vt(*ujl);
+					}
+					_ => {
+						for j in s..(s + l) {
+							self.butterfly_vt(
+								&mut *a_ptr.add(j),
+								&mut *a_ptr.add(j + l),
+								omega,
+								omega_shoup,
+							);
+						}
+					}
+				}
+			}
+			l >>= 1;
+			m <<= 1;
+		}
+	}
+
+	/// # Safety
+	///
+	/// Compute the backward NTT in place in variable time.
+	///
+	/// Aborts if a is not of the size handled by the operator.
+	pub unsafe fn backward_vt(&self, a: &mut [u64]) {
+		debug_assert!(a.len() == self.size);
+
+		let a_ptr = a.as_mut_ptr();
+
+		let mut k = 0;
+		let mut m = self.size >> 1;
+		let mut l = 1;
+		while m > 0 {
+			for i in 0..m {
+				let s = 2 * i * l;
+				let zeta_inv = *self.zetas_inv.get_unchecked(k);
+				let zeta_inv_shoup = *self.zetas_inv_shoup.get_unchecked(k);
+				k += 1;
+				match l {
+					1 => {
+						self.inv_butterfly_vt(
+							&mut *a_ptr.add(s),
+							&mut *a_ptr.add(s + l),
+							zeta_inv,
+							zeta_inv_shoup,
+						);
+					}
+					2 => {
+						self.inv_butterfly_vt(
+							&mut *a_ptr.add(s),
+							&mut *a_ptr.add(s + 2),
+							zeta_inv,
+							zeta_inv_shoup,
+						);
+						self.inv_butterfly_vt(
+							&mut *a_ptr.add(s + 1),
+							&mut *a_ptr.add(s + 3),
+							zeta_inv,
+							zeta_inv_shoup,
+						);
+					}
+					_ => {
+						for j in s..(s + l) {
+							self.inv_butterfly_vt(
+								&mut *a_ptr.add(j),
+								&mut *a_ptr.add(j + l),
+								zeta_inv,
+								zeta_inv_shoup,
+							);
+						}
+					}
+				}
+			}
+			l <<= 1;
+			m >>= 1;
+		}
+
+		a.iter_mut()
+			.for_each(|ai| *ai = self.p.mul_shoup(*ai, self.size_inv, self.size_inv_shoup));
+	}
+
 	/// Reduce a modulo p.
 	///
 	/// Aborts if a >= 4 * p.
@@ -183,6 +291,16 @@ impl NttOperator {
 
 		let y = Modulus::reduce1(a, 2 * self.p.p);
 		Modulus::reduce1(y, self.p.p)
+	}
+
+	/// Reduce a modulo p in variable time.
+	///
+	/// Aborts if a >= 4 * p.
+	unsafe fn reduce3_vt(&self, a: u64) -> u64 {
+		debug_assert!(a < 4 * self.p.p);
+
+		let y = Modulus::reduce1_vt(a, 2 * self.p.p);
+		Modulus::reduce1_vt(y, self.p.p)
 	}
 
 	/// NTT Butterfly.
@@ -201,6 +319,22 @@ impl NttOperator {
 		debug_assert!(*y < 4 * self.p.p);
 	}
 
+	/// NTT Butterfly in variable time.
+	unsafe fn butterfly_vt(&self, x: &mut u64, y: &mut u64, w: u64, w_shoup: u64) {
+		debug_assert!(*x < 4 * self.p.p);
+		debug_assert!(*y < 4 * self.p.p);
+		debug_assert!(w < self.p.p);
+		debug_assert_eq!(self.p.shoup(w), w_shoup);
+
+		*x = Modulus::reduce1_vt(*x, self.p_twice);
+		let t = self.p.lazy_mul_shoup(*y, w, w_shoup);
+		*y = *x + self.p_twice - t;
+		*x += t;
+
+		debug_assert!(*x < 4 * self.p.p);
+		debug_assert!(*y < 4 * self.p.p);
+	}
+
 	/// Inverse NTT butterfly.
 	fn inv_butterfly(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
 		debug_assert!(*x < self.p_twice);
@@ -210,6 +344,21 @@ impl NttOperator {
 
 		let t = *x;
 		*x = Modulus::reduce1(*y + t, self.p_twice);
+		*y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
+
+		debug_assert!(*x < self.p_twice);
+		debug_assert!(*y < self.p_twice);
+	}
+
+	/// Inverse NTT butterfly in variable time
+	unsafe fn inv_butterfly_vt(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
+		debug_assert!(*x < self.p_twice);
+		debug_assert!(*y < self.p_twice);
+		debug_assert!(z < self.p.p);
+		debug_assert_eq!(self.p.shoup(z), z_shoup);
+
+		let t = *x;
+		*x = Modulus::reduce1_vt(*y + t, self.p_twice);
 		*y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
 
 		debug_assert!(*x < self.p_twice);
@@ -287,12 +436,19 @@ mod tests {
 					for _ in 0..ntests {
 						let mut a = q.random_vec(size);
 						let a_clone = a.clone();
+						let mut b = a.clone();
 
 						op.forward(&mut a);
 						assert_ne!(a, a_clone);
 
+						unsafe { op.forward_vt(&mut b) }
+						assert_eq!(a, b);
+
 						op.backward(&mut a);
 						assert_eq!(a, a_clone);
+
+						unsafe { op.backward_vt(&mut b) }
+						assert_eq!(a, b);
 					}
 				}
 			}
