@@ -93,8 +93,8 @@ impl SecretKey {
 	/// We use the encoding technique described in Sec 3.1 of https://eprint.iacr.org/2021/204.
 	fn encode_pt(&self, pt: &Plaintext, encoding: Option<Encoding>) -> Result<Poly, String> {
 		let enc: Encoding;
-		if encoding.is_some() {
-			enc = encoding.unwrap();
+		if let Some(encoding) = encoding {
+			enc = encoding;
 			if pt.encoding.is_some() && Some(enc.clone()) != pt.encoding {
 				return Err("Mismatched encodings".to_string());
 			}

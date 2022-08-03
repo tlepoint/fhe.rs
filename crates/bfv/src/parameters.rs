@@ -156,7 +156,6 @@ impl BfvParametersBuilder {
 
 		// Compute the scaling factors for the plaintext
 		let rns = RnsContext::new(&ciphertext_moduli)?;
-		let delta = rns.modulus() / plaintext_modulus.modulus();
 
 		let ctx = Rc::new(Context::new(&ciphertext_moduli, polynomial_degree)?);
 		let scaler = Scaler::new(
