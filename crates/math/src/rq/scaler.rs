@@ -81,7 +81,7 @@ mod tests {
 		let ctx = Rc::new(Context::new(Q, 8)?);
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
-			for denominator in &[1u64, 2, 3, 101, 1001, 4611686018326724610] {
+			for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {
 				let n = BigUint::from(*numerator);
 				let d = BigUint::from(*denominator);
 

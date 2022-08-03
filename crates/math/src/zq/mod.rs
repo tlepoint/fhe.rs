@@ -19,7 +19,7 @@ pub struct Modulus {
 	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
-	supports_opt: bool,
+	pub(crate) supports_opt: bool,
 	distribution: Uniform<u64>,
 }
 
@@ -463,7 +463,8 @@ impl Modulus {
 	}
 
 	/// Optimized modular reduction of a u128 in constant time.
-	fn reduce_opt_u128(&self, a: u128) -> u64 {
+	// TODO: to test
+	pub fn reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
@@ -562,7 +563,7 @@ impl Modulus {
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
-	fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
+	pub fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(a < (self.p as u128) * (self.p as u128));
 
 		let q = (((self.barrett_lo as u128) * (a >> 64)) + (a << self.leading_zeros)) >> 64;

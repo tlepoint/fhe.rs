@@ -191,7 +191,6 @@ impl RnsScaler {
 		) {
 			let mut lo = (*ri as u128) * (*thetag_lo as u128);
 			let mut hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-			// sum_theta_garner.add(lo as u64, hi as u64, (hi >> 64) as u64, false);
 			sum_theta_garner.overflowing_add(U256::from([
 				lo as u64,
 				hi as u64,
@@ -200,7 +199,6 @@ impl RnsScaler {
 			]));
 			lo = (*ri as u128) * (*thetao_lo as u128);
 			hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
-			// sum_theta_omega.add(lo as u64, hi as u64, (hi >> 64) as u64, *thetao_sign);
 			if *thetao_sign {
 				sum_theta_omega.overflowing_sub(U256::from([
 					lo as u64,
@@ -265,25 +263,30 @@ impl RnsScaler {
 			}
 		}
 
-		// Let's compute [ sum(r_j * omega_j) - v * gamma + w] mod q_i
-		for (out_i, qi, gamma_i, gamma_shoup_i, omega_i, omega_shoup_i) in izip!(
-			out.iter_mut(),
-			&self.ctx.moduli,
-			&self.gamma,
-			&self.gamma_shoup,
-			&self.omega,
-			&self.omega_shoup
-		) {
-			let vi = qi.lazy_reduce_u128(v);
-			let wi = qi.lazy_reduce_u128(w);
-			let mut yi = if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
+		unsafe {
+			for i in 0..out.len() {
+				let out_i = out.get_mut(i).unwrap();
+				let qi = self.ctx.moduli.get_unchecked(i);
+				let gamma_i = self.gamma.get_unchecked(i);
+				let gamma_shoup_i = self.gamma_shoup.get_unchecked(i);
+				let omega_i = self.omega.get_unchecked(i);
+				let omega_shoup_i = self.omega_shoup.get_unchecked(i);
 
-			yi += (qi.modulus() * 2 - qi.lazy_mul_shoup(vi, *gamma_i, *gamma_shoup_i)) as u128;
+				let wi = qi.lazy_reduce_u128(w);
+				let mut yi = if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
 
-			for (rj, omega_i_j, omega_shoup_i_j) in izip!(rests.iter(), omega_i, omega_shoup_i) {
-				yi += qi.lazy_mul_shoup(*rj, *omega_i_j, *omega_shoup_i_j) as u128;
+				yi += (qi.modulus() * 2
+					- qi.lazy_mul_shoup(qi.lazy_reduce_u128(v), *gamma_i, *gamma_shoup_i))
+					as u128;
+
+				for j in 0..rests.len() {
+					let rj = rests.get(j).unwrap();
+					let omega_i_j = omega_i.get_unchecked(j);
+					let omega_shoup_i_j = omega_shoup_i.get_unchecked(j);
+					yi += qi.lazy_mul_shoup(*rj, *omega_i_j, *omega_shoup_i_j) as u128;
+				}
+				*out_i = qi.reduce_u128(yi)
 			}
-			*out_i = qi.reduce_u128(yi)
 		}
 	}
 }
@@ -366,7 +369,7 @@ mod tests {
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
-			for denominator in &[1u64, 2, 3, 101, 1001, 4611686018326724610] {
+			for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {
 				let n = BigUint::from(*numerator);
 				let d = BigUint::from(*denominator);
 				let scaler = RnsScaler::new(&q, &n, &d);
@@ -393,8 +396,9 @@ mod tests {
 
 					let z = scaler.scale_new(&(&x).into(), x.len(), false);
 					let x_scaled_round = if x_sign {
-						if d.to_u64().unwrap() == 2 {
-							q.modulus() - (&(&x_lift * &n) / &d) % q.modulus()
+						if d.to_u64().unwrap() % 2 == 0 {
+							q.modulus()
+								- (&(&x_lift * &n + ((&d >> 1usize) - 1u64)) / &d) % q.modulus()
 						} else {
 							q.modulus() - (&(&x_lift * &n + (&d >> 1)) / &d) % q.modulus()
 						}

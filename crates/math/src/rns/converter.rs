@@ -91,31 +91,33 @@ impl RnsConverter {
 			// Compute rests_from_i * theta
 			let lo = (*rests_from_i as u128) * (*theta_lo as u128);
 			let mi = (*rests_from_i as u128) * (*theta_hi as u128) + (lo >> 64);
-			let hi = mi >> 64;
-			sum.overflowing_add(U256::from([lo as u64, mi as u64, hi as u64, 0]));
+			sum.overflowing_add(U256::from([lo as u64, mi as u64, (mi >> 64) as u64, 0]));
 		}
 		sum >>= 126;
 		let value = sum.as_u128();
 		let value = (value & 1) + (value >> 1);
 
-		for (to, garner_mod_p_j, garner_mod_p_shoup_j, p_j, q_mod_p_j, q_mod_p_shoup_j) in izip!(
-			rests_to.iter_mut(),
-			&self.garner_mod_p,
-			&self.garner_mod_p_shoup,
-			&self.to.moduli,
-			&self.q_mod_p,
-			&self.q_mod_p_shoup,
-		) {
-			let mut x = (2 * p_j.modulus()
-				- p_j.lazy_mul_shoup(p_j.reduce_u128(value), *q_mod_p_j, *q_mod_p_shoup_j))
-				as u128;
-			for (rests_from_i, garner_mod_p_j_i, garner_mod_p_shoup_j_i) in
-				izip!(rests_from, garner_mod_p_j, garner_mod_p_shoup_j)
-			{
-				x += p_j.lazy_mul_shoup(*rests_from_i, *garner_mod_p_j_i, *garner_mod_p_shoup_j_i)
-					as u128
+		unsafe {
+			for j in 0..rests_to.len() {
+				let to = rests_to.get_mut(j).unwrap();
+				let garner_mod_p_j = self.garner_mod_p.get_unchecked(j);
+				let garner_mod_p_shoup_j = self.garner_mod_p_shoup.get_unchecked(j);
+				let p_j = self.to.moduli.get_unchecked(j);
+				let q_mod_p_j = self.q_mod_p.get_unchecked(j);
+				let q_mod_p_shoup_j = self.q_mod_p_shoup.get_unchecked(j);
+
+				let mut x = (2 * p_j.modulus()
+					- p_j.lazy_mul_shoup(p_j.lazy_reduce_u128(value), *q_mod_p_j, *q_mod_p_shoup_j))
+					as u128;
+				for i in 0..rests_from.len() {
+					x += p_j.lazy_mul_shoup(
+						*rests_from.get(i).unwrap(),
+						*garner_mod_p_j.get_unchecked(i),
+						*garner_mod_p_shoup_j.get_unchecked(i),
+					) as u128
+				}
+				*to = p_j.reduce_u128(x);
 			}
-			*to = p_j.reduce_u128(x);
 		}
 	}
 }
