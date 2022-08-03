@@ -30,6 +30,7 @@ pub fn rns_benchmark(c: &mut Criterion) {
 	let converter = RnsConverter::new(&rns_q, &rns_p);
 	let scaler = RnsScaler::new(
 		&rns_q,
+		&rns_p,
 		&BigUint::from(1u64),
 		&BigUint::from(46116860181065u64),
 	);
@@ -43,9 +44,12 @@ pub fn rns_benchmark(c: &mut Criterion) {
 	);
 
 	let mut y = x.clone();
-	group.bench_function(BenchmarkId::new("scaler", q.len()), |b| {
-		b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), true));
-	});
+	group.bench_function(
+		BenchmarkId::new("scaler", format!("{}->{}", q.len(), p.len())),
+		|b| {
+			b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), true));
+		},
+	);
 
 	group.finish();
 }

@@ -3,7 +3,6 @@
 use super::key_switching_key::KeySwitchingKey;
 use crate::SecretKey;
 use math::rq::{Poly, Representation};
-use ndarray::ArrayView2;
 use zeroize::Zeroize;
 
 /// Relinearization key for the BFV encryption scheme.
@@ -25,13 +24,8 @@ impl RelinearizationKey {
 	}
 
 	/// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
-	pub fn relinearize(
-		&self,
-		c0: &mut Poly,
-		c1: &mut Poly,
-		c2_coefficients: &ArrayView2<u64>,
-	) -> Result<(), String> {
-		self.ksk.key_switch(c2_coefficients, c0, c1)
+	pub fn relinearize(&self, c0: &mut Poly, c1: &mut Poly, c2: &Poly) -> Result<(), String> {
+		self.ksk.key_switch(c2, c0, c1)
 	}
 }
 
@@ -63,7 +57,7 @@ mod tests {
 
 				// Relinearize the extended ciphertext!
 				c2.change_representation(Representation::PowerBasis);
-				rk.relinearize(&mut c0, &mut c1, &c2.coefficients())?;
+				rk.relinearize(&mut c0, &mut c1, &c2)?;
 
 				let ct = Ciphertext {
 					par: params.clone(),

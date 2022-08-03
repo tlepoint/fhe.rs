@@ -81,7 +81,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
 			),
 			|b| {
-				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3.coefficients()));
+				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3));
 			},
 		);
 

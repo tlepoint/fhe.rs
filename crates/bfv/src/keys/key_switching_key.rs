@@ -6,7 +6,6 @@ use math::{
 	rns::RnsContext,
 	rq::{traits::TryConvertFrom, Poly, Representation},
 };
-use ndarray::ArrayView2;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
@@ -78,15 +77,10 @@ impl KeySwitchingKey {
 	}
 
 	/// Key switch a polynomial.
-	pub fn key_switch(
-		&self,
-		p_coefficients: &ArrayView2<u64>,
-		acc_0: &mut Poly,
-		acc_1: &mut Poly,
-	) -> Result<(), String> {
+	pub fn key_switch(&self, p: &Poly, acc_0: &mut Poly, acc_1: &mut Poly) -> Result<(), String> {
 		// TODO: Check representation of input polynomials
 		for (c2_i_coefficients, c0_i, c1_i) in
-			izip!(p_coefficients.outer_iter(), &self.c0, &self.c1)
+			izip!(p.coefficients().outer_iter(), &self.c0, &self.c1)
 		{
 			let mut c2_i = Poly::try_convert_from(
 				c2_i_coefficients.as_slice().unwrap(),
@@ -138,7 +132,7 @@ mod tests {
 				let mut input = Poly::random(&params.ctx, Representation::PowerBasis);
 				let mut c0 = Poly::zero(&params.ctx, Representation::Ntt);
 				let mut c1 = Poly::zero(&params.ctx, Representation::Ntt);
-				ksk.key_switch(&input.coefficients(), &mut c0, &mut c1)?;
+				ksk.key_switch(&input, &mut c0, &mut c1)?;
 
 				let mut c2 = &c0 + &(&c1 * &sk.s);
 				c2.change_representation(Representation::PowerBasis);

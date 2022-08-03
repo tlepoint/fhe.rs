@@ -1,12 +1,7 @@
 //! Ciphertext type in the BFV encryption scheme.
 
 use crate::{parameters::BfvParameters, RelinearizationKey};
-use itertools::izip;
-use math::rq::{
-	traits::{ContextSwitcher, TryConvertFrom},
-	Poly, Representation,
-};
-use ndarray::{Array2, Axis};
+use math::rq::{traits::ContextSwitcher, Poly, Representation};
 use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -127,46 +122,16 @@ pub fn mul(
 	// Scale
 	// TODO: This should be faster??
 	now = std::time::SystemTime::now();
-	let scaler = &ct0.par.extended_scaler;
-	let mut c0_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c0_scaled_column, c0_column) in izip!(
-		c0_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c0.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c0_column, &mut c0_scaled_column, false);
-	}
-	let mut c1_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c1_scaled_column, c1_column) in izip!(
-		c1_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c1.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c1_column, &mut c1_scaled_column, false);
-	}
-	let mut c2_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c2_scaled_column, c2_column) in izip!(
-		c2_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c2.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c2_column, &mut c2_scaled_column, false);
-	}
+	let mut c0 = ct0.par.rounder.scale(&c0, false)?;
+	let mut c1 = ct0.par.rounder.scale(&c1, false)?;
+	let c2 = ct0.par.rounder.scale(&c2, false)?;
 	println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
 	now = std::time::SystemTime::now();
-	let mut c0 =
-		Poly::try_convert_from(c0_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-	let mut c1 =
-		Poly::try_convert_from(c1_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-	unsafe {
-		c0.allow_variable_time_computations();
-		c1.allow_variable_time_computations();
-	}
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2_scaled_coeffs.view())?;
+	rk.relinearize(&mut c0, &mut c1, &c2)?;
 	println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {

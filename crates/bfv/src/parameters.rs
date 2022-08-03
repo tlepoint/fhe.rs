@@ -2,7 +2,7 @@
 
 use derive_builder::Builder;
 use math::{
-	rns::{RnsContext, RnsScaler},
+	rns::RnsContext,
 	rq::{
 		extender::Extender, scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation,
 	},
@@ -62,9 +62,9 @@ pub struct BfvParameters {
 	#[builder(setter(skip))]
 	pub(crate) extender: Extender,
 
-	/// Down scaler used in the homomorphic multiplication
+	/// Scaler used in the homomorphic multiplication
 	#[builder(setter(skip))]
-	pub(crate) extended_scaler: RnsScaler,
+	pub(crate) rounder: Scaler,
 }
 
 impl BfvParameters {
@@ -158,8 +158,10 @@ impl BfvParametersBuilder {
 		let rns = RnsContext::new(&ciphertext_moduli)?;
 
 		let ctx = Rc::new(Context::new(&ciphertext_moduli, polynomial_degree)?);
+		let plaintext_ctx = Rc::new(Context::new(&ciphertext_moduli[..1], polynomial_degree)?);
 		let scaler = Scaler::new(
 			&ctx,
+			&plaintext_ctx,
 			&BigUint::from(plaintext_modulus.modulus()),
 			rns.modulus(),
 		)?;
@@ -193,13 +195,12 @@ impl BfvParametersBuilder {
 		}
 		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree)?);
 		let extender = Extender::new(&ctx, &to_ctx)?;
-
-		let rns_extended = RnsContext::new(&extended_moduli)?;
-		let extended_scaler = RnsScaler::new(
-			&rns_extended,
+		let rounder = Scaler::new(
+			&to_ctx,
+			&ctx,
 			&BigUint::from(plaintext_modulus.modulus()),
 			rns.modulus(),
-		);
+		)?;
 
 		Ok(BfvParameters {
 			polynomial_degree,
@@ -214,7 +215,7 @@ impl BfvParametersBuilder {
 			scaler,
 			plaintext: plaintext_modulus,
 			extender,
-			extended_scaler,
+			rounder,
 		})
 	}
 }

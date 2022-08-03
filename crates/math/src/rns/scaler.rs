@@ -12,7 +12,8 @@ use num_traits::{One, ToPrimitive, Zero};
 /// Scaler in RNS basis.
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct RnsScaler {
-	ctx: RnsContext,
+	from: RnsContext,
+	to: RnsContext,
 	numerator: BigUint,
 	denominator: BigUint,
 
@@ -36,37 +37,42 @@ impl RnsScaler {
 	/// Create a RNS scaler by numerator / denominator.
 	///
 	/// Aborts if denominator is equal to 0.
-	pub fn new(ctx: &RnsContext, numerator: &BigUint, denominator: &BigUint) -> Self {
+	pub fn new(
+		from: &RnsContext,
+		to: &RnsContext,
+		numerator: &BigUint,
+		denominator: &BigUint,
+	) -> Self {
 		assert_ne!(denominator, &BigUint::zero());
 
 		// Let's define gamma = round(numerator * product / denominator)
 		let (gamma, theta_gamma_lo, theta_gamma_hi, theta_gamma_sign) =
-			Self::extract_projection_and_theta(ctx, &ctx.product, numerator, denominator, false);
-		let gamma_shoup = izip!(&gamma, &ctx.moduli)
+			Self::extract_projection_and_theta(to, &from.product, numerator, denominator, false);
+		let gamma_shoup = izip!(&gamma, &to.moduli)
 			.map(|(wi, q)| q.shoup(*wi))
 			.collect_vec();
 
 		// Let's define omega_i = round(garner_i * numerator / denominator)
 		let mut omega = vec![];
 		let mut omega_shoup = vec![];
-		for _ in &ctx.moduli {
-			omega.push(vec![0u64; ctx.moduli.len()]);
-			omega_shoup.push(vec![0u64; ctx.moduli.len()]);
+		for _ in &to.moduli {
+			omega.push(vec![0u64; from.moduli.len()]);
+			omega_shoup.push(vec![0u64; from.moduli.len()]);
 		}
 		let mut theta_omega_lo = vec![];
 		let mut theta_omega_hi = vec![];
 		let mut theta_omega_sign = vec![];
-		for i in 0..ctx.garner.len() {
+		for i in 0..from.garner.len() {
 			let (omega_i, theta_omega_i_lo, theta_omega_i_hi, theta_omega_i_sign) =
 				Self::extract_projection_and_theta(
-					ctx,
-					&ctx.garner[i],
+					to,
+					&from.garner[i],
 					numerator,
 					denominator,
 					true,
 				);
-			for j in 0..ctx.moduli.len() {
-				let qj = &ctx.moduli[j];
+			for j in 0..to.moduli.len() {
+				let qj = &to.moduli[j];
 				omega[j][i] = qj.reduce(omega_i[j]);
 				omega_shoup[j][i] = qj.shoup(omega[j][i]);
 			}
@@ -78,8 +84,8 @@ impl RnsScaler {
 		// Finally, define theta_garner_i = garner_i / product, also scaled by 2^127.
 		let mut theta_garner_lo = vec![];
 		let mut theta_garner_hi = vec![];
-		for garner_i in &ctx.garner {
-			let mut theta: BigUint = ((garner_i << 127) + (&ctx.product >> 1)) / &ctx.product;
+		for garner_i in &from.garner {
+			let mut theta: BigUint = ((garner_i << 127) + (&from.product >> 1)) / &from.product;
 			let theta_hi: BigUint = &theta >> 64;
 			theta -= &theta_hi << 64;
 			theta_garner_lo.push(theta.to_u64().unwrap());
@@ -87,7 +93,8 @@ impl RnsScaler {
 		}
 
 		Self {
-			ctx: ctx.clone(),
+			from: from.clone(),
+			to: to.clone(),
 			numerator: numerator.clone(),
 			denominator: denominator.clone(),
 			gamma,
@@ -175,8 +182,8 @@ impl RnsScaler {
 	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
 	/// if the size of out is not in [1, ..., rests.len()].
 	pub fn scale(&self, rests: &ArrayView1<u64>, out: &mut ArrayViewMut1<u64>, floor: bool) {
-		debug_assert_eq!(rests.len(), self.ctx.moduli_u64.len());
-		debug_assert!(!out.is_empty() && out.len() <= rests.len());
+		debug_assert_eq!(rests.len(), self.from.moduli_u64.len());
+		debug_assert!(!out.is_empty() && out.len() <= self.to.moduli_u64.len());
 
 		// First, let's compute the inner product of the rests with theta_omega and theta_garner.
 		let mut sum_theta_garner = U256::zero();
@@ -266,7 +273,7 @@ impl RnsScaler {
 		unsafe {
 			for i in 0..out.len() {
 				let out_i = out.get_mut(i).unwrap();
-				let qi = self.ctx.moduli.get_unchecked(i);
+				let qi = self.to.moduli.get_unchecked(i);
 				let gamma_i = self.gamma.get_unchecked(i);
 				let gamma_shoup_i = self.gamma_shoup.get_unchecked(i);
 				let omega_i = self.omega.get_unchecked(i);
@@ -305,11 +312,12 @@ mod tests {
 	fn test_constructor() -> Result<(), String> {
 		let q = RnsContext::new(&[4, 4611686018326724609, 1153])?;
 
-		let scaler = RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::from(1u64));
-		assert_eq!(scaler.ctx, q);
+		let scaler = RnsScaler::new(&q, &q, &BigUint::from(1u64), &BigUint::from(1u64));
+		assert_eq!(scaler.from, q);
 
 		assert!(
-			catch_unwind(|| RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::zero())).is_err()
+			catch_unwind(|| RnsScaler::new(&q, &q, &BigUint::from(1u64), &BigUint::zero()))
+				.is_err()
 		);
 		Ok(())
 	}
@@ -318,7 +326,7 @@ mod tests {
 	fn test_identity() -> Result<(), String> {
 		let ntests = 100;
 		let q = RnsContext::new(&[4, 4611686018326724609, 1153])?;
-		let identity = RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::from(1u64));
+		let identity = RnsScaler::new(&q, &q, &BigUint::from(1u64), &BigUint::from(1u64));
 
 		let mut rng = thread_rng();
 		for _ in 0..ntests {
@@ -342,7 +350,7 @@ mod tests {
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
-			let scaler = RnsScaler::new(&q, &BigUint::from(*numerator), &BigUint::from(1u64));
+			let scaler = RnsScaler::new(&q, &q, &BigUint::from(*numerator), &BigUint::from(1u64));
 
 			for _ in 0..ntests {
 				let x = vec![
@@ -372,7 +380,7 @@ mod tests {
 			for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {
 				let n = BigUint::from(*numerator);
 				let d = BigUint::from(*denominator);
-				let scaler = RnsScaler::new(&q, &n, &d);
+				let scaler = RnsScaler::new(&q, &q, &n, &d);
 
 				for _ in 0..ntests {
 					let x = vec![
@@ -409,6 +417,46 @@ mod tests {
 				}
 			}
 		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_scale_extend() -> Result<(), String> {
+		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153])?;
+		let r = RnsContext::new(&[
+			4u64,
+			4611686018326724609,
+			1153,
+			4611686018309947393,
+			4611686018282684417,
+			4611686018257518593,
+			4611686018232352769,
+			4611686018171535361,
+			4611686018106523649,
+			4611686018058289153,
+		])?;
+		let mut rng = thread_rng();
+
+		let scaler = RnsScaler::new(&q, &r, &r.product, &q.product);
+		let x = vec![
+			rng.next_u64() % q.moduli_u64[0],
+			rng.next_u64() % q.moduli_u64[1],
+			rng.next_u64() % q.moduli_u64[2],
+		];
+
+		let mut x_lift = q.lift(&ArrayView1::from(&x));
+		let x_sign = x_lift >= (q.modulus() >> 1);
+		if x_sign {
+			x_lift = q.modulus() - x_lift;
+		}
+
+		let y = scaler.scale_new(&(&x).into(), r.moduli.len(), true);
+		let x_scaled_floor = if x_sign {
+			&r.product - (&(&x_lift * &r.product + &q.product - 1u64) / &q.product) % &r.product
+		} else {
+			((&x_lift * &r.product) / &q.product) % &r.product
+		};
+		assert_eq!(y, r.project(&x_scaled_floor));
 		Ok(())
 	}
 }
