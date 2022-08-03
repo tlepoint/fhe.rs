@@ -76,24 +76,22 @@ mod tests {
 	];
 
 	#[test]
-	fn test_scaler() {
+	fn test_scaler() -> Result<(), String> {
 		let ntests = 100;
-		let ctx = Rc::new(Context::new(Q, 8).unwrap());
+		let ctx = Rc::new(Context::new(Q, 8)?);
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
 			for denominator in &[1u64, 2, 3, 101, 1001, 4611686018326724610] {
 				let n = BigUint::from(*numerator);
 				let d = BigUint::from(*denominator);
 
-				let scaler = Scaler::new(&ctx, &n, &d).unwrap();
+				let scaler = Scaler::new(&ctx, &n, &d)?;
 
 				for _ in 0..ntests {
 					let poly = Poly::random(&ctx, Representation::PowerBasis);
 					let poly_biguint = Vec::<BigUint>::from(&poly);
 
-					let scaled_poly = scaler.scale(&poly, true);
-					assert!(scaled_poly.is_ok());
-					let scaled_poly = scaled_poly.unwrap();
+					let scaled_poly = scaler.scale(&poly, true)?;
 					let scaled_biguint = Vec::<BigUint>::from(&scaled_poly);
 
 					let expected = poly_biguint
@@ -112,5 +110,7 @@ mod tests {
 				}
 			}
 		}
+
+		Ok(())
 	}
 }

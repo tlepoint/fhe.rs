@@ -142,16 +142,14 @@ mod tests {
 	}
 
 	#[test]
-	fn test_extender() {
+	fn test_extender() -> Result<(), String> {
 		let ntests = 100;
-		let from = Rc::new(Context::new(Q, 8).unwrap());
+		let from = Rc::new(Context::new(Q, 8)?);
 		let mut all_moduli = Q.to_vec();
 		all_moduli.append(&mut P.to_vec());
-		let to = Rc::new(Context::new(&all_moduli, 8).unwrap());
+		let to = Rc::new(Context::new(&all_moduli, 8)?);
 
-		let extender = Extender::new(&from, &to);
-		assert!(extender.is_ok());
-		let extender = extender.unwrap();
+		let extender = Extender::new(&from, &to)?;
 
 		for _ in 0..ntests {
 			let poly = Poly::random(&from, Representation::PowerBasis);
@@ -159,10 +157,10 @@ mod tests {
 
 			let extended_poly = extender.switch_context(&poly);
 			assert!(extended_poly.is_ok());
-			let extended_poly = extended_poly.unwrap();
+			let extended_poly = extended_poly?;
 
 			let mut expected_biguint = poly_biguint.clone();
-			let rns = RnsContext::new(&all_moduli).unwrap();
+			let rns = RnsContext::new(&all_moduli)?;
 			for c in &mut expected_biguint {
 				// If this is a negative coefficient, set the expected biguint
 				// with regard to the large modulus instead.
@@ -172,5 +170,7 @@ mod tests {
 			}
 			assert_eq!(expected_biguint, Vec::<BigUint>::from(&extended_poly));
 		}
+
+		Ok(())
 	}
 }

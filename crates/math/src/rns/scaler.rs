@@ -299,8 +299,8 @@ mod tests {
 	use util::catch_unwind;
 
 	#[test]
-	fn test_constructor() {
-		let q = RnsContext::new(&[4, 4611686018326724609, 1153]).unwrap();
+	fn test_constructor() -> Result<(), String> {
+		let q = RnsContext::new(&[4, 4611686018326724609, 1153])?;
 
 		let scaler = RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::from(1u64));
 		assert_eq!(scaler.ctx, q);
@@ -308,12 +308,13 @@ mod tests {
 		assert!(
 			catch_unwind(|| RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::zero())).is_err()
 		);
+		Ok(())
 	}
 
 	#[test]
-	fn test_identity() {
+	fn test_identity() -> Result<(), String> {
 		let ntests = 100;
-		let q = RnsContext::new(&[4, 4611686018326724609, 1153]).unwrap();
+		let q = RnsContext::new(&[4, 4611686018326724609, 1153])?;
 		let identity = RnsScaler::new(&q, &BigUint::from(1u64), &BigUint::from(1u64));
 
 		let mut rng = thread_rng();
@@ -328,12 +329,13 @@ mod tests {
 			assert_eq!(&x, &y);
 			assert_eq!(&x, &z);
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn test_scale_up() {
+	fn test_scale_up() -> Result<(), String> {
 		let ntests = 100;
-		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153]).unwrap();
+		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153])?;
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
@@ -354,12 +356,13 @@ mod tests {
 				assert_eq!(z, q.project(&x_scaled));
 			}
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn test_scale() {
+	fn test_scale() -> Result<(), String> {
 		let ntests = 100;
-		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153]).unwrap();
+		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153])?;
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
@@ -402,5 +405,6 @@ mod tests {
 				}
 			}
 		}
+		Ok(())
 	}
 }

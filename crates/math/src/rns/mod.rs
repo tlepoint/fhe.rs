@@ -31,10 +31,10 @@ pub struct RnsContext {
 impl RnsContext {
 	/// Create a RNS context from a list of moduli.
 	///
-	/// Returns None if the list is empty, or if the moduli are no coprime.
-	pub fn new(moduli_u64: &[u64]) -> Option<Self> {
+	/// Returns an error if the list is empty, or if the moduli are no coprime.
+	pub fn new(moduli_u64: &[u64]) -> Result<Self, String> {
 		if moduli_u64.is_empty() {
-			None
+			Err("The list of moduli is empty".to_string())
 		} else {
 			let mut moduli = Vec::with_capacity(moduli_u64.len());
 			let mut q_tilde = Vec::with_capacity(moduli_u64.len());
@@ -51,7 +51,7 @@ impl RnsContext {
 						let (d, _, _) = BigUintDig::from(moduli_u64[i])
 							.extended_gcd(&BigUintDig::from(moduli_u64[j]));
 						if d.cmp(&BigIntDig::from(1)) != Ordering::Equal {
-							return None;
+							return Err("The moduli are not coprime".to_string());
 						}
 					}
 				}
@@ -61,8 +61,11 @@ impl RnsContext {
 			}
 
 			for modulus in moduli_u64 {
-				let p = Modulus::new(*modulus)?;
-				moduli.push(p);
+				if let Some(p) = Modulus::new(*modulus) {
+					moduli.push(p);
+				} else {
+					return Err("The modulus is invalid".to_string());
+				}
 				// q* = product / modulus
 				let q_star_i = &product / modulus;
 				// q~ = (product / modulus) ^ (-1) % modulus
@@ -83,7 +86,7 @@ impl RnsContext {
 				);
 			}
 
-			Some(Self {
+			Ok(Self {
 				moduli_u64: moduli_u64.to_owned(),
 				moduli,
 				q_tilde,
@@ -120,7 +123,6 @@ impl RnsContext {
 	}
 
 	/// Getter for the i-th garner coefficient.
-	/// TODO: To test
 	pub fn get_garner(&self, i: usize) -> Option<&BigUint> {
 		self.garner.get(i)
 	}
@@ -135,32 +137,49 @@ mod tests {
 	use rand::RngCore;
 
 	#[test]
-	pub fn test_constructor() {
-		assert!(RnsContext::new(&[2]).is_some());
-		assert!(RnsContext::new(&[2, 3]).is_some());
-		assert!(RnsContext::new(&[4, 15, 1153]).is_some());
+	fn test_constructor() {
+		assert!(RnsContext::new(&[2]).is_ok());
+		assert!(RnsContext::new(&[2, 3]).is_ok());
+		assert!(RnsContext::new(&[4, 15, 1153]).is_ok());
 
-		assert!(RnsContext::new(&[]).is_none());
-		assert!(RnsContext::new(&[2, 4]).is_none());
-		assert!(RnsContext::new(&[2, 3, 5, 30]).is_none());
+		assert!(RnsContext::new(&[]).is_err_and(|e| e.to_string() == "The list of moduli is empty"));
+		assert!(
+			RnsContext::new(&[2, 4]).is_err_and(|e| e.to_string() == "The moduli are not coprime")
+		);
+		assert!(RnsContext::new(&[2, 3, 5, 30])
+			.is_err_and(|e| e.to_string() == "The moduli are not coprime"));
 	}
 
 	#[test]
-	pub fn test_modulus() {
-		let mut rns = RnsContext::new(&[2]).unwrap();
+	fn test_garner() -> Result<(), String> {
+		let rns = RnsContext::new(&[4, 15, 1153])?;
+
+		for i in 0..3 {
+			assert!(rns.get_garner(i).is_some_and(|g| *g == &rns.garner[i]));
+		}
+		assert!(rns.get_garner(3).is_none());
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_modulus() -> Result<(), String> {
+		let mut rns = RnsContext::new(&[2])?;
 		debug_assert_eq!(rns.modulus(), &BigUint::from(2u64));
 
-		rns = RnsContext::new(&[2, 5]).unwrap();
+		rns = RnsContext::new(&[2, 5])?;
 		debug_assert_eq!(rns.modulus(), &BigUint::from(2u64 * 5));
 
-		rns = RnsContext::new(&[4, 15, 1153]).unwrap();
+		rns = RnsContext::new(&[4, 15, 1153])?;
 		debug_assert_eq!(rns.modulus(), &BigUint::from(4u64 * 15 * 1153));
+
+		Ok(())
 	}
 
 	#[test]
-	pub fn test_project_lift() {
+	fn test_project_lift() -> Result<(), String> {
 		let ntests = 100;
-		let rns = RnsContext::new(&[4, 15, 1153]).unwrap();
+		let rns = RnsContext::new(&[4, 15, 1153])?;
 		let product = 4u64 * 15 * 1153;
 
 		let mut rests = rns.project(&BigUint::from(0u64));
@@ -193,5 +212,7 @@ mod tests {
 			rests = rns.project(&b);
 			assert_eq!(rns.lift(&ArrayView1::from(&rests)), b);
 		}
+
+		Ok(())
 	}
 }
