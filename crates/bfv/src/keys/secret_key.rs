@@ -3,8 +3,8 @@
 use crate::{
 	ciphertext::Ciphertext,
 	parameters::BfvParameters,
-	plaintext::Plaintext,
-	traits::{Decryptor, Encryptor},
+	plaintext::{Encoding, Plaintext},
+	traits::{Decoder, Decryptor, Encoder, Encryptor},
 };
 use itertools::Itertools;
 use math::{
@@ -50,12 +50,17 @@ impl SecretKey {
 	/// Measure the noise in a [`Ciphertext`].
 	/// This operations may run in a variable time depending on the value of the noise.
 	#[cfg(test)]
-	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
+	pub(crate) unsafe fn measure_noise(
+		&self,
+		ct: &Ciphertext,
+		encoding: Encoding,
+	) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
 
-		let mut m = Poly::try_convert_from(&plaintext, &self.par.ctx, Representation::PowerBasis)?;
-		m.change_representation(Representation::Ntt);
-		m *= &self.par.delta;
+		// let mut m = Poly::try_convert_from(&plaintext, &self.par.ctx, Representation::PowerBasis)?;
+		// m.change_representation(Representation::Ntt);
+		// m *= &self.par.delta_old;
+		let mut m = self.encode_pt(&plaintext, Some(encoding))?;
 
 		// Let's disable variable time computations
 		let mut c0 = ct.c0.clone();
@@ -79,8 +84,36 @@ impl SecretKey {
 
 		c1_s.zeroize();
 		c.zeroize();
+		m.zeroize();
 
 		Ok(noise)
+	}
+
+	/// Encode a plaintext as a polynomial in NTT representation.
+	/// We use the encoding technique described in Sec 3.1 of https://eprint.iacr.org/2021/204.
+	fn encode_pt(&self, pt: &Plaintext, encoding: Option<Encoding>) -> Result<Poly, String> {
+		let enc: Encoding;
+		if encoding.is_some() {
+			enc = encoding.unwrap();
+			if pt.encoding.is_some() && Some(enc.clone()) != pt.encoding {
+				return Err("Mismatched encodings".to_string());
+			}
+		} else if pt.encoding.is_some() {
+			enc = pt.encoding.clone().unwrap();
+		} else {
+			return Err("Missing encodings".to_string());
+		}
+
+		let mut m_v = Vec::<u64>::try_decode(pt, enc.clone())?;
+		self.par
+			.plaintext
+			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
+		let pt = Plaintext::try_encode(&m_v as &[u64], enc, &self.par)?;
+		m_v.zeroize();
+		let mut m = Poly::try_convert_from(&pt, &self.par.ctx, Representation::PowerBasis)?;
+		m.change_representation(Representation::Ntt);
+		m *= &self.par.delta;
+		Ok(m)
 	}
 }
 
@@ -97,13 +130,9 @@ impl Encryptor for SecretKey {
 			Poly::small(&self.par.ctx, Representation::PowerBasis, self.par.variance).unwrap();
 		b.change_representation(Representation::Ntt);
 		let mut a_s = &a * &self.s;
+		let mut m = self.encode_pt(pt, None)?;
 		b -= &a_s;
-
-		let mut m = Poly::try_convert_from(pt, &self.par.ctx, Representation::PowerBasis)?;
-		m.change_representation(Representation::Ntt);
-		m *= &self.par.delta;
 		b += &m;
-
 		a_s.zeroize();
 		m.zeroize();
 
@@ -153,6 +182,7 @@ impl Decryptor for SecretKey {
 						.plaintext
 						.center_vec_vt(&w[..self.par.polynomial_degree])
 				},
+				encoding: None,
 			};
 
 			c1_s.zeroize();
@@ -210,7 +240,9 @@ mod tests {
 				let ct = sk.encrypt(&pt)?;
 				let pt2 = sk.decrypt(&ct);
 
-				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+				println!("Noise: {}", unsafe {
+					sk.measure_noise(&ct, Encoding::Poly)?
+				});
 				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
 			}
 		}

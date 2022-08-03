@@ -182,7 +182,7 @@ mod tests {
 	use super::mul;
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor},
-		BfvParameters, Encoding, Plaintext, RelinearizationKey, SecretKey,
+		BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
 	};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::any;
@@ -284,10 +284,48 @@ mod tests {
 			let ct2 = sk.encrypt(&pt)?;
 			let ct3 = mul(&ct1, &ct2, &rk)?;
 
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			println!("Noise: {}", unsafe {
+				sk.measure_noise(&ct3, Encoding::Simd)?
+			});
 			let pt = sk.decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_seq_mul() -> Result<(), String> {
+		let par = Rc::new(
+			BfvParametersBuilder::default()
+				.polynomial_degree(8192)
+				.plaintext_modulus(65537)
+				.ciphertext_moduli(vec![
+					4611686018326724609,
+					4611686018309947393,
+					4611686018282684417,
+					4611686018257518593,
+					4611686018232352769,
+				])
+				.build()
+				.unwrap(),
+		);
+
+		let values = par.plaintext.random_vec(par.polynomial_degree);
+		let sk = SecretKey::random(&par);
+		let rk = RelinearizationKey::new(&sk)?;
+		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+		let mut ct1 = sk.encrypt(&pt)?;
+
+		for _ in 0..5 {
+			ct1 = mul(&ct1, &ct1, &rk)?;
+			println!("Noise: {}", unsafe {
+				sk.measure_noise(&ct1, Encoding::Simd)?
+			});
+		}
+
+		// Empirically measured.
+		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+
 		Ok(())
 	}
 }

@@ -8,7 +8,9 @@ use math::{
 	},
 	zq::{nfl::generate_opt_prime, ntt::NttOperator, Modulus},
 };
+use ndarray::ArrayView1;
 use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
@@ -43,6 +45,10 @@ pub struct BfvParameters {
 	/// Scaling polynomial for the plaintext
 	#[builder(setter(skip))]
 	pub(crate) delta: Poly,
+
+	/// Q modulo the plaintext modulus
+	#[builder(setter(skip))]
+	pub(crate) q_mod_t: u64,
 
 	/// Down scaler for the plaintext
 	#[builder(setter(skip))]
@@ -159,8 +165,20 @@ impl BfvParametersBuilder {
 			rns.modulus(),
 		)?;
 
+		// Compute the NttShoup representation of delta = -1/t mod Q
+		let mut delta_rests = vec![];
+		for m in &ciphertext_moduli {
+			let q = Modulus::new(*m).unwrap();
+			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
+		}
+		let delta = rns.lift(&ArrayView1::from(&delta_rests)); // -1/t mod Q
 		let mut delta_poly = Poly::try_convert_from(&[delta], &ctx, Representation::PowerBasis)?;
 		delta_poly.change_representation(Representation::NttShoup);
+
+		// Compute Q mod t
+		let q_mod_t = (rns.modulus() % plaintext_modulus.modulus())
+			.to_u64()
+			.unwrap();
 
 		let mut extended_moduli = Vec::with_capacity(2 * ciphertext_moduli.len() + 1);
 		for m in &ciphertext_moduli {
@@ -193,6 +211,7 @@ impl BfvParametersBuilder {
 			ctx,
 			op: op.map(Rc::new),
 			delta: delta_poly,
+			q_mod_t,
 			scaler,
 			plaintext: plaintext_modulus,
 			extender,
