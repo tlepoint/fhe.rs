@@ -37,7 +37,7 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Rc<BfvParameters>) -> Self {
-		let mut s = Poly::small(par.ctx(), Representation::PowerBasis, par.variance()).unwrap();
+		let mut s = Poly::small(&par.ctx, Representation::PowerBasis, par.variance).unwrap();
 		s.change_representation(Representation::NttShoup);
 		Self {
 			par: par.clone(),
@@ -53,9 +53,9 @@ impl SecretKey {
 	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
 
-		let mut m = Poly::try_convert_from(&plaintext, self.par.ctx(), Representation::PowerBasis)?;
+		let mut m = Poly::try_convert_from(&plaintext, &self.par.ctx, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
-		m *= self.par.delta();
+		m *= &self.par.delta;
 
 		// Let's disable variable time computations
 		let mut c0 = ct.c0.clone();
@@ -68,7 +68,7 @@ impl SecretKey {
 		c -= &m;
 		c.change_representation(Representation::PowerBasis);
 
-		let ciphertext_modulus = self.par.modulus();
+		let ciphertext_modulus = self.par.ctx.modulus();
 		let mut noise = 0usize;
 		for coeff in Vec::<BigUint>::from(&c) {
 			noise = std::cmp::max(
@@ -91,21 +91,17 @@ impl Encryptor for SecretKey {
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
 
-		let mut a = Poly::random_from_seed(self.par.ctx(), Representation::Ntt, seed);
+		let mut a = Poly::random_from_seed(&self.par.ctx, Representation::Ntt, seed);
 
-		let mut b = Poly::small(
-			self.par.ctx(),
-			Representation::PowerBasis,
-			self.par.variance(),
-		)
-		.unwrap();
+		let mut b =
+			Poly::small(&self.par.ctx, Representation::PowerBasis, self.par.variance).unwrap();
 		b.change_representation(Representation::Ntt);
 		let mut a_s = &a * &self.s;
 		b -= &a_s;
 
-		let mut m = Poly::try_convert_from(pt, self.par.ctx(), Representation::PowerBasis)?;
+		let mut m = Poly::try_convert_from(pt, &self.par.ctx, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
-		m *= self.par.delta();
+		m *= &self.par.delta;
 		b += &m;
 
 		a_s.zeroize();
@@ -140,22 +136,23 @@ impl Decryptor for SecretKey {
 			let mut c1_s = &c1 * &self.s;
 			let mut c = &c0 + &c1_s;
 			c.change_representation(Representation::PowerBasis);
-			let mut d = self.par.scaler().scale(&c, false)?;
+			let mut d = self.par.scaler.scale(&c, false)?;
 			// TODO: Can we handle plaintext moduli that are BigUint?
 			let mut v = Vec::<u64>::from(&d)
 				.iter_mut()
-				.map(|vi| *vi + self.par.plaintext().modulus())
+				.map(|vi| *vi + self.par.plaintext.modulus())
 				.collect_vec();
-			println!("V = {:?}", v);
-			let mut w = v[..self.par.degree()].to_vec();
-			let q = Modulus::new(self.par.moduli()[0]).unwrap();
+			let mut w = v[..self.par.polynomial_degree].to_vec();
+			let q = Modulus::new(self.par.ciphertext_moduli[0]).unwrap();
 			q.reduce_vec(&mut w);
-			println!("W = {:?}", w);
-			self.par.plaintext().reduce_vec(&mut w);
-			println!("W = {:?}", w);
+			self.par.plaintext.reduce_vec(&mut w);
 			let pt = Plaintext {
 				par: self.par.clone(),
-				value: unsafe { self.par.plaintext().center_vec_vt(&w[..self.par.degree()]) },
+				value: unsafe {
+					self.par
+						.plaintext
+						.center_vec_vt(&w[..self.par.polynomial_degree])
+				},
 			};
 
 			c1_s.zeroize();
@@ -190,27 +187,34 @@ mod tests {
 		coefficients.iter().for_each(|ci| {
 			// Check that this is a small polynomial
 			assert!(
-				*ci <= 2 * sk.par.variance() as u64
-					|| *ci >= (sk.par.moduli()[0] - 2 * sk.par.variance() as u64)
+				*ci <= 2 * sk.par.variance as u64
+					|| *ci >= (sk.par.ciphertext_moduli[0] - 2 * sk.par.variance as u64)
 			)
 		})
 	}
 
 	#[test]
-	fn test_encrypt_decrypt() {
+	fn test_encrypt_decrypt() -> Result<(), String> {
 		for params in [
 			Rc::new(BfvParameters::default_one_modulus()),
 			Rc::new(BfvParameters::default_two_moduli()),
 		] {
-			let sk = SecretKey::random(&params);
+			for _ in 0..100 {
+				let sk = SecretKey::random(&params);
 
-			let pt =
-				Plaintext::try_encode(&[1, 2, 3, 4, 5, 6, 7, 8], Encoding::Poly, &params).unwrap();
-			let ct = sk.encrypt(&pt).unwrap();
-			let pt2 = sk.decrypt(&ct);
+				let pt = Plaintext::try_encode(
+					&[1u64, 2, 3, 4, 5, 6, 7, 8] as &[u64],
+					Encoding::Poly,
+					&params,
+				)?;
+				let ct = sk.encrypt(&pt)?;
+				let pt2 = sk.decrypt(&ct);
 
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct).unwrap() });
-			assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+			}
 		}
+
+		Ok(())
 	}
 }

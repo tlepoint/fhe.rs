@@ -5,7 +5,7 @@ use bfv::{
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
-use math::rq::{Poly, Representation};
+use math::rq::{Context, Poly, Representation};
 use std::rc::Rc;
 
 fn params() -> Vec<Rc<BfvParameters>> {
@@ -32,8 +32,10 @@ pub fn ops_benchmark(c: &mut Criterion) {
 	for par in params() {
 		let sk = SecretKey::random(&par);
 
-		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::Poly, &par).unwrap();
-		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec(), Encoding::Poly, &par).unwrap();
+		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::Poly, &par)
+			.unwrap();
+		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::Poly, &par)
+			.unwrap();
 		let mut c1 = sk.encrypt(&pt1).unwrap();
 		let c2 = sk.encrypt(&pt2).unwrap();
 
@@ -68,8 +70,9 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		);
 
 		let rk = RelinearizationKey::new(&sk).unwrap();
-		let p2 = Poly::random(par.ctx(), Representation::PowerBasis);
-		let p1 = Poly::random(par.ctx(), Representation::Ntt);
+		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
+		let p2 = Poly::random(&ctx, Representation::PowerBasis);
+		let p1 = Poly::random(&ctx, Representation::Ntt);
 
 		group.bench_function(
 			BenchmarkId::new(

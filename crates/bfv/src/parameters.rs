@@ -16,41 +16,41 @@ use std::rc::Rc;
 #[builder(build_fn(private, name = "fallible_build"))]
 pub struct BfvParameters {
 	/// Number of coefficients in a polynomial.
-	polynomial_degree: usize,
+	pub(crate) polynomial_degree: usize,
 
 	/// Modulus of the plaintext.
 	plaintext_modulus: u64,
 
 	/// Vector of coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
-	ciphertext_moduli: Vec<u64>,
+	pub(crate) ciphertext_moduli: Vec<u64>,
 
 	/// Vector of the sized of the coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
 	ciphertext_moduli_sizes: Vec<usize>,
 
 	/// Error variance
-	variance: usize,
+	pub(crate) variance: usize,
 
 	/// Context for the underlying polynomials
 	#[builder(setter(skip))]
-	ctx: Rc<Context>,
+	pub(crate) ctx: Rc<Context>,
 
 	/// Ntt operator for the SIMD plaintext, if possible.
 	#[builder(setter(skip))]
-	op: Option<Rc<NttOperator>>,
+	pub(crate) op: Option<Rc<NttOperator>>,
 
 	/// Scaling polynomial for the plaintext
 	#[builder(setter(skip))]
-	delta: Poly,
+	pub(crate) delta: Poly,
 
 	/// Down scaler for the plaintext
 	#[builder(setter(skip))]
-	scaler: Scaler,
+	pub(crate) scaler: Scaler,
 
 	/// Plaintext Modulus
 	// #[builder(setter(skip))] // TODO: How can we handle this?
-	plaintext: Modulus,
+	pub(crate) plaintext: Modulus,
 
 	/// Polynomial extender used in the homomorphic multiplication
 	#[builder(setter(skip))]
@@ -67,44 +67,9 @@ impl BfvParameters {
 		self.polynomial_degree
 	}
 
-	/// Returns the underlying plaintext modulus
-	pub fn plaintext(&self) -> &Modulus {
-		&self.plaintext
-	}
-
-	/// Returns the error variance
-	pub fn variance(&self) -> usize {
-		self.variance
-	}
-
-	/// Returns the underlying polynomial context.
-	pub fn ctx(&self) -> &Rc<Context> {
-		&self.ctx
-	}
-
 	/// Returns a reference to the ciphertext moduli
 	pub fn moduli(&self) -> &[u64] {
 		&self.ciphertext_moduli
-	}
-
-	/// Returns the ciphertext modulus as a BigUint
-	pub fn modulus(&self) -> &BigUint {
-		self.ctx.modulus()
-	}
-
-	/// Returns a reference to the Ntt operator if it exists
-	pub fn simd_operator(&self) -> &Option<Rc<NttOperator>> {
-		&self.op
-	}
-
-	/// Returns the scaling constant polynomial in NttShoup representation
-	pub fn delta(&self) -> &Poly {
-		&self.delta
-	}
-
-	/// Returns a reference to the scaler that enables to multiply by plaintext / ciphertext_modulus
-	pub fn scaler(&self) -> &Scaler {
-		&self.scaler
 	}
 
 	#[cfg(test)]
@@ -157,6 +122,7 @@ impl BfvParametersBuilder {
 				"`plaintext_modulus` must be larger or equal to 2".to_string(),
 			));
 		}
+		let plaintext_modulus = plaintext_modulus.unwrap();
 
 		// Check the ciphertext moduli
 		if self.ciphertext_moduli.is_none() && self.ciphertext_moduli.is_none() {
@@ -169,13 +135,6 @@ impl BfvParametersBuilder {
 		assert!(self.ciphertext_moduli.is_some());
 		let ciphertext_moduli = self.ciphertext_moduli.clone().unwrap();
 
-		let ctx = Context::new(&ciphertext_moduli, polynomial_degree);
-		if ctx.is_none() {
-			return Err(BfvParametersBuilderError::ValidationError(
-				"The polynomial context could not be generated".to_string(),
-			));
-		}
-
 		let variance = if let Some(var) = self.variance {
 			var
 		} else {
@@ -187,14 +146,13 @@ impl BfvParametersBuilder {
 			));
 		}
 
-		let plaintext_modulus = plaintext_modulus.unwrap();
 		let op = NttOperator::new(&plaintext_modulus, polynomial_degree);
 
 		// Compute the scaling factors for the plaintext
-		let rns = RnsContext::new(&ciphertext_moduli).unwrap();
+		let rns = RnsContext::new(&ciphertext_moduli)?;
 		let delta = rns.modulus() / plaintext_modulus.modulus();
 
-		let ctx = Rc::new(ctx.unwrap());
+		let ctx = Rc::new(Context::new(&ciphertext_moduli, polynomial_degree)?);
 		let scaler = Scaler::new(
 			&ctx,
 			&BigUint::from(plaintext_modulus.modulus()),
@@ -216,10 +174,10 @@ impl BfvParametersBuilder {
 				extended_moduli.push(upper_bound)
 			}
 		}
-		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree).unwrap());
+		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree)?);
 		let extender = Extender::new(&ctx, &to_ctx)?;
 
-		let rns_extended = RnsContext::new(&extended_moduli).unwrap();
+		let rns_extended = RnsContext::new(&extended_moduli)?;
 		let extended_scaler = RnsScaler::new(
 			&rns_extended,
 			&BigUint::from(plaintext_modulus.modulus()),
@@ -288,27 +246,21 @@ mod tests {
 			.plaintext_modulus(2)
 			.ciphertext_moduli(vec![])
 			.build();
-		assert!(
-			params.is_err_and(|e| e.to_string() == "The polynomial context could not be generated")
-		);
+		assert!(params.is_err_and(|e| e.to_string() == "The list of moduli is empty"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(8)
 			.plaintext_modulus(2)
 			.ciphertext_moduli(vec![1])
 			.build();
-		assert!(
-			params.is_err_and(|e| e.to_string() == "The polynomial context could not be generated")
-		);
+		assert!(params.is_err_and(|e| e.to_string() == "The modulus is invalid"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(8)
 			.plaintext_modulus(2)
 			.ciphertext_moduli(vec![2])
 			.build();
-		assert!(
-			params.is_err_and(|e| e.to_string() == "The polynomial context could not be generated")
-		);
+		assert!(params.is_err_and(|e| e.to_string() == "Impossible to construct a Ntt operator"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(8)
@@ -319,8 +271,10 @@ mod tests {
 
 		let params = params.unwrap();
 		assert_eq!(params.ciphertext_moduli, vec![1153]);
+		assert_eq!(params.moduli(), vec![1153]);
 		assert_eq!(params.plaintext_modulus, 2);
 		assert_eq!(params.polynomial_degree, 8);
+		assert_eq!(params.degree(), 8);
 		assert_eq!(params.variance, 1);
 		assert!(params.op.is_none());
 	}

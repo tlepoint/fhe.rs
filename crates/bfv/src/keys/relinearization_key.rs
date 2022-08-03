@@ -50,31 +50,30 @@ mod tests {
 	};
 
 	#[test]
-	fn test_relinearization() {
+	fn test_relinearization() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default_two_moduli())] {
-			let sk = SecretKey::random(&params);
-			let rk = RelinearizationKey::new(&sk);
-			assert!(rk.is_ok());
-			let rk = rk.unwrap();
+			for _ in 0..100 {
+				let sk = SecretKey::random(&params);
+				let rk = RelinearizationKey::new(&sk)?;
 
-			// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2, c1, c2) encrypting 0.
-			let mut c2 = Poly::random(params.ctx(), Representation::Ntt);
-			let c1 = Poly::random(params.ctx(), Representation::Ntt);
-			let mut c0 = Poly::small(params.ctx(), Representation::PowerBasis, 16).unwrap();
-			c0.change_representation(Representation::Ntt);
-			c0 -= &(&c1 * &sk.s);
-			c0 -= &(&(&c2 * &sk.s) * &sk.s);
+				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2, c1, c2) encrypting 0.
+				let mut c2 = Poly::random(&params.ctx, Representation::Ntt);
+				let c1 = Poly::random(&params.ctx, Representation::Ntt);
+				let mut c0 = Poly::small(&params.ctx, Representation::PowerBasis, 16)?;
+				c0.change_representation(Representation::Ntt);
+				c0 -= &(&c1 * &sk.s);
+				c0 -= &(&(&c2 * &sk.s) * &sk.s);
 
-			// Relinearize the extended ciphertext!
-			c2.change_representation(Representation::PowerBasis);
-			let c = rk.relinearize(&c0, &c1, &c2);
-			assert!(c.is_ok());
-			let c = c.unwrap();
+				// Relinearize the extended ciphertext!
+				c2.change_representation(Representation::PowerBasis);
+				let c = rk.relinearize(&c0, &c1, &c2)?;
 
-			// Print the noise and decrypt
-			println!("Noise: {}", unsafe { sk.measure_noise(&c).unwrap() });
-			let pt = sk.decrypt(&c).unwrap();
-			assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
+				// Print the noise and decrypt
+				println!("Noise: {}", unsafe { sk.measure_noise(&c)? });
+				let pt = sk.decrypt(&c)?;
+				assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
+			}
 		}
+		Ok(())
 	}
 }

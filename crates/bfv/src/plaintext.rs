@@ -29,18 +29,6 @@ pub struct Plaintext {
 	pub(crate) value: Vec<i64>,
 }
 
-impl Plaintext {
-	/// Returns the plaintext as a polynomial
-	pub fn to_poly(&self) -> Poly {
-		Poly::try_convert_from(
-			self.value.as_ref() as &[i64],
-			self.par.ctx(),
-			Representation::PowerBasis,
-		)
-		.unwrap()
-	}
-}
-
 impl TryConvertFrom<&Plaintext> for Poly {
 	type Error = String;
 
@@ -52,14 +40,10 @@ impl TryConvertFrom<&Plaintext> for Poly {
 	where
 		R: Into<Option<Representation>>,
 	{
-		if ctx != pt.par.ctx() {
+		if ctx != &pt.par.ctx {
 			Err("Incompatible contexts".to_string())
 		} else {
-			Poly::try_convert_from(
-				pt.value.as_ref() as &[i64],
-				pt.par.ctx(),
-				Representation::PowerBasis,
-			)
+			Poly::try_convert_from(&pt.value as &[i64], &pt.par.ctx, Representation::PowerBasis)
 		}
 	}
 }
@@ -80,21 +64,53 @@ impl Encoder<&[u64]> for Plaintext {
 		encoding: Encoding,
 		par: &Rc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.len() > par.degree() {
+		if value.len() > par.polynomial_degree {
 			return Err("There are too many values to encode".to_string());
 		}
-		let mut v = vec![0u64; par.degree()];
+		let mut v = vec![0u64; par.polynomial_degree];
 		v[..value.len()].copy_from_slice(value);
 
 		if encoding == Encoding::Simd {
-			if let Some(op) = par.simd_operator() {
+			if let Some(op) = &par.op {
 				op.backward(&mut v);
 			} else {
 				return Err("The plaintext does not allow for using the Simd encoding".to_string());
 			}
 		}
 
-		let w = unsafe { par.plaintext().center_vec_vt(&v) };
+		let w = unsafe { par.plaintext.center_vec_vt(&v) };
+		v.zeroize();
+
+		Ok(Self {
+			par: par.clone(),
+			value: w,
+		})
+	}
+}
+
+impl Encoder<&[i64]> for Plaintext {
+	type Error = String;
+
+	fn try_encode(
+		value: &[i64],
+		encoding: Encoding,
+		par: &Rc<BfvParameters>,
+	) -> Result<Self, Self::Error> {
+		if value.len() > par.polynomial_degree {
+			return Err("There are too many values to encode".to_string());
+		}
+		let mut v = vec![0u64; par.polynomial_degree];
+		v[..value.len()].copy_from_slice(&par.plaintext.reduce_vec_i64(value));
+
+		if encoding == Encoding::Simd {
+			if let Some(op) = &par.op {
+				op.backward(&mut v);
+			} else {
+				return Err("The plaintext does not allow for using the Simd encoding".to_string());
+			}
+		}
+
+		let w = unsafe { par.plaintext.center_vec_vt(&v) };
 		v.zeroize();
 
 		Ok(Self {
@@ -108,10 +124,9 @@ impl Decoder for Vec<u64> {
 	type Error = String;
 
 	fn try_decode(pt: &Plaintext, encoding: Encoding) -> Result<Vec<u64>, Self::Error> {
-		let mut w = pt.par.plaintext().reduce_vec_i64(&pt.value);
-
+		let mut w = pt.par.plaintext.reduce_vec_i64(&pt.value);
 		if encoding == Encoding::Simd {
-			if let Some(op) = pt.par.simd_operator() {
+			if let Some(op) = &pt.par.op {
 				op.forward(&mut w);
 				Ok(w)
 			} else {
@@ -123,31 +138,38 @@ impl Decoder for Vec<u64> {
 	}
 }
 
+impl Decoder for Vec<i64> {
+	type Error = String;
+
+	fn try_decode(pt: &Plaintext, encoding: Encoding) -> Result<Vec<i64>, Self::Error> {
+		let v = Vec::<u64>::try_decode(pt, encoding)?;
+		Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::{Encoding, Plaintext};
 	use crate::parameters::{BfvParameters, BfvParametersBuilder};
 	use crate::traits::{Decoder, Encoder};
-	use proptest::collection::vec as prop_vec;
-	use proptest::prelude::{any, ProptestConfig};
 	use std::rc::Rc;
 
 	#[test]
 	fn try_encode() {
 		// The default test parameters support both Poly and Simd encodings
 		let params = Rc::new(BfvParameters::default_one_modulus());
-		let a = params.plaintext().random_vec(params.degree());
+		let a = params.plaintext.random_vec(params.polynomial_degree);
 
-		let plaintext = Plaintext::try_encode(&[0; 9], Encoding::Poly, &params);
+		let plaintext = Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_err());
 
-		let plaintext = Plaintext::try_encode(&a, Encoding::Poly, &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&a, Encoding::Simd, &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd, &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&[1], Encoding::Poly, &params);
+		let plaintext = Plaintext::try_encode(&[1u64] as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_ok());
 
 		// The following parameters do not allow for Simd encoding
@@ -160,31 +182,41 @@ mod tests {
 				.unwrap(),
 		);
 
-		let a = params.plaintext().random_vec(params.degree());
+		let a = params.plaintext.random_vec(params.polynomial_degree);
 
-		let plaintext = Plaintext::try_encode(&a, Encoding::Poly, &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&a, Encoding::Simd, &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd, &params);
 		assert!(plaintext.is_err());
 	}
 
-	proptest! {
-		#![proptest_config(ProptestConfig::with_cases(64))]
-		#[test]
-		fn test_encode_decode(mut a in prop_vec(any::<u64>(), 8)) {
+	#[test]
+	fn test_encode_decode() {
+		(0..100).for_each(|_| {
 			let params = Rc::new(BfvParameters::default_one_modulus());
-			params.plaintext().reduce_vec(&mut a);
+			let a = params.plaintext.random_vec(params.polynomial_degree);
 
-			let plaintext = Plaintext::try_encode(&a, Encoding::Poly, &params);
+			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 			assert!(plaintext.is_ok());
 			let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::Poly);
 			assert!(b.is_ok_and(|b| b == &a));
 
-			let plaintext = Plaintext::try_encode(&a, Encoding::Simd, &params);
+			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd, &params);
 			assert!(plaintext.is_ok());
 			let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::Simd);
 			assert!(b.is_ok_and(|b| b == &a));
-		}
+
+			let a = unsafe { params.plaintext.center_vec_vt(&a) };
+			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::Poly, &params);
+			assert!(plaintext.is_ok());
+			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::Poly);
+			assert!(b.is_ok_and(|b| b == &a));
+
+			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::Simd, &params);
+			assert!(plaintext.is_ok());
+			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::Simd);
+			assert!(b.is_ok_and(|b| b == &a));
+		})
 	}
 }
