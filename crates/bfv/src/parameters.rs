@@ -14,7 +14,7 @@ use num_traits::ToPrimitive;
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
-#[derive(Debug, Builder, PartialEq)]
+#[derive(Debug, Builder, PartialEq, Eq)]
 #[builder(build_fn(private, name = "fallible_build"))]
 pub struct BfvParameters {
 	/// Number of coefficients in a polynomial.
@@ -65,6 +65,14 @@ pub struct BfvParameters {
 	/// Scaler used in the homomorphic multiplication
 	#[builder(setter(skip))]
 	pub(crate) rounder: Scaler,
+
+	/// Multiplication 2
+	#[builder(setter(skip))]
+	pub(crate) mul2_up_1: Scaler,
+	#[builder(setter(skip))]
+	pub(crate) mul2_up_2: Scaler,
+	#[builder(setter(skip))]
+	pub(crate) mul2_down: Scaler,
 }
 
 impl BfvParameters {
@@ -202,6 +210,26 @@ impl BfvParametersBuilder {
 			rns.modulus(),
 		)?;
 
+		let rns2 =
+			RnsContext::new(&extended_moduli[ciphertext_moduli.len()..extended_moduli.len() - 1])?;
+		let mul2_up_ctx = Rc::new(Context::new(
+			&extended_moduli[..extended_moduli.len() - 1],
+			polynomial_degree,
+		)?);
+		let mul2_up_1 = Scaler::new(
+			&ctx,
+			&mul2_up_ctx,
+			&BigUint::from(1u64),
+			&BigUint::from(1u64),
+		)?;
+		let mul2_up_2 = Scaler::new(&ctx, &mul2_up_ctx, rns2.modulus(), rns.modulus())?;
+		let mul2_down = Scaler::new(
+			&mul2_up_ctx,
+			&ctx,
+			&BigUint::from(plaintext_modulus.modulus()),
+			rns2.modulus(),
+		)?;
+
 		Ok(BfvParameters {
 			polynomial_degree,
 			plaintext_modulus: plaintext_modulus.modulus(),
@@ -216,6 +244,9 @@ impl BfvParametersBuilder {
 			plaintext: plaintext_modulus,
 			extender,
 			rounder,
+			mul2_up_1,
+			mul2_up_2,
+			mul2_down,
 		})
 	}
 }

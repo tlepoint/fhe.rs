@@ -41,6 +41,7 @@ impl PartialEq for Plaintext {
 		eq
 	}
 }
+impl Eq for Plaintext {}
 
 impl TryConvertFrom<&Plaintext> for Poly {
 	type Error = String;

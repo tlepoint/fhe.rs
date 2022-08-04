@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 /// Relinearization key for the BFV encryption scheme.
 /// A relinearization key is a special type of key switching key,
 /// which switch from `s^2` to `s` where `s` is the secret key.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RelinearizationKey {
 	ksk: KeySwitchingKey,
 }

@@ -12,7 +12,7 @@ use std::rc::Rc;
 use zeroize::Zeroize;
 
 /// Key switching key for the BFV encryption scheme.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct KeySwitchingKey {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Rc<BfvParameters>,

@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use math::rns::{RnsContext, RnsConverter, RnsScaler};
+use math::rns::{RnsContext, RnsConverter, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
@@ -31,9 +31,9 @@ pub fn rns_benchmark(c: &mut Criterion) {
 	let scaler = RnsScaler::new(
 		&rns_q,
 		&rns_p,
-		&BigUint::from(1u64),
-		&BigUint::from(46116860181065u64),
+		ScalingFactor::new(&BigUint::from(1u64), &BigUint::from(46116860181065u64)),
 	);
+	let scaler_as_converter = RnsScaler::new(&rns_q, &rns_p, ScalingFactor::one());
 
 	let mut y = vec![0; p.len()];
 	group.bench_function(
@@ -43,11 +43,17 @@ pub fn rns_benchmark(c: &mut Criterion) {
 		},
 	);
 
-	let mut y = x.clone();
 	group.bench_function(
 		BenchmarkId::new("scaler", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), true));
+			b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), 0, true));
+		},
+	);
+
+	group.bench_function(
+		BenchmarkId::new("scaler_as_converter", format!("{}->{}", q.len(), p.len())),
+		|b| {
+			b.iter(|| scaler_as_converter.scale(&(&x).into(), &mut (&mut y).into(), 0, true));
 		},
 	);
 
