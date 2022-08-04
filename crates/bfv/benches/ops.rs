@@ -11,7 +11,7 @@ use std::rc::Rc;
 fn params() -> Vec<Rc<BfvParameters>> {
 	let par = BfvParametersBuilder::default()
 		.polynomial_degree(16384)
-		.plaintext_modulus(2)
+		.plaintext_modulus(1153)
 		.ciphertext_moduli(vec![
 			4611686018326724609,
 			4611686018309947393,
