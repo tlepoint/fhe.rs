@@ -1,5 +1,5 @@
 use bfv::{
-	mul, mul2,
+	mul, mul2, mul3,
 	traits::{Encoder, Encryptor},
 	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
 };
@@ -10,15 +10,15 @@ use std::rc::Rc;
 
 fn params() -> Vec<Rc<BfvParameters>> {
 	let par = BfvParametersBuilder::default()
-		.polynomial_degree(16384)
+		.polynomial_degree(32768)
 		.plaintext_modulus(2)
 		.ciphertext_moduli(vec![
 			4611686018326724609,
 			4611686018309947393,
 			4611686018282684417,
-			// 4611686018257518593,
-			// 4611686018232352769,
-			// 4611686018171535361,
+			4611686018257518593,
+			4611686018232352769,
+			4611686018171535361,
 			4611686018106523649,
 		])
 		.build()
@@ -102,6 +102,16 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| mul2(&c1, &c2, &rk));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul3",
+				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+			),
+			|b| {
+				b.iter(|| mul3(&c1, &c2, &rk));
 			},
 		);
 	}

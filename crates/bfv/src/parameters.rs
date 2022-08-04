@@ -10,7 +10,7 @@ use math::{
 };
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
+use num_traits::{One, ToPrimitive};
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
@@ -73,6 +73,12 @@ pub struct BfvParameters {
 	pub(crate) mul2_up_2: Scaler,
 	#[builder(setter(skip))]
 	pub(crate) mul2_down: Scaler,
+
+	/// Multiplication 3
+	#[builder(setter(skip))]
+	pub(crate) mul3_extend: Scaler,
+	#[builder(setter(skip))]
+	pub(crate) mul3_scale: Scaler,
 }
 
 impl BfvParameters {
@@ -230,6 +236,19 @@ impl BfvParametersBuilder {
 			rns2.modulus(),
 		)?;
 
+		let rns3 = RnsContext::new(&extended_moduli[..2])?;
+		let mul3_ctx = Rc::new(Context::new(
+			&extended_moduli[2..extended_moduli.len() - 2],
+			polynomial_degree,
+		)?);
+		let mul3_extend = Scaler::new(&ctx, &mul3_ctx, &BigUint::one(), rns3.modulus())?;
+		let mul3_scale = Scaler::new(
+			&mul3_ctx,
+			&ctx,
+			&(&BigUint::from(plaintext_modulus.modulus()) * rns3.modulus() * rns3.modulus()),
+			rns.modulus(),
+		)?;
+
 		Ok(BfvParameters {
 			polynomial_degree,
 			plaintext_modulus: plaintext_modulus.modulus(),
@@ -247,6 +266,8 @@ impl BfvParametersBuilder {
 			mul2_up_1,
 			mul2_up_2,
 			mul2_down,
+			mul3_extend,
+			mul3_scale,
 		})
 	}
 }
