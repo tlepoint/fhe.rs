@@ -1,5 +1,5 @@
 use bfv::{
-	mul,
+	mul, mul2,
 	traits::{Encoder, Encryptor},
 	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
 };
@@ -16,9 +16,9 @@ fn params() -> Vec<Rc<BfvParameters>> {
 			4611686018326724609,
 			4611686018309947393,
 			4611686018282684417,
-			4611686018257518593,
-			4611686018232352769,
-			4611686018171535361,
+			// 4611686018257518593,
+			// 4611686018232352769,
+			// 4611686018171535361,
 			4611686018106523649,
 		])
 		.build()
@@ -81,7 +81,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
 			),
 			|b| {
-				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3.coefficients()));
+				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3));
 			},
 		);
 
@@ -92,6 +92,16 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| mul(&c1, &c2, &rk));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul2",
+				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+			),
+			|b| {
+				b.iter(|| mul2(&c1, &c2, &rk));
 			},
 		);
 	}

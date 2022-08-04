@@ -15,7 +15,7 @@ pub fn supports_ntt(p: u64, n: usize) -> bool {
 }
 
 /// Number-Theoretic Transform operator.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
 	p: Modulus,
 	p_twice: u64,

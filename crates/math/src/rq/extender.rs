@@ -10,7 +10,7 @@ use ndarray::{s, Array2, Axis};
 use std::rc::Rc;
 
 /// Context extender.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Extender {
 	from: Rc<Context>,
 	to: Rc<Context>,

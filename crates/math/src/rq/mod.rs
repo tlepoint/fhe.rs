@@ -24,7 +24,7 @@ use util::sample_vec_cbd;
 use zeroize::Zeroize;
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Context {
 	q: Vec<Modulus>,
 	rns: RnsContext,
@@ -84,7 +84,7 @@ pub enum Representation {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Poly {
 	ctx: Rc<Context>,
 	representation: Representation,

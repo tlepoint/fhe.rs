@@ -2,7 +2,7 @@
 
 use derive_builder::Builder;
 use math::{
-	rns::{RnsContext, RnsScaler},
+	rns::RnsContext,
 	rq::{
 		extender::Extender, scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation,
 	},
@@ -14,7 +14,7 @@ use num_traits::ToPrimitive;
 use std::rc::Rc;
 
 /// Parameters for the BFV encryption scheme.
-#[derive(Debug, Builder, PartialEq)]
+#[derive(Debug, Builder, PartialEq, Eq)]
 #[builder(build_fn(private, name = "fallible_build"))]
 pub struct BfvParameters {
 	/// Number of coefficients in a polynomial.
@@ -62,9 +62,17 @@ pub struct BfvParameters {
 	#[builder(setter(skip))]
 	pub(crate) extender: Extender,
 
-	/// Down scaler used in the homomorphic multiplication
+	/// Scaler used in the homomorphic multiplication
 	#[builder(setter(skip))]
-	pub(crate) extended_scaler: RnsScaler,
+	pub(crate) rounder: Scaler,
+
+	/// Multiplication 2
+	#[builder(setter(skip))]
+	pub(crate) mul2_up_1: Scaler,
+	#[builder(setter(skip))]
+	pub(crate) mul2_up_2: Scaler,
+	#[builder(setter(skip))]
+	pub(crate) mul2_down: Scaler,
 }
 
 impl BfvParameters {
@@ -158,8 +166,10 @@ impl BfvParametersBuilder {
 		let rns = RnsContext::new(&ciphertext_moduli)?;
 
 		let ctx = Rc::new(Context::new(&ciphertext_moduli, polynomial_degree)?);
+		let plaintext_ctx = Rc::new(Context::new(&ciphertext_moduli[..1], polynomial_degree)?);
 		let scaler = Scaler::new(
 			&ctx,
+			&plaintext_ctx,
 			&BigUint::from(plaintext_modulus.modulus()),
 			rns.modulus(),
 		)?;
@@ -193,13 +203,32 @@ impl BfvParametersBuilder {
 		}
 		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree)?);
 		let extender = Extender::new(&ctx, &to_ctx)?;
-
-		let rns_extended = RnsContext::new(&extended_moduli)?;
-		let extended_scaler = RnsScaler::new(
-			&rns_extended,
+		let rounder = Scaler::new(
+			&to_ctx,
+			&ctx,
 			&BigUint::from(plaintext_modulus.modulus()),
 			rns.modulus(),
-		);
+		)?;
+
+		let rns2 =
+			RnsContext::new(&extended_moduli[ciphertext_moduli.len()..extended_moduli.len() - 1])?;
+		let mul2_up_ctx = Rc::new(Context::new(
+			&extended_moduli[..extended_moduli.len() - 1],
+			polynomial_degree,
+		)?);
+		let mul2_up_1 = Scaler::new(
+			&ctx,
+			&mul2_up_ctx,
+			&BigUint::from(1u64),
+			&BigUint::from(1u64),
+		)?;
+		let mul2_up_2 = Scaler::new(&ctx, &mul2_up_ctx, rns2.modulus(), rns.modulus())?;
+		let mul2_down = Scaler::new(
+			&mul2_up_ctx,
+			&ctx,
+			&BigUint::from(plaintext_modulus.modulus()),
+			rns2.modulus(),
+		)?;
 
 		Ok(BfvParameters {
 			polynomial_degree,
@@ -214,7 +243,10 @@ impl BfvParametersBuilder {
 			scaler,
 			plaintext: plaintext_modulus,
 			extender,
-			extended_scaler,
+			rounder,
+			mul2_up_1,
+			mul2_up_2,
+			mul2_down,
 		})
 	}
 }

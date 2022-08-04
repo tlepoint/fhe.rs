@@ -1,12 +1,7 @@
 //! Ciphertext type in the BFV encryption scheme.
 
 use crate::{parameters::BfvParameters, RelinearizationKey};
-use itertools::izip;
-use math::rq::{
-	traits::{ContextSwitcher, TryConvertFrom},
-	Poly, Representation,
-};
-use ndarray::{Array2, Axis};
+use math::rq::{traits::ContextSwitcher, Poly, Representation};
 use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -16,7 +11,7 @@ use std::{
 };
 
 /// A ciphertext encrypting a plaintext.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ciphertext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Rc<BfvParameters>,
@@ -107,10 +102,10 @@ pub fn mul(
 ) -> Result<Ciphertext, String> {
 	// Extend
 	let mut now = std::time::SystemTime::now();
-	let c00 = ct0.par.extender.switch_context(&ct0.c0).unwrap();
-	let c01 = ct0.par.extender.switch_context(&ct0.c1).unwrap();
-	let c10 = ct1.par.extender.switch_context(&ct1.c0).unwrap();
-	let c11 = ct1.par.extender.switch_context(&ct1.c1).unwrap();
+	let c00 = ct0.par.extender.switch_context(&ct0.c0)?;
+	let c01 = ct0.par.extender.switch_context(&ct0.c1)?;
+	let c10 = ct1.par.extender.switch_context(&ct1.c0)?;
+	let c11 = ct1.par.extender.switch_context(&ct1.c1)?;
 	println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -127,46 +122,70 @@ pub fn mul(
 	// Scale
 	// TODO: This should be faster??
 	now = std::time::SystemTime::now();
-	let scaler = &ct0.par.extended_scaler;
-	let mut c0_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c0_scaled_column, c0_column) in izip!(
-		c0_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c0.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c0_column, &mut c0_scaled_column, false);
-	}
-	let mut c1_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c1_scaled_column, c1_column) in izip!(
-		c1_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c1.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c1_column, &mut c1_scaled_column, false);
-	}
-	let mut c2_scaled_coeffs =
-		Array2::zeros((ct0.par.ciphertext_moduli.len(), ct0.par.polynomial_degree));
-	for (mut c2_scaled_column, c2_column) in izip!(
-		c2_scaled_coeffs.axis_iter_mut(Axis(1)),
-		c2.coefficients().axis_iter(Axis(1))
-	) {
-		scaler.scale(&c2_column, &mut c2_scaled_column, false);
-	}
+	let mut c0 = ct0.par.rounder.scale(&c0, false)?;
+	let mut c1 = ct0.par.rounder.scale(&c1, false)?;
+	let c2 = ct0.par.rounder.scale(&c2, false)?;
 	println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
 	now = std::time::SystemTime::now();
-	let mut c0 =
-		Poly::try_convert_from(c0_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-	let mut c1 =
-		Poly::try_convert_from(c1_scaled_coeffs, &ct0.par.ctx, Representation::PowerBasis)?;
-	unsafe {
-		c0.allow_variable_time_computations();
-		c1.allow_variable_time_computations();
-	}
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2_scaled_coeffs.view())?;
+	rk.relinearize(&mut c0, &mut c1, &c2)?;
+	println!("Relinearize: {:?}", now.elapsed().unwrap());
+
+	Ok(Ciphertext {
+		par: ct0.par.clone(),
+		seed: None,
+		c0,
+		c1,
+	})
+}
+
+/// Multiply two ciphertext and relinearize.
+pub fn mul2(
+	ct0: &Ciphertext,
+	ct1: &Ciphertext,
+	rk: &RelinearizationKey,
+) -> Result<Ciphertext, String> {
+	// Extend
+	let mut now = std::time::SystemTime::now();
+	let c00 = ct1.par.mul2_up_1.scale2(&ct0.c0, false)?;
+	let c01 = ct1.par.mul2_up_1.scale2(&ct0.c1, false)?;
+	let mut c10 = ct1.c0.clone();
+	let mut c11 = ct1.c1.clone();
+	c10.change_representation(Representation::PowerBasis);
+	c11.change_representation(Representation::PowerBasis);
+	let mut c10 = ct1.par.mul2_up_2.scale(&c10, false)?;
+	let mut c11 = ct1.par.mul2_up_2.scale(&c11, false)?;
+	c10.change_representation(Representation::Ntt);
+	c11.change_representation(Representation::Ntt);
+	println!("Extend: {:?}", now.elapsed().unwrap());
+
+	// Multiply
+	now = std::time::SystemTime::now();
+	let mut c0 = &c00 * &c10;
+	let mut c1 = &c00 * &c11;
+	c1 += &(&c01 * &c10);
+	let mut c2 = &c01 * &c11;
+	c0.change_representation(Representation::PowerBasis);
+	c1.change_representation(Representation::PowerBasis);
+	c2.change_representation(Representation::PowerBasis);
+	println!("Multiply: {:?}", now.elapsed().unwrap());
+
+	// Scale
+	// TODO: This should be faster??
+	now = std::time::SystemTime::now();
+	let mut c0 = ct0.par.mul2_down.scale(&c0, false)?;
+	let mut c1 = ct0.par.mul2_down.scale(&c1, false)?;
+	let c2 = ct0.par.mul2_down.scale(&c2, false)?;
+	println!("Scale: {:?}", now.elapsed().unwrap());
+
+	// Relinearize
+	now = std::time::SystemTime::now();
+	c0.change_representation(Representation::Ntt);
+	c1.change_representation(Representation::Ntt);
+	rk.relinearize(&mut c0, &mut c1, &c2)?;
 	println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
@@ -179,7 +198,7 @@ pub fn mul(
 
 #[cfg(test)]
 mod tests {
-	use super::mul;
+	use super::{mul, mul2};
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor},
 		BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
@@ -294,6 +313,32 @@ mod tests {
 	}
 
 	#[test]
+	fn test_mul2() -> Result<(), String> {
+		let par = Rc::new(BfvParameters::default_two_moduli());
+		for _ in 0..100 {
+			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let mut expected = values.clone();
+			par.plaintext.mul_vec(&mut expected, &values);
+
+			let sk = SecretKey::random(&par);
+			let rk = RelinearizationKey::new(&sk)?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+
+			let ct1 = sk.encrypt(&pt)?;
+			let ct2 = sk.encrypt(&pt)?;
+			let ct3 = mul2(&ct1, &ct2, &rk)?;
+
+			println!("Noise: {}", unsafe {
+				sk.measure_noise(&ct3, Encoding::Simd)?
+			});
+			let pt = sk.decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+		}
+		Ok(())
+	}
+
+	#[test]
 	fn test_seq_mul() -> Result<(), String> {
 		let par = Rc::new(
 			BfvParametersBuilder::default()
@@ -318,6 +363,42 @@ mod tests {
 
 		for _ in 0..5 {
 			ct1 = mul(&ct1, &ct1, &rk)?;
+			println!("Noise: {}", unsafe {
+				sk.measure_noise(&ct1, Encoding::Simd)?
+			});
+		}
+
+		// Empirically measured.
+		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_seq_mul2() -> Result<(), String> {
+		let par = Rc::new(
+			BfvParametersBuilder::default()
+				.polynomial_degree(8192)
+				.plaintext_modulus(65537)
+				.ciphertext_moduli(vec![
+					4611686018326724609,
+					4611686018309947393,
+					4611686018282684417,
+					4611686018257518593,
+					4611686018232352769,
+				])
+				.build()
+				.unwrap(),
+		);
+
+		let values = par.plaintext.random_vec(par.polynomial_degree);
+		let sk = SecretKey::random(&par);
+		let rk = RelinearizationKey::new(&sk)?;
+		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+		let mut ct1 = sk.encrypt(&pt)?;
+
+		for _ in 0..5 {
+			ct1 = mul2(&ct1, &ct1, &rk)?;
 			println!("Noise: {}", unsafe {
 				sk.measure_noise(&ct1, Encoding::Simd)?
 			});

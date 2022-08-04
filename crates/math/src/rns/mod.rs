@@ -14,10 +14,10 @@ mod converter;
 mod scaler;
 
 pub use converter::RnsConverter;
-pub use scaler::RnsScaler;
+pub use scaler::{RnsScaler, ScalingFactor};
 
 /// Context for a Residue Number System.
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RnsContext {
 	moduli_u64: Vec<u64>,
 	moduli: Vec<Modulus>,

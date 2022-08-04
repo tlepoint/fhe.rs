@@ -13,7 +13,7 @@ use rand_chacha::ChaCha8Rng;
 use util::is_prime;
 
 /// Structure holding a modulus up to 62 bits.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Modulus {
 	p: u64,
 	barrett_hi: u64,
@@ -21,6 +21,18 @@ pub struct Modulus {
 	leading_zeros: u32,
 	supports_opt: bool,
 	distribution: Uniform<u64>,
+}
+
+impl Eq for Modulus {}
+impl PartialEq for Modulus {
+	fn eq(&self, other: &Self) -> bool {
+		self.p == other.p
+			&& self.barrett_hi == other.barrett_hi
+			&& self.barrett_lo == other.barrett_lo
+			&& self.leading_zeros == other.leading_zeros
+			&& self.supports_opt == other.supports_opt
+			&& self.distribution == other.distribution
+	}
 }
 
 impl Modulus {
