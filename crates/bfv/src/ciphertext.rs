@@ -16,7 +16,7 @@ pub struct Ciphertext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Rc<BfvParameters>,
 
-	/// The seed that generated the polynomial c0 in a fresh ciphertext.
+	/// The seed that generated the polynomial c1 in a fresh ciphertext.
 	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
 	/// The ciphertext element c0.
