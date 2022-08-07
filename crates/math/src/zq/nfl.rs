@@ -22,10 +22,10 @@ pub fn supports_opt(p: u64) -> bool {
 	left_side < middle
 }
 
-/// Generate an optimized `num_bits`-bit prime, congruent to 1 mod `modulo`, smaller than `upper_bound`.
-/// Note that `num_bits` must belong to (30..=62), and upper_bound must be <= 1 << num_bits.
-pub fn generate_opt_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<u64> {
-	if !(30..=62).contains(&num_bits) {
+/// Generate a `num_bits`-bit prime, congruent to 1 mod `modulo`, strictly smaller than `upper_bound`.
+/// Note that `num_bits` must belong to (10..=62), and upper_bound must be <= 1 << num_bits.
+pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<u64> {
+	if !(10..=62).contains(&num_bits) {
 		None
 	} else {
 		debug_assert!(
@@ -33,25 +33,21 @@ pub fn generate_opt_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Opt
 			"upper_bound larger than number of bits"
 		);
 
+		let leading_zeros = (64 - num_bits) as u32;
+
 		let mut tentative_prime = upper_bound - 1;
-		while tentative_prime % modulo != 1
-			&& tentative_prime.leading_zeros() == ((64 - num_bits) as u32)
-		{
+		while tentative_prime % modulo != 1 && tentative_prime.leading_zeros() == leading_zeros {
 			tentative_prime -= 1
 		}
-		if tentative_prime.leading_zeros() != ((64 - num_bits) as u32) {
-			return None;
-		}
 
-		while tentative_prime.leading_zeros() == (64 - num_bits) as u32
+		while tentative_prime.leading_zeros() == leading_zeros
 			&& !is_prime(tentative_prime)
+			&& tentative_prime >= modulo
 		{
 			tentative_prime -= modulo
 		}
 
-		if tentative_prime.leading_zeros() == (64 - num_bits) as u32
-			&& supports_opt(tentative_prime)
-		{
+		if tentative_prime.leading_zeros() == leading_zeros && is_prime(tentative_prime) {
 			Some(tentative_prime)
 		} else {
 			None
@@ -61,7 +57,8 @@ pub fn generate_opt_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Opt
 
 #[cfg(test)]
 mod tests {
-	use super::generate_opt_prime;
+	use super::generate_prime;
+	use util::catch_unwind;
 
 	// Verifies that the same moduli as in the NFLlib library are generated.
 	// <https://github.com/quarkslab/NFLlib/blob/master/include/nfl/params.hpp>
@@ -70,10 +67,10 @@ mod tests {
 		let mut generated = vec![];
 		let mut upper_bound = u64::MAX >> 2;
 		while generated.len() != 20 {
-			let p = generate_opt_prime(62, 2 * 1048576, upper_bound);
+			let p = generate_prime(62, 2 * 1048576, upper_bound);
 			assert!(p.is_some());
 			upper_bound = p.unwrap();
-			generated.push(p.unwrap());
+			generated.push(upper_bound);
 		}
 		assert_eq!(
 			generated,
@@ -100,5 +97,22 @@ mod tests {
 				4611686017517223937
 			]
 		)
+	}
+
+	#[test]
+	fn test_upper_bound() {
+		debug_assert!(catch_unwind(|| generate_prime(62, 2 * 1048576, (1 << 62) + 1)).is_err());
+	}
+
+	#[test]
+	fn test_modulo_too_large() {
+		assert!(generate_prime(10, 2048, 1 << 10).is_none());
+	}
+
+	#[test]
+	fn test_not_found() {
+		// 1033 is the smallest 11-bit prime congruent to 1 modulo 16, so looking for a smaller
+		// one should fail.
+		assert!(generate_prime(11, 16, 1033).is_none());
 	}
 }

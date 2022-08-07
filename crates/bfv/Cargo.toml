@@ -13,6 +13,7 @@ bench = false  # Disable default bench (we use criterion)
 itertools = "0.10.3"
 derive_builder = "0.11.2"
 math = { version = "0.0.1", path = "../math" }
+util = { version = "0.0.1", path = "../util" }
 num-bigint = "0.4.3"
 num-traits = "0.2.15"
 rand = "0.8.5"

@@ -43,11 +43,11 @@ impl KeySwitchingKey {
 			let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
 			rng.fill(&mut seed_i);
 
-			let mut b = Poly::small(&sk.par.ctx, Representation::PowerBasis, sk.par.variance)?;
 			let mut a = Poly::random_from_seed(&sk.par.ctx, Representation::Ntt, seed_i);
-
 			let mut a_s = &a * &sk.s;
 			a_s.change_representation(Representation::PowerBasis);
+
+			let mut b = Poly::small(&sk.par.ctx, Representation::PowerBasis, sk.par.variance)?;
 			b -= &a_s;
 
 			let gi = rns.get_garner(i).unwrap();
@@ -110,8 +110,8 @@ mod tests {
 	#[test]
 	fn test_constructor() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default_one_modulus()),
-			Rc::new(BfvParameters::default_two_moduli()),
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
@@ -123,7 +123,7 @@ mod tests {
 
 	#[test]
 	fn test_key_switch() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default_two_moduli())] {
+		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let mut s = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;

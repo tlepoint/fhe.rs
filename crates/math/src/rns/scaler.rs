@@ -332,6 +332,8 @@ impl RnsScaler {
 					yi += if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
 				}
 
+				debug_assert!(rests.len() <= omega_i.len());
+				debug_assert!(rests.len() <= omega_shoup_i.len());
 				for j in 0..rests.len() {
 					yi += qi.lazy_mul_shoup(
 						*rests.get(j).unwrap(),
@@ -339,6 +341,7 @@ impl RnsScaler {
 						*omega_shoup_i.get_unchecked(j),
 					) as u128;
 				}
+
 				*out_i = qi.reduce_u128(yi)
 			}
 		}

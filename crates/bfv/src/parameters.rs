@@ -2,11 +2,9 @@
 
 use derive_builder::Builder;
 use math::{
-	rns::RnsContext,
-	rq::{
-		extender::Extender, scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation,
-	},
-	zq::{nfl::generate_opt_prime, ntt::NttOperator, Modulus},
+	rns::{RnsContext, ScalingFactor},
+	rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
+	zq::{nfl::generate_prime, ntt::NttOperator, Modulus},
 };
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
@@ -58,21 +56,11 @@ pub struct BfvParameters {
 	// #[builder(setter(skip))] // TODO: How can we handle this?
 	pub(crate) plaintext: Modulus,
 
-	/// Polynomial extender used in the homomorphic multiplication
+	// Parameters for the multiplications
 	#[builder(setter(skip))]
-	pub(crate) extender: Extender,
-
-	/// Scaler used in the homomorphic multiplication
+	pub(crate) mul_1_params: MultiplicationParameters, // type 1
 	#[builder(setter(skip))]
-	pub(crate) rounder: Scaler,
-
-	/// Multiplication 2
-	#[builder(setter(skip))]
-	pub(crate) mul2_up_1: Scaler,
-	#[builder(setter(skip))]
-	pub(crate) mul2_up_2: Scaler,
-	#[builder(setter(skip))]
-	pub(crate) mul2_down: Scaler,
+	pub(crate) mul_2_params: MultiplicationParameters, // type 1
 }
 
 impl BfvParameters {
@@ -86,22 +74,17 @@ impl BfvParameters {
 		&self.ciphertext_moduli
 	}
 
-	#[cfg(test)]
-	pub fn default_one_modulus() -> Self {
-		BfvParametersBuilder::default()
-			.polynomial_degree(8)
-			.plaintext_modulus(1153)
-			.ciphertext_moduli(vec![4611686018326724609])
-			.build()
-			.unwrap()
+	/// Returns a reference to the ciphertext moduli
+	pub fn moduli_sizes(&self) -> &[usize] {
+		&self.ciphertext_moduli_sizes
 	}
 
 	#[cfg(test)]
-	pub fn default_two_moduli() -> Self {
+	pub fn default(num_moduli: usize) -> Self {
 		BfvParametersBuilder::default()
 			.polynomial_degree(8)
 			.plaintext_modulus(1153)
-			.ciphertext_moduli(vec![4611686018326724609, 4611686018309947393])
+			.ciphertext_moduli_sizes(vec![62; num_moduli])
 			.build()
 			.unwrap()
 	}
@@ -139,21 +122,34 @@ impl BfvParametersBuilder {
 		let plaintext_modulus = plaintext_modulus.unwrap();
 
 		// Check the ciphertext moduli
-		if self.ciphertext_moduli.is_none() && self.ciphertext_moduli.is_none() {
+		if self.ciphertext_moduli.is_none() && self.ciphertext_moduli_sizes.is_none() {
 			return Err(
 				BfvParametersBuilderError::ValidationError("One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"
 					.to_string())
 			);
 		}
-		// TODO: This needs to be fixed when only sizes are specified
-		assert!(self.ciphertext_moduli.is_some());
-		let ciphertext_moduli = self.ciphertext_moduli.clone().unwrap();
 
-		let variance = if let Some(var) = self.variance {
-			var
+		// Construct the vector of ciphertext moduli.
+		let mut ciphertext_moduli = self.ciphertext_moduli.clone().unwrap_or_default();
+		let mut ciphertext_moduli_sizes = self.ciphertext_moduli_sizes.clone().unwrap_or_default();
+
+		if (ciphertext_moduli.is_empty() && ciphertext_moduli_sizes.is_empty())
+			|| (!ciphertext_moduli.is_empty() && !ciphertext_moduli_sizes.is_empty())
+		{
+			return Err(
+				BfvParametersBuilderError::ValidationError("One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"
+					.to_string())
+			);
+		} else if ciphertext_moduli_sizes.is_empty() {
+			for modulus in &ciphertext_moduli {
+				ciphertext_moduli_sizes.push(64 - modulus.leading_zeros() as usize)
+			}
 		} else {
-			1
-		};
+			ciphertext_moduli = Self::generate_moduli(&ciphertext_moduli_sizes, polynomial_degree)?
+		}
+		assert_eq!(ciphertext_moduli.len(), ciphertext_moduli_sizes.len());
+
+		let variance = self.variance.unwrap_or(1);
 		if !(1..=16).contains(&variance) {
 			return Err(BfvParametersBuilderError::ValidationError(
 				"The variance should be an integer between 1 and 16".to_string(),
@@ -170,8 +166,7 @@ impl BfvParametersBuilder {
 		let scaler = Scaler::new(
 			&ctx,
 			&plaintext_ctx,
-			&BigUint::from(plaintext_modulus.modulus()),
-			rns.modulus(),
+			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns.modulus()),
 		)?;
 
 		// Compute the NttShoup representation of delta = -1/t mod Q
@@ -189,52 +184,51 @@ impl BfvParametersBuilder {
 			.to_u64()
 			.unwrap();
 
-		let mut extended_moduli = Vec::with_capacity(2 * ciphertext_moduli.len() + 1);
-		for m in &ciphertext_moduli {
-			extended_moduli.push(*m);
-		}
-		let mut upper_bound = u64::MAX >> 2;
-		while extended_moduli.len() != 2 * ciphertext_moduli.len() + 1 {
-			upper_bound =
-				generate_opt_prime(62, 2 * polynomial_degree as u64, upper_bound).unwrap();
-			if !ciphertext_moduli.contains(&upper_bound) {
-				extended_moduli.push(upper_bound)
+		// Create n+1 moduli of 62 bits for multiplication.
+		let mut extended_basis = Vec::with_capacity(ciphertext_moduli.len() + 1);
+		let mut upper_bound = 1 << 62;
+		while extended_basis.len() != ciphertext_moduli.len() + 1 {
+			upper_bound = generate_prime(62, 2 * polynomial_degree as u64, upper_bound).unwrap();
+			if !extended_basis.contains(&upper_bound) && !ciphertext_moduli.contains(&upper_bound) {
+				extended_basis.push(upper_bound)
 			}
 		}
-		let to_ctx = Rc::new(Context::new(&extended_moduli, polynomial_degree)?);
-		let extender = Extender::new(&ctx, &to_ctx)?;
-		let rounder = Scaler::new(
-			&to_ctx,
+
+		// For the first multiplication, we want to extend to a context that is ~60 bits larger.
+		let modulus_size = ciphertext_moduli_sizes.iter().sum::<usize>();
+		let n_moduli = ((modulus_size + 60) + 61) / 62;
+		let mut mul_1_moduli = vec![];
+		mul_1_moduli.append(&mut ciphertext_moduli.clone());
+		mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
+		let mul_1_ctx = Rc::new(Context::new(&mul_1_moduli, polynomial_degree)?);
+		let mul_1_params = MultiplicationParameters::new(
 			&ctx,
-			&BigUint::from(plaintext_modulus.modulus()),
-			rns.modulus(),
+			&mul_1_ctx,
+			ScalingFactor::one(),
+			ScalingFactor::one(),
+			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx.modulus()),
 		)?;
 
-		let rns2 =
-			RnsContext::new(&extended_moduli[ciphertext_moduli.len()..extended_moduli.len() - 1])?;
-		let mul2_up_ctx = Rc::new(Context::new(
-			&extended_moduli[..extended_moduli.len() - 1],
-			polynomial_degree,
-		)?);
-		let mul2_up_1 = Scaler::new(
+		// For the second multiplication, we use two moduli of roughly the same size
+		let n_moduli = ciphertext_moduli.len();
+		let mut mul_2_moduli = vec![];
+		mul_2_moduli.append(&mut ciphertext_moduli.clone());
+		mul_2_moduli.append(&mut extended_basis[..n_moduli].to_vec());
+		let rns_2 = RnsContext::new(&extended_basis[..n_moduli])?;
+		let mul_2_ctx = Rc::new(Context::new(&mul_2_moduli, polynomial_degree)?);
+		let mul_2_params = MultiplicationParameters::new(
 			&ctx,
-			&mul2_up_ctx,
-			&BigUint::from(1u64),
-			&BigUint::from(1u64),
-		)?;
-		let mul2_up_2 = Scaler::new(&ctx, &mul2_up_ctx, rns2.modulus(), rns.modulus())?;
-		let mul2_down = Scaler::new(
-			&mul2_up_ctx,
-			&ctx,
-			&BigUint::from(plaintext_modulus.modulus()),
-			rns2.modulus(),
+			&mul_2_ctx,
+			ScalingFactor::one(),
+			ScalingFactor::new(rns_2.modulus(), ctx.modulus()),
+			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
 		)?;
 
 		Ok(BfvParameters {
 			polynomial_degree,
 			plaintext_modulus: plaintext_modulus.modulus(),
 			ciphertext_moduli,
-			ciphertext_moduli_sizes: vec![],
+			ciphertext_moduli_sizes,
 			variance,
 			ctx,
 			op: op.map(Rc::new),
@@ -242,11 +236,69 @@ impl BfvParametersBuilder {
 			q_mod_t,
 			scaler,
 			plaintext: plaintext_modulus,
-			extender,
-			rounder,
-			mul2_up_1,
-			mul2_up_2,
-			mul2_down,
+
+			mul_1_params,
+			mul_2_params,
+		})
+	}
+
+	/// Generate ciphertext moduli with the specified sizes
+	fn generate_moduli(
+		ciphertext_moduli_sizes: &[usize],
+		polynomial_degree: usize,
+	) -> Result<Vec<u64>, BfvParametersBuilderError> {
+		let mut moduli = vec![];
+		for size in ciphertext_moduli_sizes {
+			if *size > 62 || *size < 10 {
+				return Err(BfvParametersBuilderError::ValidationError(
+					"The moduli sizes must be between 10 and 62 bits.".to_string(),
+				));
+			}
+
+			let mut upper_bound = 1 << size;
+			loop {
+				if let Some(prime) =
+					generate_prime(*size, 2 * polynomial_degree as u64, upper_bound)
+				{
+					if !moduli.contains(&prime) {
+						moduli.push(prime);
+						break;
+					} else {
+						upper_bound = prime;
+					}
+				} else {
+					return Err(BfvParametersBuilderError::ValidationError(
+						"Could not generate enough ciphertext moduli to match the sizes provided"
+							.to_string(),
+					));
+				}
+			}
+		}
+
+		Ok(moduli)
+	}
+}
+
+/// Multiplication parameters
+#[derive(Debug, PartialEq, Eq, Default)]
+pub(crate) struct MultiplicationParameters {
+	pub(crate) extender_self: Scaler,
+	pub(crate) extender_other: Scaler,
+	pub(crate) down_scaler: Scaler,
+}
+
+impl MultiplicationParameters {
+	fn new(
+		from: &Rc<Context>,
+		to: &Rc<Context>,
+		up_self_factor: ScalingFactor,
+		up_other_factor: ScalingFactor,
+		down_factor: ScalingFactor,
+	) -> Result<Self, String> {
+		Ok(Self {
+			extender_self: Scaler::new(from, to, up_self_factor)?,
+			extender_other: Scaler::new(from, to, up_other_factor)?,
+			down_scaler: Scaler::new(to, from, down_factor)?,
 		})
 	}
 }
@@ -296,7 +348,15 @@ mod tests {
 			.plaintext_modulus(2)
 			.ciphertext_moduli(vec![])
 			.build();
-		assert!(params.is_err_and(|e| e.to_string() == "The list of moduli is empty"));
+		assert!(params.is_err_and(|e| e.to_string() == "One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"));
+
+		let params = BfvParametersBuilder::default()
+			.polynomial_degree(1024)
+			.plaintext_modulus(2)
+			.ciphertext_moduli(vec![1153])
+			.ciphertext_moduli_sizes(vec![62])
+			.build();
+		assert!(params.is_err_and(|e| e.to_string() == "One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(8)
@@ -331,12 +391,42 @@ mod tests {
 
 	#[test]
 	fn test_default() {
-		let params = BfvParameters::default_one_modulus();
+		let params = BfvParameters::default(1);
 		assert_eq!(params.ciphertext_moduli.len(), 1);
-		assert!(params.op.is_some());
 
-		let params = BfvParameters::default_two_moduli();
+		let params = BfvParameters::default(2);
 		assert_eq!(params.ciphertext_moduli.len(), 2);
-		assert!(params.op.is_some());
+	}
+
+	#[test]
+	fn test_ciphertext_moduli() {
+		let params = BfvParametersBuilder::default()
+			.polynomial_degree(8)
+			.plaintext_modulus(2)
+			.ciphertext_moduli_sizes(vec![62, 62, 62, 61, 60, 11])
+			.build();
+		assert!(params.is_ok_and(|p| p.ciphertext_moduli
+			== &[
+				4611686018427387761,
+				4611686018427387617,
+				4611686018427387409,
+				2305843009213693921,
+				1152921504606846577,
+				2017
+			]));
+
+		let params = BfvParametersBuilder::default()
+			.polynomial_degree(8)
+			.plaintext_modulus(2)
+			.ciphertext_moduli(vec![
+				4611686018427387761,
+				4611686018427387617,
+				4611686018427387409,
+				2305843009213693921,
+				1152921504606846577,
+				2017,
+			])
+			.build();
+		assert!(params.is_ok_and(|p| p.ciphertext_moduli_sizes == &[62, 62, 62, 61, 60, 11]));
 	}
 }
