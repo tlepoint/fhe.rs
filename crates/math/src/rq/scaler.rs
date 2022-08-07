@@ -6,7 +6,6 @@ use super::{Context, Poly, Representation};
 use crate::rns::{RnsScaler, ScalingFactor};
 use itertools::izip;
 use ndarray::{s, Array2, Axis};
-use num_bigint::BigUint;
 use std::rc::Rc;
 
 /// Context extender.
@@ -22,14 +21,9 @@ impl Scaler {
 	pub fn new(
 		from: &Rc<Context>,
 		to: &Rc<Context>,
-		numerator: &BigUint,
-		denominator: &BigUint,
+		factor: ScalingFactor,
 	) -> Result<Self, String> {
-		let scaler = RnsScaler::new(
-			&from.rns,
-			&to.rns,
-			ScalingFactor::new(numerator, denominator),
-		);
+		let scaler = RnsScaler::new(&from.rns, &to.rns, factor);
 
 		Ok(Self {
 			from: from.clone(),
@@ -139,7 +133,7 @@ impl Scaler {
 
 #[cfg(test)]
 mod tests {
-	use super::Scaler;
+	use super::{Scaler, ScalingFactor};
 	use crate::rq::{Context, Poly, Representation};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
@@ -169,7 +163,7 @@ mod tests {
 				let n = BigUint::from(*numerator);
 				let d = BigUint::from(*denominator);
 
-				let scaler = Scaler::new(&from, &to, &n, &d)?;
+				let scaler = Scaler::new(&from, &to, ScalingFactor::new(&n, &d))?;
 
 				for _ in 0..ntests {
 					let poly = Poly::random(&from, Representation::PowerBasis);

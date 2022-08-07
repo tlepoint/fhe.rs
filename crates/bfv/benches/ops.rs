@@ -9,21 +9,19 @@ use math::rq::{Context, Poly, Representation};
 use std::rc::Rc;
 
 fn params() -> Vec<Rc<BfvParameters>> {
-	let par = BfvParametersBuilder::default()
+	let par_62 = BfvParametersBuilder::default()
 		.polynomial_degree(16384)
 		.plaintext_modulus(1153)
-		.ciphertext_moduli(vec![
-			4611686018326724609,
-			4611686018309947393,
-			4611686018282684417,
-			// 4611686018257518593,
-			// 4611686018232352769,
-			// 4611686018171535361,
-			4611686018106523649,
-		])
+		.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62, 62, 62])
 		.build()
 		.unwrap();
-	vec![Rc::new(par)]
+	let par_50 = BfvParametersBuilder::default()
+		.polynomial_degree(16384)
+		.plaintext_modulus(1153)
+		.ciphertext_moduli_sizes(vec![50, 50, 50, 50, 50, 50, 50])
+		.build()
+		.unwrap();
+	vec![Rc::new(par_62), Rc::new(par_50)]
 }
 
 pub fn ops_benchmark(c: &mut Criterion) {
@@ -42,7 +40,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"add",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| c1 += &c2);
@@ -52,7 +54,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"sub",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| c1 -= &c2);
@@ -62,7 +68,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"neg",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| c1 = -&c2);
@@ -78,7 +88,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"relinearize",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3));
@@ -88,7 +102,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"mul",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| mul(&c1, &c2, &rk));
@@ -98,7 +116,11 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"mul2",
-				format!("{}/{}", par.degree(), 62 * par.moduli().len()),
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
 			),
 			|b| {
 				b.iter(|| mul2(&c1, &c2, &rk));

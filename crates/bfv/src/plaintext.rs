@@ -31,7 +31,7 @@ pub struct Plaintext {
 	pub(crate) encoding: Option<Encoding>,
 }
 
-// TODO: To test
+// Equality.
 impl PartialEq for Plaintext {
 	fn eq(&self, other: &Self) -> bool {
 		let mut eq = self.par == other.par && self.value == other.value;
@@ -41,8 +41,10 @@ impl PartialEq for Plaintext {
 		eq
 	}
 }
+
 impl Eq for Plaintext {}
 
+// Conversions.
 impl TryConvertFrom<&Plaintext> for Poly {
 	type Error = String;
 
@@ -62,6 +64,8 @@ impl TryConvertFrom<&Plaintext> for Poly {
 	}
 }
 
+// Zeroizing of plaintexts.
+
 impl Zeroize for Plaintext {
 	fn zeroize(&mut self) {
 		self.value.zeroize()
@@ -69,6 +73,8 @@ impl Zeroize for Plaintext {
 }
 
 impl ZeroizeOnDrop for Plaintext {}
+
+// Encoding and decoding.
 
 impl Encoder<&[u64]> for Plaintext {
 	type Error = String;
@@ -195,7 +201,7 @@ mod tests {
 	#[test]
 	fn try_encode() {
 		// The default test parameters support both Poly and Simd encodings
-		let params = Rc::new(BfvParameters::default_one_modulus());
+		let params = Rc::new(BfvParameters::default(1));
 		let a = params.plaintext.random_vec(params.polynomial_degree);
 
 		let plaintext = Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::Poly, &params);
@@ -232,7 +238,7 @@ mod tests {
 	#[test]
 	fn test_encode_decode() {
 		(0..100).for_each(|_| {
-			let params = Rc::new(BfvParameters::default_one_modulus());
+			let params = Rc::new(BfvParameters::default(1));
 			let a = params.plaintext.random_vec(params.polynomial_degree);
 
 			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
@@ -256,5 +262,23 @@ mod tests {
 			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::Simd);
 			assert!(b.is_ok_and(|b| b == &a));
 		})
+	}
+
+	#[test]
+	fn test_partial_eq() -> Result<(), String> {
+		let params = Rc::new(BfvParameters::default(1));
+		let a = params.plaintext.random_vec(params.polynomial_degree);
+
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params)?;
+		let mut same_plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params)?;
+		assert_eq!(plaintext, same_plaintext);
+
+		// Equality also holds when there is no encoding specified. In this test, we use the fact that
+		// we can set it to None directly, but such a partial plaintext will be created during
+		// decryption since we do not specify the encoding at the time.
+		same_plaintext.encoding = None;
+		assert_eq!(plaintext, same_plaintext);
+
+		Ok(())
 	}
 }

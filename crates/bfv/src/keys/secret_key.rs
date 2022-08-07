@@ -37,8 +37,7 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Rc<BfvParameters>) -> Self {
-		let mut s = Poly::small(&par.ctx, Representation::PowerBasis, par.variance).unwrap();
-		s.change_representation(Representation::NttShoup);
+		let s = Poly::small(&par.ctx, Representation::NttShoup, par.variance).unwrap();
 		Self {
 			par: par.clone(),
 			s,
@@ -125,14 +124,15 @@ impl Encryptor for SecretKey {
 		thread_rng().fill(&mut seed);
 
 		let mut a = Poly::random_from_seed(&self.par.ctx, Representation::Ntt, seed);
-
-		let mut b =
-			Poly::small(&self.par.ctx, Representation::PowerBasis, self.par.variance).unwrap();
-		b.change_representation(Representation::Ntt);
 		let mut a_s = &a * &self.s;
-		let mut m = self.encode_pt(pt, None)?;
+
+		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
+
+		let mut m = self.encode_pt(pt, None)?;
 		b += &m;
+
+		// Zeroize the temporary variables holding sensitive information.
 		a_s.zeroize();
 		m.zeroize();
 
@@ -175,6 +175,7 @@ impl Decryptor for SecretKey {
 			let q = Modulus::new(self.par.ciphertext_moduli[0]).unwrap();
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
+
 			let pt = Plaintext {
 				par: self.par.clone(),
 				value: unsafe {
@@ -185,10 +186,12 @@ impl Decryptor for SecretKey {
 				encoding: None,
 			};
 
+			// Zeroize the temporary variables holding sensitive information.
 			c1_s.zeroize();
 			c.zeroize();
 			d.zeroize();
 			v.zeroize();
+
 			Ok(pt)
 		}
 	}
@@ -207,7 +210,7 @@ mod tests {
 
 	#[test]
 	fn test_keygen() {
-		let params = Rc::new(BfvParameters::default_one_modulus());
+		let params = Rc::new(BfvParameters::default(1));
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
@@ -226,8 +229,8 @@ mod tests {
 	#[test]
 	fn test_encrypt_decrypt() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default_one_modulus()),
-			Rc::new(BfvParameters::default_two_moduli()),
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
 		] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);

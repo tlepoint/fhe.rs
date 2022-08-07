@@ -42,7 +42,7 @@ mod tests {
 
 	#[test]
 	fn test_relinearization() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default_two_moduli())] {
+		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;

@@ -1,7 +1,7 @@
 //! Ciphertext type in the BFV encryption scheme.
 
 use crate::{parameters::BfvParameters, RelinearizationKey};
-use math::rq::{traits::ContextSwitcher, Poly, Representation};
+use math::rq::{Poly, Representation};
 use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -102,10 +102,10 @@ pub fn mul(
 ) -> Result<Ciphertext, String> {
 	// Extend
 	let mut now = std::time::SystemTime::now();
-	let c00 = ct0.par.extender.switch_context(&ct0.c0)?;
-	let c01 = ct0.par.extender.switch_context(&ct0.c1)?;
-	let c10 = ct1.par.extender.switch_context(&ct1.c0)?;
-	let c11 = ct1.par.extender.switch_context(&ct1.c1)?;
+	let c00 = ct0.par.mul_1_params.extender_self.scale2(&ct0.c0, false)?;
+	let c01 = ct0.par.mul_1_params.extender_self.scale2(&ct0.c1, false)?;
+	let c10 = ct1.par.mul_1_params.extender_other.scale2(&ct1.c0, false)?;
+	let c11 = ct1.par.mul_1_params.extender_other.scale2(&ct1.c1, false)?;
 	println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -122,9 +122,9 @@ pub fn mul(
 	// Scale
 	// TODO: This should be faster??
 	now = std::time::SystemTime::now();
-	let mut c0 = ct0.par.rounder.scale(&c0, false)?;
-	let mut c1 = ct0.par.rounder.scale(&c1, false)?;
-	let c2 = ct0.par.rounder.scale(&c2, false)?;
+	let mut c0 = ct0.par.mul_1_params.down_scaler.scale(&c0, false)?;
+	let mut c1 = ct0.par.mul_1_params.down_scaler.scale(&c1, false)?;
+	let c2 = ct0.par.mul_1_params.down_scaler.scale(&c2, false)?;
 	println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
@@ -150,14 +150,14 @@ pub fn mul2(
 ) -> Result<Ciphertext, String> {
 	// Extend
 	let mut now = std::time::SystemTime::now();
-	let c00 = ct1.par.mul2_up_1.scale2(&ct0.c0, false)?;
-	let c01 = ct1.par.mul2_up_1.scale2(&ct0.c1, false)?;
+	let c00 = ct1.par.mul_2_params.extender_self.scale2(&ct0.c0, false)?;
+	let c01 = ct1.par.mul_2_params.extender_self.scale2(&ct0.c1, false)?;
 	let mut c10 = ct1.c0.clone();
 	let mut c11 = ct1.c1.clone();
 	c10.change_representation(Representation::PowerBasis);
 	c11.change_representation(Representation::PowerBasis);
-	let mut c10 = ct1.par.mul2_up_2.scale(&c10, false)?;
-	let mut c11 = ct1.par.mul2_up_2.scale(&c11, false)?;
+	let mut c10 = ct1.par.mul_2_params.extender_other.scale(&c10, false)?;
+	let mut c11 = ct1.par.mul_2_params.extender_other.scale(&c11, false)?;
 	c10.change_representation(Representation::Ntt);
 	c11.change_representation(Representation::Ntt);
 	println!("Extend: {:?}", now.elapsed().unwrap());
@@ -176,9 +176,9 @@ pub fn mul2(
 	// Scale
 	// TODO: This should be faster??
 	now = std::time::SystemTime::now();
-	let mut c0 = ct0.par.mul2_down.scale(&c0, false)?;
-	let mut c1 = ct0.par.mul2_down.scale(&c1, false)?;
-	let c2 = ct0.par.mul2_down.scale(&c2, false)?;
+	let mut c0 = ct0.par.mul_2_params.down_scaler.scale(&c0, false)?;
+	let mut c1 = ct0.par.mul_2_params.down_scaler.scale(&c1, false)?;
+	let c2 = ct0.par.mul_2_params.down_scaler.scale(&c2, false)?;
 	println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
@@ -210,8 +210,8 @@ mod tests {
 	proptest! {
 		#[test]
 		fn test_add(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default_one_modulus()),
-						   Rc::new(BfvParameters::default_two_moduli())] {
+			for params in [Rc::new(BfvParameters::default(1)),
+						   Rc::new(BfvParameters::default(2))] {
 				params.plaintext.reduce_vec(&mut a);
 				params.plaintext.reduce_vec(&mut b);
 				let mut c = a.clone();
@@ -238,8 +238,8 @@ mod tests {
 
 		#[test]
 		fn test_sub(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default_one_modulus()),
-						   Rc::new(BfvParameters::default_two_moduli())] {
+			for params in [Rc::new(BfvParameters::default(1)),
+						   Rc::new(BfvParameters::default(2))] {
 				params.plaintext.reduce_vec(&mut a);
 				params.plaintext.reduce_vec(&mut b);
 				let mut c = a.clone();
@@ -266,8 +266,8 @@ mod tests {
 
 		#[test]
 		fn test_neg(mut a in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default_one_modulus()),
-						   Rc::new(BfvParameters::default_two_moduli())] {
+			for params in [Rc::new(BfvParameters::default(1)),
+						   Rc::new(BfvParameters::default(2))] {
 				params.plaintext.reduce_vec(&mut a);
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
@@ -288,7 +288,7 @@ mod tests {
 
 	#[test]
 	fn test_mul() -> Result<(), String> {
-		let par = Rc::new(BfvParameters::default_two_moduli());
+		let par = Rc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.polynomial_degree);
@@ -314,7 +314,7 @@ mod tests {
 
 	#[test]
 	fn test_mul2() -> Result<(), String> {
-		let par = Rc::new(BfvParameters::default_two_moduli());
+		let par = Rc::new(BfvParameters::default(2));
 		for _ in 0..100 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.polynomial_degree);
@@ -339,18 +339,42 @@ mod tests {
 	}
 
 	#[test]
-	fn test_seq_mul() -> Result<(), String> {
+	fn test_seq_mul_50() -> Result<(), String> {
 		let par = Rc::new(
 			BfvParametersBuilder::default()
 				.polynomial_degree(8192)
 				.plaintext_modulus(65537)
-				.ciphertext_moduli(vec![
-					4611686018326724609,
-					4611686018309947393,
-					4611686018282684417,
-					4611686018257518593,
-					4611686018232352769,
-				])
+				.ciphertext_moduli_sizes(vec![50, 50, 50, 50, 50])
+				.build()
+				.unwrap(),
+		);
+
+		let values = par.plaintext.random_vec(par.polynomial_degree);
+		let sk = SecretKey::random(&par);
+		let rk = RelinearizationKey::new(&sk)?;
+		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+		let mut ct1 = sk.encrypt(&pt)?;
+
+		for _ in 0..5 {
+			ct1 = mul(&ct1, &ct1, &rk)?;
+			println!("Noise: {}", unsafe {
+				sk.measure_noise(&ct1, Encoding::Simd)?
+			});
+		}
+
+		// Empirically measured.
+		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_seq_mul_62() -> Result<(), String> {
+		let par = Rc::new(
+			BfvParametersBuilder::default()
+				.polynomial_degree(8192)
+				.plaintext_modulus(65537)
+				.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62])
 				.build()
 				.unwrap(),
 		);
@@ -380,13 +404,7 @@ mod tests {
 			BfvParametersBuilder::default()
 				.polynomial_degree(8192)
 				.plaintext_modulus(65537)
-				.ciphertext_moduli(vec![
-					4611686018326724609,
-					4611686018309947393,
-					4611686018282684417,
-					4611686018257518593,
-					4611686018232352769,
-				])
+				.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62])
 				.build()
 				.unwrap(),
 		);

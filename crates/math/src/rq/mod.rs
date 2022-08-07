@@ -241,7 +241,7 @@ impl Poly {
 		p
 	}
 
-	/// Generate a small polynomial.
+	/// Generate a small polynomial and convert into the specified representation.
 	///
 	/// Returns an error if the variance does not belong to [1, ..., 16].
 	pub fn small(
@@ -253,7 +253,11 @@ impl Poly {
 			Err("The variance should be an integer between 1 and 16".to_string())
 		} else {
 			let mut coeffs = sample_vec_cbd(ctx.degree, variance)?;
-			let p = Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, representation)?;
+			let mut p =
+				Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, Representation::PowerBasis)?;
+			if representation != Representation::PowerBasis {
+				p.change_representation(representation);
+			}
 			coeffs.zeroize();
 			Ok(p)
 		}

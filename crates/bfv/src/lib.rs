@@ -2,6 +2,7 @@
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 #![feature(is_some_with)]
+#![feature(option_get_or_insert_default)]
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
