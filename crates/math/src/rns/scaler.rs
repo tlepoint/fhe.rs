@@ -14,7 +14,7 @@ use num_traits::{One, ToPrimitive, Zero};
 pub struct ScalingFactor {
 	numerator: BigUint,
 	denominator: BigUint,
-	is_one: bool,
+	pub(crate) is_one: bool,
 }
 
 impl ScalingFactor {
@@ -80,15 +80,15 @@ impl RnsScaler {
 			.collect_vec();
 
 		// Let's define omega_i = round(from.garner_i * numerator / denominator)
-		let mut omega = vec![];
-		let mut omega_shoup = vec![];
+		let mut omega = Vec::with_capacity(to.moduli.len());
+		let mut omega_shoup = Vec::with_capacity(to.moduli.len());
 		for _ in &to.moduli {
 			omega.push(vec![0u64; from.moduli.len()]);
 			omega_shoup.push(vec![0u64; from.moduli.len()]);
 		}
-		let mut theta_omega_lo = vec![];
-		let mut theta_omega_hi = vec![];
-		let mut theta_omega_sign = vec![];
+		let mut theta_omega_lo = Vec::with_capacity(from.garner.len());
+		let mut theta_omega_hi = Vec::with_capacity(from.garner.len());
+		let mut theta_omega_sign = Vec::with_capacity(from.garner.len());
 		for i in 0..from.garner.len() {
 			let (omega_i, theta_omega_i_lo, theta_omega_i_hi, theta_omega_i_sign) =
 				Self::extract_projection_and_theta(
@@ -109,8 +109,8 @@ impl RnsScaler {
 		}
 
 		// Finally, define theta_garner_i = from.garner_i / product, also scaled by 2^127.
-		let mut theta_garner_lo = vec![];
-		let mut theta_garner_hi = vec![];
+		let mut theta_garner_lo = Vec::with_capacity(from.garner.len());
+		let mut theta_garner_hi = Vec::with_capacity(from.garner.len());
 		for garner_i in &from.garner {
 			let mut theta: BigUint = ((garner_i << 127) + (&from.product >> 1)) / &from.product;
 			let theta_hi: BigUint = &theta >> 64;

@@ -13,6 +13,7 @@ use std::rc::Rc;
 pub struct Scaler {
 	from: Rc<Context>,
 	to: Rc<Context>,
+	number_common_moduli: usize,
 	scaler: RnsScaler,
 }
 
@@ -23,11 +24,23 @@ impl Scaler {
 		to: &Rc<Context>,
 		factor: ScalingFactor,
 	) -> Result<Self, String> {
+		let mut number_common_moduli = 0;
+		if factor.is_one {
+			for (qi, pi) in izip!(&from.q, &to.q) {
+				if qi == pi {
+					number_common_moduli += 1
+				} else {
+					break;
+				}
+			}
+		}
+
 		let scaler = RnsScaler::new(&from.rns, &to.rns, factor);
 
 		Ok(Self {
 			from: from.clone(),
 			to: to.clone(),
+			number_common_moduli,
 			scaler,
 		})
 	}
@@ -38,39 +51,27 @@ impl Scaler {
 	pub fn scale(&self, p: &Poly, floor: bool) -> Result<Poly, String> {
 		if p.ctx.as_ref() != self.from.as_ref() {
 			Err("The input polynomial does not have the correct context".to_string())
-		} else if p.representation != Representation::PowerBasis {
-			Err("The input polynomial should be in power basis representation".to_string())
 		} else {
 			let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));
-			izip!(
-				new_coefficients.axis_iter_mut(Axis(1)),
-				p.coefficients.axis_iter(Axis(1))
-			)
-			.for_each(|(mut new_column, column)| {
-				self.scaler.scale(&column, &mut new_column, 0, floor)
-			});
-			Ok(Poly {
-				ctx: self.to.clone(),
-				representation: p.representation.clone(),
-				allow_variable_time_computations: p.allow_variable_time_computations,
-				coefficients: new_coefficients,
-				coefficients_shoup: None,
-			})
-		}
-	}
 
-	/// Scale a polynomial
-	pub fn scale2(&self, p: &Poly, floor: bool) -> Result<Poly, String> {
-		if p.ctx.as_ref() != self.from.as_ref() {
-			Err("The input polynomial does not have the correct context".to_string())
-		} else {
-			let mut new_coefficients = Array2::zeros((self.to.q.len(), self.to.degree));
-			new_coefficients
-				.slice_mut(s![..self.from.q.len(), ..])
-				.assign(&p.coefficients);
+			if self.number_common_moduli > 0 {
+				new_coefficients
+					.slice_mut(s![..self.number_common_moduli, ..])
+					.assign(&p.coefficients.slice(s![..self.number_common_moduli, ..]));
+			}
 
-			if p.representation != Representation::PowerBasis {
-				// TODO: Need to be tested
+			if p.representation == Representation::PowerBasis {
+				izip!(
+					new_coefficients
+						.slice_mut(s![self.number_common_moduli.., ..])
+						.axis_iter_mut(Axis(1)),
+					p.coefficients.axis_iter(Axis(1))
+				)
+				.for_each(|(mut new_column, column)| {
+					self.scaler
+						.scale(&column, &mut new_column, self.number_common_moduli, floor)
+				});
+			} else {
 				let mut p_coefficients_powerbasis = p.coefficients.clone();
 				// Backward NTT
 				if p.allow_variable_time_computations {
@@ -84,40 +85,32 @@ impl Scaler {
 				// Conversion
 				izip!(
 					new_coefficients
-						.slice_mut(s![self.from.q.len().., ..])
+						.slice_mut(s![self.number_common_moduli.., ..])
 						.axis_iter_mut(Axis(1)),
 					p_coefficients_powerbasis.axis_iter(Axis(1))
 				)
 				.for_each(|(mut new_column, column)| {
 					self.scaler
-						.scale(&column, &mut new_column, self.from.q.len(), floor)
+						.scale(&column, &mut new_column, self.number_common_moduli, floor)
 				});
 				// Forward NTT on the second half
 				if p.allow_variable_time_computations {
 					izip!(
 						new_coefficients
-							.slice_mut(s![self.from.q.len().., ..])
+							.slice_mut(s![self.number_common_moduli.., ..])
 							.outer_iter_mut(),
-						&self.to.ops[self.from.q.len()..]
+						&self.to.ops[self.number_common_moduli..]
 					)
 					.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_slice_mut().unwrap()) });
 				} else {
 					izip!(
 						new_coefficients
-							.slice_mut(s![self.from.q.len().., ..])
+							.slice_mut(s![self.number_common_moduli.., ..])
 							.outer_iter_mut(),
-						&self.to.ops[self.from.q.len()..]
+						&self.to.ops[self.number_common_moduli..]
 					)
 					.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
 				}
-			} else {
-				izip!(
-					new_coefficients.axis_iter_mut(Axis(1)),
-					p.coefficients.axis_iter(Axis(1))
-				)
-				.for_each(|(mut new_column, column)| {
-					self.scaler.scale(&column, &mut new_column, 0, floor)
-				});
 			}
 
 			Ok(Poly {
@@ -147,8 +140,8 @@ mod tests {
 	];
 
 	static P: &[u64; 3] = &[
-		4611686018309947393,
 		4611686018282684417,
+		4611686018309947393,
 		4611686018257518593,
 	];
 
@@ -166,7 +159,7 @@ mod tests {
 				let scaler = Scaler::new(&from, &to, ScalingFactor::new(&n, &d))?;
 
 				for _ in 0..ntests {
-					let poly = Poly::random(&from, Representation::PowerBasis);
+					let mut poly = Poly::random(&from, Representation::PowerBasis);
 					let poly_biguint = Vec::<BigUint>::from(&poly);
 
 					let scaled_poly = scaler.scale(&poly, true)?;
@@ -184,6 +177,12 @@ mod tests {
 							}
 						})
 						.collect_vec();
+					assert_eq!(expected, scaled_biguint);
+
+					poly.change_representation(Representation::Ntt);
+					let mut scaled_poly = scaler.scale(&poly, true)?;
+					scaled_poly.change_representation(Representation::PowerBasis);
+					let scaled_biguint = Vec::<BigUint>::from(&scaled_poly);
 					assert_eq!(expected, scaled_biguint);
 				}
 			}

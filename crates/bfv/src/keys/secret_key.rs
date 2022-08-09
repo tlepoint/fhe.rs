@@ -3,8 +3,8 @@
 use crate::{
 	ciphertext::Ciphertext,
 	parameters::BfvParameters,
-	plaintext::{Encoding, Plaintext},
-	traits::{Decoder, Decryptor, Encoder, Encryptor},
+	plaintext::{encode_pt, Plaintext},
+	traits::{Decryptor, Encryptor},
 };
 use itertools::Itertools;
 use math::{
@@ -16,6 +16,8 @@ use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+#[cfg(test)]
+use crate::Encoding;
 #[cfg(test)]
 use num_bigint::BigUint;
 
@@ -56,10 +58,7 @@ impl SecretKey {
 	) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
 
-		// let mut m = Poly::try_convert_from(&plaintext, &self.par.ctx, Representation::PowerBasis)?;
-		// m.change_representation(Representation::Ntt);
-		// m *= &self.par.delta_old;
-		let mut m = self.encode_pt(&plaintext, Some(encoding))?;
+		let mut m = encode_pt(&self.par, &plaintext, Some(encoding))?;
 
 		// Let's disable variable time computations
 		let mut c0 = ct.c0.clone();
@@ -87,33 +86,6 @@ impl SecretKey {
 
 		Ok(noise)
 	}
-
-	/// Encode a plaintext as a polynomial in NTT representation.
-	/// We use the encoding technique described in Sec 3.1 of https://eprint.iacr.org/2021/204.
-	fn encode_pt(&self, pt: &Plaintext, encoding: Option<Encoding>) -> Result<Poly, String> {
-		let enc: Encoding;
-		if let Some(encoding) = encoding {
-			enc = encoding;
-			if pt.encoding.is_some() && Some(enc.clone()) != pt.encoding {
-				return Err("Mismatched encodings".to_string());
-			}
-		} else if pt.encoding.is_some() {
-			enc = pt.encoding.clone().unwrap();
-		} else {
-			return Err("Missing encodings".to_string());
-		}
-
-		let mut m_v = Vec::<u64>::try_decode(pt, enc.clone())?;
-		self.par
-			.plaintext
-			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
-		let pt = Plaintext::try_encode(&m_v as &[u64], enc, &self.par)?;
-		m_v.zeroize();
-		let mut m = Poly::try_convert_from(&pt, &self.par.ctx, Representation::PowerBasis)?;
-		m.change_representation(Representation::Ntt);
-		m *= &self.par.delta;
-		Ok(m)
-	}
 }
 
 impl Encryptor for SecretKey {
@@ -129,7 +101,7 @@ impl Encryptor for SecretKey {
 		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
 
-		let mut m = self.encode_pt(pt, None)?;
+		let mut m = encode_pt(&self.par, pt, None)?;
 		b += &m;
 
 		// Zeroize the temporary variables holding sensitive information.
@@ -137,8 +109,10 @@ impl Encryptor for SecretKey {
 		m.zeroize();
 
 		// It is now safe to enable variable time computations.
-		unsafe { a.allow_variable_time_computations() }
-		unsafe { b.allow_variable_time_computations() }
+		unsafe {
+			a.allow_variable_time_computations();
+			b.allow_variable_time_computations()
+		}
 
 		Ok(Ciphertext {
 			par: self.par.clone(),
@@ -176,6 +150,10 @@ impl Decryptor for SecretKey {
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
 
+			let mut poly =
+				Poly::try_convert_from(&w as &[u64], &self.par.ctx, Representation::PowerBasis)?;
+			poly.change_representation(Representation::Ntt);
+
 			let pt = Plaintext {
 				par: self.par.clone(),
 				value: unsafe {
@@ -184,9 +162,10 @@ impl Decryptor for SecretKey {
 						.center_vec_vt(&w[..self.par.polynomial_degree])
 				},
 				encoding: None,
+				poly_ntt: poly,
 			};
 
-			// Zeroize the temporary variables holding sensitive information.
+			// Zeroize the temporary variables potentially holding sensitive information.
 			c1_s.zeroize();
 			c.zeroize();
 			d.zeroize();
