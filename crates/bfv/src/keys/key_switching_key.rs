@@ -1,6 +1,7 @@
 //! Key-switching keys for the BFV encryption scheme
 
-use crate::{BfvParameters, SecretKey};
+use crate::{traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey};
+use fhers_protos::protos::{bfv::KeySwitchingKey as KeySwitchingKeyProto, rq::Rq};
 use itertools::izip;
 use math::{
 	rns::RnsContext,
@@ -18,7 +19,7 @@ pub struct KeySwitchingKey {
 	pub(crate) par: Rc<BfvParameters>,
 
 	/// The seed that generated the polynomials c1.
-	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
+	pub(crate) seed: <ChaCha8Rng as SeedableRng>::Seed,
 
 	/// The key switching elements c0.
 	pub(crate) c0: Vec<Poly>,
@@ -30,20 +31,47 @@ pub struct KeySwitchingKey {
 impl KeySwitchingKey {
 	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial `from`.
 	pub fn new(sk: &SecretKey, from: &Poly) -> Result<Self, String> {
-		let mut c0 = Vec::with_capacity(sk.par.ciphertext_moduli.len());
-		let mut c1 = Vec::with_capacity(sk.par.ciphertext_moduli.len());
-
-		let rns = RnsContext::new(&sk.par.ciphertext_moduli)?;
-
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
-		let mut rng = ChaCha8Rng::from_seed(seed);
+		let c1 = Self::generate_c1(&sk.par, seed, sk.par.ciphertext_moduli.len());
+		let c0 = Self::generate_c0(sk, from, &c1)?;
 
-		for i in 0..sk.par.ciphertext_moduli.len() {
+		Ok(Self {
+			par: sk.par.clone(),
+			seed,
+			c0,
+			c1,
+		})
+	}
+
+	/// Generate the c1's from the seed
+	fn generate_c1(
+		par: &Rc<BfvParameters>,
+		seed: <ChaCha8Rng as SeedableRng>::Seed,
+		size: usize,
+	) -> Vec<Poly> {
+		let mut c1 = Vec::with_capacity(size);
+		let mut rng = ChaCha8Rng::from_seed(seed);
+		(0..size).for_each(|_| {
 			let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
 			rng.fill(&mut seed_i);
+			let mut a = Poly::random_from_seed(&par.ctx, Representation::NttShoup, seed_i);
+			unsafe { a.allow_variable_time_computations() }
+			c1.push(a);
+		});
+		c1
+	}
 
-			let mut a = Poly::random_from_seed(&sk.par.ctx, Representation::Ntt, seed_i);
+	/// Generate the c0's from the c1's and the secret key
+	fn generate_c0(sk: &SecretKey, from: &Poly, c1: &[Poly]) -> Result<Vec<Poly>, String> {
+		if c1.len() != sk.par.ciphertext_moduli.len() {
+			return Err("Invalid number of c1".to_string());
+		}
+		let rns = RnsContext::new(&sk.par.ciphertext_moduli)?;
+		let mut c0 = Vec::with_capacity(sk.par.ciphertext_moduli.len());
+		for (i, c1i) in c1.iter().enumerate().take(sk.par.ciphertext_moduli.len()) {
+			let mut a = c1i.clone();
+			a.disallow_variable_time_computations();
 			let mut a_s = &a * &sk.s;
 			a_s.change_representation(Representation::PowerBasis);
 
@@ -54,26 +82,16 @@ impl KeySwitchingKey {
 			let mut g_i_from = gi * from;
 			b += &g_i_from;
 
+			a.zeroize();
 			a_s.zeroize();
 			g_i_from.zeroize();
 
 			// It is now safe to enable variable time computations.
-			unsafe { a.allow_variable_time_computations() }
 			unsafe { b.allow_variable_time_computations() }
-
-			a.change_representation(Representation::NttShoup);
 			b.change_representation(Representation::NttShoup);
-
 			c0.push(b);
-			c1.push(a);
 		}
-
-		Ok(Self {
-			par: sk.par.clone(),
-			seed: Some(seed),
-			c0,
-			c1,
-		})
+		Ok(c0)
 	}
 
 	/// Key switch a polynomial.
@@ -97,9 +115,56 @@ impl KeySwitchingKey {
 	}
 }
 
+impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
+	fn from(value: &KeySwitchingKey) -> Self {
+		let mut ksk = KeySwitchingKeyProto::new();
+		ksk.seed = value.seed.to_vec();
+		for c0 in &value.c0 {
+			ksk.c0.push(Rq::from(c0))
+		}
+		ksk
+	}
+}
+
+impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
+	type Error = String;
+
+	fn try_convert_from(
+		value: &KeySwitchingKeyProto,
+		par: &Rc<BfvParameters>,
+	) -> Result<Self, Self::Error> {
+		let seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
+		if seed.is_err() {
+			return Err("Invalid seed".to_string());
+		}
+		if value.c0.len() != par.ciphertext_moduli.len() {
+			return Err("Invalid number of c0".to_string());
+		}
+
+		let seed = seed.unwrap();
+		let c1 = Self::generate_c1(par, seed, par.ciphertext_moduli.len());
+		let mut c0 = Vec::with_capacity(par.ciphertext_moduli.len());
+		for c0i in &value.c0 {
+			let mut p = Poly::try_convert_from(c0i, &par.ctx, None)?;
+			unsafe { p.allow_variable_time_computations() }
+			c0.push(p)
+		}
+
+		Ok(Self {
+			par: par.clone(),
+			seed,
+			c0,
+			c1,
+		})
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use crate::{keys::key_switching_key::KeySwitchingKey, BfvParameters, SecretKey};
+	use crate::{
+		keys::key_switching_key::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, SecretKey,
+	};
+	use fhers_protos::protos::bfv::KeySwitchingKey as KeySwitchingKeyProto;
 	use math::{
 		rns::RnsContext,
 		rq::{Poly, Representation},
@@ -147,6 +212,21 @@ mod tests {
 					assert!(std::cmp::min(b.bits(), (rns.modulus() - b).bits()) <= 70)
 				});
 			}
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_proto_conversion() -> Result<(), String> {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
+			let ksk = KeySwitchingKey::new(&sk, &p)?;
+			let ksk_proto = KeySwitchingKeyProto::from(&ksk);
+			assert_eq!(ksk, KeySwitchingKey::try_convert_from(&ksk_proto, &params)?);
 		}
 		Ok(())
 	}

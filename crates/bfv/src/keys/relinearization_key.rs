@@ -1,8 +1,14 @@
 //! Relinearization keys for the BFV encryption scheme
 
+use std::rc::Rc;
+
 use super::key_switching_key::KeySwitchingKey;
-use crate::SecretKey;
+use crate::{traits::TryConvertFrom, BfvParameters, SecretKey};
+use fhers_protos::protos::bfv::{
+	KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
+};
 use math::rq::{Poly, Representation};
+use protobuf::MessageField;
 use zeroize::Zeroize;
 
 /// Relinearization key for the BFV encryption scheme.
@@ -29,16 +35,41 @@ impl RelinearizationKey {
 	}
 }
 
+impl From<&RelinearizationKey> for RelinearizationKeyProto {
+	fn from(value: &RelinearizationKey) -> Self {
+		let mut rk = RelinearizationKeyProto::new();
+		rk.ksk = MessageField::some(KeySwitchingKeyProto::from(&value.ksk));
+		rk
+	}
+}
+
+impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
+	type Error = String;
+
+	fn try_convert_from(
+		value: &RelinearizationKeyProto,
+		par: &Rc<BfvParameters>,
+	) -> Result<Self, Self::Error> {
+		if value.ksk.is_some() {
+			Ok(RelinearizationKey {
+				ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
+			})
+		} else {
+			Err("Invalid serialization".to_string())
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use math::rq::{Poly, Representation};
-	use std::rc::Rc;
-
 	use super::RelinearizationKey;
 	use crate::{
-		traits::{Decoder, Decryptor},
+		traits::{Decoder, Decryptor, TryConvertFrom},
 		BfvParameters, Ciphertext, Encoding, SecretKey,
 	};
+	use fhers_protos::protos::bfv::RelinearizationKey as RelinearizationKeyProto;
+	use math::rq::{Poly, Representation};
+	use std::rc::Rc;
 
 	#[test]
 	fn test_relinearization() -> Result<(), String> {
@@ -73,6 +104,20 @@ mod tests {
 				let pt = sk.decrypt(&ct)?;
 				assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
 			}
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_proto_conversion() -> Result<(), String> {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let rk = RelinearizationKey::new(&sk)?;
+			let proto = RelinearizationKeyProto::from(&rk);
+			assert_eq!(rk, RelinearizationKey::try_convert_from(&proto, &params)?);
 		}
 		Ok(())
 	}

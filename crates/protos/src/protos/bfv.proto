@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+import "src/protos/rq.proto";
+
+package fhers;
+
+message Ciphertext {
+    Rq c0 = 1;
+    oneof c1 {
+        bytes c1_seed = 2;
+        Rq c1_poly = 3;
+    }
+}
+
+message KeySwitchingKey {
+    bytes seed = 1;
+    uint32 size = 2;
+    repeated Rq c0 = 3;
+}
+
+message RelinearizationKey {
+    KeySwitchingKey ksk = 1;
+}
