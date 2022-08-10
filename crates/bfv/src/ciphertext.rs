@@ -2,10 +2,13 @@
 
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
+	traits::TryConvertFrom,
 	Plaintext, RelinearizationKey,
 };
-use math::rq::{Poly, Representation};
+use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
+use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
 use num_bigint::BigUint;
+use protobuf::MessageField;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -193,13 +196,68 @@ pub fn mul2(
 	mul_internal(ct0, ct1, rk, &ct0.par.mul_2_params)
 }
 
+/// Conversions from and to protobuf.
+impl From<&Ciphertext> for CiphertextProto {
+	fn from(ct: &Ciphertext) -> Self {
+		let mut proto = CiphertextProto::new();
+		if let Some(seed) = ct.seed {
+			proto.set_c1_seed(seed.to_vec())
+		} else {
+			proto.set_c1_poly(Rq::from(&ct.c1))
+		}
+		proto.c0 = MessageField::some(Rq::from(&ct.c0));
+		proto
+	}
+}
+
+impl TryConvertFrom<&CiphertextProto> for Ciphertext {
+	type Error = String;
+
+	fn try_convert_from(
+		value: &CiphertextProto,
+		par: &Rc<BfvParameters>,
+	) -> Result<Self, Self::Error> {
+		if value.c0.is_none() {
+			return Err("Missing c0".to_string());
+		}
+
+		let mut c0 = Poly::try_convert_from(value.c0.as_ref().unwrap(), &par.ctx, None)?;
+		unsafe { c0.allow_variable_time_computations() }
+
+		let mut seed = None;
+		let mut c1;
+		if value.has_c1_poly() {
+			c1 = Poly::try_convert_from(value.c1_poly(), &par.ctx, None)?;
+		} else if value.has_c1_seed() {
+			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.c1_seed());
+			if try_seed.is_err() {
+				return Err("Invalid seed".to_string());
+			}
+			seed = Some(try_seed.unwrap());
+			c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
+			unsafe { c1.allow_variable_time_computations() }
+		} else {
+			return Err("c1 or the seed are missing".to_string());
+		}
+
+		Ok(Ciphertext {
+			par: par.clone(),
+			seed,
+			c0,
+			c1,
+		})
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::{mul, mul2};
 	use crate::{
-		traits::{Decoder, Decryptor, Encoder, Encryptor},
-		BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
+		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, RelinearizationKey,
+		SecretKey,
 	};
+	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::any;
 	use std::rc::Rc;
@@ -465,6 +523,22 @@ mod tests {
 		// Empirically measured.
 		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
 
+		Ok(())
+	}
+
+	#[test]
+	fn test_proto_conversion() -> Result<(), String> {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let v = params.plaintext.random_vec(8);
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
+			let ct = sk.encrypt(&pt)?;
+			let ct_proto = CiphertextProto::from(&ct);
+			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
+		}
 		Ok(())
 	}
 }
