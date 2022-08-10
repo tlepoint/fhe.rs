@@ -29,6 +29,8 @@ pub struct Plaintext {
 	pub(crate) value: Vec<i64>,
 	/// The encoding of the plaintext, if known
 	pub(crate) encoding: Option<Encoding>,
+	/// The plaintext as a polynomial.
+	pub(crate) poly_ntt: Poly,
 }
 
 // Equality.
@@ -101,10 +103,14 @@ impl Encoder<&[u64]> for Plaintext {
 		let w = unsafe { par.plaintext.center_vec_vt(&v) };
 		v.zeroize();
 
+		let mut poly = Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
+		poly.change_representation(Representation::Ntt);
+
 		Ok(Self {
 			par: par.clone(),
 			value: w,
 			encoding: Some(encoding),
+			poly_ntt: poly,
 		})
 	}
 }
@@ -134,10 +140,14 @@ impl Encoder<&[i64]> for Plaintext {
 		let w = unsafe { par.plaintext.center_vec_vt(&v) };
 		v.zeroize();
 
+		let mut poly = Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
+		poly.change_representation(Representation::Ntt);
+
 		Ok(Self {
 			par: par.clone(),
 			value: w,
 			encoding: Some(encoding),
+			poly_ntt: poly,
 		})
 	}
 }
@@ -189,6 +199,35 @@ impl Decoder for Vec<i64> {
 		let v = Vec::<u64>::try_decode(pt, encoding)?;
 		Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
 	}
+}
+
+/// Encode a plaintext as a polynomial in NTT representation.
+/// We use the encoding technique described in Sec 3.1 of https://eprint.iacr.org/2021/204.
+pub(crate) fn encode_pt(
+	par: &Rc<BfvParameters>,
+	pt: &Plaintext,
+	encoding: Option<Encoding>,
+) -> Result<Poly, String> {
+	let enc: Encoding;
+	if let Some(encoding) = encoding {
+		enc = encoding;
+		if pt.encoding.is_some() && Some(enc.clone()) != pt.encoding {
+			return Err("Mismatched encodings".to_string());
+		}
+	} else if pt.encoding.is_some() {
+		enc = pt.encoding.clone().unwrap();
+	} else {
+		return Err("Missing encodings".to_string());
+	}
+
+	let mut m_v = Vec::<u64>::try_decode(pt, enc.clone())?;
+	par.plaintext.scalar_mul_vec(&mut m_v, par.q_mod_t);
+	let pt = Plaintext::try_encode(&m_v as &[u64], enc, par)?;
+	m_v.zeroize();
+	let mut m = Poly::try_convert_from(&pt, &par.ctx, Representation::PowerBasis)?;
+	m.change_representation(Representation::Ntt);
+	m *= &par.delta;
+	Ok(m)
 }
 
 #[cfg(test)]

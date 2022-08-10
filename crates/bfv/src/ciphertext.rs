@@ -1,12 +1,15 @@
 //! Ciphertext type in the BFV encryption scheme.
 
-use crate::{parameters::BfvParameters, RelinearizationKey};
+use crate::{
+	parameters::{BfvParameters, MultiplicationParameters},
+	Plaintext, RelinearizationKey,
+};
 use math::rq::{Poly, Representation};
 use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
-	ops::{Add, AddAssign, Neg, Sub, SubAssign},
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	rc::Rc,
 };
 
@@ -89,9 +92,87 @@ impl Neg for &Ciphertext {
 	}
 }
 
+impl MulAssign<&Plaintext> for Ciphertext {
+	fn mul_assign(&mut self, rhs: &Plaintext) {
+		assert_eq!(self.par, rhs.par);
+
+		self.c0 *= &rhs.poly_ntt;
+		self.c1 *= &rhs.poly_ntt;
+		self.seed = None
+	}
+}
+
+impl Mul<&Plaintext> for &Ciphertext {
+	type Output = Ciphertext;
+
+	fn mul(self, rhs: &Plaintext) -> Self::Output {
+		Ciphertext {
+			par: self.par.clone(),
+			seed: None,
+			c0: &self.c0 * &rhs.poly_ntt,
+			c1: &self.c1 * &rhs.poly_ntt,
+		}
+	}
+}
+
 #[allow(dead_code)]
 fn print_poly(s: &str, p: &Poly) {
 	println!("{} = {:?}", s, Vec::<BigUint>::from(p))
+}
+
+/// Multiply two ciphertext and relinearize.
+fn mul_internal(
+	ct0: &Ciphertext,
+	ct1: &Ciphertext,
+	rk: &RelinearizationKey,
+	mp: &MultiplicationParameters,
+) -> Result<Ciphertext, String> {
+	if ct0.par != ct1.par {
+		return Err("Incompatible parameters".to_string());
+	}
+	if ct0.par.ciphertext_moduli.len() == 1 {
+		return Err("Parameters do not allow for multiplication".to_string());
+	}
+	// Extend
+	let mut now = std::time::SystemTime::now();
+	let c00 = mp.extender_self.scale(&ct0.c0, false)?;
+	let c01 = mp.extender_self.scale(&ct0.c1, false)?;
+	let c10 = mp.extender_other.scale(&ct1.c0, false)?;
+	let c11 = mp.extender_other.scale(&ct1.c1, false)?;
+	println!("Extend: {:?}", now.elapsed().unwrap());
+
+	// Multiply
+	now = std::time::SystemTime::now();
+	let mut c0 = &c00 * &c10;
+	let mut c1 = &c00 * &c11;
+	c1 += &(&c01 * &c10);
+	let mut c2 = &c01 * &c11;
+	c0.change_representation(Representation::PowerBasis);
+	c1.change_representation(Representation::PowerBasis);
+	c2.change_representation(Representation::PowerBasis);
+	println!("Multiply: {:?}", now.elapsed().unwrap());
+
+	// Scale
+	// TODO: This should be faster??
+	now = std::time::SystemTime::now();
+	let mut c0 = mp.down_scaler.scale(&c0, false)?;
+	let mut c1 = mp.down_scaler.scale(&c1, false)?;
+	let c2 = mp.down_scaler.scale(&c2, false)?;
+	println!("Scale: {:?}", now.elapsed().unwrap());
+
+	// Relinearize
+	now = std::time::SystemTime::now();
+	c0.change_representation(Representation::Ntt);
+	c1.change_representation(Representation::Ntt);
+	rk.relinearize(&mut c0, &mut c1, &c2)?;
+	println!("Relinearize: {:?}", now.elapsed().unwrap());
+
+	Ok(Ciphertext {
+		par: ct0.par.clone(),
+		seed: None,
+		c0,
+		c1,
+	})
 }
 
 /// Multiply two ciphertext and relinearize.
@@ -100,46 +181,7 @@ pub fn mul(
 	ct1: &Ciphertext,
 	rk: &RelinearizationKey,
 ) -> Result<Ciphertext, String> {
-	// Extend
-	let mut now = std::time::SystemTime::now();
-	let c00 = ct0.par.mul_1_params.extender_self.scale2(&ct0.c0, false)?;
-	let c01 = ct0.par.mul_1_params.extender_self.scale2(&ct0.c1, false)?;
-	let c10 = ct1.par.mul_1_params.extender_other.scale2(&ct1.c0, false)?;
-	let c11 = ct1.par.mul_1_params.extender_other.scale2(&ct1.c1, false)?;
-	println!("Extend: {:?}", now.elapsed().unwrap());
-
-	// Multiply
-	now = std::time::SystemTime::now();
-	let mut c0 = &c00 * &c10;
-	let mut c1 = &c00 * &c11;
-	c1 += &(&c01 * &c10);
-	let mut c2 = &c01 * &c11;
-	c0.change_representation(Representation::PowerBasis);
-	c1.change_representation(Representation::PowerBasis);
-	c2.change_representation(Representation::PowerBasis);
-	println!("Multiply: {:?}", now.elapsed().unwrap());
-
-	// Scale
-	// TODO: This should be faster??
-	now = std::time::SystemTime::now();
-	let mut c0 = ct0.par.mul_1_params.down_scaler.scale(&c0, false)?;
-	let mut c1 = ct0.par.mul_1_params.down_scaler.scale(&c1, false)?;
-	let c2 = ct0.par.mul_1_params.down_scaler.scale(&c2, false)?;
-	println!("Scale: {:?}", now.elapsed().unwrap());
-
-	// Relinearize
-	now = std::time::SystemTime::now();
-	c0.change_representation(Representation::Ntt);
-	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2)?;
-	println!("Relinearize: {:?}", now.elapsed().unwrap());
-
-	Ok(Ciphertext {
-		par: ct0.par.clone(),
-		seed: None,
-		c0,
-		c1,
-	})
+	mul_internal(ct0, ct1, rk, &ct0.par.mul_1_params)
 }
 
 /// Multiply two ciphertext and relinearize.
@@ -148,52 +190,7 @@ pub fn mul2(
 	ct1: &Ciphertext,
 	rk: &RelinearizationKey,
 ) -> Result<Ciphertext, String> {
-	// Extend
-	let mut now = std::time::SystemTime::now();
-	let c00 = ct1.par.mul_2_params.extender_self.scale2(&ct0.c0, false)?;
-	let c01 = ct1.par.mul_2_params.extender_self.scale2(&ct0.c1, false)?;
-	let mut c10 = ct1.c0.clone();
-	let mut c11 = ct1.c1.clone();
-	c10.change_representation(Representation::PowerBasis);
-	c11.change_representation(Representation::PowerBasis);
-	let mut c10 = ct1.par.mul_2_params.extender_other.scale(&c10, false)?;
-	let mut c11 = ct1.par.mul_2_params.extender_other.scale(&c11, false)?;
-	c10.change_representation(Representation::Ntt);
-	c11.change_representation(Representation::Ntt);
-	println!("Extend: {:?}", now.elapsed().unwrap());
-
-	// Multiply
-	now = std::time::SystemTime::now();
-	let mut c0 = &c00 * &c10;
-	let mut c1 = &c00 * &c11;
-	c1 += &(&c01 * &c10);
-	let mut c2 = &c01 * &c11;
-	c0.change_representation(Representation::PowerBasis);
-	c1.change_representation(Representation::PowerBasis);
-	c2.change_representation(Representation::PowerBasis);
-	println!("Multiply: {:?}", now.elapsed().unwrap());
-
-	// Scale
-	// TODO: This should be faster??
-	now = std::time::SystemTime::now();
-	let mut c0 = ct0.par.mul_2_params.down_scaler.scale(&c0, false)?;
-	let mut c1 = ct0.par.mul_2_params.down_scaler.scale(&c1, false)?;
-	let c2 = ct0.par.mul_2_params.down_scaler.scale(&c2, false)?;
-	println!("Scale: {:?}", now.elapsed().unwrap());
-
-	// Relinearize
-	now = std::time::SystemTime::now();
-	c0.change_representation(Representation::Ntt);
-	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2)?;
-	println!("Relinearize: {:?}", now.elapsed().unwrap());
-
-	Ok(Ciphertext {
-		par: ct0.par.clone(),
-		seed: None,
-		c0,
-		c1,
-	})
+	mul_internal(ct0, ct1, rk, &ct0.par.mul_2_params)
 }
 
 #[cfg(test)]
@@ -280,6 +277,49 @@ mod tests {
 					let ct_c = -&ct_a;
 
 					let pt_c = sk.decrypt(&ct_c).unwrap();
+					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
+				}
+			}
+		}
+
+		#[test]
+		fn test_scalar_mul(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
+			for params in [Rc::new(BfvParameters::default(1)),
+						   Rc::new(BfvParameters::default(2))] {
+				params.plaintext.reduce_vec(&mut a);
+				params.plaintext.reduce_vec(&mut b);
+
+				let sk = SecretKey::random(&params);
+				for encoding in [Encoding::Poly, Encoding::Simd] {
+					let mut c = vec![0u64; 8];
+					match encoding {
+						Encoding::Poly => {
+							for i in 0..8 {
+								for j in 0..8 {
+									if i + j >= 8 {
+										c[(i+j) % 8] = params.plaintext.sub(c[(i+j) % 8], params.plaintext.mul(a[i], b[j]));
+									} else {
+										c[i+j] = params.plaintext.add(c[i+j], params.plaintext.mul(a[i], b[j]));
+									}
+								}
+							}
+						}
+						Encoding::Simd => {
+							c = a.clone();
+							params.plaintext.mul_vec(&mut c, &b);
+						}
+					}
+
+					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
+					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
+
+					let mut ct_a = sk.encrypt(&pt_a).unwrap();
+					let ct_c = &ct_a * &pt_b;
+					ct_a *= &pt_b;
+
+					let pt_c = sk.decrypt(&ct_c).unwrap();
+					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
+					let pt_c = sk.decrypt(&ct_a).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
 				}
 			}
