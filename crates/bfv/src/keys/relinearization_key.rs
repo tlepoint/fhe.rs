@@ -98,9 +98,7 @@ mod tests {
 				};
 
 				// Print the noise and decrypt
-				println!("Noise: {}", unsafe {
-					sk.measure_noise(&ct, Encoding::Poly)?
-				});
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
 				let pt = sk.decrypt(&ct)?;
 				assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
 			}

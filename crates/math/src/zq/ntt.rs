@@ -22,6 +22,7 @@ pub struct NttOperator {
 	size: usize,
 	omegas: Vec<u64>,
 	omegas_shoup: Vec<u64>,
+	omegas_inv: Vec<u64>,
 	zetas_inv: Vec<u64>,
 	zetas_inv_shoup: Vec<u64>,
 	size_inv: u64,
@@ -41,12 +42,14 @@ impl NttOperator {
 			let omega_inv = p.inv(omega).unwrap();
 
 			let mut omegas = vec![];
+			let mut omegas_inv = vec![];
 			let mut zetas_inv = vec![];
 			for i in 0..size {
 				let j = i.reverse_bits() >> (size.leading_zeros() + 1);
 				let w = p.pow(omega, j as u64);
 				let z = p.pow(omega_inv, (j + 1) as u64);
 				omegas.push(w);
+				omegas_inv.push(p.inv(omega).unwrap());
 				zetas_inv.push(z);
 			}
 
@@ -59,6 +62,7 @@ impl NttOperator {
 				size,
 				omegas,
 				omegas_shoup,
+				omegas_inv,
 				zetas_inv,
 				zetas_inv_shoup,
 				size_inv,
@@ -396,6 +400,18 @@ impl NttOperator {
 		// A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
 		// for all prime p dividing n.
 		(p.pow(a, n as u64) == 1) && (p.pow(a, (n / 2) as u64) != 1)
+	}
+
+	/// TODO: To document and test
+	pub fn mul_omega(&self, m: &mut [u64]) {
+		assert_eq!(m.len(), self.size);
+		self.p.mul_vec(m, &self.omegas);
+	}
+
+	/// TODO: To document and test
+	pub fn mul_omega_inv(&self, m: &mut [u64]) {
+		assert_eq!(m.len(), self.size);
+		self.p.mul_vec(m, &self.omegas_inv);
 	}
 }
 

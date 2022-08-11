@@ -293,14 +293,17 @@ impl Poly {
 	/// Substitute x by x^i in a polynomial.
 	/// In PowerBasis representation, i can be any integer that is not a multiple of 2 * degree.
 	/// In Ntt and NttShoup representation, i can be any odd integer that is not a multiple of 2 * degree.
-	pub fn substitute(&self, i: u32) -> Result<Poly, String> {
+	pub fn substitute(&self, i: usize) -> Result<Poly, String> {
 		let degree = self.ctx.degree as u32;
-		let exponent = i % (2 * degree);
+		let exponent = (i as u32) % (2 * degree);
 		if exponent == 0 {
 			return Err("The exponent is a multiple of 2 * degree".to_string());
 		}
 
 		let mut q = Poly::zero(&self.ctx, self.representation.clone());
+		if self.allow_variable_time_computations {
+			unsafe { q.allow_variable_time_computations() }
+		}
 		let mask = (self.ctx.degree - 1) as u32;
 		match self.representation {
 			Representation::Ntt => {

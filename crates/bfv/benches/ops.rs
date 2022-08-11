@@ -1,7 +1,8 @@
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, GaloisKey, Plaintext, RelinearizationKey,
+	SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
@@ -80,6 +81,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		);
 
 		let rk = RelinearizationKey::new(&sk).unwrap();
+		let gk = GaloisKey::new(&sk, par.degree() + 1).unwrap();
 		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
 		let p3 = Poly::random(&ctx, Representation::PowerBasis);
 		let mut p2 = Poly::random(&ctx, Representation::Ntt);
@@ -96,6 +98,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"galois",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| gk.relinearize(&mut c1));
 			},
 		);
 

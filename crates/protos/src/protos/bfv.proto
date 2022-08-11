@@ -21,3 +21,8 @@ message KeySwitchingKey {
 message RelinearizationKey {
     KeySwitchingKey ksk = 1;
 }
+
+message GaloisKey {
+    KeySwitchingKey ksk = 1;
+    uint32 exponent = 2;
+}

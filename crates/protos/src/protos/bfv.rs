@@ -604,6 +604,147 @@ impl ::protobuf::reflect::ProtobufValue for RelinearizationKey {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
+#[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:fhers.GaloisKey)
+pub struct GaloisKey {
+    // message fields
+    // @@protoc_insertion_point(field:fhers.GaloisKey.ksk)
+    pub ksk: ::protobuf::MessageField<KeySwitchingKey>,
+    // @@protoc_insertion_point(field:fhers.GaloisKey.exponent)
+    pub exponent: u32,
+    // special fields
+    // @@protoc_insertion_point(special_field:fhers.GaloisKey.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a GaloisKey {
+    fn default() -> &'a GaloisKey {
+        <GaloisKey as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl GaloisKey {
+    pub fn new() -> GaloisKey {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(2);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, KeySwitchingKey>(
+            "ksk",
+            |m: &GaloisKey| { &m.ksk },
+            |m: &mut GaloisKey| { &mut m.ksk },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "exponent",
+            |m: &GaloisKey| { &m.exponent },
+            |m: &mut GaloisKey| { &mut m.exponent },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GaloisKey>(
+            "GaloisKey",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for GaloisKey {
+    const NAME: &'static str = "GaloisKey";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.ksk)?;
+                },
+                16 => {
+                    self.exponent = is.read_uint32()?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if let Some(v) = self.ksk.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        }
+        if self.exponent != 0 {
+            my_size += ::protobuf::rt::uint32_size(2, self.exponent);
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if let Some(v) = self.ksk.as_ref() {
+            ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+        }
+        if self.exponent != 0 {
+            os.write_uint32(2, self.exponent)?;
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> GaloisKey {
+        GaloisKey::new()
+    }
+
+    fn clear(&mut self) {
+        self.ksk.clear();
+        self.exponent = 0;
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static GaloisKey {
+        static instance: GaloisKey = GaloisKey {
+            ksk: ::protobuf::MessageField::none(),
+            exponent: 0,
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for GaloisKey {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("GaloisKey").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for GaloisKey {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for GaloisKey {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
 static file_descriptor_proto_data: &'static [u8] = b"\
     \n\x14src/protos/bfv.proto\x12\x05fhers\x1a\x13src/protos/rq.proto\"n\n\
     \nCiphertext\x12\x19\n\x02c0\x18\x01\x20\x01(\x0b2\t.fhers.RqR\x02c0\x12\
@@ -612,34 +753,42 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     SwitchingKey\x12\x12\n\x04seed\x18\x01\x20\x01(\x0cR\x04seed\x12\x12\n\
     \x04size\x18\x02\x20\x01(\rR\x04size\x12\x19\n\x02c0\x18\x03\x20\x03(\
     \x0b2\t.fhers.RqR\x02c0\">\n\x12RelinearizationKey\x12(\n\x03ksk\x18\x01\
-    \x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03kskJ\x9a\x04\n\x06\x12\x04\
-    \0\0\x16\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\x12\x03\x02\
-    \0\x1d\n\x08\n\x01\x02\x12\x03\x04\0\x0e\n\n\n\x02\x04\0\x12\x04\x06\0\
-    \x0c\x01\n\n\n\x03\x04\0\x01\x12\x03\x06\x08\x12\n\x0b\n\x04\x04\0\x02\0\
-    \x12\x03\x07\x04\x0e\n\x0c\n\x05\x04\0\x02\0\x06\x12\x03\x07\x04\x06\n\
-    \x0c\n\x05\x04\0\x02\0\x01\x12\x03\x07\x07\t\n\x0c\n\x05\x04\0\x02\0\x03\
-    \x12\x03\x07\x0c\r\n\x0c\n\x04\x04\0\x08\0\x12\x04\x08\x04\x0b\x05\n\x0c\
-    \n\x05\x04\0\x08\0\x01\x12\x03\x08\n\x0c\n\x0b\n\x04\x04\0\x02\x01\x12\
-    \x03\t\x08\x1a\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\t\x08\r\n\x0c\n\x05\
-    \x04\0\x02\x01\x01\x12\x03\t\x0e\x15\n\x0c\n\x05\x04\0\x02\x01\x03\x12\
-    \x03\t\x18\x19\n\x0b\n\x04\x04\0\x02\x02\x12\x03\n\x08\x17\n\x0c\n\x05\
-    \x04\0\x02\x02\x06\x12\x03\n\x08\n\n\x0c\n\x05\x04\0\x02\x02\x01\x12\x03\
-    \n\x0b\x12\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\n\x15\x16\n\n\n\x02\x04\
-    \x01\x12\x04\x0e\0\x12\x01\n\n\n\x03\x04\x01\x01\x12\x03\x0e\x08\x17\n\
-    \x0b\n\x04\x04\x01\x02\0\x12\x03\x0f\x04\x13\n\x0c\n\x05\x04\x01\x02\0\
-    \x05\x12\x03\x0f\x04\t\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x0f\n\x0e\n\
-    \x0c\n\x05\x04\x01\x02\0\x03\x12\x03\x0f\x11\x12\n\x0b\n\x04\x04\x01\x02\
-    \x01\x12\x03\x10\x04\x14\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x10\x04\
-    \n\n\x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x10\x0b\x0f\n\x0c\n\x05\x04\
-    \x01\x02\x01\x03\x12\x03\x10\x12\x13\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\
-    \x11\x04\x17\n\x0c\n\x05\x04\x01\x02\x02\x04\x12\x03\x11\x04\x0c\n\x0c\n\
-    \x05\x04\x01\x02\x02\x06\x12\x03\x11\r\x0f\n\x0c\n\x05\x04\x01\x02\x02\
-    \x01\x12\x03\x11\x10\x12\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x11\x15\
-    \x16\n\n\n\x02\x04\x02\x12\x04\x14\0\x16\x01\n\n\n\x03\x04\x02\x01\x12\
-    \x03\x14\x08\x1a\n\x0b\n\x04\x04\x02\x02\0\x12\x03\x15\x04\x1c\n\x0c\n\
-    \x05\x04\x02\x02\0\x06\x12\x03\x15\x04\x13\n\x0c\n\x05\x04\x02\x02\0\x01\
-    \x12\x03\x15\x14\x17\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03\x15\x1a\x1bb\
-    \x06proto3\
+    \x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\"Q\n\tGaloisKey\x12(\n\
+    \x03ksk\x18\x01\x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\x12\x1a\
+    \n\x08exponent\x18\x02\x20\x01(\rR\x08exponentJ\xa0\x05\n\x06\x12\x04\0\
+    \0\x1b\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\x12\x03\x02\0\
+    \x1d\n\x08\n\x01\x02\x12\x03\x04\0\x0e\n\n\n\x02\x04\0\x12\x04\x06\0\x0c\
+    \x01\n\n\n\x03\x04\0\x01\x12\x03\x06\x08\x12\n\x0b\n\x04\x04\0\x02\0\x12\
+    \x03\x07\x04\x0e\n\x0c\n\x05\x04\0\x02\0\x06\x12\x03\x07\x04\x06\n\x0c\n\
+    \x05\x04\0\x02\0\x01\x12\x03\x07\x07\t\n\x0c\n\x05\x04\0\x02\0\x03\x12\
+    \x03\x07\x0c\r\n\x0c\n\x04\x04\0\x08\0\x12\x04\x08\x04\x0b\x05\n\x0c\n\
+    \x05\x04\0\x08\0\x01\x12\x03\x08\n\x0c\n\x0b\n\x04\x04\0\x02\x01\x12\x03\
+    \t\x08\x1a\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\t\x08\r\n\x0c\n\x05\x04\
+    \0\x02\x01\x01\x12\x03\t\x0e\x15\n\x0c\n\x05\x04\0\x02\x01\x03\x12\x03\t\
+    \x18\x19\n\x0b\n\x04\x04\0\x02\x02\x12\x03\n\x08\x17\n\x0c\n\x05\x04\0\
+    \x02\x02\x06\x12\x03\n\x08\n\n\x0c\n\x05\x04\0\x02\x02\x01\x12\x03\n\x0b\
+    \x12\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\n\x15\x16\n\n\n\x02\x04\x01\
+    \x12\x04\x0e\0\x12\x01\n\n\n\x03\x04\x01\x01\x12\x03\x0e\x08\x17\n\x0b\n\
+    \x04\x04\x01\x02\0\x12\x03\x0f\x04\x13\n\x0c\n\x05\x04\x01\x02\0\x05\x12\
+    \x03\x0f\x04\t\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x0f\n\x0e\n\x0c\n\
+    \x05\x04\x01\x02\0\x03\x12\x03\x0f\x11\x12\n\x0b\n\x04\x04\x01\x02\x01\
+    \x12\x03\x10\x04\x14\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x10\x04\n\n\
+    \x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x10\x0b\x0f\n\x0c\n\x05\x04\x01\
+    \x02\x01\x03\x12\x03\x10\x12\x13\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\x11\
+    \x04\x17\n\x0c\n\x05\x04\x01\x02\x02\x04\x12\x03\x11\x04\x0c\n\x0c\n\x05\
+    \x04\x01\x02\x02\x06\x12\x03\x11\r\x0f\n\x0c\n\x05\x04\x01\x02\x02\x01\
+    \x12\x03\x11\x10\x12\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x11\x15\x16\
+    \n\n\n\x02\x04\x02\x12\x04\x14\0\x16\x01\n\n\n\x03\x04\x02\x01\x12\x03\
+    \x14\x08\x1a\n\x0b\n\x04\x04\x02\x02\0\x12\x03\x15\x04\x1c\n\x0c\n\x05\
+    \x04\x02\x02\0\x06\x12\x03\x15\x04\x13\n\x0c\n\x05\x04\x02\x02\0\x01\x12\
+    \x03\x15\x14\x17\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03\x15\x1a\x1b\n\n\n\
+    \x02\x04\x03\x12\x04\x18\0\x1b\x01\n\n\n\x03\x04\x03\x01\x12\x03\x18\x08\
+    \x11\n\x0b\n\x04\x04\x03\x02\0\x12\x03\x19\x04\x1c\n\x0c\n\x05\x04\x03\
+    \x02\0\x06\x12\x03\x19\x04\x13\n\x0c\n\x05\x04\x03\x02\0\x01\x12\x03\x19\
+    \x14\x17\n\x0c\n\x05\x04\x03\x02\0\x03\x12\x03\x19\x1a\x1b\n\x0b\n\x04\
+    \x04\x03\x02\x01\x12\x03\x1a\x04\x18\n\x0c\n\x05\x04\x03\x02\x01\x05\x12\
+    \x03\x1a\x04\n\n\x0c\n\x05\x04\x03\x02\x01\x01\x12\x03\x1a\x0b\x13\n\x0c\
+    \n\x05\x04\x03\x02\x01\x03\x12\x03\x1a\x16\x17b\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -658,10 +807,11 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(1);
             deps.push(super::rq::file_descriptor().clone());
-            let mut messages = ::std::vec::Vec::with_capacity(3);
+            let mut messages = ::std::vec::Vec::with_capacity(4);
             messages.push(Ciphertext::generated_message_descriptor_data());
             messages.push(KeySwitchingKey::generated_message_descriptor_data());
             messages.push(RelinearizationKey::generated_message_descriptor_data());
+            messages.push(GaloisKey::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(0);
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),

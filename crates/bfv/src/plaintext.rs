@@ -2,8 +2,7 @@
 
 use crate::parameters::BfvParameters;
 use crate::traits::{Decoder, Encoder};
-use math::rq::traits::TryConvertFrom;
-use math::rq::{Poly, Representation};
+use math::rq::{traits::TryConvertFrom, Poly, Representation};
 use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -31,6 +30,19 @@ pub struct Plaintext {
 	pub(crate) encoding: Option<Encoding>,
 	/// The plaintext as a polynomial.
 	pub(crate) poly_ntt: Poly,
+}
+
+impl Plaintext {
+	pub(crate) fn encode(&self) -> Result<Poly, String> {
+		let mut m_v = self.par.plaintext.reduce_vec_i64(&self.value);
+		self.par
+			.plaintext
+			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
+		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
+		m.change_representation(Representation::Ntt);
+		m *= &self.par.delta;
+		Ok(m)
+	}
 }
 
 // Equality.
@@ -90,13 +102,22 @@ impl Encoder<&[u64]> for Plaintext {
 			return Err("There are too many values to encode".to_string());
 		}
 		let mut v = vec![0u64; par.polynomial_degree];
-		v[..value.len()].copy_from_slice(value);
 
-		if encoding == Encoding::Simd {
-			if let Some(op) = &par.op {
-				op.backward(&mut v);
-			} else {
-				return Err("The plaintext does not allow for using the Simd encoding".to_string());
+		if !value.is_empty() {
+			match encoding {
+				Encoding::Poly => v[..value.len()].copy_from_slice(value),
+				Encoding::Simd => {
+					if let Some(op) = &par.op {
+						for i in 0..value.len() {
+							v[par.matrix_reps_index_map[i]] = value[i];
+						}
+						op.backward(&mut v);
+					} else {
+						return Err(
+							"The plaintext does not allow for using the Simd encoding".to_string()
+						);
+					}
+				}
 			}
 		}
 
@@ -127,14 +148,25 @@ impl Encoder<&[i64]> for Plaintext {
 			return Err("There are too many values to encode".to_string());
 		}
 		let mut v = vec![0u64; par.polynomial_degree];
-		v[..value.len()].copy_from_slice(&par.plaintext.reduce_vec_i64(value));
 
-		if encoding == Encoding::Simd {
-			if let Some(op) = &par.op {
-				op.backward(&mut v);
-			} else {
-				return Err("The plaintext does not allow for using the Simd encoding".to_string());
+		if !value.is_empty() {
+			let mut value_u64 = par.plaintext.reduce_vec_i64(value);
+			match encoding {
+				Encoding::Poly => v[..value_u64.len()].copy_from_slice(&value_u64),
+				Encoding::Simd => {
+					if let Some(op) = &par.op {
+						for i in 0..value_u64.len() {
+							v[par.matrix_reps_index_map[i]] = value_u64[i];
+						}
+						op.backward(&mut v);
+					} else {
+						return Err(
+							"The plaintext does not allow for using the Simd encoding".to_string()
+						);
+					}
+				}
 			}
+			value_u64.zeroize()
 		}
 
 		let w = unsafe { par.plaintext.center_vec_vt(&v) };
@@ -176,15 +208,22 @@ impl Decoder for Vec<u64> {
 		}
 
 		let mut w = pt.par.plaintext.reduce_vec_i64(&pt.value);
-		if enc == Encoding::Simd {
-			if let Some(op) = &pt.par.op {
-				op.forward(&mut w);
-				Ok(w)
-			} else {
-				Err("The plaintext does not allow for using the Simd encoding".to_string())
+
+		match enc {
+			Encoding::Poly => Ok(w),
+			Encoding::Simd => {
+				if let Some(op) = &pt.par.op {
+					op.forward(&mut w);
+					let mut w_reordered = w.clone();
+					for i in 0..pt.par.polynomial_degree {
+						w_reordered[i] = w[pt.par.matrix_reps_index_map[i]]
+					}
+					w.zeroize();
+					Ok(w_reordered)
+				} else {
+					Err("The plaintext does not allow for using the Simd encoding".to_string())
+				}
 			}
-		} else {
-			Ok(w)
 		}
 	}
 }
@@ -199,35 +238,6 @@ impl Decoder for Vec<i64> {
 		let v = Vec::<u64>::try_decode(pt, encoding)?;
 		Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
 	}
-}
-
-/// Encode a plaintext as a polynomial in NTT representation.
-/// We use the encoding technique described in Sec 3.1 of https://eprint.iacr.org/2021/204.
-pub(crate) fn encode_pt(
-	par: &Rc<BfvParameters>,
-	pt: &Plaintext,
-	encoding: Option<Encoding>,
-) -> Result<Poly, String> {
-	let enc: Encoding;
-	if let Some(encoding) = encoding {
-		enc = encoding;
-		if pt.encoding.is_some() && Some(enc.clone()) != pt.encoding {
-			return Err("Mismatched encodings".to_string());
-		}
-	} else if pt.encoding.is_some() {
-		enc = pt.encoding.clone().unwrap();
-	} else {
-		return Err("Missing encodings".to_string());
-	}
-
-	let mut m_v = Vec::<u64>::try_decode(pt, enc.clone())?;
-	par.plaintext.scalar_mul_vec(&mut m_v, par.q_mod_t);
-	let pt = Plaintext::try_encode(&m_v as &[u64], enc, par)?;
-	m_v.zeroize();
-	let mut m = Poly::try_convert_from(&pt, &par.ctx, Representation::PowerBasis)?;
-	m.change_representation(Representation::Ntt);
-	m *= &par.delta;
-	Ok(m)
 }
 
 #[cfg(test)]

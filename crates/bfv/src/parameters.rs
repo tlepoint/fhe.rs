@@ -60,7 +60,10 @@ pub struct BfvParameters {
 	#[builder(setter(skip))]
 	pub(crate) mul_1_params: MultiplicationParameters, // type 1
 	#[builder(setter(skip))]
-	pub(crate) mul_2_params: MultiplicationParameters, // type 1
+	pub(crate) mul_2_params: MultiplicationParameters, // type 2
+
+	#[builder(setter(skip))]
+	pub(crate) matrix_reps_index_map: Vec<usize>,
 }
 
 impl BfvParameters {
@@ -224,6 +227,24 @@ impl BfvParametersBuilder {
 			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
 		)?;
 
+		// We use the same code as SEAL
+		// https://github.com/microsoft/SEAL/blob/82b07db635132e297282649e2ab5908999089ad2/native/src/seal/batchencoder.cpp
+		let row_size = polynomial_degree >> 1;
+		let m = polynomial_degree << 1;
+		let gen = 3;
+		let mut pos = 1;
+		let mut matrix_reps_index_map = vec![0usize; polynomial_degree];
+		for i in 0..row_size {
+			let index1 = (pos - 1) >> 1;
+			let index2 = (m - pos - 1) >> 1;
+			matrix_reps_index_map[i] =
+				index1.reverse_bits() >> (polynomial_degree.leading_zeros() + 1);
+			matrix_reps_index_map[row_size | i] =
+				index2.reverse_bits() >> (polynomial_degree.leading_zeros() + 1);
+			pos *= gen;
+			pos &= m - 1;
+		}
+
 		Ok(BfvParameters {
 			polynomial_degree,
 			plaintext_modulus: plaintext_modulus.modulus(),
@@ -236,9 +257,9 @@ impl BfvParametersBuilder {
 			q_mod_t,
 			scaler,
 			plaintext: plaintext_modulus,
-
 			mul_1_params,
 			mul_2_params,
+			matrix_reps_index_map,
 		})
 	}
 

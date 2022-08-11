@@ -3,7 +3,7 @@
 use crate::{
 	ciphertext::Ciphertext,
 	parameters::BfvParameters,
-	plaintext::{encode_pt, Plaintext},
+	plaintext::Plaintext,
 	traits::{Decryptor, Encryptor},
 };
 use itertools::Itertools;
@@ -16,8 +16,6 @@ use rand_chacha::ChaCha8Rng;
 use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-#[cfg(test)]
-use crate::Encoding;
 #[cfg(test)]
 use num_bigint::BigUint;
 
@@ -51,14 +49,9 @@ impl SecretKey {
 	/// Measure the noise in a [`Ciphertext`].
 	/// This operations may run in a variable time depending on the value of the noise.
 	#[cfg(test)]
-	pub(crate) unsafe fn measure_noise(
-		&self,
-		ct: &Ciphertext,
-		encoding: Encoding,
-	) -> Result<usize, String> {
+	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
-
-		let mut m = encode_pt(&self.par, &plaintext, Some(encoding))?;
+		let mut m = plaintext.encode()?;
 
 		// Let's disable variable time computations
 		let mut c0 = ct.c0.clone();
@@ -101,7 +94,7 @@ impl Encryptor for SecretKey {
 		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
 
-		let mut m = encode_pt(&self.par, pt, None)?;
+		let mut m = pt.encode()?;
 		b += &m;
 
 		// Zeroize the temporary variables holding sensitive information.
@@ -222,9 +215,7 @@ mod tests {
 				let ct = sk.encrypt(&pt)?;
 				let pt2 = sk.decrypt(&ct);
 
-				println!("Noise: {}", unsafe {
-					sk.measure_noise(&ct, Encoding::Poly)?
-				});
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
 				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
 			}
 		}

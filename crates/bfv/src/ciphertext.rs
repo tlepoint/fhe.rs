@@ -401,9 +401,7 @@ mod tests {
 			let ct2 = sk.encrypt(&pt)?;
 			let ct3 = mul(&ct1, &ct2, &rk)?;
 
-			println!("Noise: {}", unsafe {
-				sk.measure_noise(&ct3, Encoding::Simd)?
-			});
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
@@ -427,9 +425,7 @@ mod tests {
 			let ct2 = sk.encrypt(&pt)?;
 			let ct3 = mul2(&ct1, &ct2, &rk)?;
 
-			println!("Noise: {}", unsafe {
-				sk.measure_noise(&ct3, Encoding::Simd)?
-			});
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
@@ -455,13 +451,11 @@ mod tests {
 
 		for _ in 0..5 {
 			ct1 = mul(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe {
-				sk.measure_noise(&ct1, Encoding::Simd)?
-			});
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
 		}
 
 		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
 
 		Ok(())
 	}
@@ -485,13 +479,11 @@ mod tests {
 
 		for _ in 0..5 {
 			ct1 = mul(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe {
-				sk.measure_noise(&ct1, Encoding::Simd)?
-			});
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
 		}
 
 		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
 
 		Ok(())
 	}
@@ -515,13 +507,11 @@ mod tests {
 
 		for _ in 0..5 {
 			ct1 = mul2(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe {
-				sk.measure_noise(&ct1, Encoding::Simd)?
-			});
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
 		}
 
 		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1, Encoding::Simd)? } <= 200);
+		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
 
 		Ok(())
 	}
