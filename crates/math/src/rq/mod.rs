@@ -650,19 +650,20 @@ mod tests {
 			}
 		}
 
-		// Generate a very large polynomial to check the variance (here equal to 8).
-		let ctx = Rc::new(Context::new(&[4611686018326724609], 2 << 18)?);
-		let q = Modulus::new(4611686018326724609).unwrap();
-		let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
-		let coefficients = p.coefficients().to_slice().unwrap();
-		let v = unsafe { q.center_vec_vt(coefficients) }
-			.iter()
-			.map(|ai| *ai as f64)
-			.collect_vec();
-		let s = test::stats::Summary::new(&v);
-		assert!(s.min >= -16.0);
-		assert!(s.max <= 16.0);
-		assert_eq!(s.var.round(), 8.0);
+		// TODO: This is *way* too slow??
+		// // Generate a very large polynomial to check the variance (here equal to 8).
+		// let ctx = Rc::new(Context::new(&[4611686018326724609], 1 << 13)?);
+		// let q = Modulus::new(4611686018326724609).unwrap();
+		// let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
+		// let coefficients = p.coefficients().to_slice().unwrap();
+		// let v = unsafe { q.center_vec_vt(coefficients) }
+		// 	.iter()
+		// 	.map(|ai| *ai as f64)
+		// 	.collect_vec();
+		// let s = test::stats::Summary::new(&v);
+		// assert!(s.min >= -16.0);
+		// assert!(s.max <= 16.0);
+		// assert_eq!(s.var.round(), 8.0);
 
 		Ok(())
 	}

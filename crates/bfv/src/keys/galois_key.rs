@@ -16,7 +16,7 @@ use zeroize::Zeroize;
 /// which switch from `s(x^i)` to `s(x)` where `s(x)` is the secret key.
 #[derive(Debug, PartialEq, Eq)]
 pub struct GaloisKey {
-	exponent: usize,
+	pub(crate) exponent: usize,
 	ksk: KeySwitchingKey,
 }
 
@@ -35,20 +35,24 @@ impl GaloisKey {
 		Ok(Self { exponent, ksk })
 	}
 
-	/// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
-	pub fn relinearize(&self, ct: &mut Ciphertext) -> Result<(), String> {
+	/// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
+	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+		assert_eq!(ct.par, self.ksk.par);
+
 		let mut c0 = ct.c0.substitute(self.exponent)?;
-
-		let mut c2 = ct.c1.substitute(self.exponent)?;
-		c2.change_representation(Representation::PowerBasis);
-
 		let mut c1 = Poly::zero(&self.ksk.par.ctx, Representation::Ntt);
 		unsafe { c1.allow_variable_time_computations() }
 
+		let mut c2 = ct.c1.substitute(self.exponent)?;
+		c2.change_representation(Representation::PowerBasis);
 		self.ksk.key_switch(&c2, &mut c0, &mut c1)?;
-		ct.c0 = c0;
-		ct.c1 = c1;
-		Ok(())
+
+		Ok(Ciphertext {
+			par: ct.par.clone(),
+			seed: None,
+			c0,
+			c1,
+		})
 	}
 }
 
@@ -96,7 +100,7 @@ mod tests {
 	#[test]
 	fn test_relinearization() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
-			for _ in 0..1 {
+			for _ in 0..50 {
 				let sk = SecretKey::random(&params);
 				let v = params.plaintext.random_vec(params.degree());
 				let row_size = params.degree() >> 1;
@@ -109,8 +113,7 @@ mod tests {
 						assert!(GaloisKey::new(&sk, i).is_err())
 					} else {
 						let gk = GaloisKey::new(&sk, i)?;
-						let mut ct2 = ct.clone();
-						gk.relinearize(&mut ct2)?;
+						let ct2 = gk.relinearize(&ct)?;
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 
 						if i == 3 {
@@ -144,7 +147,7 @@ mod tests {
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
 			Rc::new(BfvParameters::default(1)),
-			// Rc::new(BfvParameters::default(2)),
+			Rc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9)?;
