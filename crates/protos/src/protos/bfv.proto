@@ -26,3 +26,7 @@ message GaloisKey {
     KeySwitchingKey ksk = 1;
     uint32 exponent = 2;
 }
+
+message InnerSumKey {
+    repeated GaloisKey gk = 1;
+}

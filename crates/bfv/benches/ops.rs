@@ -1,8 +1,8 @@
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, GaloisKey, Plaintext, RelinearizationKey,
-	SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, GaloisKey, InnerSumKey, Plaintext,
+	RelinearizationKey, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
@@ -80,6 +80,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
+		let isk = InnerSumKey::new(&sk).unwrap();
 		let rk = RelinearizationKey::new(&sk).unwrap();
 		let gk = GaloisKey::new(&sk, par.degree() + 1).unwrap();
 		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
@@ -112,6 +113,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| gk.relinearize(&mut c1));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"inner_sum",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| c1 = isk.inner_sum(&c1).unwrap());
 			},
 		);
 

@@ -196,6 +196,10 @@ pub fn mul2(
 	mul_internal(ct0, ct1, rk, &ct0.par.mul_2_params)
 }
 
+// pub fn inner_sum(ct: &Ciphertext, isk: &InnerSumKey) -> Result<Ciphertext, String> {
+
+// }
+
 /// Conversions from and to protobuf.
 impl From<&Ciphertext> for CiphertextProto {
 	fn from(ct: &Ciphertext) -> Self {
@@ -254,8 +258,7 @@ mod tests {
 	use super::{mul, mul2};
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
-		BfvParameters, BfvParametersBuilder, Ciphertext, Encoding, Plaintext, RelinearizationKey,
-		SecretKey,
+		BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
 	use std::rc::Rc;
