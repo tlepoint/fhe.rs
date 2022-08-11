@@ -37,13 +37,13 @@ impl PartialEq for Modulus {
 
 impl Modulus {
 	/// Create a modulus from an integer of at most 62 bits.
-	pub fn new(p: u64) -> std::option::Option<Self> {
+	pub fn new(p: u64) -> Result<Self, String> {
 		if p < 2 || (p >> 62) != 0 {
-			None
+			Err("modulus should be between 2 and 2^62-1".to_string())
 		} else {
 			let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
 
-			Some(Self {
+			Ok(Self {
 				p,
 				barrett_hi: (barrett >> 64) as u64,
 				barrett_lo: barrett as u64,
@@ -710,7 +710,7 @@ mod tests {
 	// Utility functions for the proptests.
 
 	fn valid_moduli() -> impl Strategy<Value = Modulus> {
-		any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p))
+		any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p).ok())
 	}
 
 	fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
@@ -726,16 +726,16 @@ mod tests {
 		#[test]
 		fn test_constructor(p: u64) {
 			// 63 and 64-bit integers do not work.
-			prop_assert!(Modulus::new(p | (1u64 << 62)).is_none());
-			prop_assert!(Modulus::new(p | (1u64 << 63)).is_none());
+			prop_assert!(Modulus::new(p | (1u64 << 62)).is_err());
+			prop_assert!(Modulus::new(p | (1u64 << 63)).is_err());
 
 			// p = 0 & 1 do not work.
-			prop_assert!(Modulus::new(0u64).is_none());
-			prop_assert!(Modulus::new(1u64).is_none());
+			prop_assert!(Modulus::new(0u64).is_err());
+			prop_assert!(Modulus::new(1u64).is_err());
 
 			// Otherwise, all moduli should work.
 			prop_assume!(p >> 2 >= 2);
-			prop_assert!(Modulus::new(p >> 2).is_some_and(|q| q.modulus() == p >> 2));
+			prop_assert!(Modulus::new(p >> 2).is_ok_and(|q| q.modulus() == p >> 2));
 		}
 
 		#[test]

@@ -27,7 +27,7 @@ use zeroize::Zeroize;
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Context {
 	q: Vec<Modulus>,
-	rns: RnsContext,
+	rns: Rc<RnsContext>,
 	ops: Vec<NttOperator>,
 	degree: usize,
 }
@@ -41,18 +41,15 @@ impl Context {
 			Err("The degree is not a power of two larger or equal to 8".to_string())
 		} else {
 			let mut q = Vec::with_capacity(moduli.len());
-			let rns = RnsContext::new(moduli)?;
+			let rns = Rc::new(RnsContext::new(moduli)?);
 			let mut ops = Vec::with_capacity(moduli.len());
 			for modulus in moduli {
-				if let Some(qi) = Modulus::new(*modulus) {
-					if let Some(op) = NttOperator::new(&qi, degree) {
-						q.push(qi);
-						ops.push(op);
-					} else {
-						return Err("Impossible to construct a Ntt operator".to_string());
-					}
+				let qi = Modulus::new(*modulus)?;
+				if let Some(op) = NttOperator::new(&qi, degree) {
+					q.push(qi);
+					ops.push(op);
 				} else {
-					return Err("The modulus is invalid".to_string());
+					return Err("Impossible to construct a Ntt operator".to_string());
 				}
 			}
 

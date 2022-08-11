@@ -258,25 +258,28 @@ mod tests {
 		SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
-	use proptest::collection::vec as prop_vec;
-	use proptest::prelude::any;
 	use std::rc::Rc;
 
-	proptest! {
-		#[test]
-		fn test_add(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default(1)),
-						   Rc::new(BfvParameters::default(2))] {
-				params.plaintext.reduce_vec(&mut a);
-				params.plaintext.reduce_vec(&mut b);
+	#[test]
+	fn test_add() {
+		let ntests = 100;
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			for _ in 0..ntests {
+				let a = params.plaintext.random_vec(params.degree());
+				let b = params.plaintext.random_vec(params.degree());
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
 				let sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
+					let pt_a =
+						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
+					let pt_b =
+						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
 					let mut ct_a = sk.encrypt(&pt_a).unwrap();
 					let ct_b = sk.encrypt(&pt_b).unwrap();
@@ -290,21 +293,28 @@ mod tests {
 				}
 			}
 		}
+	}
 
-		#[test]
-		fn test_sub(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default(1)),
-						   Rc::new(BfvParameters::default(2))] {
-				params.plaintext.reduce_vec(&mut a);
-				params.plaintext.reduce_vec(&mut b);
+	#[test]
+	fn test_sub() {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let ntests = 100;
+			for _ in 0..ntests {
+				let a = params.plaintext.random_vec(params.degree());
+				let b = params.plaintext.random_vec(params.degree());
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
 				let sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
+					let pt_a =
+						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
+					let pt_b =
+						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
 					let mut ct_a = sk.encrypt(&pt_a).unwrap();
 					let ct_b = sk.encrypt(&pt_b).unwrap();
@@ -318,18 +328,24 @@ mod tests {
 				}
 			}
 		}
+	}
 
-		#[test]
-		fn test_neg(mut a in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default(1)),
-						   Rc::new(BfvParameters::default(2))] {
-				params.plaintext.reduce_vec(&mut a);
+	#[test]
+	fn test_neg() {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let ntests = 100;
+			for _ in 0..ntests {
+				let a = params.plaintext.random_vec(params.degree());
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
 
 				let sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
+					let pt_a =
+						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 
 					let ct_a = sk.encrypt(&pt_a).unwrap();
 					let ct_c = -&ct_a;
@@ -339,25 +355,35 @@ mod tests {
 				}
 			}
 		}
+	}
 
-		#[test]
-		fn test_scalar_mul(mut a in prop_vec(any::<u64>(), 8), mut b in prop_vec(any::<u64>(), 8)) {
-			for params in [Rc::new(BfvParameters::default(1)),
-						   Rc::new(BfvParameters::default(2))] {
-				params.plaintext.reduce_vec(&mut a);
-				params.plaintext.reduce_vec(&mut b);
+	#[test]
+	fn test_scalar_mul() {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let ntests = 100;
+			for _ in 0..ntests {
+				let a = params.plaintext.random_vec(params.degree());
+				let b = params.plaintext.random_vec(params.degree());
 
 				let sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
-					let mut c = vec![0u64; 8];
+					let mut c = vec![0u64; params.degree()];
 					match encoding {
 						Encoding::Poly => {
-							for i in 0..8 {
-								for j in 0..8 {
-									if i + j >= 8 {
-										c[(i+j) % 8] = params.plaintext.sub(c[(i+j) % 8], params.plaintext.mul(a[i], b[j]));
+							for i in 0..params.degree() {
+								for j in 0..params.degree() {
+									if i + j >= params.degree() {
+										c[(i + j) % params.degree()] = params.plaintext.sub(
+											c[(i + j) % params.degree()],
+											params.plaintext.mul(a[i], b[j]),
+										);
 									} else {
-										c[i+j] = params.plaintext.add(c[i+j], params.plaintext.mul(a[i], b[j]));
+										c[i + j] = params
+											.plaintext
+											.add(c[i + j], params.plaintext.mul(a[i], b[j]));
 									}
 								}
 							}
@@ -368,8 +394,10 @@ mod tests {
 						}
 					}
 
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
+					let pt_a =
+						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
+					let pt_b =
+						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
 					let mut ct_a = sk.encrypt(&pt_a).unwrap();
 					let ct_c = &ct_a * &pt_b;
@@ -410,8 +438,9 @@ mod tests {
 
 	#[test]
 	fn test_mul2() -> Result<(), String> {
+		let ntests = 100;
 		let par = Rc::new(BfvParameters::default(2));
-		for _ in 0..100 {
+		for _ in 0..ntests {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.polynomial_degree);
 			let mut expected = values.clone();
@@ -429,90 +458,6 @@ mod tests {
 			let pt = sk.decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
-		Ok(())
-	}
-
-	#[test]
-	fn test_seq_mul_50() -> Result<(), String> {
-		let par = Rc::new(
-			BfvParametersBuilder::default()
-				.polynomial_degree(8192)
-				.plaintext_modulus(65537)
-				.ciphertext_moduli_sizes(vec![50, 50, 50, 50, 50])
-				.build()
-				.unwrap(),
-		);
-
-		let values = par.plaintext.random_vec(par.polynomial_degree);
-		let sk = SecretKey::random(&par);
-		let rk = RelinearizationKey::new(&sk)?;
-		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
-		let mut ct1 = sk.encrypt(&pt)?;
-
-		for _ in 0..5 {
-			ct1 = mul(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
-		}
-
-		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
-
-		Ok(())
-	}
-
-	#[test]
-	fn test_seq_mul_62() -> Result<(), String> {
-		let par = Rc::new(
-			BfvParametersBuilder::default()
-				.polynomial_degree(8192)
-				.plaintext_modulus(65537)
-				.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62])
-				.build()
-				.unwrap(),
-		);
-
-		let values = par.plaintext.random_vec(par.polynomial_degree);
-		let sk = SecretKey::random(&par);
-		let rk = RelinearizationKey::new(&sk)?;
-		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
-		let mut ct1 = sk.encrypt(&pt)?;
-
-		for _ in 0..5 {
-			ct1 = mul(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
-		}
-
-		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
-
-		Ok(())
-	}
-
-	#[test]
-	fn test_seq_mul2() -> Result<(), String> {
-		let par = Rc::new(
-			BfvParametersBuilder::default()
-				.polynomial_degree(8192)
-				.plaintext_modulus(65537)
-				.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62])
-				.build()
-				.unwrap(),
-		);
-
-		let values = par.plaintext.random_vec(par.polynomial_degree);
-		let sk = SecretKey::random(&par);
-		let rk = RelinearizationKey::new(&sk)?;
-		let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
-		let mut ct1 = sk.encrypt(&pt)?;
-
-		for _ in 0..5 {
-			ct1 = mul2(&ct1, &ct1, &rk)?;
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct1)? });
-		}
-
-		// Empirically measured.
-		assert!(unsafe { sk.measure_noise(&ct1)? } <= 200);
-
 		Ok(())
 	}
 

@@ -99,14 +99,7 @@ mod tests {
 			for _ in 0..1 {
 				let sk = SecretKey::random(&params);
 				let v = params.plaintext.random_vec(params.degree());
-				let mut expected = vec![0u64; params.degree()];
 				let row_size = params.degree() >> 1;
-				for i in 0..row_size - 1 {
-					expected[i] = v[i + 1];
-					expected[i | row_size] = v[(i | row_size) + 1];
-				}
-				expected[row_size - 1] = v[0];
-				expected[2 * row_size - 1] = v[row_size];
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
 				let ct = sk.encrypt(&pt)?;
@@ -115,20 +108,29 @@ mod tests {
 					if i & 1 == 0 {
 						assert!(GaloisKey::new(&sk, i).is_err())
 					} else {
-						assert!(GaloisKey::new(&sk, i).is_ok());
+						let gk = GaloisKey::new(&sk, i)?;
+						let mut ct2 = ct.clone();
+						gk.relinearize(&mut ct2)?;
+						println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 
 						if i == 3 {
-							let gk = GaloisKey::new(&sk, i)?;
-
-							let mut ct2 = ct.clone();
-
-							// Relinearize the extended ciphertext!
-							gk.relinearize(&mut ct2)?;
-
-							// Print the noise and decrypt
-							println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 							let pt = sk.decrypt(&ct2)?;
 
+							// The expected result is rotated one on the left
+							let mut expected = vec![0u64; params.degree()];
+							expected[..row_size - 1].copy_from_slice(&v[1..row_size]);
+							expected[row_size - 1] = v[0];
+							expected[row_size..2 * row_size - 1]
+								.copy_from_slice(&v[row_size + 1..]);
+							expected[2 * row_size - 1] = v[row_size];
+							assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::Simd)?, &expected)
+						} else if i == params.degree() * 2 - 1 {
+							let pt = sk.decrypt(&ct2)?;
+
+							// The expected result has its rows flipped
+							let mut expected = vec![0u64; params.degree()];
+							expected[..row_size].copy_from_slice(&v[row_size..]);
+							expected[row_size..].copy_from_slice(&v[..row_size]);
 							assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::Simd)?, &expected)
 						}
 					}
