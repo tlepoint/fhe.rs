@@ -401,18 +401,6 @@ impl NttOperator {
 		// for all prime p dividing n.
 		(p.pow(a, n as u64) == 1) && (p.pow(a, (n / 2) as u64) != 1)
 	}
-
-	/// TODO: To document and test
-	pub fn mul_omega(&self, m: &mut [u64]) {
-		assert_eq!(m.len(), self.size);
-		self.p.mul_vec(m, &self.omegas);
-	}
-
-	/// TODO: To document and test
-	pub fn mul_omega_inv(&self, m: &mut [u64]) {
-		assert_eq!(m.len(), self.size);
-		self.p.mul_vec(m, &self.omegas_inv);
-	}
 }
 
 #[cfg(test)]
