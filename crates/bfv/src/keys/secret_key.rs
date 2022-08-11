@@ -20,7 +20,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use num_bigint::BigUint;
 
 /// Secret key for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
 	pub(crate) par: Rc<BfvParameters>,
 	pub(crate) s: Poly,

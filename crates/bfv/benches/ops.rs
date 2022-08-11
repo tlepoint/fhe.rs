@@ -1,7 +1,7 @@
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, GaloisKey, InnerSumKey, Plaintext,
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKey, EvaluationKeyBuilder, Plaintext,
 	RelinearizationKey, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
@@ -30,6 +30,13 @@ pub fn ops_benchmark(c: &mut Criterion) {
 
 	for par in params() {
 		let sk = SecretKey::random(&par);
+		let ek = EvaluationKeyBuilder::new(&sk)
+			.enable_inner_sum()
+			.enable_relinearization()
+			.enable_column_rotation(1)
+			.unwrap()
+			.build()
+			.unwrap();
 
 		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::Poly, &par)
 			.unwrap();
@@ -80,9 +87,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let isk = InnerSumKey::new(&sk).unwrap();
 		let rk = RelinearizationKey::new(&sk).unwrap();
-		let gk = GaloisKey::new(&sk, par.degree() + 1).unwrap();
 		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
 		let p3 = Poly::random(&ctx, Representation::PowerBasis);
 		let mut p2 = Poly::random(&ctx, Representation::Ntt);
@@ -104,7 +109,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 
 		group.bench_function(
 			BenchmarkId::new(
-				"galois",
+				"rotate",
 				format!(
 					"{}/{}",
 					par.degree(),
@@ -112,7 +117,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| gk.relinearize(&mut c1));
+				b.iter(|| c1 = ek.rotates_column_by(&c1, 1).unwrap());
 			},
 		);
 
@@ -126,7 +131,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| c1 = isk.inner_sum(&c1).unwrap());
+				b.iter(|| c1 = ek.computes_inner_sum(&c1).unwrap());
 			},
 		);
 
