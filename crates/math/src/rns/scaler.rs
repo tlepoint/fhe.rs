@@ -8,6 +8,7 @@ use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
+use std::rc::Rc;
 
 /// Scaling factor when performing a RNS scaling.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -41,8 +42,8 @@ impl ScalingFactor {
 /// Scaler in RNS basis.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RnsScaler {
-	from: RnsContext,
-	to: RnsContext,
+	from: Rc<RnsContext>,
+	to: Rc<RnsContext>,
 	scaling_factor: ScalingFactor,
 
 	gamma: Vec<u64>,
@@ -65,7 +66,7 @@ impl RnsScaler {
 	/// Create a RNS scaler by numerator / denominator.
 	///
 	/// Aborts if denominator is equal to 0.
-	pub fn new(from: &RnsContext, to: &RnsContext, scaling_factor: ScalingFactor) -> Self {
+	pub fn new(from: &Rc<RnsContext>, to: &Rc<RnsContext>, scaling_factor: ScalingFactor) -> Self {
 		// Let's define gamma = round(numerator * from.product / denominator)
 		let (gamma, theta_gamma_lo, theta_gamma_hi, theta_gamma_sign) =
 			Self::extract_projection_and_theta(
@@ -350,6 +351,8 @@ impl RnsScaler {
 
 #[cfg(test)]
 mod tests {
+	use std::rc::Rc;
+
 	use super::RnsScaler;
 	use crate::rns::{scaler::ScalingFactor, RnsContext};
 	use ndarray::ArrayView1;
@@ -360,7 +363,7 @@ mod tests {
 
 	#[test]
 	fn test_constructor() -> Result<(), String> {
-		let q = RnsContext::new(&[4, 4611686018326724609, 1153])?;
+		let q = Rc::new(RnsContext::new(&[4, 4611686018326724609, 1153])?);
 
 		let scaler = RnsScaler::new(&q, &q, ScalingFactor::one());
 		assert_eq!(scaler.from, q);
@@ -374,7 +377,7 @@ mod tests {
 	#[test]
 	fn test_scale_same_context() -> Result<(), String> {
 		let ntests = 1000;
-		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153])?;
+		let q = Rc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
@@ -424,8 +427,8 @@ mod tests {
 	#[test]
 	fn test_scale_different_contexts() -> Result<(), String> {
 		let ntests = 10;
-		let q = RnsContext::new(&[4u64, 4611686018326724609, 1153])?;
-		let r = RnsContext::new(&[
+		let q = Rc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
+		let r = Rc::new(RnsContext::new(&[
 			4u64,
 			4611686018326724609,
 			1153,
@@ -436,7 +439,7 @@ mod tests {
 			4611686018171535361,
 			4611686018106523649,
 			4611686018058289153,
-		])?;
+		])?);
 		let mut rng = thread_rng();
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {

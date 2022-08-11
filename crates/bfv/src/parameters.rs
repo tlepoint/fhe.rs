@@ -115,14 +115,7 @@ impl BfvParametersBuilder {
 				"plaintext_modulus",
 			));
 		}
-		let plaintext_modulus = Modulus::new(self.plaintext_modulus.unwrap());
-		if plaintext_modulus.is_none() {
-			// TODO: More checks needed
-			return Err(BfvParametersBuilderError::ValidationError(
-				"`plaintext_modulus` must be larger or equal to 2".to_string(),
-			));
-		}
-		let plaintext_modulus = plaintext_modulus.unwrap();
+		let plaintext_modulus = Modulus::new(self.plaintext_modulus.unwrap())?;
 
 		// Check the ciphertext moduli
 		if self.ciphertext_moduli.is_none() && self.ciphertext_moduli_sizes.is_none() {
@@ -354,8 +347,7 @@ mod tests {
 			.polynomial_degree(1024)
 			.plaintext_modulus(0)
 			.build();
-		assert!(params
-			.is_err_and(|e| e.to_string() == "`plaintext_modulus` must be larger or equal to 2"));
+		assert!(params.is_err_and(|e| e.to_string() == "modulus should be between 2 and 2^62-1"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(1024)
@@ -384,7 +376,7 @@ mod tests {
 			.plaintext_modulus(2)
 			.ciphertext_moduli(vec![1])
 			.build();
-		assert!(params.is_err_and(|e| e.to_string() == "The modulus is invalid"));
+		assert!(params.is_err_and(|e| e.to_string() == "modulus should be between 2 and 2^62-1"));
 
 		let params = BfvParametersBuilder::default()
 			.polynomial_degree(8)

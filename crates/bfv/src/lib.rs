@@ -16,7 +16,3 @@ pub use ciphertext::{mul, mul2, Ciphertext};
 pub use keys::{GaloisKey, RelinearizationKey, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::{Encoding, Plaintext};
-
-#[cfg(test)]
-#[macro_use]
-extern crate proptest;

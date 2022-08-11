@@ -2,6 +2,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::rns::{RnsContext, RnsConverter, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
+use std::rc::Rc;
 
 pub fn rns_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("rns");
@@ -25,8 +26,8 @@ pub fn rns_benchmark(c: &mut Criterion) {
 		x.push(rng.next_u64() % *qi);
 	}
 
-	let rns_q = RnsContext::new(&q).unwrap();
-	let rns_p = RnsContext::new(&p).unwrap();
+	let rns_q = Rc::new(RnsContext::new(&q).unwrap());
+	let rns_p = Rc::new(RnsContext::new(&p).unwrap());
 	let converter = RnsConverter::new(&rns_q, &rns_p);
 	let scaler = RnsScaler::new(
 		&rns_q,

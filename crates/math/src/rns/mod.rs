@@ -61,11 +61,7 @@ impl RnsContext {
 			}
 
 			for modulus in moduli_u64 {
-				if let Some(p) = Modulus::new(*modulus) {
-					moduli.push(p);
-				} else {
-					return Err("The modulus is invalid".to_string());
-				}
+				moduli.push(Modulus::new(*modulus)?);
 				// q* = product / modulus
 				let q_star_i = &product / modulus;
 				// q~ = (product / modulus) ^ (-1) % modulus
