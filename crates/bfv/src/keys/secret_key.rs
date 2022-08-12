@@ -63,8 +63,9 @@ impl SecretKey {
 
 		for i in 1..ct.c.len() {
 			if self.s.len() < i {
-				self.s
-					.push(self.s.last().unwrap() * self.s.first().unwrap());
+				let mut si = self.s.last().unwrap() * self.s.first().unwrap();
+				si.change_representation(Representation::NttShoup);
+				self.s.push(si);
 				debug_assert_eq!(self.s.len(), i)
 			}
 			let mut cis = ct.c[i].clone();
