@@ -27,6 +27,7 @@ message GaloisKey {
     uint32 exponent = 2;
 }
 
-message InnerSumKey {
-    repeated GaloisKey gk = 1;
+message EvaluationKey {
+    RelinearizationKey rk = 1;
+    repeated GaloisKey gk = 2;
 }

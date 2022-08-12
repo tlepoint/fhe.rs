@@ -1,7 +1,7 @@
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKey, EvaluationKeyBuilder, Plaintext,
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext,
 	RelinearizationKey, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};

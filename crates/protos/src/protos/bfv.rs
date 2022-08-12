@@ -746,45 +746,52 @@ impl ::protobuf::reflect::ProtobufValue for GaloisKey {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:fhers.InnerSumKey)
-pub struct InnerSumKey {
+// @@protoc_insertion_point(message:fhers.EvaluationKey)
+pub struct EvaluationKey {
     // message fields
-    // @@protoc_insertion_point(field:fhers.InnerSumKey.gk)
+    // @@protoc_insertion_point(field:fhers.EvaluationKey.rk)
+    pub rk: ::protobuf::MessageField<RelinearizationKey>,
+    // @@protoc_insertion_point(field:fhers.EvaluationKey.gk)
     pub gk: ::std::vec::Vec<GaloisKey>,
     // special fields
-    // @@protoc_insertion_point(special_field:fhers.InnerSumKey.special_fields)
+    // @@protoc_insertion_point(special_field:fhers.EvaluationKey.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a InnerSumKey {
-    fn default() -> &'a InnerSumKey {
-        <InnerSumKey as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a EvaluationKey {
+    fn default() -> &'a EvaluationKey {
+        <EvaluationKey as ::protobuf::Message>::default_instance()
     }
 }
 
-impl InnerSumKey {
-    pub fn new() -> InnerSumKey {
+impl EvaluationKey {
+    pub fn new() -> EvaluationKey {
         ::std::default::Default::default()
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(1);
+        let mut fields = ::std::vec::Vec::with_capacity(2);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, RelinearizationKey>(
+            "rk",
+            |m: &EvaluationKey| { &m.rk },
+            |m: &mut EvaluationKey| { &mut m.rk },
+        ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "gk",
-            |m: &InnerSumKey| { &m.gk },
-            |m: &mut InnerSumKey| { &mut m.gk },
+            |m: &EvaluationKey| { &m.gk },
+            |m: &mut EvaluationKey| { &mut m.gk },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<InnerSumKey>(
-            "InnerSumKey",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<EvaluationKey>(
+            "EvaluationKey",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for InnerSumKey {
-    const NAME: &'static str = "InnerSumKey";
+impl ::protobuf::Message for EvaluationKey {
+    const NAME: &'static str = "EvaluationKey";
 
     fn is_initialized(&self) -> bool {
         true
@@ -794,6 +801,9 @@ impl ::protobuf::Message for InnerSumKey {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.rk)?;
+                },
+                18 => {
                     self.gk.push(is.read_message()?);
                 },
                 tag => {
@@ -808,6 +818,10 @@ impl ::protobuf::Message for InnerSumKey {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
+        if let Some(v) = self.rk.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        }
         for value in &self.gk {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
@@ -818,8 +832,11 @@ impl ::protobuf::Message for InnerSumKey {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.gk {
+        if let Some(v) = self.rk.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+        }
+        for v in &self.gk {
+            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -833,17 +850,19 @@ impl ::protobuf::Message for InnerSumKey {
         &mut self.special_fields
     }
 
-    fn new() -> InnerSumKey {
-        InnerSumKey::new()
+    fn new() -> EvaluationKey {
+        EvaluationKey::new()
     }
 
     fn clear(&mut self) {
+        self.rk.clear();
         self.gk.clear();
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static InnerSumKey {
-        static instance: InnerSumKey = InnerSumKey {
+    fn default_instance() -> &'static EvaluationKey {
+        static instance: EvaluationKey = EvaluationKey {
+            rk: ::protobuf::MessageField::none(),
             gk: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -851,20 +870,20 @@ impl ::protobuf::Message for InnerSumKey {
     }
 }
 
-impl ::protobuf::MessageFull for InnerSumKey {
+impl ::protobuf::MessageFull for EvaluationKey {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("InnerSumKey").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("EvaluationKey").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for InnerSumKey {
+impl ::std::fmt::Display for EvaluationKey {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for InnerSumKey {
+impl ::protobuf::reflect::ProtobufValue for EvaluationKey {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -878,9 +897,10 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x0b2\t.fhers.RqR\x02c0\">\n\x12RelinearizationKey\x12(\n\x03ksk\x18\x01\
     \x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\"Q\n\tGaloisKey\x12(\n\
     \x03ksk\x18\x01\x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\x12\x1a\
-    \n\x08exponent\x18\x02\x20\x01(\rR\x08exponent\"/\n\x0bInnerSumKey\x12\
-    \x20\n\x02gk\x18\x01\x20\x03(\x0b2\x10.fhers.GaloisKeyR\x02gkJ\xfd\x05\n\
-    \x06\x12\x04\0\0\x1f\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\
+    \n\x08exponent\x18\x02\x20\x01(\rR\x08exponent\"\\\n\rEvaluationKey\x12)\
+    \n\x02rk\x18\x01\x20\x01(\x0b2\x19.fhers.RelinearizationKeyR\x02rk\x12\
+    \x20\n\x02gk\x18\x02\x20\x03(\x0b2\x10.fhers.GaloisKeyR\x02gkJ\xb4\x06\n\
+    \x06\x12\x04\0\0\x20\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\
     \x12\x03\x02\0\x1d\n\x08\n\x01\x02\x12\x03\x04\0\x0e\n\n\n\x02\x04\0\x12\
     \x04\x06\0\x0c\x01\n\n\n\x03\x04\0\x01\x12\x03\x06\x08\x12\n\x0b\n\x04\
     \x04\0\x02\0\x12\x03\x07\x04\x0e\n\x0c\n\x05\x04\0\x02\0\x06\x12\x03\x07\
@@ -913,11 +933,14 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x0b\n\x04\x04\x03\x02\x01\x12\x03\x1a\x04\x18\n\x0c\n\x05\x04\x03\x02\
     \x01\x05\x12\x03\x1a\x04\n\n\x0c\n\x05\x04\x03\x02\x01\x01\x12\x03\x1a\
     \x0b\x13\n\x0c\n\x05\x04\x03\x02\x01\x03\x12\x03\x1a\x16\x17\n\n\n\x02\
-    \x04\x04\x12\x04\x1d\0\x1f\x01\n\n\n\x03\x04\x04\x01\x12\x03\x1d\x08\x13\
+    \x04\x04\x12\x04\x1d\0\x20\x01\n\n\n\x03\x04\x04\x01\x12\x03\x1d\x08\x15\
     \n\x0b\n\x04\x04\x04\x02\0\x12\x03\x1e\x04\x1e\n\x0c\n\x05\x04\x04\x02\0\
-    \x04\x12\x03\x1e\x04\x0c\n\x0c\n\x05\x04\x04\x02\0\x06\x12\x03\x1e\r\x16\
-    \n\x0c\n\x05\x04\x04\x02\0\x01\x12\x03\x1e\x17\x19\n\x0c\n\x05\x04\x04\
-    \x02\0\x03\x12\x03\x1e\x1c\x1db\x06proto3\
+    \x06\x12\x03\x1e\x04\x16\n\x0c\n\x05\x04\x04\x02\0\x01\x12\x03\x1e\x17\
+    \x19\n\x0c\n\x05\x04\x04\x02\0\x03\x12\x03\x1e\x1c\x1d\n\x0b\n\x04\x04\
+    \x04\x02\x01\x12\x03\x1f\x04\x1e\n\x0c\n\x05\x04\x04\x02\x01\x04\x12\x03\
+    \x1f\x04\x0c\n\x0c\n\x05\x04\x04\x02\x01\x06\x12\x03\x1f\r\x16\n\x0c\n\
+    \x05\x04\x04\x02\x01\x01\x12\x03\x1f\x17\x19\n\x0c\n\x05\x04\x04\x02\x01\
+    \x03\x12\x03\x1f\x1c\x1db\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -941,7 +964,7 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
             messages.push(KeySwitchingKey::generated_message_descriptor_data());
             messages.push(RelinearizationKey::generated_message_descriptor_data());
             messages.push(GaloisKey::generated_message_descriptor_data());
-            messages.push(InnerSumKey::generated_message_descriptor_data());
+            messages.push(EvaluationKey::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(0);
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),
