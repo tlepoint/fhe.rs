@@ -120,6 +120,70 @@ fn print_poly(s: &str, p: &Poly) {
 	println!("{} = {:?}", s, Vec::<BigUint>::from(p))
 }
 
+impl Mul<&Ciphertext> for &Ciphertext {
+	type Output = Ciphertext;
+
+	fn mul(self, rhs: &Ciphertext) -> Self::Output {
+		// Scale all ciphertexts
+		let mut now = std::time::SystemTime::now();
+		let self_c = self
+			.c
+			.iter()
+			.map(|ci| {
+				self.par
+					.mul_1_params
+					.extender_self
+					.scale(ci, false)
+					.unwrap()
+			})
+			.collect_vec();
+		let other_c = rhs
+			.c
+			.iter()
+			.map(|ci| {
+				self.par
+					.mul_1_params
+					.extender_self
+					.scale(ci, false)
+					.unwrap()
+			})
+			.collect_vec();
+		println!("Extend: {:?}", now.elapsed().unwrap());
+
+		// Multiply
+		now = std::time::SystemTime::now();
+		let mut c = vec![
+			Poly::zero(&self.par.mul_1_params.to, Representation::Ntt);
+			self_c.len() + other_c.len() - 1
+		];
+		for i in 0..self_c.len() {
+			for j in 0..other_c.len() {
+				c[i + j] += &(&self_c[i] * &other_c[j])
+			}
+		}
+		println!("Multiply: {:?}", now.elapsed().unwrap());
+
+		// Scale
+		now = std::time::SystemTime::now();
+		let c = c
+			.iter_mut()
+			.map(|ci| {
+				ci.change_representation(Representation::PowerBasis);
+				let mut ci = self.par.mul_1_params.down_scaler.scale(ci, false).unwrap();
+				ci.change_representation(Representation::Ntt);
+				ci
+			})
+			.collect_vec();
+		println!("Scale: {:?}", now.elapsed().unwrap());
+
+		Ciphertext {
+			par: self.par.clone(),
+			seed: None,
+			c,
+		}
+	}
+}
+
 /// Multiply two ciphertext and relinearize.
 fn mul_internal(
 	ct0: &Ciphertext,
@@ -190,10 +254,6 @@ pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Cip
 pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
 	mul_internal(ct0, ct1, ek, &ct0.par.mul_2_params)
 }
-
-// pub fn inner_sum(ct: &Ciphertext, isk: &InnerSumKey) -> Result<Ciphertext, String> {
-
-// }
 
 /// Conversions from and to protobuf.
 impl From<&Ciphertext> for CiphertextProto {
@@ -272,7 +332,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
@@ -307,7 +367,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
@@ -341,7 +401,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
@@ -367,7 +427,7 @@ mod tests {
 				let a = params.plaintext.random_vec(params.degree());
 				let b = params.plaintext.random_vec(params.degree());
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let mut c = vec![0u64; params.degree()];
 					match encoding {
@@ -420,7 +480,37 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
+			let mut sk = SecretKey::random(&par);
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+
+			let ct1 = sk.encrypt(&pt)?;
+			let ct2 = sk.encrypt(&pt)?;
+			let ct3 = &ct1 * &ct2;
+			let ct4 = &ct3 * &ct3;
+
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+
+			let e = expected.clone();
+			par.plaintext.mul_vec(&mut expected, &e);
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
+			let pt = sk.decrypt(&ct4)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_mul_3() -> Result<(), String> {
+		let par = Rc::new(BfvParameters::default(2));
+		for _ in 0..50 {
+			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let mut expected = values.clone();
+			par.plaintext.mul_vec(&mut expected, &values);
+
+			let mut sk = SecretKey::random(&par);
 			let ek = EvaluationKeyBuilder::new(&sk)
 				.enable_relinearization()
 				.build()?;
@@ -447,7 +537,7 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
+			let mut sk = SecretKey::random(&par);
 			let ek = EvaluationKeyBuilder::new(&sk)
 				.enable_relinearization()
 				.build()?;
@@ -474,6 +564,10 @@ mod tests {
 			let v = params.plaintext.random_vec(8);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
 			let ct = sk.encrypt(&pt)?;
+			let ct_proto = CiphertextProto::from(&ct);
+			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
+
+			let ct = &ct * &ct;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
 		}

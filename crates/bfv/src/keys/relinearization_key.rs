@@ -75,7 +75,7 @@ mod tests {
 	fn test_relinearization() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;
 
 				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2, c1, c2) encrypting 0.

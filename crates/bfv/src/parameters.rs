@@ -299,6 +299,8 @@ pub(crate) struct MultiplicationParameters {
 	pub(crate) extender_self: Scaler,
 	pub(crate) extender_other: Scaler,
 	pub(crate) down_scaler: Scaler,
+	pub(crate) from: Rc<Context>,
+	pub(crate) to: Rc<Context>,
 }
 
 impl MultiplicationParameters {
@@ -313,6 +315,8 @@ impl MultiplicationParameters {
 			extender_self: Scaler::new(from, to, up_self_factor)?,
 			extender_other: Scaler::new(from, to, up_other_factor)?,
 			down_scaler: Scaler::new(to, from, down_factor)?,
+			from: from.clone(),
+			to: to.clone(),
 		})
 	}
 }

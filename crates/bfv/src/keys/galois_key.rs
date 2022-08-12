@@ -101,7 +101,7 @@ mod tests {
 	fn test_relinearization() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let v = params.plaintext.random_vec(params.degree());
 				let row_size = params.degree() >> 1;
 

@@ -53,19 +53,26 @@ impl SecretKey {
 	/// Measure the noise in a [`Ciphertext`].
 	/// This operations may run in a variable time depending on the value of the noise.
 	#[cfg(test)]
-	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
-		assert_eq!(ct.c.len(), 2);
+	pub(crate) unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
 		let mut m = plaintext.encode()?;
 
 		// Let's disable variable time computations
-		let mut c0 = ct.c[0].clone();
-		let mut c1 = ct.c[1].clone();
-		c0.disallow_variable_time_computations();
-		c1.disallow_variable_time_computations();
+		let mut c = ct.c[0].clone();
+		c.disallow_variable_time_computations();
 
-		let mut c1_s = &c1 * &self.s[0];
-		let mut c = &c0 + &c1_s;
+		for i in 1..ct.c.len() {
+			if self.s.len() < i {
+				self.s
+					.push(self.s.last().unwrap() * self.s.first().unwrap());
+				debug_assert_eq!(self.s.len(), i)
+			}
+			let mut cis = ct.c[i].clone();
+			cis.disallow_variable_time_computations();
+			cis *= &self.s[i - 1];
+			c += &cis;
+			cis.zeroize();
+		}
 		c -= &m;
 		c.change_representation(Representation::PowerBasis);
 
@@ -78,7 +85,6 @@ impl SecretKey {
 			)
 		}
 
-		c1_s.zeroize();
 		c.zeroize();
 		m.zeroize();
 
@@ -123,20 +129,25 @@ impl Encryptor for SecretKey {
 impl Decryptor for SecretKey {
 	type Error = String;
 
-	fn decrypt(&self, ct: &Ciphertext) -> Result<Plaintext, Self::Error> {
-		assert_eq!(ct.c.len(), 2);
-
+	fn decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext, Self::Error> {
 		if self.par != ct.par {
 			Err("Incompatible BFV parameters".to_string())
 		} else {
-			// Let's disable variable time computations
-			let mut c0 = ct.c[0].clone();
-			let mut c1 = ct.c[1].clone();
-			c0.disallow_variable_time_computations();
-			c1.disallow_variable_time_computations();
+			let mut c = ct.c[0].clone();
+			c.disallow_variable_time_computations();
 
-			let mut c1_s = &c1 * &self.s[0];
-			let mut c = &c0 + &c1_s;
+			for i in 1..ct.c.len() {
+				if self.s.len() < i {
+					self.s
+						.push(self.s.last().unwrap() * self.s.first().unwrap());
+					debug_assert_eq!(self.s.len(), i)
+				}
+				let mut cis = ct.c[i].clone();
+				cis.disallow_variable_time_computations();
+				cis *= &self.s[i - 1];
+				c += &cis;
+				cis.zeroize();
+			}
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler.scale(&c, false)?;
 			// TODO: Can we handle plaintext moduli that are BigUint?
@@ -165,7 +176,6 @@ impl Decryptor for SecretKey {
 			};
 
 			// Zeroize the temporary variables potentially holding sensitive information.
-			c1_s.zeroize();
 			c.zeroize();
 			d.zeroize();
 			v.zeroize();
@@ -211,7 +221,7 @@ mod tests {
 			Rc::new(BfvParameters::default(2)),
 		] {
 			for _ in 0..100 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 
 				let pt = Plaintext::try_encode(
 					&[1u64, 2, 3, 4, 5, 6, 7, 8] as &[u64],

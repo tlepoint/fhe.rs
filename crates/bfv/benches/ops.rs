@@ -171,13 +171,27 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
+				b.iter(|| &c1 * &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul_relinearize",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
 				b.iter(|| mul(&c1, &c2, &ek));
 			},
 		);
 
 		group.bench_function(
 			BenchmarkId::new(
-				"mul2",
+				"mul2_relinearize",
 				format!(
 					"{}/{}",
 					par.degree(),

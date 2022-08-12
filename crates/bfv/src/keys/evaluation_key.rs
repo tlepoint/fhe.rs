@@ -329,7 +329,7 @@ mod tests {
 	fn test_inner_sum() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
 
 				let v = params.plaintext.random_vec(params.degree());
@@ -355,7 +355,7 @@ mod tests {
 	fn test_row_rotation() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_row_rotation()
 					.build()?;
@@ -383,7 +383,7 @@ mod tests {
 			let row_size = params.polynomial_degree >> 1;
 			for _ in 0..50 {
 				for i in 1..row_size {
-					let sk = SecretKey::random(&params);
+					let mut sk = SecretKey::random(&params);
 					let ek = EvaluationKeyBuilder::new(&sk)
 						.enable_column_rotation(i)?
 						.build()?;
