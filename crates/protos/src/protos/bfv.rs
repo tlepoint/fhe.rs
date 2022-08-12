@@ -29,10 +29,10 @@ const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_1_0;
 // @@protoc_insertion_point(message:fhers.Ciphertext)
 pub struct Ciphertext {
     // message fields
-    // @@protoc_insertion_point(field:fhers.Ciphertext.c0)
-    pub c0: ::protobuf::MessageField<super::rq::Rq>,
-    // message oneof groups
-    pub c1: ::std::option::Option<ciphertext::C1>,
+    // @@protoc_insertion_point(field:fhers.Ciphertext.c)
+    pub c: ::std::vec::Vec<super::rq::Rq>,
+    // @@protoc_insertion_point(field:fhers.Ciphertext.seed)
+    pub seed: ::std::vec::Vec<u8>,
     // special fields
     // @@protoc_insertion_point(special_field:fhers.Ciphertext.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -49,126 +49,19 @@ impl Ciphertext {
         ::std::default::Default::default()
     }
 
-    // bytes c1_seed = 2;
-
-    pub fn c1_seed(&self) -> &[u8] {
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Seed(ref v)) => v,
-            _ => &[],
-        }
-    }
-
-    pub fn clear_c1_seed(&mut self) {
-        self.c1 = ::std::option::Option::None;
-    }
-
-    pub fn has_c1_seed(&self) -> bool {
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Seed(..)) => true,
-            _ => false,
-        }
-    }
-
-    // Param is passed by value, moved
-    pub fn set_c1_seed(&mut self, v: ::std::vec::Vec<u8>) {
-        self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Seed(v))
-    }
-
-    // Mutable pointer to the field.
-    pub fn mut_c1_seed(&mut self) -> &mut ::std::vec::Vec<u8> {
-        if let ::std::option::Option::Some(ciphertext::C1::C1Seed(_)) = self.c1 {
-        } else {
-            self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Seed(::std::vec::Vec::new()));
-        }
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Seed(ref mut v)) => v,
-            _ => panic!(),
-        }
-    }
-
-    // Take field
-    pub fn take_c1_seed(&mut self) -> ::std::vec::Vec<u8> {
-        if self.has_c1_seed() {
-            match self.c1.take() {
-                ::std::option::Option::Some(ciphertext::C1::C1Seed(v)) => v,
-                _ => panic!(),
-            }
-        } else {
-            ::std::vec::Vec::new()
-        }
-    }
-
-    // .fhers.Rq c1_poly = 3;
-
-    pub fn c1_poly(&self) -> &super::rq::Rq {
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Poly(ref v)) => v,
-            _ => <super::rq::Rq as ::protobuf::Message>::default_instance(),
-        }
-    }
-
-    pub fn clear_c1_poly(&mut self) {
-        self.c1 = ::std::option::Option::None;
-    }
-
-    pub fn has_c1_poly(&self) -> bool {
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Poly(..)) => true,
-            _ => false,
-        }
-    }
-
-    // Param is passed by value, moved
-    pub fn set_c1_poly(&mut self, v: super::rq::Rq) {
-        self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Poly(v))
-    }
-
-    // Mutable pointer to the field.
-    pub fn mut_c1_poly(&mut self) -> &mut super::rq::Rq {
-        if let ::std::option::Option::Some(ciphertext::C1::C1Poly(_)) = self.c1 {
-        } else {
-            self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Poly(super::rq::Rq::new()));
-        }
-        match self.c1 {
-            ::std::option::Option::Some(ciphertext::C1::C1Poly(ref mut v)) => v,
-            _ => panic!(),
-        }
-    }
-
-    // Take field
-    pub fn take_c1_poly(&mut self) -> super::rq::Rq {
-        if self.has_c1_poly() {
-            match self.c1.take() {
-                ::std::option::Option::Some(ciphertext::C1::C1Poly(v)) => v,
-                _ => panic!(),
-            }
-        } else {
-            super::rq::Rq::new()
-        }
-    }
-
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(1);
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, super::rq::Rq>(
-            "c0",
-            |m: &Ciphertext| { &m.c0 },
-            |m: &mut Ciphertext| { &mut m.c0 },
+        let mut fields = ::std::vec::Vec::with_capacity(2);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "c",
+            |m: &Ciphertext| { &m.c },
+            |m: &mut Ciphertext| { &mut m.c },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_oneof_deref_has_get_set_simpler_accessor::<_, _>(
-            "c1_seed",
-            Ciphertext::has_c1_seed,
-            Ciphertext::c1_seed,
-            Ciphertext::set_c1_seed,
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "seed",
+            |m: &Ciphertext| { &m.seed },
+            |m: &mut Ciphertext| { &mut m.seed },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, super::rq::Rq>(
-            "c1_poly",
-            Ciphertext::has_c1_poly,
-            Ciphertext::c1_poly,
-            Ciphertext::mut_c1_poly,
-            Ciphertext::set_c1_poly,
-        ));
-        oneofs.push(ciphertext::C1::generated_oneof_descriptor_data());
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Ciphertext>(
             "Ciphertext",
             fields,
@@ -188,13 +81,10 @@ impl ::protobuf::Message for Ciphertext {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.c0)?;
+                    self.c.push(is.read_message()?);
                 },
                 18 => {
-                    self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Seed(is.read_bytes()?));
-                },
-                26 => {
-                    self.c1 = ::std::option::Option::Some(ciphertext::C1::C1Poly(is.read_message()?));
+                    self.seed = is.read_bytes()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -208,20 +98,12 @@ impl ::protobuf::Message for Ciphertext {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if let Some(v) = self.c0.as_ref() {
-            let len = v.compute_size();
+        for value in &self.c {
+            let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        if let ::std::option::Option::Some(ref v) = self.c1 {
-            match v {
-                &ciphertext::C1::C1Seed(ref v) => {
-                    my_size += ::protobuf::rt::bytes_size(2, &v);
-                },
-                &ciphertext::C1::C1Poly(ref v) => {
-                    let len = v.compute_size();
-                    my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-                },
-            };
+        };
+        if !self.seed.is_empty() {
+            my_size += ::protobuf::rt::bytes_size(2, &self.seed);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -229,18 +111,11 @@ impl ::protobuf::Message for Ciphertext {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if let Some(v) = self.c0.as_ref() {
+        for v in &self.c {
             ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
-        }
-        if let ::std::option::Option::Some(ref v) = self.c1 {
-            match v {
-                &ciphertext::C1::C1Seed(ref v) => {
-                    os.write_bytes(2, v)?;
-                },
-                &ciphertext::C1::C1Poly(ref v) => {
-                    ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-                },
-            };
+        };
+        if !self.seed.is_empty() {
+            os.write_bytes(2, &self.seed)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -259,16 +134,15 @@ impl ::protobuf::Message for Ciphertext {
     }
 
     fn clear(&mut self) {
-        self.c0.clear();
-        self.c1 = ::std::option::Option::None;
-        self.c1 = ::std::option::Option::None;
+        self.c.clear();
+        self.seed.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static Ciphertext {
         static instance: Ciphertext = Ciphertext {
-            c0: ::protobuf::MessageField::none(),
-            c1: ::std::option::Option::None,
+            c: ::std::vec::Vec::new(),
+            seed: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -290,36 +164,6 @@ impl ::std::fmt::Display for Ciphertext {
 
 impl ::protobuf::reflect::ProtobufValue for Ciphertext {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-/// Nested message and enums of message `Ciphertext`
-pub mod ciphertext {
-
-    #[derive(Clone,PartialEq,Debug)]
-    #[non_exhaustive]
-    // @@protoc_insertion_point(oneof:fhers.Ciphertext.c1)
-    pub enum C1 {
-        // @@protoc_insertion_point(oneof_field:fhers.Ciphertext.c1_seed)
-        C1Seed(::std::vec::Vec<u8>),
-        // @@protoc_insertion_point(oneof_field:fhers.Ciphertext.c1_poly)
-        C1Poly(super::super::rq::Rq),
-    }
-
-    impl ::protobuf::Oneof for C1 {
-    }
-
-    impl ::protobuf::OneofFull for C1 {
-        fn descriptor() -> ::protobuf::reflect::OneofDescriptor {
-            static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::OneofDescriptor> = ::protobuf::rt::Lazy::new();
-            descriptor.get(|| <super::Ciphertext as ::protobuf::MessageFull>::descriptor().oneof_by_name("c1").unwrap()).clone()
-        }
-    }
-
-    impl C1 {
-        pub(in super) fn generated_oneof_descriptor_data() -> ::protobuf::reflect::GeneratedOneofDescriptorData {
-            ::protobuf::reflect::GeneratedOneofDescriptorData::new::<C1>("c1")
-        }
-    }
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
@@ -746,45 +590,52 @@ impl ::protobuf::reflect::ProtobufValue for GaloisKey {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:fhers.InnerSumKey)
-pub struct InnerSumKey {
+// @@protoc_insertion_point(message:fhers.EvaluationKey)
+pub struct EvaluationKey {
     // message fields
-    // @@protoc_insertion_point(field:fhers.InnerSumKey.gk)
+    // @@protoc_insertion_point(field:fhers.EvaluationKey.rk)
+    pub rk: ::protobuf::MessageField<RelinearizationKey>,
+    // @@protoc_insertion_point(field:fhers.EvaluationKey.gk)
     pub gk: ::std::vec::Vec<GaloisKey>,
     // special fields
-    // @@protoc_insertion_point(special_field:fhers.InnerSumKey.special_fields)
+    // @@protoc_insertion_point(special_field:fhers.EvaluationKey.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a InnerSumKey {
-    fn default() -> &'a InnerSumKey {
-        <InnerSumKey as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a EvaluationKey {
+    fn default() -> &'a EvaluationKey {
+        <EvaluationKey as ::protobuf::Message>::default_instance()
     }
 }
 
-impl InnerSumKey {
-    pub fn new() -> InnerSumKey {
+impl EvaluationKey {
+    pub fn new() -> EvaluationKey {
         ::std::default::Default::default()
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(1);
+        let mut fields = ::std::vec::Vec::with_capacity(2);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, RelinearizationKey>(
+            "rk",
+            |m: &EvaluationKey| { &m.rk },
+            |m: &mut EvaluationKey| { &mut m.rk },
+        ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "gk",
-            |m: &InnerSumKey| { &m.gk },
-            |m: &mut InnerSumKey| { &mut m.gk },
+            |m: &EvaluationKey| { &m.gk },
+            |m: &mut EvaluationKey| { &mut m.gk },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<InnerSumKey>(
-            "InnerSumKey",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<EvaluationKey>(
+            "EvaluationKey",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for InnerSumKey {
-    const NAME: &'static str = "InnerSumKey";
+impl ::protobuf::Message for EvaluationKey {
+    const NAME: &'static str = "EvaluationKey";
 
     fn is_initialized(&self) -> bool {
         true
@@ -794,6 +645,9 @@ impl ::protobuf::Message for InnerSumKey {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.rk)?;
+                },
+                18 => {
                     self.gk.push(is.read_message()?);
                 },
                 tag => {
@@ -808,6 +662,10 @@ impl ::protobuf::Message for InnerSumKey {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
+        if let Some(v) = self.rk.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        }
         for value in &self.gk {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
@@ -818,8 +676,11 @@ impl ::protobuf::Message for InnerSumKey {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.gk {
+        if let Some(v) = self.rk.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+        }
+        for v in &self.gk {
+            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -833,17 +694,19 @@ impl ::protobuf::Message for InnerSumKey {
         &mut self.special_fields
     }
 
-    fn new() -> InnerSumKey {
-        InnerSumKey::new()
+    fn new() -> EvaluationKey {
+        EvaluationKey::new()
     }
 
     fn clear(&mut self) {
+        self.rk.clear();
         self.gk.clear();
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static InnerSumKey {
-        static instance: InnerSumKey = InnerSumKey {
+    fn default_instance() -> &'static EvaluationKey {
+        static instance: EvaluationKey = EvaluationKey {
+            rk: ::protobuf::MessageField::none(),
             gk: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -851,73 +714,73 @@ impl ::protobuf::Message for InnerSumKey {
     }
 }
 
-impl ::protobuf::MessageFull for InnerSumKey {
+impl ::protobuf::MessageFull for EvaluationKey {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("InnerSumKey").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("EvaluationKey").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for InnerSumKey {
+impl ::std::fmt::Display for EvaluationKey {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for InnerSumKey {
+impl ::protobuf::reflect::ProtobufValue for EvaluationKey {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x14src/protos/bfv.proto\x12\x05fhers\x1a\x13src/protos/rq.proto\"n\n\
-    \nCiphertext\x12\x19\n\x02c0\x18\x01\x20\x01(\x0b2\t.fhers.RqR\x02c0\x12\
-    \x19\n\x07c1_seed\x18\x02\x20\x01(\x0cH\0R\x06c1Seed\x12$\n\x07c1_poly\
-    \x18\x03\x20\x01(\x0b2\t.fhers.RqH\0R\x06c1PolyB\x04\n\x02c1\"T\n\x0fKey\
-    SwitchingKey\x12\x12\n\x04seed\x18\x01\x20\x01(\x0cR\x04seed\x12\x12\n\
-    \x04size\x18\x02\x20\x01(\rR\x04size\x12\x19\n\x02c0\x18\x03\x20\x03(\
-    \x0b2\t.fhers.RqR\x02c0\">\n\x12RelinearizationKey\x12(\n\x03ksk\x18\x01\
-    \x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\"Q\n\tGaloisKey\x12(\n\
-    \x03ksk\x18\x01\x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\x12\x1a\
-    \n\x08exponent\x18\x02\x20\x01(\rR\x08exponent\"/\n\x0bInnerSumKey\x12\
-    \x20\n\x02gk\x18\x01\x20\x03(\x0b2\x10.fhers.GaloisKeyR\x02gkJ\xfd\x05\n\
-    \x06\x12\x04\0\0\x1f\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\
-    \x12\x03\x02\0\x1d\n\x08\n\x01\x02\x12\x03\x04\0\x0e\n\n\n\x02\x04\0\x12\
-    \x04\x06\0\x0c\x01\n\n\n\x03\x04\0\x01\x12\x03\x06\x08\x12\n\x0b\n\x04\
-    \x04\0\x02\0\x12\x03\x07\x04\x0e\n\x0c\n\x05\x04\0\x02\0\x06\x12\x03\x07\
-    \x04\x06\n\x0c\n\x05\x04\0\x02\0\x01\x12\x03\x07\x07\t\n\x0c\n\x05\x04\0\
-    \x02\0\x03\x12\x03\x07\x0c\r\n\x0c\n\x04\x04\0\x08\0\x12\x04\x08\x04\x0b\
-    \x05\n\x0c\n\x05\x04\0\x08\0\x01\x12\x03\x08\n\x0c\n\x0b\n\x04\x04\0\x02\
-    \x01\x12\x03\t\x08\x1a\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\t\x08\r\n\
-    \x0c\n\x05\x04\0\x02\x01\x01\x12\x03\t\x0e\x15\n\x0c\n\x05\x04\0\x02\x01\
-    \x03\x12\x03\t\x18\x19\n\x0b\n\x04\x04\0\x02\x02\x12\x03\n\x08\x17\n\x0c\
-    \n\x05\x04\0\x02\x02\x06\x12\x03\n\x08\n\n\x0c\n\x05\x04\0\x02\x02\x01\
-    \x12\x03\n\x0b\x12\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\n\x15\x16\n\n\n\
-    \x02\x04\x01\x12\x04\x0e\0\x12\x01\n\n\n\x03\x04\x01\x01\x12\x03\x0e\x08\
-    \x17\n\x0b\n\x04\x04\x01\x02\0\x12\x03\x0f\x04\x13\n\x0c\n\x05\x04\x01\
-    \x02\0\x05\x12\x03\x0f\x04\t\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x0f\n\
-    \x0e\n\x0c\n\x05\x04\x01\x02\0\x03\x12\x03\x0f\x11\x12\n\x0b\n\x04\x04\
-    \x01\x02\x01\x12\x03\x10\x04\x14\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\
-    \x10\x04\n\n\x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x10\x0b\x0f\n\x0c\n\
-    \x05\x04\x01\x02\x01\x03\x12\x03\x10\x12\x13\n\x0b\n\x04\x04\x01\x02\x02\
-    \x12\x03\x11\x04\x17\n\x0c\n\x05\x04\x01\x02\x02\x04\x12\x03\x11\x04\x0c\
-    \n\x0c\n\x05\x04\x01\x02\x02\x06\x12\x03\x11\r\x0f\n\x0c\n\x05\x04\x01\
-    \x02\x02\x01\x12\x03\x11\x10\x12\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\
-    \x11\x15\x16\n\n\n\x02\x04\x02\x12\x04\x14\0\x16\x01\n\n\n\x03\x04\x02\
-    \x01\x12\x03\x14\x08\x1a\n\x0b\n\x04\x04\x02\x02\0\x12\x03\x15\x04\x1c\n\
-    \x0c\n\x05\x04\x02\x02\0\x06\x12\x03\x15\x04\x13\n\x0c\n\x05\x04\x02\x02\
-    \0\x01\x12\x03\x15\x14\x17\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03\x15\x1a\
-    \x1b\n\n\n\x02\x04\x03\x12\x04\x18\0\x1b\x01\n\n\n\x03\x04\x03\x01\x12\
-    \x03\x18\x08\x11\n\x0b\n\x04\x04\x03\x02\0\x12\x03\x19\x04\x1c\n\x0c\n\
-    \x05\x04\x03\x02\0\x06\x12\x03\x19\x04\x13\n\x0c\n\x05\x04\x03\x02\0\x01\
-    \x12\x03\x19\x14\x17\n\x0c\n\x05\x04\x03\x02\0\x03\x12\x03\x19\x1a\x1b\n\
-    \x0b\n\x04\x04\x03\x02\x01\x12\x03\x1a\x04\x18\n\x0c\n\x05\x04\x03\x02\
-    \x01\x05\x12\x03\x1a\x04\n\n\x0c\n\x05\x04\x03\x02\x01\x01\x12\x03\x1a\
-    \x0b\x13\n\x0c\n\x05\x04\x03\x02\x01\x03\x12\x03\x1a\x16\x17\n\n\n\x02\
-    \x04\x04\x12\x04\x1d\0\x1f\x01\n\n\n\x03\x04\x04\x01\x12\x03\x1d\x08\x13\
-    \n\x0b\n\x04\x04\x04\x02\0\x12\x03\x1e\x04\x1e\n\x0c\n\x05\x04\x04\x02\0\
-    \x04\x12\x03\x1e\x04\x0c\n\x0c\n\x05\x04\x04\x02\0\x06\x12\x03\x1e\r\x16\
-    \n\x0c\n\x05\x04\x04\x02\0\x01\x12\x03\x1e\x17\x19\n\x0c\n\x05\x04\x04\
-    \x02\0\x03\x12\x03\x1e\x1c\x1db\x06proto3\
+    \n\x14src/protos/bfv.proto\x12\x05fhers\x1a\x13src/protos/rq.proto\"9\n\
+    \nCiphertext\x12\x17\n\x01c\x18\x01\x20\x03(\x0b2\t.fhers.RqR\x01c\x12\
+    \x12\n\x04seed\x18\x02\x20\x01(\x0cR\x04seed\"T\n\x0fKeySwitchingKey\x12\
+    \x12\n\x04seed\x18\x01\x20\x01(\x0cR\x04seed\x12\x12\n\x04size\x18\x02\
+    \x20\x01(\rR\x04size\x12\x19\n\x02c0\x18\x03\x20\x03(\x0b2\t.fhers.RqR\
+    \x02c0\">\n\x12RelinearizationKey\x12(\n\x03ksk\x18\x01\x20\x01(\x0b2\
+    \x16.fhers.KeySwitchingKeyR\x03ksk\"Q\n\tGaloisKey\x12(\n\x03ksk\x18\x01\
+    \x20\x01(\x0b2\x16.fhers.KeySwitchingKeyR\x03ksk\x12\x1a\n\x08exponent\
+    \x18\x02\x20\x01(\rR\x08exponent\"\\\n\rEvaluationKey\x12)\n\x02rk\x18\
+    \x01\x20\x01(\x0b2\x19.fhers.RelinearizationKeyR\x02rk\x12\x20\n\x02gk\
+    \x18\x02\x20\x03(\x0b2\x10.fhers.GaloisKeyR\x02gkJ\xef\x05\n\x06\x12\x04\
+    \0\0\x1d\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\t\n\x02\x03\0\x12\x03\x02\
+    \0\x1d\n\x08\n\x01\x02\x12\x03\x04\0\x0e\n\n\n\x02\x04\0\x12\x04\x06\0\t\
+    \x01\n\n\n\x03\x04\0\x01\x12\x03\x06\x08\x12\n\x0b\n\x04\x04\0\x02\0\x12\
+    \x03\x07\x04\x16\n\x0c\n\x05\x04\0\x02\0\x04\x12\x03\x07\x04\x0c\n\x0c\n\
+    \x05\x04\0\x02\0\x06\x12\x03\x07\r\x0f\n\x0c\n\x05\x04\0\x02\0\x01\x12\
+    \x03\x07\x10\x11\n\x0c\n\x05\x04\0\x02\0\x03\x12\x03\x07\x14\x15\n\x0b\n\
+    \x04\x04\0\x02\x01\x12\x03\x08\x04\x13\n\x0c\n\x05\x04\0\x02\x01\x05\x12\
+    \x03\x08\x04\t\n\x0c\n\x05\x04\0\x02\x01\x01\x12\x03\x08\n\x0e\n\x0c\n\
+    \x05\x04\0\x02\x01\x03\x12\x03\x08\x11\x12\n\n\n\x02\x04\x01\x12\x04\x0b\
+    \0\x0f\x01\n\n\n\x03\x04\x01\x01\x12\x03\x0b\x08\x17\n\x0b\n\x04\x04\x01\
+    \x02\0\x12\x03\x0c\x04\x13\n\x0c\n\x05\x04\x01\x02\0\x05\x12\x03\x0c\x04\
+    \t\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x0c\n\x0e\n\x0c\n\x05\x04\x01\
+    \x02\0\x03\x12\x03\x0c\x11\x12\n\x0b\n\x04\x04\x01\x02\x01\x12\x03\r\x04\
+    \x14\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\r\x04\n\n\x0c\n\x05\x04\x01\
+    \x02\x01\x01\x12\x03\r\x0b\x0f\n\x0c\n\x05\x04\x01\x02\x01\x03\x12\x03\r\
+    \x12\x13\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\x0e\x04\x17\n\x0c\n\x05\x04\
+    \x01\x02\x02\x04\x12\x03\x0e\x04\x0c\n\x0c\n\x05\x04\x01\x02\x02\x06\x12\
+    \x03\x0e\r\x0f\n\x0c\n\x05\x04\x01\x02\x02\x01\x12\x03\x0e\x10\x12\n\x0c\
+    \n\x05\x04\x01\x02\x02\x03\x12\x03\x0e\x15\x16\n\n\n\x02\x04\x02\x12\x04\
+    \x11\0\x13\x01\n\n\n\x03\x04\x02\x01\x12\x03\x11\x08\x1a\n\x0b\n\x04\x04\
+    \x02\x02\0\x12\x03\x12\x04\x1c\n\x0c\n\x05\x04\x02\x02\0\x06\x12\x03\x12\
+    \x04\x13\n\x0c\n\x05\x04\x02\x02\0\x01\x12\x03\x12\x14\x17\n\x0c\n\x05\
+    \x04\x02\x02\0\x03\x12\x03\x12\x1a\x1b\n\n\n\x02\x04\x03\x12\x04\x15\0\
+    \x18\x01\n\n\n\x03\x04\x03\x01\x12\x03\x15\x08\x11\n\x0b\n\x04\x04\x03\
+    \x02\0\x12\x03\x16\x04\x1c\n\x0c\n\x05\x04\x03\x02\0\x06\x12\x03\x16\x04\
+    \x13\n\x0c\n\x05\x04\x03\x02\0\x01\x12\x03\x16\x14\x17\n\x0c\n\x05\x04\
+    \x03\x02\0\x03\x12\x03\x16\x1a\x1b\n\x0b\n\x04\x04\x03\x02\x01\x12\x03\
+    \x17\x04\x18\n\x0c\n\x05\x04\x03\x02\x01\x05\x12\x03\x17\x04\n\n\x0c\n\
+    \x05\x04\x03\x02\x01\x01\x12\x03\x17\x0b\x13\n\x0c\n\x05\x04\x03\x02\x01\
+    \x03\x12\x03\x17\x16\x17\n\n\n\x02\x04\x04\x12\x04\x1a\0\x1d\x01\n\n\n\
+    \x03\x04\x04\x01\x12\x03\x1a\x08\x15\n\x0b\n\x04\x04\x04\x02\0\x12\x03\
+    \x1b\x04\x1e\n\x0c\n\x05\x04\x04\x02\0\x06\x12\x03\x1b\x04\x16\n\x0c\n\
+    \x05\x04\x04\x02\0\x01\x12\x03\x1b\x17\x19\n\x0c\n\x05\x04\x04\x02\0\x03\
+    \x12\x03\x1b\x1c\x1d\n\x0b\n\x04\x04\x04\x02\x01\x12\x03\x1c\x04\x1e\n\
+    \x0c\n\x05\x04\x04\x02\x01\x04\x12\x03\x1c\x04\x0c\n\x0c\n\x05\x04\x04\
+    \x02\x01\x06\x12\x03\x1c\r\x16\n\x0c\n\x05\x04\x04\x02\x01\x01\x12\x03\
+    \x1c\x17\x19\n\x0c\n\x05\x04\x04\x02\x01\x03\x12\x03\x1c\x1c\x1db\x06pro\
+    to3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -941,7 +804,7 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
             messages.push(KeySwitchingKey::generated_message_descriptor_data());
             messages.push(RelinearizationKey::generated_message_descriptor_data());
             messages.push(GaloisKey::generated_message_descriptor_data());
-            messages.push(InnerSumKey::generated_message_descriptor_data());
+            messages.push(EvaluationKey::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(0);
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),

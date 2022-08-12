@@ -13,6 +13,6 @@ mod plaintext;
 
 pub mod traits;
 pub use ciphertext::{mul, mul2, Ciphertext};
-pub use keys::{EvaluationKey, EvaluationKeyBuilder, RelinearizationKey, SecretKey};
+pub use keys::{EvaluationKey, EvaluationKeyBuilder, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::{Encoding, Plaintext};

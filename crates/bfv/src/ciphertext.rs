@@ -3,12 +3,12 @@
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
 	traits::TryConvertFrom,
-	Plaintext, RelinearizationKey,
+	EvaluationKey, Plaintext,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
+use itertools::{izip, Itertools};
 use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
 use num_bigint::BigUint;
-use protobuf::MessageField;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -25,11 +25,8 @@ pub struct Ciphertext {
 	/// The seed that generated the polynomial c1 in a fresh ciphertext.
 	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
-	/// The ciphertext element c0.
-	pub(crate) c0: Poly,
-
-	/// The ciphertext element c1.
-	pub(crate) c1: Poly,
+	/// The ciphertext elements.
+	pub(crate) c: Vec<Poly>,
 }
 
 impl Add<&Ciphertext> for &Ciphertext {
@@ -37,12 +34,14 @@ impl Add<&Ciphertext> for &Ciphertext {
 
 	fn add(self, rhs: &Ciphertext) -> Ciphertext {
 		debug_assert_eq!(self.par, rhs.par);
-
+		assert_eq!(self.c.len(), rhs.c.len());
+		let c = izip!(&self.c, &rhs.c)
+			.map(|(c1i, c2i)| c1i + c2i)
+			.collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 + &rhs.c0,
-			c1: &self.c1 + &rhs.c1,
+			c,
 		}
 	}
 }
@@ -50,9 +49,8 @@ impl Add<&Ciphertext> for &Ciphertext {
 impl AddAssign<&Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-
-		self.c0 += &rhs.c0;
-		self.c1 += &rhs.c1;
+		assert_eq!(self.c.len(), rhs.c.len());
+		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
 		self.seed = None
 	}
 }
@@ -62,12 +60,14 @@ impl Sub<&Ciphertext> for &Ciphertext {
 
 	fn sub(self, rhs: &Ciphertext) -> Ciphertext {
 		assert_eq!(self.par, rhs.par);
-
+		assert_eq!(self.c.len(), rhs.c.len());
+		let c = izip!(&self.c, &rhs.c)
+			.map(|(c1i, c2i)| c1i - c2i)
+			.collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 - &rhs.c0,
-			c1: &self.c1 - &rhs.c1,
+			c,
 		}
 	}
 }
@@ -75,9 +75,8 @@ impl Sub<&Ciphertext> for &Ciphertext {
 impl SubAssign<&Ciphertext> for Ciphertext {
 	fn sub_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-
-		self.c0 -= &rhs.c0;
-		self.c1 -= &rhs.c1;
+		assert_eq!(self.c.len(), rhs.c.len());
+		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
 		self.seed = None
 	}
 }
@@ -86,11 +85,11 @@ impl Neg for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn neg(self) -> Ciphertext {
+		let c = self.c.iter().map(|c1i| -c1i).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: -&self.c0,
-			c1: -&self.c1,
+			c,
 		}
 	}
 }
@@ -98,9 +97,7 @@ impl Neg for &Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
 	fn mul_assign(&mut self, rhs: &Plaintext) {
 		assert_eq!(self.par, rhs.par);
-
-		self.c0 *= &rhs.poly_ntt;
-		self.c1 *= &rhs.poly_ntt;
+		self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
 		self.seed = None
 	}
 }
@@ -109,11 +106,11 @@ impl Mul<&Plaintext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn mul(self, rhs: &Plaintext) -> Self::Output {
+		let c = self.c.iter().map(|c1i| c1i * &rhs.poly_ntt).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 * &rhs.poly_ntt,
-			c1: &self.c1 * &rhs.poly_ntt,
+			c,
 		}
 	}
 }
@@ -123,25 +120,96 @@ fn print_poly(s: &str, p: &Poly) {
 	println!("{} = {:?}", s, Vec::<BigUint>::from(p))
 }
 
+impl Mul<&Ciphertext> for &Ciphertext {
+	type Output = Ciphertext;
+
+	fn mul(self, rhs: &Ciphertext) -> Self::Output {
+		// Scale all ciphertexts
+		let mut now = std::time::SystemTime::now();
+		let self_c = self
+			.c
+			.iter()
+			.map(|ci| {
+				self.par
+					.mul_1_params
+					.extender_self
+					.scale(ci, false)
+					.unwrap()
+			})
+			.collect_vec();
+		let other_c = rhs
+			.c
+			.iter()
+			.map(|ci| {
+				self.par
+					.mul_1_params
+					.extender_self
+					.scale(ci, false)
+					.unwrap()
+			})
+			.collect_vec();
+		println!("Extend: {:?}", now.elapsed().unwrap());
+
+		// Multiply
+		now = std::time::SystemTime::now();
+		let mut c = vec![
+			Poly::zero(&self.par.mul_1_params.to, Representation::Ntt);
+			self_c.len() + other_c.len() - 1
+		];
+		for i in 0..self_c.len() {
+			for j in 0..other_c.len() {
+				c[i + j] += &(&self_c[i] * &other_c[j])
+			}
+		}
+		println!("Multiply: {:?}", now.elapsed().unwrap());
+
+		// Scale
+		now = std::time::SystemTime::now();
+		let c = c
+			.iter_mut()
+			.map(|ci| {
+				ci.change_representation(Representation::PowerBasis);
+				let mut ci = self.par.mul_1_params.down_scaler.scale(ci, false).unwrap();
+				ci.change_representation(Representation::Ntt);
+				ci
+			})
+			.collect_vec();
+		println!("Scale: {:?}", now.elapsed().unwrap());
+
+		Ciphertext {
+			par: self.par.clone(),
+			seed: None,
+			c,
+		}
+	}
+}
+
 /// Multiply two ciphertext and relinearize.
 fn mul_internal(
 	ct0: &Ciphertext,
 	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
+	ek: &EvaluationKey,
 	mp: &MultiplicationParameters,
 ) -> Result<Ciphertext, String> {
+	if !ek.supports_relinearization() {
+		return Err("The evaluation key does not support relinearization".to_string());
+	}
 	if ct0.par != ct1.par {
 		return Err("Incompatible parameters".to_string());
 	}
 	if ct0.par.ciphertext_moduli.len() == 1 {
 		return Err("Parameters do not allow for multiplication".to_string());
 	}
+	if ct0.c.len() != 2 || ct1.c.len() != 2 {
+		return Err("Multiplication can only be performed on ciphertexts of size 2".to_string());
+	}
+
 	// Extend
 	let mut now = std::time::SystemTime::now();
-	let c00 = mp.extender_self.scale(&ct0.c0, false)?;
-	let c01 = mp.extender_self.scale(&ct0.c1, false)?;
-	let c10 = mp.extender_other.scale(&ct1.c0, false)?;
-	let c11 = mp.extender_other.scale(&ct1.c1, false)?;
+	let c00 = mp.extender_self.scale(&ct0.c[0], false)?;
+	let c01 = mp.extender_self.scale(&ct0.c[1], false)?;
+	let c10 = mp.extender_other.scale(&ct1.c[0], false)?;
+	let c11 = mp.extender_other.scale(&ct1.c[1], false)?;
 	println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -167,49 +235,38 @@ fn mul_internal(
 	now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2)?;
+	ek.relinearizes(&mut c0, &mut c1, &c2)?;
 	println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
 		par: ct0.par.clone(),
 		seed: None,
-		c0,
-		c1,
+		c: vec![c0, c1],
 	})
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul(
-	ct0: &Ciphertext,
-	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
-) -> Result<Ciphertext, String> {
-	mul_internal(ct0, ct1, rk, &ct0.par.mul_1_params)
+pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params)
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul2(
-	ct0: &Ciphertext,
-	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
-) -> Result<Ciphertext, String> {
-	mul_internal(ct0, ct1, rk, &ct0.par.mul_2_params)
+pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_2_params)
 }
-
-// pub fn inner_sum(ct: &Ciphertext, isk: &InnerSumKey) -> Result<Ciphertext, String> {
-
-// }
 
 /// Conversions from and to protobuf.
 impl From<&Ciphertext> for CiphertextProto {
 	fn from(ct: &Ciphertext) -> Self {
 		let mut proto = CiphertextProto::new();
-		if let Some(seed) = ct.seed {
-			proto.set_c1_seed(seed.to_vec())
-		} else {
-			proto.set_c1_poly(Rq::from(&ct.c1))
+		for i in 0..ct.c.len() - 1 {
+			proto.c.push(Rq::from(&ct.c[i]))
 		}
-		proto.c0 = MessageField::some(Rq::from(&ct.c0));
+		if let Some(seed) = ct.seed {
+			proto.seed = seed.to_vec()
+		} else {
+			proto.c.push(Rq::from(&ct.c[ct.c.len() - 1]))
+		}
 		proto
 	}
 }
@@ -221,34 +278,33 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		value: &CiphertextProto,
 		par: &Rc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.c0.is_none() {
-			return Err("Missing c0".to_string());
+		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
+			return Err("Not enough polynomials".to_string());
+		}
+		let mut seed = None;
+
+		let mut c = Vec::with_capacity(value.c.len() + 1);
+		for cip in &value.c {
+			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
+			unsafe { ci.allow_variable_time_computations() }
+			c.push(ci)
 		}
 
-		let mut c0 = Poly::try_convert_from(value.c0.as_ref().unwrap(), &par.ctx, None)?;
-		unsafe { c0.allow_variable_time_computations() }
-
-		let mut seed = None;
-		let mut c1;
-		if value.has_c1_poly() {
-			c1 = Poly::try_convert_from(value.c1_poly(), &par.ctx, None)?;
-		} else if value.has_c1_seed() {
-			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.c1_seed());
+		if !value.seed.is_empty() {
+			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 			if try_seed.is_err() {
 				return Err("Invalid seed".to_string());
 			}
-			seed = Some(try_seed.unwrap());
-			c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
+			seed = try_seed.ok();
+			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
-		} else {
-			return Err("c1 or the seed are missing".to_string());
+			c.push(c1)
 		}
 
 		Ok(Ciphertext {
 			par: par.clone(),
 			seed,
-			c0,
-			c1,
+			c,
 		})
 	}
 }
@@ -258,7 +314,7 @@ mod tests {
 	use super::{mul, mul2};
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
-		BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
+		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
 	use std::rc::Rc;
@@ -276,7 +332,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
@@ -311,7 +367,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
@@ -345,7 +401,7 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
@@ -371,7 +427,7 @@ mod tests {
 				let a = params.plaintext.random_vec(params.degree());
 				let b = params.plaintext.random_vec(params.degree());
 
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				for encoding in [Encoding::Poly, Encoding::Simd] {
 					let mut c = vec![0u64; params.degree()];
 					match encoding {
@@ -424,13 +480,45 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let mut sk = SecretKey::random(&par);
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
 			let ct1 = sk.encrypt(&pt)?;
 			let ct2 = sk.encrypt(&pt)?;
-			let ct3 = mul(&ct1, &ct2, &rk)?;
+			let ct3 = &ct1 * &ct2;
+			let ct4 = &ct3 * &ct3;
+
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+
+			let e = expected.clone();
+			par.plaintext.mul_vec(&mut expected, &e);
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
+			let pt = sk.decrypt(&ct4)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_mul_3() -> Result<(), String> {
+		let par = Rc::new(BfvParameters::default(2));
+		for _ in 0..50 {
+			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let mut expected = values.clone();
+			par.plaintext.mul_vec(&mut expected, &values);
+
+			let mut sk = SecretKey::random(&par);
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_relinearization()
+				.build()?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+
+			let ct1 = sk.encrypt(&pt)?;
+			let ct2 = sk.encrypt(&pt)?;
+			let ct3 = mul(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;
@@ -449,13 +537,15 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let mut sk = SecretKey::random(&par);
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_relinearization()
+				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
 			let ct1 = sk.encrypt(&pt)?;
 			let ct2 = sk.encrypt(&pt)?;
-			let ct3 = mul2(&ct1, &ct2, &rk)?;
+			let ct3 = mul2(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;
@@ -474,6 +564,10 @@ mod tests {
 			let v = params.plaintext.random_vec(8);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
 			let ct = sk.encrypt(&pt)?;
+			let ct_proto = CiphertextProto::from(&ct);
+			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
+
+			let ct = &ct * &ct;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
 		}

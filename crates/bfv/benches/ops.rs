@@ -1,8 +1,7 @@
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKey, EvaluationKeyBuilder, Plaintext,
-	RelinearizationKey, SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
@@ -55,6 +54,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
+				b.iter(|| c1 = &c1 + &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"add_assign",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
 				b.iter(|| c1 += &c2);
 			},
 		);
@@ -62,6 +75,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"sub",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| c1 = &c1 - &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"sub_assign",
 				format!(
 					"{}/{}",
 					par.degree(),
@@ -87,7 +114,6 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let rk = RelinearizationKey::new(&sk).unwrap();
 		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
 		let p3 = Poly::random(&ctx, Representation::PowerBasis);
 		let mut p2 = Poly::random(&ctx, Representation::Ntt);
@@ -103,7 +129,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| rk.relinearize(&mut p1, &mut p2, &p3));
+				b.iter(|| ek.relinearizes(&mut p1, &mut p2, &p3));
 			},
 		);
 
@@ -145,13 +171,13 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| mul(&c1, &c2, &rk));
+				b.iter(|| &c1 * &c2);
 			},
 		);
 
 		group.bench_function(
 			BenchmarkId::new(
-				"mul2",
+				"mul_relinearize",
 				format!(
 					"{}/{}",
 					par.degree(),
@@ -159,7 +185,21 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| mul2(&c1, &c2, &rk));
+				b.iter(|| mul(&c1, &c2, &ek));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul2_relinearize",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| mul2(&c1, &c2, &ek));
 			},
 		);
 	}

@@ -1,10 +1,17 @@
 //! Evaluation keys for the BFV encryption scheme.
 
-use crate::Ciphertext;
+use crate::{traits::TryConvertFrom, Ciphertext};
 
 use super::{GaloisKey, RelinearizationKey, SecretKey};
+use fhers_protos::protos::bfv::{
+	EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto,
+	RelinearizationKey as RelinearizationKeyProto,
+};
+use math::rq::Poly;
 use math::zq::Modulus;
+use protobuf::MessageField;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Evaluation key for the BFV encryption scheme.
@@ -89,6 +96,15 @@ impl EvaluationKey {
 	/// Reports whether the evaluation key enable to perform relinearizations
 	pub fn supports_relinearization(&self) -> bool {
 		self.rk.is_some()
+	}
+
+	/// Relinearizes the expanded ciphertext
+	pub fn relinearizes(&self, c0: &mut Poly, c1: &mut Poly, c2: &Poly) -> Result<(), String> {
+		if !self.supports_relinearization() {
+			Err("This key does not support relinearization".to_string())
+		} else {
+			self.rk.as_ref().unwrap().relinearize(c0, c1, c2)
+		}
 	}
 }
 
@@ -200,13 +216,73 @@ impl EvaluationKeyBuilder {
 	}
 }
 
+impl From<&EvaluationKey> for EvaluationKeyProto {
+	fn from(ek: &EvaluationKey) -> Self {
+		let mut proto = EvaluationKeyProto::new();
+		for (_, gk) in ek.gk.iter() {
+			proto.gk.push(GaloisKeyProto::from(gk))
+		}
+		if let Some(rk) = &ek.rk {
+			proto.rk = MessageField::some(RelinearizationKeyProto::from(rk))
+		}
+		proto
+	}
+}
+
+impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
+	type Error = String;
+
+	fn try_convert_from(
+		value: &EvaluationKeyProto,
+		par: &Rc<crate::BfvParameters>,
+	) -> Result<Self, Self::Error> {
+		let mut rk = None;
+		if value.rk.is_some() {
+			rk = Some(RelinearizationKey::try_convert_from(
+				value.rk.as_ref().unwrap(),
+				par,
+			)?);
+		}
+
+		let mut gk = HashMap::new();
+		for gkp in &value.gk {
+			let key = GaloisKey::try_convert_from(gkp, par)?;
+			if key.exponent == 2 * par.degree() - 1 {
+				// row rotation key
+				gk.insert(0, key);
+			} else {
+				let q = Modulus::new(2 * par.degree() as u64)?;
+				let mut i = 1usize;
+				while i < par.degree() / 2 {
+					let e = q.pow(3, i as u64);
+					if key.exponent == e as usize {
+						gk.insert(i, key);
+						break;
+					}
+					i *= 2
+				}
+			}
+		}
+
+		let mut inner_sum = gk.contains_key(&0);
+		let mut i = 1usize;
+		while i < par.degree() / 2 {
+			inner_sum &= gk.contains_key(&i);
+			i *= 2
+		}
+
+		Ok(EvaluationKey { inner_sum, rk, gk })
+	}
+}
+
 #[cfg(test)]
 mod tests {
-	use super::EvaluationKeyBuilder;
+	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::{
-		traits::{Decoder, Decryptor, Encoder, Encryptor},
+		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
+	use fhers_protos::protos::bfv::EvaluationKey as EvaluationKeyProto;
 	use std::rc::Rc;
 
 	#[test]
@@ -253,7 +329,7 @@ mod tests {
 	fn test_inner_sum() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
 
 				let v = params.plaintext.random_vec(params.degree());
@@ -279,7 +355,7 @@ mod tests {
 	fn test_row_rotation() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
-				let sk = SecretKey::random(&params);
+				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_row_rotation()
 					.build()?;
@@ -307,7 +383,7 @@ mod tests {
 			let row_size = params.polynomial_degree >> 1;
 			for _ in 0..50 {
 				for i in 1..row_size {
-					let sk = SecretKey::random(&params);
+					let mut sk = SecretKey::random(&params);
 					let ek = EvaluationKeyBuilder::new(&sk)
 						.enable_column_rotation(i)?
 						.build()?;
@@ -328,6 +404,34 @@ mod tests {
 					assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected)
 				}
 			}
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_proto_conversion() -> Result<(), String> {
+		for params in [
+			Rc::new(BfvParameters::default(1)),
+			Rc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_row_rotation()
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk).build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 		}
 		Ok(())
 	}

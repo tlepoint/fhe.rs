@@ -72,7 +72,7 @@ impl KeySwitchingKey {
 		for (i, c1i) in c1.iter().enumerate().take(sk.par.ciphertext_moduli.len()) {
 			let mut a = c1i.clone();
 			a.disallow_variable_time_computations();
-			let mut a_s = &a * &sk.s;
+			let mut a_s = &a * &sk.s[0];
 			a_s.change_representation(Representation::PowerBasis);
 
 			let mut b = Poly::small(&sk.par.ctx, Representation::PowerBasis, sk.par.variance)?;
@@ -199,7 +199,7 @@ mod tests {
 				let mut c1 = Poly::zero(&params.ctx, Representation::Ntt);
 				ksk.key_switch(&input, &mut c0, &mut c1)?;
 
-				let mut c2 = &c0 + &(&c1 * &sk.s);
+				let mut c2 = &c0 + &(&c1 * &sk.s[0]);
 				c2.change_representation(Representation::PowerBasis);
 
 				input.change_representation(Representation::Ntt);

@@ -50,7 +50,7 @@ pub trait Decryptor {
 	type Error;
 
 	/// Decrypt a [`Ciphertext`].
-	fn decrypt(&self, ciphertext: &Ciphertext) -> Result<Plaintext, Self::Error>;
+	fn decrypt(&mut self, ciphertext: &Ciphertext) -> Result<Plaintext, Self::Error>;
 }
 
 /// Conversions.
