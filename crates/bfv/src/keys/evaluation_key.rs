@@ -570,6 +570,20 @@ mod tests {
 				.build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_expansion(params.degree().log2() as usize)?
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.enable_expansion(params.degree().log2() as usize)?
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 		}
 		Ok(())
 	}
