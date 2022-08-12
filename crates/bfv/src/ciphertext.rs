@@ -3,7 +3,7 @@
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
 	traits::TryConvertFrom,
-	Plaintext, RelinearizationKey,
+	EvaluationKey, Plaintext,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
 use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
@@ -127,9 +127,12 @@ fn print_poly(s: &str, p: &Poly) {
 fn mul_internal(
 	ct0: &Ciphertext,
 	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
+	ek: &EvaluationKey,
 	mp: &MultiplicationParameters,
 ) -> Result<Ciphertext, String> {
+	if !ek.supports_relinearization() {
+		return Err("The evaluation key does not support relinearization".to_string());
+	}
 	if ct0.par != ct1.par {
 		return Err("Incompatible parameters".to_string());
 	}
@@ -167,7 +170,7 @@ fn mul_internal(
 	now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	rk.relinearize(&mut c0, &mut c1, &c2)?;
+	ek.relinearizes(&mut c0, &mut c1, &c2)?;
 	println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
@@ -179,21 +182,13 @@ fn mul_internal(
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul(
-	ct0: &Ciphertext,
-	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
-) -> Result<Ciphertext, String> {
-	mul_internal(ct0, ct1, rk, &ct0.par.mul_1_params)
+pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params)
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul2(
-	ct0: &Ciphertext,
-	ct1: &Ciphertext,
-	rk: &RelinearizationKey,
-) -> Result<Ciphertext, String> {
-	mul_internal(ct0, ct1, rk, &ct0.par.mul_2_params)
+pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_2_params)
 }
 
 // pub fn inner_sum(ct: &Ciphertext, isk: &InnerSumKey) -> Result<Ciphertext, String> {
@@ -258,7 +253,7 @@ mod tests {
 	use super::{mul, mul2};
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
-		BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
+		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
 	use std::rc::Rc;
@@ -425,12 +420,14 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_relinearization()
+				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
 			let ct1 = sk.encrypt(&pt)?;
 			let ct2 = sk.encrypt(&pt)?;
-			let ct3 = mul(&ct1, &ct2, &rk)?;
+			let ct3 = mul(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;
@@ -450,12 +447,14 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_relinearization()
+				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
 			let ct1 = sk.encrypt(&pt)?;
 			let ct2 = sk.encrypt(&pt)?;
-			let ct3 = mul2(&ct1, &ct2, &rk)?;
+			let ct3 = mul2(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.decrypt(&ct3)?;

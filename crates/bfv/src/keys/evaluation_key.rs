@@ -7,6 +7,7 @@ use fhers_protos::protos::bfv::{
 	EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto,
 	RelinearizationKey as RelinearizationKeyProto,
 };
+use math::rq::Poly;
 use math::zq::Modulus;
 use protobuf::MessageField;
 use std::collections::{HashMap, HashSet};
@@ -95,6 +96,15 @@ impl EvaluationKey {
 	/// Reports whether the evaluation key enable to perform relinearizations
 	pub fn supports_relinearization(&self) -> bool {
 		self.rk.is_some()
+	}
+
+	/// Relinearizes the expanded ciphertext
+	pub fn relinearizes(&self, c0: &mut Poly, c1: &mut Poly, c2: &Poly) -> Result<(), String> {
+		if !self.supports_relinearization() {
+			Err("This key does not support relinearization".to_string())
+		} else {
+			self.rk.as_ref().unwrap().relinearize(c0, c1, c2)
+		}
 	}
 }
 
