@@ -194,9 +194,9 @@ impl BfvParametersBuilder {
 
 	/// Build a new `BfvParameters`.
 	pub fn build(&self) -> Result<BfvParameters, String> {
-		if self.degree == Default::default() {
+		if self.degree == usize::default() {
 			return Err("Unspecified degree".to_string());
-		} else if self.plaintext == Default::default() {
+		} else if self.plaintext == u64::default() {
 			return Err("Unspecified plaintext modulus".to_string());
 		} else if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
 			return Err("Unspecified ciphertext moduli".to_string());

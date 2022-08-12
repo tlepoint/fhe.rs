@@ -29,6 +29,16 @@ pub struct Ciphertext {
 	pub(crate) c: Vec<Poly>,
 }
 
+impl Ciphertext {
+	pub(crate) fn placeholder(par: &Rc<BfvParameters>) -> Self {
+		Self {
+			par: par.clone(),
+			seed: Default::default(),
+			c: Default::default(),
+		}
+	}
+}
+
 impl Add<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 

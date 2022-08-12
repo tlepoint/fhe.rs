@@ -125,7 +125,7 @@ impl Encoder<&[u64]> for Plaintext {
 		v.zeroize();
 
 		let mut poly = Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
-		poly.change_representation(Representation::Ntt);
+		poly.change_representation(Representation::NttShoup);
 
 		Ok(Self {
 			par: par.clone(),
@@ -173,7 +173,7 @@ impl Encoder<&[i64]> for Plaintext {
 		v.zeroize();
 
 		let mut poly = Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
-		poly.change_representation(Representation::Ntt);
+		poly.change_representation(Representation::NttShoup);
 
 		Ok(Self {
 			par: par.clone(),

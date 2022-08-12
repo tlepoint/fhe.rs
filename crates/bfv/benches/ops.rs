@@ -1,3 +1,5 @@
+#![feature(int_log)]
+
 use bfv::{
 	mul, mul2,
 	traits::{Encoder, Encryptor},
@@ -7,24 +9,28 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
 use math::rq::{Context, Poly, Representation};
 use std::rc::Rc;
+use std::time::Duration;
 
 fn params() -> Result<Vec<Rc<BfvParameters>>, String> {
-	let par_62 = BfvParametersBuilder::new()
-		.set_degree(16384)?
+	let par_small = BfvParametersBuilder::new()
+		.set_degree(2048)?
 		.set_plaintext_modulus(1153)?
-		.set_ciphertext_moduli_sizes(&[62, 62, 62, 62, 62, 62, 62])?
+		.set_ciphertext_moduli_sizes(&[54, 55])?
 		.build()?;
-	let par_50 = BfvParametersBuilder::new()
+	let par_large = BfvParametersBuilder::new()
 		.set_degree(16384)?
 		.set_plaintext_modulus(1153)?
-		.set_ciphertext_moduli_sizes(&[50, 50, 50, 50, 50, 50, 50])?
+		.set_ciphertext_moduli_sizes(&[62; 7])?
 		.build()
 		.unwrap();
-	Ok(vec![Rc::new(par_62), Rc::new(par_50)])
+	Ok(vec![Rc::new(par_small), Rc::new(par_large)])
 }
 
 pub fn ops_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("ops");
+	group.sample_size(10);
+	group.warm_up_time(Duration::from_secs(1));
+	group.measurement_time(Duration::from_secs(1));
 
 	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
@@ -32,6 +38,8 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			.enable_inner_sum()
 			.enable_relinearization()
 			.enable_column_rotation(1)
+			.unwrap()
+			.enable_expansion(par.degree().log2() as usize)
 			.unwrap()
 			.build()
 			.unwrap();
@@ -159,6 +167,25 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				b.iter(|| c1 = ek.computes_inner_sum(&c1).unwrap());
 			},
 		);
+
+		for i in 1..par.degree().log2() + 1 {
+			if par.degree() > 2048 && i > 4 {
+				continue; // Skip slow benchmarks
+			}
+			group.bench_function(
+				BenchmarkId::new(
+					format!("expand_{}", i),
+					format!(
+						"{}/{}",
+						par.degree(),
+						par.moduli_sizes().iter().sum::<usize>()
+					),
+				),
+				|b| {
+					b.iter(|| ek.expands(&c1, i as usize).unwrap());
+				},
+			);
+		}
 
 		group.bench_function(
 			BenchmarkId::new(
