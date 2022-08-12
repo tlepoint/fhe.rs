@@ -39,7 +39,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			.enable_relinearization()
 			.enable_column_rotation(1)
 			.unwrap()
-			.enable_expansion(par.degree().log2() as usize)
+			.enable_expansion(par.degree().ilog2() as usize)
 			.unwrap()
 			.build()
 			.unwrap();
@@ -168,7 +168,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		for i in 1..par.degree().log2() + 1 {
+		for i in 1..par.degree().ilog2() + 1 {
 			if par.degree() > 2048 && i > 4 {
 				continue; // Skip slow benchmarks
 			}

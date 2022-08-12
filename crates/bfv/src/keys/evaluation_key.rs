@@ -289,7 +289,7 @@ impl EvaluationKeyBuilder {
 			indices.insert((self.sk.par.degree() >> l) + 1);
 		}
 
-		for l in 0..self.sk.par.degree().log2() {
+		for l in 0..self.sk.par.degree().ilog2() {
 			let mut monomial = vec![0i64; self.sk.par.degree()];
 			monomial[self.sk.par.degree() - (1 << l)] = -1;
 			let mut monomial = Poly::try_convert_from(
@@ -344,8 +344,8 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 			gk.insert(key.exponent, key);
 		}
 
-		let mut monomials = Vec::with_capacity(par.degree().log2() as usize);
-		for l in 0..par.degree().log2() {
+		let mut monomials = Vec::with_capacity(par.degree().ilog2() as usize);
+		for l in 0..par.degree().ilog2() {
 			let mut monomial = vec![0i64; par.degree()];
 			monomial[par.degree() - (1 << l)] = -1;
 			let mut monomial =
@@ -572,7 +572,7 @@ mod tests {
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_expansion(params.degree().log2() as usize)?
+				.enable_expansion(params.degree().ilog2() as usize)?
 				.build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
@@ -580,7 +580,7 @@ mod tests {
 			let ek = EvaluationKeyBuilder::new(&sk)
 				.enable_inner_sum()
 				.enable_relinearization()
-				.enable_expansion(params.degree().log2() as usize)?
+				.enable_expansion(params.degree().ilog2() as usize)?
 				.build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
