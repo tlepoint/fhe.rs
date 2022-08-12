@@ -5,11 +5,8 @@ import "src/protos/rq.proto";
 package fhers;
 
 message Ciphertext {
-    Rq c0 = 1;
-    oneof c1 {
-        bytes c1_seed = 2;
-        Rq c1_poly = 3;
-    }
+    repeated Rq c = 1;
+    bytes seed = 2;
 }
 
 message KeySwitchingKey {

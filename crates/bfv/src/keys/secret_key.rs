@@ -23,12 +23,12 @@ use num_bigint::BigUint;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
 	pub(crate) par: Rc<BfvParameters>,
-	pub(crate) s: Poly,
+	pub(crate) s: Vec<Poly>,
 }
 
 impl Zeroize for SecretKey {
 	fn zeroize(&mut self) {
-		self.s.zeroize();
+		self.s.iter_mut().for_each(|si| si.zeroize());
 	}
 }
 
@@ -37,10 +37,14 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Rc<BfvParameters>) -> Self {
-		let s = Poly::small(&par.ctx, Representation::NttShoup, par.variance).unwrap();
+		let mut s = Poly::small(&par.ctx, Representation::Ntt, par.variance).unwrap();
+		let mut s2 = &s * &s;
+		// TODO: Can I multiply in NttShoup representation directly?
+		s.change_representation(Representation::NttShoup);
+		s2.change_representation(Representation::NttShoup);
 		Self {
 			par: par.clone(),
-			s,
+			s: vec![s, s2],
 		}
 	}
 
@@ -50,16 +54,17 @@ impl SecretKey {
 	/// This operations may run in a variable time depending on the value of the noise.
 	#[cfg(test)]
 	pub(crate) unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize, String> {
+		assert_eq!(ct.c.len(), 2);
 		let plaintext = self.decrypt(ct)?;
 		let mut m = plaintext.encode()?;
 
 		// Let's disable variable time computations
-		let mut c0 = ct.c0.clone();
-		let mut c1 = ct.c1.clone();
+		let mut c0 = ct.c[0].clone();
+		let mut c1 = ct.c[1].clone();
 		c0.disallow_variable_time_computations();
 		c1.disallow_variable_time_computations();
 
-		let mut c1_s = &c1 * &self.s;
+		let mut c1_s = &c1 * &self.s[0];
 		let mut c = &c0 + &c1_s;
 		c -= &m;
 		c.change_representation(Representation::PowerBasis);
@@ -89,7 +94,7 @@ impl Encryptor for SecretKey {
 		thread_rng().fill(&mut seed);
 
 		let mut a = Poly::random_from_seed(&self.par.ctx, Representation::Ntt, seed);
-		let mut a_s = &a * &self.s;
+		let mut a_s = &a * &self.s[0];
 
 		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
@@ -110,8 +115,7 @@ impl Encryptor for SecretKey {
 		Ok(Ciphertext {
 			par: self.par.clone(),
 			seed: Some(seed),
-			c0: b,
-			c1: a,
+			c: vec![b, a],
 		})
 	}
 }
@@ -120,16 +124,18 @@ impl Decryptor for SecretKey {
 	type Error = String;
 
 	fn decrypt(&self, ct: &Ciphertext) -> Result<Plaintext, Self::Error> {
+		assert_eq!(ct.c.len(), 2);
+
 		if self.par != ct.par {
 			Err("Incompatible BFV parameters".to_string())
 		} else {
 			// Let's disable variable time computations
-			let mut c0 = ct.c0.clone();
-			let mut c1 = ct.c1.clone();
+			let mut c0 = ct.c[0].clone();
+			let mut c1 = ct.c[1].clone();
 			c0.disallow_variable_time_computations();
 			c1.disallow_variable_time_computations();
 
-			let mut c1_s = &c1 * &self.s;
+			let mut c1_s = &c1 * &self.s[0];
 			let mut c = &c0 + &c1_s;
 			c.change_representation(Representation::PowerBasis);
 			let mut d = self.par.scaler.scale(&c, false)?;
@@ -186,7 +192,7 @@ mod tests {
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
-		let mut s = sk.s.clone();
+		let mut s = sk.s[0].clone();
 		s.change_representation(Representation::PowerBasis);
 		let coefficients = Vec::<u64>::from(&s);
 		coefficients.iter().for_each(|ci| {

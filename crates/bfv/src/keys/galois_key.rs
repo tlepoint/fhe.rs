@@ -28,7 +28,7 @@ impl GaloisKey {
 			return Err("Invalid exponent".to_string());
 		}
 
-		let mut s_sub = sk.s.substitute(exponent)?;
+		let mut s_sub = sk.s[0].substitute(exponent)?;
 		s_sub.change_representation(Representation::PowerBasis);
 		let ksk = KeySwitchingKey::new(sk, &s_sub)?;
 		s_sub.zeroize();
@@ -38,20 +38,20 @@ impl GaloisKey {
 	/// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
 	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
 		assert_eq!(ct.par, self.ksk.par);
+		assert_eq!(ct.c.len(), 2);
 
-		let mut c0 = ct.c0.substitute(self.exponent)?;
+		let mut c0 = ct.c[0].substitute(self.exponent)?;
 		let mut c1 = Poly::zero(&self.ksk.par.ctx, Representation::Ntt);
 		unsafe { c1.allow_variable_time_computations() }
 
-		let mut c2 = ct.c1.substitute(self.exponent)?;
+		let mut c2 = ct.c[1].substitute(self.exponent)?;
 		c2.change_representation(Representation::PowerBasis);
 		self.ksk.key_switch(&c2, &mut c0, &mut c1)?;
 
 		Ok(Ciphertext {
 			par: ct.par.clone(),
 			seed: None,
-			c0,
-			c1,
+			c: vec![c0, c1],
 		})
 	}
 }

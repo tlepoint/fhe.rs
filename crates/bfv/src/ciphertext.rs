@@ -6,9 +6,9 @@ use crate::{
 	EvaluationKey, Plaintext,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
+use itertools::{izip, Itertools};
 use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
 use num_bigint::BigUint;
-use protobuf::MessageField;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
@@ -25,11 +25,8 @@ pub struct Ciphertext {
 	/// The seed that generated the polynomial c1 in a fresh ciphertext.
 	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
-	/// The ciphertext element c0.
-	pub(crate) c0: Poly,
-
-	/// The ciphertext element c1.
-	pub(crate) c1: Poly,
+	/// The ciphertext elements.
+	pub(crate) c: Vec<Poly>,
 }
 
 impl Add<&Ciphertext> for &Ciphertext {
@@ -37,12 +34,14 @@ impl Add<&Ciphertext> for &Ciphertext {
 
 	fn add(self, rhs: &Ciphertext) -> Ciphertext {
 		debug_assert_eq!(self.par, rhs.par);
-
+		assert_eq!(self.c.len(), rhs.c.len());
+		let c = izip!(&self.c, &rhs.c)
+			.map(|(c1i, c2i)| c1i + c2i)
+			.collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 + &rhs.c0,
-			c1: &self.c1 + &rhs.c1,
+			c,
 		}
 	}
 }
@@ -50,9 +49,8 @@ impl Add<&Ciphertext> for &Ciphertext {
 impl AddAssign<&Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-
-		self.c0 += &rhs.c0;
-		self.c1 += &rhs.c1;
+		assert_eq!(self.c.len(), rhs.c.len());
+		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
 		self.seed = None
 	}
 }
@@ -62,12 +60,14 @@ impl Sub<&Ciphertext> for &Ciphertext {
 
 	fn sub(self, rhs: &Ciphertext) -> Ciphertext {
 		assert_eq!(self.par, rhs.par);
-
+		assert_eq!(self.c.len(), rhs.c.len());
+		let c = izip!(&self.c, &rhs.c)
+			.map(|(c1i, c2i)| c1i - c2i)
+			.collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 - &rhs.c0,
-			c1: &self.c1 - &rhs.c1,
+			c,
 		}
 	}
 }
@@ -75,9 +75,8 @@ impl Sub<&Ciphertext> for &Ciphertext {
 impl SubAssign<&Ciphertext> for Ciphertext {
 	fn sub_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-
-		self.c0 -= &rhs.c0;
-		self.c1 -= &rhs.c1;
+		assert_eq!(self.c.len(), rhs.c.len());
+		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
 		self.seed = None
 	}
 }
@@ -86,11 +85,11 @@ impl Neg for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn neg(self) -> Ciphertext {
+		let c = self.c.iter().map(|c1i| -c1i).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: -&self.c0,
-			c1: -&self.c1,
+			c,
 		}
 	}
 }
@@ -98,9 +97,7 @@ impl Neg for &Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
 	fn mul_assign(&mut self, rhs: &Plaintext) {
 		assert_eq!(self.par, rhs.par);
-
-		self.c0 *= &rhs.poly_ntt;
-		self.c1 *= &rhs.poly_ntt;
+		self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
 		self.seed = None
 	}
 }
@@ -109,11 +106,11 @@ impl Mul<&Plaintext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn mul(self, rhs: &Plaintext) -> Self::Output {
+		let c = self.c.iter().map(|c1i| c1i * &rhs.poly_ntt).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
-			c0: &self.c0 * &rhs.poly_ntt,
-			c1: &self.c1 * &rhs.poly_ntt,
+			c,
 		}
 	}
 }
@@ -139,12 +136,16 @@ fn mul_internal(
 	if ct0.par.ciphertext_moduli.len() == 1 {
 		return Err("Parameters do not allow for multiplication".to_string());
 	}
+	if ct0.c.len() != 2 || ct1.c.len() != 2 {
+		return Err("Multiplication can only be performed on ciphertexts of size 2".to_string());
+	}
+
 	// Extend
 	let mut now = std::time::SystemTime::now();
-	let c00 = mp.extender_self.scale(&ct0.c0, false)?;
-	let c01 = mp.extender_self.scale(&ct0.c1, false)?;
-	let c10 = mp.extender_other.scale(&ct1.c0, false)?;
-	let c11 = mp.extender_other.scale(&ct1.c1, false)?;
+	let c00 = mp.extender_self.scale(&ct0.c[0], false)?;
+	let c01 = mp.extender_self.scale(&ct0.c[1], false)?;
+	let c10 = mp.extender_other.scale(&ct1.c[0], false)?;
+	let c11 = mp.extender_other.scale(&ct1.c[1], false)?;
 	println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -176,8 +177,7 @@ fn mul_internal(
 	Ok(Ciphertext {
 		par: ct0.par.clone(),
 		seed: None,
-		c0,
-		c1,
+		c: vec![c0, c1],
 	})
 }
 
@@ -199,12 +199,14 @@ pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ci
 impl From<&Ciphertext> for CiphertextProto {
 	fn from(ct: &Ciphertext) -> Self {
 		let mut proto = CiphertextProto::new();
-		if let Some(seed) = ct.seed {
-			proto.set_c1_seed(seed.to_vec())
-		} else {
-			proto.set_c1_poly(Rq::from(&ct.c1))
+		for i in 0..ct.c.len() - 1 {
+			proto.c.push(Rq::from(&ct.c[i]))
 		}
-		proto.c0 = MessageField::some(Rq::from(&ct.c0));
+		if let Some(seed) = ct.seed {
+			proto.seed = seed.to_vec()
+		} else {
+			proto.c.push(Rq::from(&ct.c[ct.c.len() - 1]))
+		}
 		proto
 	}
 }
@@ -216,34 +218,33 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		value: &CiphertextProto,
 		par: &Rc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.c0.is_none() {
-			return Err("Missing c0".to_string());
+		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
+			return Err("Not enough polynomials".to_string());
+		}
+		let mut seed = None;
+
+		let mut c = Vec::with_capacity(value.c.len() + 1);
+		for cip in &value.c {
+			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
+			unsafe { ci.allow_variable_time_computations() }
+			c.push(ci)
 		}
 
-		let mut c0 = Poly::try_convert_from(value.c0.as_ref().unwrap(), &par.ctx, None)?;
-		unsafe { c0.allow_variable_time_computations() }
-
-		let mut seed = None;
-		let mut c1;
-		if value.has_c1_poly() {
-			c1 = Poly::try_convert_from(value.c1_poly(), &par.ctx, None)?;
-		} else if value.has_c1_seed() {
-			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.c1_seed());
+		if !value.seed.is_empty() {
+			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 			if try_seed.is_err() {
 				return Err("Invalid seed".to_string());
 			}
-			seed = Some(try_seed.unwrap());
-			c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
+			seed = try_seed.ok();
+			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
-		} else {
-			return Err("c1 or the seed are missing".to_string());
+			c.push(c1)
 		}
 
 		Ok(Ciphertext {
 			par: par.clone(),
 			seed,
-			c0,
-			c1,
+			c,
 		})
 	}
 }

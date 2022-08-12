@@ -54,6 +54,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
+				b.iter(|| c1 = &c1 + &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"add_assign",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
 				b.iter(|| c1 += &c2);
 			},
 		);
@@ -61,6 +75,20 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new(
 				"sub",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| c1 = &c1 - &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"sub_assign",
 				format!(
 					"{}/{}",
 					par.degree(),

@@ -22,7 +22,7 @@ pub struct RelinearizationKey {
 impl RelinearizationKey {
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new(sk: &SecretKey) -> Result<Self, String> {
-		let mut s_squared = &sk.s * &sk.s;
+		let mut s_squared = sk.s[1].clone();
 		s_squared.change_representation(Representation::PowerBasis);
 		let ksk = KeySwitchingKey::new(sk, &s_squared)?;
 		s_squared.zeroize();
@@ -83,8 +83,8 @@ mod tests {
 				let mut c1 = Poly::random(&params.ctx, Representation::Ntt);
 				let mut c0 = Poly::small(&params.ctx, Representation::PowerBasis, 16)?;
 				c0.change_representation(Representation::Ntt);
-				c0 -= &(&c1 * &sk.s);
-				c0 -= &(&(&c2 * &sk.s) * &sk.s);
+				c0 -= &(&c1 * &sk.s[0]);
+				c0 -= &(&c2 * &sk.s[1]);
 
 				// Relinearize the extended ciphertext!
 				c2.change_representation(Representation::PowerBasis);
@@ -93,8 +93,7 @@ mod tests {
 				let ct = Ciphertext {
 					par: params.clone(),
 					seed: None,
-					c0,
-					c1,
+					c: vec![c0, c1],
 				};
 
 				// Print the noise and decrypt
