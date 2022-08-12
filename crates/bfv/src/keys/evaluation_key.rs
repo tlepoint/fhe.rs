@@ -161,7 +161,7 @@ impl EvaluationKeyBuilder {
 	/// Allow this evaluation to homomorphically rotate the plaintext columns.
 	#[allow(unused_must_use)]
 	pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self, String> {
-		if i == 0 || i >= self.sk.par.polynomial_degree {
+		if i == 0 || i >= self.sk.par.degree() {
 			Err("Invalid column index".to_string())
 		} else {
 			self.column_rotation.insert(i);
@@ -193,19 +193,17 @@ impl EvaluationKeyBuilder {
 			// Add the required indices to the set of indices
 			indices.insert(0);
 			let mut i = 1;
-			while i < self.sk.par.polynomial_degree / 2 {
+			while i < self.sk.par.degree() / 2 {
 				indices.insert(i);
 				i *= 2
 			}
 		}
 
-		let q = Modulus::new(2 * self.sk.par.polynomial_degree as u64)?;
+		let q = Modulus::new(2 * self.sk.par.degree() as u64)?;
 		for index in indices {
 			if index == 0 {
-				ek.gk.insert(
-					0,
-					GaloisKey::new(&self.sk, 2 * self.sk.par.polynomial_degree - 1)?,
-				);
+				ek.gk
+					.insert(0, GaloisKey::new(&self.sk, 2 * self.sk.par.degree() - 1)?);
 			} else {
 				let exp = q.pow(3, index as u64);
 				ek.gk.insert(index, GaloisKey::new(&self.sk, exp as usize)?);
@@ -361,7 +359,7 @@ mod tests {
 					.build()?;
 
 				let v = params.plaintext.random_vec(params.degree());
-				let row_size = params.polynomial_degree >> 1;
+				let row_size = params.degree() >> 1;
 				let mut expected = vec![0u64; params.degree()];
 				expected[..row_size].copy_from_slice(&v[row_size..]);
 				expected[row_size..].copy_from_slice(&v[..row_size]);
@@ -380,7 +378,7 @@ mod tests {
 	#[test]
 	fn test_column_rotation() -> Result<(), String> {
 		for params in [Rc::new(BfvParameters::default(2))] {
-			let row_size = params.polynomial_degree >> 1;
+			let row_size = params.degree() >> 1;
 			for _ in 0..50 {
 				for i in 1..row_size {
 					let mut sk = SecretKey::random(&params);
@@ -389,7 +387,7 @@ mod tests {
 						.build()?;
 
 					let v = params.plaintext.random_vec(params.degree());
-					let row_size = params.polynomial_degree >> 1;
+					let row_size = params.degree() >> 1;
 					let mut expected = vec![0u64; params.degree()];
 					expected[..row_size - i].copy_from_slice(&v[i..row_size]);
 					expected[row_size - i..row_size].copy_from_slice(&v[..i]);

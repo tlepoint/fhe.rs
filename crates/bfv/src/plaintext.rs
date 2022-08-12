@@ -98,10 +98,10 @@ impl Encoder<&[u64]> for Plaintext {
 		encoding: Encoding,
 		par: &Rc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.len() > par.polynomial_degree {
+		if value.len() > par.degree() {
 			return Err("There are too many values to encode".to_string());
 		}
-		let mut v = vec![0u64; par.polynomial_degree];
+		let mut v = vec![0u64; par.degree()];
 
 		if !value.is_empty() {
 			match encoding {
@@ -144,10 +144,10 @@ impl Encoder<&[i64]> for Plaintext {
 		encoding: Encoding,
 		par: &Rc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.len() > par.polynomial_degree {
+		if value.len() > par.degree() {
 			return Err("There are too many values to encode".to_string());
 		}
-		let mut v = vec![0u64; par.polynomial_degree];
+		let mut v = vec![0u64; par.degree()];
 
 		if !value.is_empty() {
 			let mut value_u64 = par.plaintext.reduce_vec_i64(value);
@@ -215,7 +215,7 @@ impl Decoder for Vec<u64> {
 				if let Some(op) = &pt.par.op {
 					op.forward(&mut w);
 					let mut w_reordered = w.clone();
-					for i in 0..pt.par.polynomial_degree {
+					for i in 0..pt.par.degree() {
 						w_reordered[i] = w[pt.par.matrix_reps_index_map[i]]
 					}
 					w.zeroize();
@@ -248,10 +248,10 @@ mod tests {
 	use std::rc::Rc;
 
 	#[test]
-	fn try_encode() {
+	fn try_encode() -> Result<(), String> {
 		// The default test parameters support both Poly and Simd encodings
 		let params = Rc::new(BfvParameters::default(1));
-		let a = params.plaintext.random_vec(params.polynomial_degree);
+		let a = params.plaintext.random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_err());
@@ -267,28 +267,29 @@ mod tests {
 
 		// The following parameters do not allow for Simd encoding
 		let params = Rc::new(
-			BfvParametersBuilder::default()
-				.polynomial_degree(8)
-				.plaintext_modulus(2)
-				.ciphertext_moduli(vec![4611686018326724609])
-				.build()
-				.unwrap(),
+			BfvParametersBuilder::new()
+				.set_degree(8)?
+				.set_plaintext_modulus(2)?
+				.set_ciphertext_moduli(&[4611686018326724609])?
+				.build()?,
 		);
 
-		let a = params.plaintext.random_vec(params.polynomial_degree);
+		let a = params.plaintext.random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 		assert!(plaintext.is_ok());
 
 		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd, &params);
 		assert!(plaintext.is_err());
+
+		Ok(())
 	}
 
 	#[test]
 	fn test_encode_decode() {
 		(0..100).for_each(|_| {
 			let params = Rc::new(BfvParameters::default(1));
-			let a = params.plaintext.random_vec(params.polynomial_degree);
+			let a = params.plaintext.random_vec(params.degree());
 
 			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 			assert!(plaintext.is_ok());
@@ -316,7 +317,7 @@ mod tests {
 	#[test]
 	fn test_partial_eq() -> Result<(), String> {
 		let params = Rc::new(BfvParameters::default(1));
-		let a = params.plaintext.random_vec(params.polynomial_degree);
+		let a = params.plaintext.random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params)?;
 		let mut same_plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params)?;

@@ -63,8 +63,9 @@ impl SecretKey {
 
 		for i in 1..ct.c.len() {
 			if self.s.len() < i {
-				self.s
-					.push(self.s.last().unwrap() * self.s.first().unwrap());
+				let mut si = self.s.last().unwrap() * self.s.first().unwrap();
+				si.change_representation(Representation::NttShoup);
+				self.s.push(si);
 				debug_assert_eq!(self.s.len(), i)
 			}
 			let mut cis = ct.c[i].clone();
@@ -155,7 +156,7 @@ impl Decryptor for SecretKey {
 				.iter_mut()
 				.map(|vi| *vi + self.par.plaintext.modulus())
 				.collect_vec();
-			let mut w = v[..self.par.polynomial_degree].to_vec();
+			let mut w = v[..self.par.degree()].to_vec();
 			let q = Modulus::new(self.par.ciphertext_moduli[0]).unwrap();
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
@@ -166,11 +167,7 @@ impl Decryptor for SecretKey {
 
 			let pt = Plaintext {
 				par: self.par.clone(),
-				value: unsafe {
-					self.par
-						.plaintext
-						.center_vec_vt(&w[..self.par.polynomial_degree])
-				},
+				value: unsafe { self.par.plaintext.center_vec_vt(&w[..self.par.degree()]) },
 				encoding: None,
 				poly_ntt: poly,
 			};

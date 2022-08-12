@@ -476,7 +476,7 @@ mod tests {
 		let par = Rc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
-			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
@@ -506,7 +506,7 @@ mod tests {
 		let par = Rc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
-			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
@@ -533,7 +533,7 @@ mod tests {
 		let par = Rc::new(BfvParameters::default(2));
 		for _ in 0..ntests {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
-			let values = par.plaintext.random_vec(par.polynomial_degree);
+			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
@@ -561,7 +561,7 @@ mod tests {
 			Rc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(8);
+			let v = params.plaintext.random_vec(params.degree());
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
 			let ct = sk.encrypt(&pt)?;
 			let ct_proto = CiphertextProto::from(&ct);
