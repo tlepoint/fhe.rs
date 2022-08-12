@@ -8,26 +8,25 @@ use itertools::Itertools;
 use math::rq::{Context, Poly, Representation};
 use std::rc::Rc;
 
-fn params() -> Vec<Rc<BfvParameters>> {
-	let par_62 = BfvParametersBuilder::default()
-		.polynomial_degree(16384)
-		.plaintext_modulus(1153)
-		.ciphertext_moduli_sizes(vec![62, 62, 62, 62, 62, 62, 62])
+fn params() -> Result<Vec<Rc<BfvParameters>>, String> {
+	let par_62 = BfvParametersBuilder::new()
+		.set_degree(16384)?
+		.set_plaintext_modulus(1153)?
+		.set_ciphertext_moduli_sizes(&[62, 62, 62, 62, 62, 62, 62])?
+		.build()?;
+	let par_50 = BfvParametersBuilder::new()
+		.set_degree(16384)?
+		.set_plaintext_modulus(1153)?
+		.set_ciphertext_moduli_sizes(&[50, 50, 50, 50, 50, 50, 50])?
 		.build()
 		.unwrap();
-	let par_50 = BfvParametersBuilder::default()
-		.polynomial_degree(16384)
-		.plaintext_modulus(1153)
-		.ciphertext_moduli_sizes(vec![50, 50, 50, 50, 50, 50, 50])
-		.build()
-		.unwrap();
-	vec![Rc::new(par_62), Rc::new(par_50)]
+	Ok(vec![Rc::new(par_62), Rc::new(par_50)])
 }
 
 pub fn ops_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("ops");
 
-	for par in params() {
+	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
 		let ek = EvaluationKeyBuilder::new(&sk)
 			.enable_inner_sum()
