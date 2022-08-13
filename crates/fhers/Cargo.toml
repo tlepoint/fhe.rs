@@ -11,5 +11,10 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 bfv = { version = "0.0.1", path = "../bfv" }
-math = { version = "0.0.1", path = "../math" }
 util = { version = "0.0.1", path = "../util" }
+
+[dev-dependencies]
+rayon = "1.5.3"
+rand = "0.8.5"
+ndarray = "0.15.6"
+itertools = "0.10.3"

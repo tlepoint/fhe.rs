@@ -11,18 +11,16 @@ use math::{
 	rq::{traits::TryConvertFrom, Poly, Representation},
 	zq::Modulus,
 };
+use num_bigint::BigUint;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::rc::Rc;
+use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
-
-#[cfg(test)]
-use num_bigint::BigUint;
 
 /// Secret key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
-	pub(crate) par: Rc<BfvParameters>,
+	pub(crate) par: Arc<BfvParameters>,
 	pub(crate) s: Vec<Poly>,
 }
 
@@ -36,7 +34,7 @@ impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
-	pub fn random(par: &Rc<BfvParameters>) -> Self {
+	pub fn random(par: &Arc<BfvParameters>) -> Self {
 		let mut s = Poly::small(&par.ctx, Representation::Ntt, par.variance).unwrap();
 		let mut s2 = &s * &s;
 		// TODO: Can I multiply in NttShoup representation directly?
@@ -48,12 +46,12 @@ impl SecretKey {
 		}
 	}
 
+	/// Measure the noise in a [`Ciphertext`].
+	///
 	/// # Safety
 	///
-	/// Measure the noise in a [`Ciphertext`].
 	/// This operations may run in a variable time depending on the value of the noise.
-	#[cfg(test)]
-	pub(crate) unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize, String> {
+	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
 		let mut m = plaintext.encode()?;
 
@@ -191,11 +189,11 @@ mod tests {
 		Encoding, Plaintext,
 	};
 	use math::rq::Representation;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_keygen() {
-		let params = Rc::new(BfvParameters::default(1));
+		let params = Arc::new(BfvParameters::default(1));
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
@@ -214,8 +212,8 @@ mod tests {
 	#[test]
 	fn test_encrypt_decrypt() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			for _ in 0..100 {
 				let mut sk = SecretKey::random(&params);

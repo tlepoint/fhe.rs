@@ -1,17 +1,18 @@
 //! Evaluation keys for the BFV encryption scheme.
 
-use crate::{traits::TryConvertFrom, Ciphertext};
-
 use super::{GaloisKey, RelinearizationKey, SecretKey};
+use crate::traits::{Deserialize, Serialize};
+use crate::BfvParameters;
+use crate::{traits::TryConvertFrom, Ciphertext};
 use fhers_protos::protos::bfv::{
 	EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto,
 	RelinearizationKey as RelinearizationKeyProto,
 };
-use math::rq::Poly;
+use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use math::zq::Modulus;
-use protobuf::MessageField;
+use protobuf::{Message, MessageField};
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Evaluation key for the BFV encryption scheme.
@@ -23,19 +24,33 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// - inner sum
 #[derive(Debug, PartialEq, Eq)]
 pub struct EvaluationKey {
-	inner_sum: bool,
+	par: Arc<BfvParameters>,
 
 	/// Relinearization key
 	rk: Option<RelinearizationKey>,
 
-	/// Galois keys
+	/// Map from Galois keys exponents to Galois keys
 	gk: HashMap<usize, GaloisKey>,
+
+	/// Map from rotation index to Galois key exponent
+	rot_to_gk_exponent: HashMap<usize, usize>,
+
+	/// Monomials used in expansion
+	monomials: Vec<Poly>,
 }
 
 impl EvaluationKey {
 	/// Reports whether the evaluation key enables to compute an homomorphic inner sums.
 	pub fn supports_inner_sum(&self) -> bool {
-		self.inner_sum
+		let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
+		let mut i = 1;
+		while i < self.par.degree() / 2 {
+			ret &= self
+				.gk
+				.contains_key(self.rot_to_gk_exponent.get(&i).unwrap());
+			i *= 2
+		}
+		ret
 	}
 
 	/// Computes the homomorphic inner sum.
@@ -47,12 +62,15 @@ impl EvaluationKey {
 
 			let mut i = 1;
 			while i < ct.par.degree() / 2 {
-				let gk = self.gk.get(&i).unwrap();
+				let gk = self
+					.gk
+					.get(self.rot_to_gk_exponent.get(&i).unwrap())
+					.unwrap();
 				out += &gk.relinearize(&out)?;
 				i *= 2
 			}
 
-			let gk = self.gk.get(&0).unwrap();
+			let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
 			out += &gk.relinearize(&out)?;
 
 			Ok(out)
@@ -61,7 +79,7 @@ impl EvaluationKey {
 
 	/// Reports whether the evaluation key enables to rotate the rows of the plaintext.
 	pub fn supports_row_rotation(&self) -> bool {
-		self.gk.contains_key(&0)
+		self.gk.contains_key(&(self.par.degree() * 2 - 1))
 	}
 
 	/// Homomorphically rotate the rows of the plaintext
@@ -69,17 +87,17 @@ impl EvaluationKey {
 		if !self.supports_row_rotation() {
 			Err("This key does not support the row rotation functionality".to_string())
 		} else {
-			let gk = self.gk.get(&0).unwrap();
+			let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
 			gk.relinearize(ct)
 		}
 	}
 
 	/// Reports whether the evaluation key enables to rotate the columns of the plaintext.
 	pub fn supports_column_rotation_by(&self, i: usize) -> bool {
-		if i == 0 {
-			false
+		if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
+			self.gk.contains_key(exp)
 		} else {
-			self.gk.contains_key(&i)
+			false
 		}
 	}
 
@@ -88,7 +106,10 @@ impl EvaluationKey {
 		if !self.supports_column_rotation_by(i) {
 			Err("This key does not support rotating the columns by this index".to_string())
 		} else {
-			let gk = self.gk.get(&i).unwrap();
+			let gk = self
+				.gk
+				.get(self.rot_to_gk_exponent.get(&i).unwrap())
+				.unwrap();
 			gk.relinearize(ct)
 		}
 	}
@@ -106,6 +127,77 @@ impl EvaluationKey {
 			self.rk.as_ref().unwrap().relinearize(c0, c1, c2)
 		}
 	}
+
+	/// Reports whether the evaluation key supports oblivious expansion.
+	pub fn supports_expansion(&self, level: usize) -> bool {
+		let mut ret = level < self.par.degree().leading_zeros() as usize;
+		for l in 0..level {
+			ret &= self.gk.contains_key(&((self.par.degree() >> l) + 1));
+		}
+		ret
+	}
+
+	/// Obliviously expands the ciphertext. Returns an error if this evaluation does not
+	/// support expansion to this level, or if the ciphertext does not have size 2.
+	/// The output is a vector of 2^level ciphertexts.
+	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>, String> {
+		if ct.c.len() != 2 {
+			Err("The ciphertext is not of size 2".to_string())
+		} else if level == 0 {
+			Ok(vec![ct.clone()])
+		} else if self.supports_expansion(level) {
+			let mut out = vec![Ciphertext::placeholder(&ct.par); 1 << level];
+			out[0] = ct.clone();
+
+			// We use the Oblivious expansion algorithm of
+			// https://eprint.iacr.org/2019/1483.pdf
+			for l in 0..level {
+				let monomial = &self.monomials[l];
+				let gk = self.gk.get(&((self.par.degree() >> l) + 1)).unwrap();
+				for i in 0..(1 << l) {
+					let sub = gk.relinearize(&out[i])?;
+					out[(1 << l) | i] = &out[i] - &sub;
+					out[(1 << l) | i].c[0] *= monomial;
+					out[(1 << l) | i].c[1] *= monomial;
+					out[i] += &sub;
+				}
+			}
+
+			Ok(out)
+		} else {
+			Err("This key does not support expansion at this level".to_string())
+		}
+	}
+
+	fn construct_rot_to_gk_exponent(par: &Arc<BfvParameters>) -> HashMap<usize, usize> {
+		let mut m = HashMap::new();
+		let q = Modulus::new(2 * par.degree() as u64).unwrap();
+		for i in 1..par.degree() / 2 {
+			let exp = q.pow(3, i as u64) as usize;
+			m.insert(i, exp);
+		}
+		m
+	}
+}
+
+impl Serialize for EvaluationKey {
+	fn serialize(&self) -> Vec<u8> {
+		let ekp = EvaluationKeyProto::from(self);
+		ekp.write_to_bytes().unwrap()
+	}
+}
+
+impl Deserialize for EvaluationKey {
+	type Error = String;
+
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
+		let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
+		if let Ok(gkp) = gkp {
+			EvaluationKey::try_convert_from(&gkp, par)
+		} else {
+			Err("Invalid serialization".to_string())
+		}
+	}
 }
 
 /// Builder for an evaluation key from the secret key.
@@ -113,8 +205,10 @@ pub struct EvaluationKeyBuilder {
 	relin: bool,
 	inner_sum: bool,
 	row_rotation: bool,
+	expansion_level: usize,
 	column_rotation: HashSet<usize>,
 	sk: SecretKey,
+	rot_to_gk_exponent: HashMap<usize, usize>,
 }
 
 impl Zeroize for EvaluationKeyBuilder {
@@ -133,7 +227,9 @@ impl EvaluationKeyBuilder {
 			relin: false,
 			inner_sum: false,
 			row_rotation: false,
+			expansion_level: 0,
 			column_rotation: HashSet::default(),
+			rot_to_gk_exponent: EvaluationKey::construct_rot_to_gk_exponent(&sk.par),
 		}
 	}
 
@@ -144,28 +240,39 @@ impl EvaluationKeyBuilder {
 		self
 	}
 
-	/// Allow this evaluation to compute homomorphic inner sums.
+	/// Allow relinearizations by this evaluation key.
+	#[allow(unused_must_use)]
+	pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self, String> {
+		if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
+			Err("Invalid level".to_string())
+		} else {
+			self.expansion_level = level;
+			Ok(self)
+		}
+	}
+
+	/// Allow this evaluation key to compute homomorphic inner sums.
 	#[allow(unused_must_use)]
 	pub fn enable_inner_sum(&mut self) -> &mut Self {
 		self.inner_sum = true;
 		self
 	}
 
-	/// Allow this evaluation to homomorphically rotate the plaintext rows.
+	/// Allow this evaluation key to homomorphically rotate the plaintext rows.
 	#[allow(unused_must_use)]
 	pub fn enable_row_rotation(&mut self) -> &mut Self {
 		self.row_rotation = true;
 		self
 	}
 
-	/// Allow this evaluation to homomorphically rotate the plaintext columns.
+	/// Allow this evaluation key to homomorphically rotate the plaintext columns.
 	#[allow(unused_must_use)]
 	pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self, String> {
-		if i == 0 || i >= self.sk.par.degree() {
-			Err("Invalid column index".to_string())
-		} else {
-			self.column_rotation.insert(i);
+		if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
+			self.column_rotation.insert(*exp);
 			Ok(self)
+		} else {
+			Err("Invalid column index".to_string())
 		}
 	}
 
@@ -174,7 +281,9 @@ impl EvaluationKeyBuilder {
 		let mut ek = EvaluationKey {
 			rk: None,
 			gk: HashMap::default(),
-			inner_sum: false,
+			par: self.sk.par.clone(),
+			rot_to_gk_exponent: EvaluationKey::construct_rot_to_gk_exponent(&self.sk.par),
+			monomials: vec![],
 		};
 
 		let mut indices = self.column_rotation.clone();
@@ -184,30 +293,38 @@ impl EvaluationKeyBuilder {
 		}
 
 		if self.row_rotation {
-			indices.insert(0);
+			indices.insert(self.sk.par.degree() * 2 - 1);
 		}
 
 		if self.inner_sum {
-			ek.inner_sum = true;
-
 			// Add the required indices to the set of indices
-			indices.insert(0);
+			indices.insert(self.sk.par.degree() * 2 - 1);
 			let mut i = 1;
 			while i < self.sk.par.degree() / 2 {
-				indices.insert(i);
+				indices.insert(*ek.rot_to_gk_exponent.get(&i).unwrap());
 				i *= 2
 			}
 		}
 
-		let q = Modulus::new(2 * self.sk.par.degree() as u64)?;
+		for l in 0..self.expansion_level {
+			indices.insert((self.sk.par.degree() >> l) + 1);
+		}
+
+		for l in 0..self.sk.par.degree().ilog2() {
+			let mut monomial = vec![0i64; self.sk.par.degree()];
+			monomial[self.sk.par.degree() - (1 << l)] = -1;
+			let mut monomial = Poly::try_convert_from(
+				&monomial as &[i64],
+				&self.sk.par.ctx,
+				Representation::PowerBasis,
+			)?;
+			unsafe { monomial.allow_variable_time_computations() }
+			monomial.change_representation(Representation::Ntt);
+			ek.monomials.push(monomial);
+		}
+
 		for index in indices {
-			if index == 0 {
-				ek.gk
-					.insert(0, GaloisKey::new(&self.sk, 2 * self.sk.par.degree() - 1)?);
-			} else {
-				let exp = q.pow(3, index as u64);
-				ek.gk.insert(index, GaloisKey::new(&self.sk, exp as usize)?);
-			}
+			ek.gk.insert(index, GaloisKey::new(&self.sk, index)?);
 		}
 
 		Ok(ek)
@@ -232,7 +349,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 
 	fn try_convert_from(
 		value: &EvaluationKeyProto,
-		par: &Rc<crate::BfvParameters>,
+		par: &Arc<crate::BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		let mut rk = None;
 		if value.rk.is_some() {
@@ -245,31 +362,27 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 		let mut gk = HashMap::new();
 		for gkp in &value.gk {
 			let key = GaloisKey::try_convert_from(gkp, par)?;
-			if key.exponent == 2 * par.degree() - 1 {
-				// row rotation key
-				gk.insert(0, key);
-			} else {
-				let q = Modulus::new(2 * par.degree() as u64)?;
-				let mut i = 1usize;
-				while i < par.degree() / 2 {
-					let e = q.pow(3, i as u64);
-					if key.exponent == e as usize {
-						gk.insert(i, key);
-						break;
-					}
-					i *= 2
-				}
-			}
+			gk.insert(key.exponent, key);
 		}
 
-		let mut inner_sum = gk.contains_key(&0);
-		let mut i = 1usize;
-		while i < par.degree() / 2 {
-			inner_sum &= gk.contains_key(&i);
-			i *= 2
+		let mut monomials = Vec::with_capacity(par.degree().ilog2() as usize);
+		for l in 0..par.degree().ilog2() {
+			let mut monomial = vec![0i64; par.degree()];
+			monomial[par.degree() - (1 << l)] = -1;
+			let mut monomial =
+				Poly::try_convert_from(&monomial as &[i64], &par.ctx, Representation::PowerBasis)?;
+			unsafe { monomial.allow_variable_time_computations() }
+			monomial.change_representation(Representation::Ntt);
+			monomials.push(monomial);
 		}
 
-		Ok(EvaluationKey { inner_sum, rk, gk })
+		Ok(EvaluationKey {
+			rk,
+			gk,
+			par: par.clone(),
+			rot_to_gk_exponent: EvaluationKey::construct_rot_to_gk_exponent(par),
+			monomials,
+		})
 	}
 }
 
@@ -277,15 +390,16 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 mod tests {
 	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::{
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		traits::{Decoder, Decryptor, Deserialize, Encoder, Encryptor, Serialize, TryConvertFrom},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::EvaluationKey as EvaluationKeyProto;
-	use std::rc::Rc;
+	use itertools::izip;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_builder() -> Result<(), String> {
-		let params = Rc::new(BfvParameters::default(2));
+		let params = Arc::new(BfvParameters::default(2));
 		let sk = SecretKey::random(&params);
 		let mut builder = EvaluationKeyBuilder::new(&sk);
 
@@ -293,19 +407,35 @@ mod tests {
 		assert!(!builder.build()?.supports_column_rotation_by(0));
 		assert!(!builder.build()?.supports_column_rotation_by(1));
 		assert!(!builder.build()?.supports_inner_sum());
+		assert!(!builder.build()?.supports_expansion(1));
+		assert!(builder.build()?.supports_expansion(0));
 		assert!(builder.enable_column_rotation(0).is_err());
+		assert!(builder
+			.enable_expansion(64 - params.degree().leading_zeros() as usize)
+			.is_err());
 
 		builder.enable_column_rotation(1)?;
 		assert!(builder.build()?.supports_column_rotation_by(1));
 		assert!(!builder.build()?.supports_row_rotation());
 		assert!(!builder.build()?.supports_inner_sum());
+		assert!(!builder.build()?.supports_expansion(1));
 
 		builder.enable_row_rotation();
 		assert!(builder.build()?.supports_row_rotation());
 		assert!(!builder.build()?.supports_inner_sum());
+		assert!(!builder.build()?.supports_expansion(1));
 
 		builder.enable_inner_sum();
 		assert!(builder.build()?.supports_inner_sum());
+		assert!(builder.build()?.supports_expansion(1));
+		assert!(!builder
+			.build()?
+			.supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
+
+		builder.enable_expansion(64 - 1 - params.degree().leading_zeros() as usize)?;
+		assert!(builder
+			.build()?
+			.supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
 
 		assert!(builder.build().is_ok());
 
@@ -325,7 +455,7 @@ mod tests {
 
 	#[test]
 	fn test_inner_sum() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
@@ -336,9 +466,9 @@ mod tests {
 					.reduce_u128(v.iter().map(|vi| *vi as u128).sum());
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-				let mut ct = sk.encrypt(&pt)?;
+				let ct = sk.encrypt(&pt)?;
 
-				let ct2 = ek.computes_inner_sum(&mut ct)?;
+				let ct2 = ek.computes_inner_sum(&ct)?;
 				let pt = sk.decrypt(&ct2)?;
 				assert_eq!(
 					Vec::<u64>::try_decode(&pt, Encoding::Simd)?,
@@ -351,7 +481,7 @@ mod tests {
 
 	#[test]
 	fn test_row_rotation() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk)
@@ -365,9 +495,9 @@ mod tests {
 				expected[row_size..].copy_from_slice(&v[..row_size]);
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-				let mut ct = sk.encrypt(&pt)?;
+				let ct = sk.encrypt(&pt)?;
 
-				let ct2 = ek.rotates_row(&mut ct)?;
+				let ct2 = ek.rotates_row(&ct)?;
 				let pt = sk.decrypt(&ct2)?;
 				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected)
 			}
@@ -377,7 +507,7 @@ mod tests {
 
 	#[test]
 	fn test_column_rotation() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let row_size = params.degree() >> 1;
 			for _ in 0..50 {
 				for i in 1..row_size {
@@ -395,9 +525,9 @@ mod tests {
 					expected[2 * row_size - i..].copy_from_slice(&v[row_size..row_size + i]);
 
 					let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-					let mut ct = sk.encrypt(&pt)?;
+					let ct = sk.encrypt(&pt)?;
 
-					let ct2 = ek.rotates_column_by(&mut ct, i)?;
+					let ct2 = ek.rotates_column_by(&ct, i)?;
 					let pt = sk.decrypt(&ct2)?;
 					assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected)
 				}
@@ -407,10 +537,41 @@ mod tests {
 	}
 
 	#[test]
+	fn test_expansion() -> Result<(), String> {
+		for params in [Arc::new(BfvParameters::default(2))] {
+			let log_degree = 64 - 1 - params.degree().leading_zeros();
+			for _ in 0..1 {
+				for i in 1..1 + log_degree as usize {
+					let mut sk = SecretKey::random(&params);
+					let ek = EvaluationKeyBuilder::new(&sk)
+						.enable_expansion(i)?
+						.build()?;
+
+					assert!(ek.supports_expansion(i));
+					assert!(!ek.supports_expansion(i + 1));
+					let v = params.plaintext.random_vec(1 << i);
+					let pt = Plaintext::try_encode(&v as &[u64], Encoding::Poly, &params)?;
+					let ct = sk.encrypt(&pt)?;
+
+					let ct2 = ek.expands(&ct, i)?;
+					assert_eq!(ct2.len(), 1 << i);
+					for (vi, ct2i) in izip!(&v, &ct2) {
+						let mut expected = vec![0u64; params.degree()];
+						expected[0] = params.plaintext.mul(*vi, (1 << i) as u64);
+						let pt = sk.decrypt(ct2i)?;
+						assert_eq!(expected, Vec::<u64>::try_decode(&pt, Encoding::Poly)?);
+					}
+				}
+			}
+		}
+		Ok(())
+	}
+
+	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 
@@ -430,6 +591,62 @@ mod tests {
 				.build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let proto = EvaluationKeyProto::from(&ek);
+			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_serialize() -> Result<(), String> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_row_rotation()
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk).build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
 		}
 		Ok(())
 	}

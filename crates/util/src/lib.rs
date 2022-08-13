@@ -2,11 +2,13 @@
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 #![feature(is_some_with)]
+#![feature(int_roundings)]
 #![feature(test)]
 
 //! Utilities for the fhe.rs library.
 
-use num_bigint::{prime::probably_prime, BigUint};
+use num_bigint::{prime::probably_prime, BigUint, ModInverse};
+use num_traits::cast::ToPrimitive;
 use rand::{thread_rng, RngCore};
 use std::panic::UnwindSafe;
 
@@ -59,6 +61,83 @@ pub fn sample_vec_cbd(vector_size: usize, variance: usize) -> Result<Vec<i64>, &
 	}
 
 	Ok(out)
+}
+
+/// Transcodes a vector of u64 of nbits numbers into a vector of bytes
+/// TODO: To test
+pub fn transcode_forward(a: &[u64], nbits: usize) -> Vec<u8> {
+	assert!(nbits <= 64);
+	let mask = (u64::MAX >> (64 - nbits)) as u128;
+	let nbytes = (a.len() * nbits).div_ceil(8);
+	let mut out = Vec::with_capacity(nbytes);
+
+	let mut current_index = 0;
+	let mut current_value = 0u128;
+	let mut current_value_nbits = 0;
+	while current_index < a.len() {
+		if current_value_nbits < 8 {
+			debug_assert!(64 - a[current_index].leading_zeros() <= nbits as u32);
+			current_value |= ((a[current_index] as u128) & mask) << current_value_nbits;
+			current_value_nbits += nbits;
+			current_index += 1;
+		}
+		while current_value_nbits >= 8 {
+			out.push(current_value as u8);
+			current_value >>= 8;
+			current_value_nbits -= 8;
+		}
+	}
+	if current_value_nbits > 0 {
+		assert!(current_value_nbits < 8);
+		assert_eq!(out.len(), nbytes - 1);
+		out.push(current_value as u8)
+	} else {
+		assert_eq!(out.len(), nbytes);
+		assert_eq!(current_value, 0);
+	}
+	out
+}
+
+/// Transcodes a vector of u8 into a vector of u64 of nbits numbers
+/// TODO: To test
+pub fn transcode_backward(b: &[u8], nbits: usize) -> Vec<u64> {
+	assert!(nbits <= 64);
+	let mask = (u64::MAX >> (64 - nbits)) as u128;
+
+	let nelements = (b.len() * 8).div_ceil(nbits);
+	let mut out = Vec::with_capacity(nelements);
+
+	let mut current_value = 0u128;
+	let mut current_value_nbits = 0;
+	let mut current_index = 0;
+	while current_index < b.len() {
+		if current_value_nbits < nbits {
+			current_value |= (b[current_index] as u128) << current_value_nbits;
+			current_value_nbits += 8;
+			current_index += 1;
+		}
+		while current_value_nbits >= nbits {
+			out.push((current_value & mask) as u64);
+			current_value >>= nbits;
+			current_value_nbits -= nbits;
+		}
+	}
+	if current_value_nbits > 0 {
+		assert_eq!(out.len(), nelements - 1);
+		out.push(current_value as u64);
+	} else {
+		assert_eq!(out.len(), nelements);
+		assert_eq!(current_value, 0);
+	}
+	out
+}
+
+/// Computes the inverse
+/// TODO: To test
+pub fn inverse(a: u64, p: u64) -> Option<u64> {
+	let p = BigUint::from(p);
+	let a = BigUint::from(a);
+	a.mod_inverse(p)?.to_u64()
 }
 
 #[cfg(test)]

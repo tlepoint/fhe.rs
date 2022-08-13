@@ -9,14 +9,14 @@ use math::{
 };
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::rc::Rc;
+use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// Key switching key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq)]
 pub struct KeySwitchingKey {
 	/// The parameters of the underlying BFV encryption scheme.
-	pub(crate) par: Rc<BfvParameters>,
+	pub(crate) par: Arc<BfvParameters>,
 
 	/// The seed that generated the polynomials c1.
 	pub(crate) seed: <ChaCha8Rng as SeedableRng>::Seed,
@@ -46,7 +46,7 @@ impl KeySwitchingKey {
 
 	/// Generate the c1's from the seed
 	fn generate_c1(
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 		seed: <ChaCha8Rng as SeedableRng>::Seed,
 		size: usize,
 	) -> Vec<Poly> {
@@ -131,7 +131,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 
 	fn try_convert_from(
 		value: &KeySwitchingKeyProto,
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		let seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 		if seed.is_err() {
@@ -170,13 +170,13 @@ mod tests {
 		rq::{Poly, Representation},
 	};
 	use num_bigint::BigUint;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_constructor() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
@@ -188,7 +188,7 @@ mod tests {
 
 	#[test]
 	fn test_key_switch() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let mut s = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
@@ -219,8 +219,8 @@ mod tests {
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;

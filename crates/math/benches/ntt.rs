@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::zq::{ntt::NttOperator, Modulus};
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub fn ntt_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("ntt");
@@ -11,7 +11,7 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 			let p_nbits = 64 - p.leading_zeros();
 			let q = Modulus::new(p).unwrap();
 			let mut a = q.random_vec(*vector_size);
-			let op = NttOperator::new(&Rc::new(q), *vector_size).unwrap();
+			let op = NttOperator::new(&Arc::new(q), *vector_size).unwrap();
 
 			group.bench_function(
 				BenchmarkId::new("forward", format!("{}/{}", vector_size, p_nbits)),

@@ -9,4 +9,5 @@ repository = "https://github.com/tlepoint/fhe.rs"
 [dependencies]
 itertools = "0.10.3"
 num-bigint = {version = "0.8.1", package = "num-bigint-dig", features = ["prime"]}
+num-traits = "0.2.15"
 rand = "0.8.5"

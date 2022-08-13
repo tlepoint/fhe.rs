@@ -41,21 +41,32 @@ impl NttOperator {
 			let omega = Self::primitive_root(size, p);
 			let omega_inv = p.inv(omega).unwrap();
 
-			let mut omegas = vec![];
-			let mut omegas_inv = vec![];
-			let mut zetas_inv = vec![];
+			let mut exp = 1u64;
+			let mut exp_inv = 1u64;
+			let mut powers = Vec::with_capacity(size + 1);
+			let mut powers_inv = Vec::with_capacity(size + 1);
+			for _ in 0..size + 1 {
+				powers.push(exp);
+				powers_inv.push(exp_inv);
+				exp = p.mul(exp, omega);
+				exp_inv = p.mul(exp_inv, omega_inv);
+			}
+
+			let mut omegas = Vec::with_capacity(size);
+			let mut omegas_inv = Vec::with_capacity(size);
+			let mut zetas_inv = Vec::with_capacity(size);
 			for i in 0..size {
 				let j = i.reverse_bits() >> (size.leading_zeros() + 1);
-				let w = p.pow(omega, j as u64);
-				let z = p.pow(omega_inv, (j + 1) as u64);
-				omegas.push(w);
-				omegas_inv.push(p.inv(omega).unwrap());
-				zetas_inv.push(z);
+				omegas.push(powers[j]);
+				omegas_inv.push(powers_inv[j]);
+				zetas_inv.push(powers_inv[j + 1]);
 			}
 
 			let size_inv = p.inv(size as u64).unwrap();
+
 			let omegas_shoup = p.shoup_vec(&omegas);
 			let zetas_inv_shoup = p.shoup_vec(&zetas_inv);
+
 			Some(Self {
 				p: p.clone(),
 				p_twice: p.p * 2,
