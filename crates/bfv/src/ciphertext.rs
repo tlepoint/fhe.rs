@@ -28,16 +28,9 @@ pub struct Ciphertext {
 
 	/// The ciphertext elements.
 	pub(crate) c: Vec<Poly>,
-}
 
-impl Ciphertext {
-	pub(crate) fn placeholder(par: &Arc<BfvParameters>) -> Self {
-		Self {
-			par: par.clone(),
-			seed: None,
-			c: Default::default(),
-		}
-	}
+	/// A ciphertext may be minimized for communication, and not support homomorphic operations anymore.
+	pub(crate) minimized: bool,
 }
 
 impl Ciphertext {
@@ -47,7 +40,16 @@ impl Ciphertext {
 			par: par.clone(),
 			seed: None,
 			c: Default::default(),
+			minimized: false,
 		}
+	}
+
+	/// Minimizes the ciphertext for communication.
+	pub fn minimizes(&mut self) {
+		self.minimized = true;
+		self.c
+			.iter_mut()
+			.for_each(|ci| *ci = self.par.modswitch.scale(ci, false).unwrap())
 	}
 }
 
@@ -63,7 +65,9 @@ impl Add<&Ciphertext> for &Ciphertext {
 
 impl AddAssign<&Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: &Ciphertext) {
-		debug_assert_eq!(self.par, rhs.par);
+		assert_eq!(self.par, rhs.par);
+		assert!(!self.minimized && !rhs.minimized);
+
 		if self.c.is_empty() {
 			*self = rhs.clone()
 		} else {
@@ -76,7 +80,9 @@ impl AddAssign<&Ciphertext> for Ciphertext {
 
 impl AddAssign<Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: Ciphertext) {
-		debug_assert_eq!(self.par, rhs.par);
+		assert_eq!(self.par, rhs.par);
+		assert!(!self.minimized && !rhs.minimized);
+
 		if self.c.is_empty() {
 			*self = rhs
 		} else {
@@ -99,7 +105,9 @@ impl Sub<&Ciphertext> for &Ciphertext {
 
 impl SubAssign<&Ciphertext> for Ciphertext {
 	fn sub_assign(&mut self, rhs: &Ciphertext) {
-		debug_assert_eq!(self.par, rhs.par);
+		assert_eq!(self.par, rhs.par);
+		assert!(!self.minimized && !rhs.minimized);
+
 		if self.c.is_empty() {
 			*self = -rhs
 		} else {
@@ -114,11 +122,13 @@ impl Neg for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn neg(self) -> Ciphertext {
+		assert!(!self.minimized);
 		let c = self.c.iter().map(|c1i| -c1i).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
+			minimized: false,
 		}
 	}
 }
@@ -126,6 +136,7 @@ impl Neg for &Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
 	fn mul_assign(&mut self, rhs: &Plaintext) {
 		assert_eq!(self.par, rhs.par);
+		assert!(!self.minimized);
 		self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
 		self.seed = None
 	}
@@ -150,6 +161,9 @@ impl Mul<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn mul(self, rhs: &Ciphertext) -> Self::Output {
+		assert_eq!(self.par, rhs.par);
+		assert!(!self.minimized && !rhs.minimized);
+
 		// Scale all ciphertexts
 		// let mut now = std::time::SystemTime::now();
 		let self_c = self
@@ -206,6 +220,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
+			minimized: false,
 		}
 	}
 }
@@ -222,6 +237,9 @@ fn mul_internal(
 	}
 	if ct0.par != ct1.par {
 		return Err("Incompatible parameters".to_string());
+	}
+	if ct0.minimized || ct1.minimized {
+		return Err("A ciphertext is minimized and cannot be operated on".to_string());
 	}
 	if ct0.par.ciphertext_moduli.len() == 1 {
 		return Err("Parameters do not allow for multiplication".to_string());
@@ -268,6 +286,7 @@ fn mul_internal(
 		par: ct0.par.clone(),
 		seed: None,
 		c: vec![c0, c1],
+		minimized: false,
 	})
 }
 
@@ -293,6 +312,7 @@ impl From<&Ciphertext> for CiphertextProto {
 		} else {
 			proto.c.push(Rq::from(&ct.c[ct.c.len() - 1]))
 		}
+		proto.minimized = ct.minimized;
 		proto
 	}
 }
@@ -307,11 +327,17 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
 			return Err("Not enough polynomials".to_string());
 		}
+		let ctx = if value.minimized {
+			&par.plaintext_ctx
+		} else {
+			&par.ctx
+		};
+
 		let mut seed = None;
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
+			let mut ci = Poly::try_convert_from(cip, ctx, None)?;
 			unsafe { ci.allow_variable_time_computations() }
 			c.push(ci)
 		}
@@ -322,7 +348,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 				return Err("Invalid seed".to_string());
 			}
 			seed = try_seed.ok();
-			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
+			let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
 			c.push(c1)
 		}
@@ -331,6 +357,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			par: par.clone(),
 			seed,
 			c,
+			minimized: value.minimized,
 		})
 	}
 }

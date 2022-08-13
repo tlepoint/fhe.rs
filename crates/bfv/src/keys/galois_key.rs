@@ -39,6 +39,7 @@ impl GaloisKey {
 	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
 		assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
+		assert!(!ct.minimized);
 
 		let mut c0 = ct.c[0].substitute(self.exponent)?;
 		let mut c1 = Poly::zero(&self.ksk.par.ctx, Representation::Ntt);
@@ -52,6 +53,7 @@ impl GaloisKey {
 			par: ct.par.clone(),
 			seed: None,
 			c: vec![c0, c1],
+			minimized: false,
 		})
 	}
 }

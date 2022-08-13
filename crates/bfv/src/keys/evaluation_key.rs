@@ -55,7 +55,9 @@ impl EvaluationKey {
 
 	/// Computes the homomorphic inner sum.
 	pub fn computes_inner_sum(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
-		if !self.supports_inner_sum() {
+		if ct.minimized {
+			Err("The ciphertext is minimized".to_string())
+		} else if !self.supports_inner_sum() {
 			Err("This key does not support the inner sum functionality".to_string())
 		} else {
 			let mut out = ct.clone();
@@ -84,7 +86,9 @@ impl EvaluationKey {
 
 	/// Homomorphically rotate the rows of the plaintext
 	pub fn rotates_row(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
-		if !self.supports_row_rotation() {
+		if ct.minimized {
+			Err("The ciphertext is minimized".to_string())
+		} else if !self.supports_row_rotation() {
 			Err("This key does not support the row rotation functionality".to_string())
 		} else {
 			let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
@@ -103,7 +107,9 @@ impl EvaluationKey {
 
 	/// Homomorphically rotate the columns of the plaintext
 	pub fn rotates_column_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext, String> {
-		if !self.supports_column_rotation_by(i) {
+		if ct.minimized {
+			Err("The ciphertext is minimized".to_string())
+		} else if !self.supports_column_rotation_by(i) {
 			Err("This key does not support rotating the columns by this index".to_string())
 		} else {
 			let gk = self
@@ -141,12 +147,14 @@ impl EvaluationKey {
 	/// support expansion to this level, or if the ciphertext does not have size 2.
 	/// The output is a vector of 2^level ciphertexts.
 	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>, String> {
-		if ct.c.len() != 2 {
+		if ct.minimized {
+			Err("The ciphertext is minimized".to_string())
+		} else if ct.c.len() != 2 {
 			Err("The ciphertext is not of size 2".to_string())
 		} else if level == 0 {
 			Ok(vec![ct.clone()])
 		} else if self.supports_expansion(level) {
-			let mut out = vec![Ciphertext::placeholder(&ct.par); 1 << level];
+			let mut out = vec![Ciphertext::zero(&ct.par); 1 << level];
 			out[0] = ct.clone();
 
 			// We use the Oblivious expansion algorithm of

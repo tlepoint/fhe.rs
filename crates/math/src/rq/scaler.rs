@@ -71,7 +71,7 @@ impl Scaler {
 					self.scaler
 						.scale(&column, &mut new_column, self.number_common_moduli, floor)
 				});
-			} else {
+			} else if self.number_common_moduli < self.to.q.len() {
 				let mut p_coefficients_powerbasis = p.coefficients.clone();
 				// Backward NTT
 				if p.allow_variable_time_computations {
