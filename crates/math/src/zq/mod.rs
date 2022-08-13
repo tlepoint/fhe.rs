@@ -636,64 +636,14 @@ impl Modulus {
 	///
 	/// Panics if the length of the vector is not a multiple of 8.
 	pub fn serialize_vec(&self, a: &[u64]) -> Vec<u8> {
-		let nbytes = self.serialization_length(a.len());
-		let mut out = Vec::with_capacity(nbytes);
-
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		let mut current_index = 0;
-		let mut current_value = 0u128;
-		let mut current_value_nbits = 0;
-		while current_index < a.len() {
-			if current_value_nbits < 8 {
-				current_value |= (a[current_index] as u128) << current_value_nbits;
-				current_value_nbits += p_nbits;
-				current_index += 1;
-			}
-			while current_value_nbits >= 8 {
-				out.push(current_value as u8);
-				current_value >>= 8;
-				current_value_nbits -= 8;
-			}
-		}
-		assert_eq!(out.len(), nbytes);
-		assert_eq!(current_value_nbits, 0);
-		assert_eq!(current_value, 0);
-		out
+		util::transcode_forward(a, p_nbits)
 	}
 
 	/// Deserialize a vector of bytes into a vector of elements mod p.
-	///
-	/// Panics if the number of bits in the vector is not a multiple of the bitlength of p.
-	pub fn deserialize_vec(&self, b: &[u8]) -> Option<Vec<u64>> {
+	pub fn deserialize_vec(&self, b: &[u8]) -> Vec<u64> {
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		if (b.len() * 8) % p_nbits != 0 {
-			None
-		} else {
-			let mask = (u64::MAX >> (64 - p_nbits)) as u128;
-
-			let nelements = (b.len() * 8) / p_nbits;
-			let mut out = Vec::with_capacity(nelements);
-
-			let mut current_value = 0u128;
-			let mut current_value_nbits = 0;
-			let mut current_index = 0;
-			while current_index < b.len() {
-				if current_value_nbits < p_nbits {
-					current_value |= (b[current_index] as u128) << current_value_nbits;
-					current_value_nbits += 8;
-					current_index += 1;
-				}
-				while current_value_nbits >= p_nbits {
-					out.push((current_value & mask) as u64);
-					current_value >>= p_nbits;
-					current_value_nbits -= p_nbits;
-				}
-			}
-			assert_eq!(out.len(), nelements);
-			assert_eq!(current_value_nbits, 0);
-			assert_eq!(current_value, 0);
-			Some(out)
-		}
+		util::transcode_backward(b, p_nbits)
 	}
 }
 
@@ -936,7 +886,7 @@ mod tests {
 		fn test_serialize(p in valid_moduli(), mut a in prop_vec(any::<u64>(), 8)) {
 			p.reduce_vec(&mut a);
 			let b = p.serialize_vec(&a);
-			let c = p.deserialize_vec(&b).unwrap();
+			let c = p.deserialize_vec(&b);
 			prop_assert_eq!(a, c);
 		}
 	}

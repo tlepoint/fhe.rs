@@ -1,6 +1,6 @@
 //! Relinearization keys for the BFV encryption scheme
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::key_switching_key::KeySwitchingKey;
 use crate::{traits::TryConvertFrom, BfvParameters, SecretKey};
@@ -48,7 +48,7 @@ impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
 
 	fn try_convert_from(
 		value: &RelinearizationKeyProto,
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		if value.ksk.is_some() {
 			Ok(RelinearizationKey {
@@ -69,11 +69,11 @@ mod tests {
 	};
 	use fhers_protos::protos::bfv::RelinearizationKey as RelinearizationKeyProto;
 	use math::rq::{Poly, Representation};
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_relinearization() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let mut sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;
@@ -108,8 +108,8 @@ mod tests {
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let rk = RelinearizationKey::new(&sk)?;

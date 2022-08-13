@@ -3,7 +3,7 @@
 use crate::ciphertext::Ciphertext;
 use crate::parameters::BfvParameters;
 use crate::plaintext::{Encoding, Plaintext};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Encode values into [`Plaintext`].
 pub trait Encoder<T>
@@ -17,7 +17,7 @@ where
 	fn try_encode(
 		value: T,
 		encoding: Encoding,
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error>;
 }
 
@@ -67,5 +67,23 @@ where
 	type Error;
 
 	/// Attempt to convert the `value` with a specific parameter.
-	fn try_convert_from(value: T, par: &Rc<BfvParameters>) -> Result<Self, Self::Error>;
+	fn try_convert_from(value: T, par: &Arc<BfvParameters>) -> Result<Self, Self::Error>;
+}
+
+/// Serialization.
+pub trait Serialize {
+	/// Serialize `Self` into a vector fo bytes.
+	fn serialize(&self) -> Vec<u8>;
+}
+
+/// Deserialization with a context.
+pub trait Deserialize
+where
+	Self: Sized,
+{
+	/// The type of errors.
+	type Error;
+
+	/// Attempt to deserialize from a vector of bytes
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error>;
 }

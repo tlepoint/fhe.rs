@@ -2,25 +2,26 @@
 
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
-	traits::TryConvertFrom,
+	traits::{Deserialize, Serialize, TryConvertFrom},
 	EvaluationKey, Plaintext,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
 use itertools::{izip, Itertools};
 use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
 use num_bigint::BigUint;
+use protobuf::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-	rc::Rc,
+	sync::Arc,
 };
 
 /// A ciphertext encrypting a plaintext.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ciphertext {
 	/// The parameters of the underlying BFV encryption scheme.
-	pub(crate) par: Rc<BfvParameters>,
+	pub(crate) par: Arc<BfvParameters>,
 
 	/// The seed that generated the polynomial c1 in a fresh ciphertext.
 	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
@@ -30,10 +31,21 @@ pub struct Ciphertext {
 }
 
 impl Ciphertext {
-	pub(crate) fn placeholder(par: &Rc<BfvParameters>) -> Self {
+	pub(crate) fn placeholder(par: &Arc<BfvParameters>) -> Self {
 		Self {
 			par: par.clone(),
-			seed: Default::default(),
+			seed: None,
+			c: Default::default(),
+		}
+	}
+}
+
+impl Ciphertext {
+	/// Generate the zero ciphertext.
+	pub fn zero(par: &Arc<BfvParameters>) -> Self {
+		Self {
+			par: par.clone(),
+			seed: None,
 			c: Default::default(),
 		}
 	}
@@ -43,25 +55,35 @@ impl Add<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn add(self, rhs: &Ciphertext) -> Ciphertext {
-		debug_assert_eq!(self.par, rhs.par);
-		assert_eq!(self.c.len(), rhs.c.len());
-		let c = izip!(&self.c, &rhs.c)
-			.map(|(c1i, c2i)| c1i + c2i)
-			.collect_vec();
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-		}
+		let mut self_clone = self.clone();
+		self_clone += rhs;
+		self_clone
 	}
 }
 
 impl AddAssign<&Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-		assert_eq!(self.c.len(), rhs.c.len());
-		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
-		self.seed = None
+		if self.c.is_empty() {
+			*self = rhs.clone()
+		} else {
+			assert_eq!(self.c.len(), rhs.c.len());
+			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
+			self.seed = None
+		}
+	}
+}
+
+impl AddAssign<Ciphertext> for Ciphertext {
+	fn add_assign(&mut self, rhs: Ciphertext) {
+		debug_assert_eq!(self.par, rhs.par);
+		if self.c.is_empty() {
+			*self = rhs
+		} else {
+			assert_eq!(self.c.len(), rhs.c.len());
+			izip!(&mut self.c, rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
+			self.seed = None
+		}
 	}
 }
 
@@ -69,25 +91,22 @@ impl Sub<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn sub(self, rhs: &Ciphertext) -> Ciphertext {
-		assert_eq!(self.par, rhs.par);
-		assert_eq!(self.c.len(), rhs.c.len());
-		let c = izip!(&self.c, &rhs.c)
-			.map(|(c1i, c2i)| c1i - c2i)
-			.collect_vec();
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-		}
+		let mut self_clone = self.clone();
+		self_clone -= rhs;
+		self_clone
 	}
 }
 
 impl SubAssign<&Ciphertext> for Ciphertext {
 	fn sub_assign(&mut self, rhs: &Ciphertext) {
 		debug_assert_eq!(self.par, rhs.par);
-		assert_eq!(self.c.len(), rhs.c.len());
-		izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
-		self.seed = None
+		if self.c.is_empty() {
+			*self = -rhs
+		} else {
+			assert_eq!(self.c.len(), rhs.c.len());
+			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
+			self.seed = None
+		}
 	}
 }
 
@@ -116,12 +135,9 @@ impl Mul<&Plaintext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn mul(self, rhs: &Plaintext) -> Self::Output {
-		let c = self.c.iter().map(|c1i| c1i * &rhs.poly_ntt).collect_vec();
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-		}
+		let mut self_clone = self.clone();
+		self_clone *= rhs;
+		self_clone
 	}
 }
 
@@ -135,7 +151,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 
 	fn mul(self, rhs: &Ciphertext) -> Self::Output {
 		// Scale all ciphertexts
-		let mut now = std::time::SystemTime::now();
+		// let mut now = std::time::SystemTime::now();
 		let self_c = self
 			.c
 			.iter()
@@ -158,10 +174,10 @@ impl Mul<&Ciphertext> for &Ciphertext {
 					.unwrap()
 			})
 			.collect_vec();
-		println!("Extend: {:?}", now.elapsed().unwrap());
+		// println!("Extend: {:?}", now.elapsed().unwrap());
 
 		// Multiply
-		now = std::time::SystemTime::now();
+		// now = std::time::SystemTime::now();
 		let mut c = vec![
 			Poly::zero(&self.par.mul_1_params.to, Representation::Ntt);
 			self_c.len() + other_c.len() - 1
@@ -171,10 +187,10 @@ impl Mul<&Ciphertext> for &Ciphertext {
 				c[i + j] += &(&self_c[i] * &other_c[j])
 			}
 		}
-		println!("Multiply: {:?}", now.elapsed().unwrap());
+		// println!("Multiply: {:?}", now.elapsed().unwrap());
 
 		// Scale
-		now = std::time::SystemTime::now();
+		// now = std::time::SystemTime::now();
 		let c = c
 			.iter_mut()
 			.map(|ci| {
@@ -184,7 +200,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 				ci
 			})
 			.collect_vec();
-		println!("Scale: {:?}", now.elapsed().unwrap());
+		// println!("Scale: {:?}", now.elapsed().unwrap());
 
 		Ciphertext {
 			par: self.par.clone(),
@@ -215,15 +231,15 @@ fn mul_internal(
 	}
 
 	// Extend
-	let mut now = std::time::SystemTime::now();
+	// let mut now = std::time::SystemTime::now();
 	let c00 = mp.extender_self.scale(&ct0.c[0], false)?;
 	let c01 = mp.extender_self.scale(&ct0.c[1], false)?;
 	let c10 = mp.extender_other.scale(&ct1.c[0], false)?;
 	let c11 = mp.extender_other.scale(&ct1.c[1], false)?;
-	println!("Extend: {:?}", now.elapsed().unwrap());
+	// println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
-	now = std::time::SystemTime::now();
+	// now = std::time::SystemTime::now();
 	let mut c0 = &c00 * &c10;
 	let mut c1 = &c00 * &c11;
 	c1 += &(&c01 * &c10);
@@ -231,22 +247,22 @@ fn mul_internal(
 	c0.change_representation(Representation::PowerBasis);
 	c1.change_representation(Representation::PowerBasis);
 	c2.change_representation(Representation::PowerBasis);
-	println!("Multiply: {:?}", now.elapsed().unwrap());
+	// println!("Multiply: {:?}", now.elapsed().unwrap());
 
 	// Scale
 	// TODO: This should be faster??
-	now = std::time::SystemTime::now();
+	// now = std::time::SystemTime::now();
 	let mut c0 = mp.down_scaler.scale(&c0, false)?;
 	let mut c1 = mp.down_scaler.scale(&c1, false)?;
 	let c2 = mp.down_scaler.scale(&c2, false)?;
-	println!("Scale: {:?}", now.elapsed().unwrap());
+	// println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
-	now = std::time::SystemTime::now();
+	// now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
 	ek.relinearizes(&mut c0, &mut c1, &c2)?;
-	println!("Relinearize: {:?}", now.elapsed().unwrap());
+	// println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
 		par: ct0.par.clone(),
@@ -286,7 +302,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 	fn try_convert_from(
 		value: &CiphertextProto,
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
 			return Err("Not enough polynomials".to_string());
@@ -319,6 +335,24 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 	}
 }
 
+impl Serialize for Ciphertext {
+	fn serialize(&self) -> Vec<u8> {
+		CiphertextProto::from(self).write_to_bytes().unwrap()
+	}
+}
+
+impl Deserialize for Ciphertext {
+	type Error = String;
+
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
+		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
+			Ciphertext::try_convert_from(&ctp, par)
+		} else {
+			Err("This serialization is incorrect".to_string())
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::{mul, mul2};
@@ -327,14 +361,14 @@ mod tests {
 		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_add() {
 		let ntests = 100;
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			for _ in 0..ntests {
 				let a = params.plaintext.random_vec(params.degree());
@@ -367,8 +401,8 @@ mod tests {
 	#[test]
 	fn test_sub() {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -402,8 +436,8 @@ mod tests {
 	#[test]
 	fn test_neg() {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -429,8 +463,8 @@ mod tests {
 	#[test]
 	fn test_scalar_mul() {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -483,7 +517,7 @@ mod tests {
 
 	#[test]
 	fn test_mul() -> Result<(), String> {
-		let par = Rc::new(BfvParameters::default(2));
+		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
@@ -513,7 +547,7 @@ mod tests {
 
 	#[test]
 	fn test_mul_3() -> Result<(), String> {
-		let par = Rc::new(BfvParameters::default(2));
+		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
@@ -540,7 +574,7 @@ mod tests {
 	#[test]
 	fn test_mul2() -> Result<(), String> {
 		let ntests = 100;
-		let par = Rc::new(BfvParameters::default(2));
+		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..ntests {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
@@ -567,8 +601,8 @@ mod tests {
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());

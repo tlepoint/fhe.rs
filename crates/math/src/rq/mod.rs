@@ -18,7 +18,7 @@ use ndarray::{s, Array2, ArrayView2};
 use num_bigint::BigUint;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use std::rc::Rc;
+use std::sync::Arc;
 use traits::TryConvertFrom;
 use util::sample_vec_cbd;
 use zeroize::Zeroize;
@@ -27,7 +27,7 @@ use zeroize::Zeroize;
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Context {
 	q: Vec<Modulus>,
-	rns: Rc<RnsContext>,
+	rns: Arc<RnsContext>,
 	ops: Vec<NttOperator>,
 	degree: usize,
 }
@@ -41,7 +41,7 @@ impl Context {
 			Err("The degree is not a power of two larger or equal to 8".to_string())
 		} else {
 			let mut q = Vec::with_capacity(moduli.len());
-			let rns = Rc::new(RnsContext::new(moduli)?);
+			let rns = Arc::new(RnsContext::new(moduli)?);
 			let mut ops = Vec::with_capacity(moduli.len());
 			for modulus in moduli {
 				let qi = Modulus::new(*modulus)?;
@@ -83,7 +83,7 @@ pub enum Representation {
 /// Struct that holds a polynomial for a specific context.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Poly {
-	ctx: Rc<Context>,
+	ctx: Arc<Context>,
 	representation: Representation,
 	allow_variable_time_computations: bool,
 	coefficients: Array2<u64>,
@@ -92,7 +92,7 @@ pub struct Poly {
 
 impl Poly {
 	/// Creates a polynomial holding the constant 0.
-	pub fn zero(ctx: &Rc<Context>, representation: Representation) -> Self {
+	pub fn zero(ctx: &Arc<Context>, representation: Representation) -> Self {
 		Self {
 			ctx: ctx.clone(),
 			representation: representation.clone(),
@@ -204,7 +204,7 @@ impl Poly {
 	}
 
 	/// Generate a random polynomial.
-	pub fn random(ctx: &Rc<Context>, representation: Representation) -> Self {
+	pub fn random(ctx: &Arc<Context>, representation: Representation) -> Self {
 		let mut p = Poly::zero(ctx, representation);
 		izip!(p.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut v, qi)| {
 			v.as_slice_mut()
@@ -219,7 +219,7 @@ impl Poly {
 
 	/// Generate a random polynomial deterministically from a seed.
 	pub fn random_from_seed(
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: Representation,
 		seed: <ChaCha8Rng as SeedableRng>::Seed,
 	) -> Self {
@@ -242,7 +242,7 @@ impl Poly {
 	///
 	/// Returns an error if the variance does not belong to [1, ..., 16].
 	pub fn small(
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: Representation,
 		variance: usize,
 	) -> Result<Self, String> {
@@ -389,7 +389,7 @@ mod tests {
 	use num_traits::{One, Zero};
 	use rand::{thread_rng, Rng, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	// Moduli to be used in tests.
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
@@ -423,7 +423,7 @@ mod tests {
 		];
 
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
 			let q = Poly::zero(&ctx, Representation::Ntt);
 			assert_ne!(p, q);
@@ -431,7 +431,7 @@ mod tests {
 			assert_eq!(Vec::<u64>::from(&q), &[0; 8]);
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let p = Poly::zero(&ctx, Representation::PowerBasis);
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
@@ -450,13 +450,13 @@ mod tests {
 			thread_rng().fill(&mut seed);
 
 			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 				let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
 				let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
 				assert_eq!(p, q);
 			}
 
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
+			let ctx = Arc::new(Context::new(MODULI, 8)?);
 			let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
 			let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
 			assert_eq!(p, q);
@@ -476,13 +476,13 @@ mod tests {
 	fn test_coefficients() -> Result<(), String> {
 		for _ in 0..50 {
 			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 				let p = Poly::random(&ctx, Representation::Ntt);
 				let p_coefficients = Vec::<u64>::from(&p);
 				assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
 			}
 
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
+			let ctx = Arc::new(Context::new(MODULI, 8)?);
 			let p = Poly::random(&ctx, Representation::Ntt);
 			let p_coefficients = Vec::<u64>::from(&p);
 			assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
@@ -494,13 +494,13 @@ mod tests {
 	fn test_modulus() -> Result<(), String> {
 		for modulus in MODULI {
 			let modulus_biguint = BigUint::from(*modulus);
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			assert_eq!(ctx.modulus(), &modulus_biguint)
 		}
 
 		let mut modulus_biguint = BigUint::one();
 		MODULI.iter().for_each(|m| modulus_biguint *= *m);
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		assert_eq!(ctx.modulus(), &modulus_biguint);
 
 		Ok(())
@@ -509,7 +509,7 @@ mod tests {
 	#[test]
 	fn test_allow_variable_time_computations() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let mut p = Poly::random(&ctx, Representation::default());
 			assert!(!p.allow_variable_time_computations);
 
@@ -523,7 +523,7 @@ mod tests {
 			assert!(!p.allow_variable_time_computations);
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let mut p = Poly::random(&ctx, Representation::default());
 		assert!(!p.allow_variable_time_computations);
 
@@ -558,7 +558,7 @@ mod tests {
 
 	#[test]
 	fn test_change_representation() -> Result<(), String> {
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::default());
 		assert_eq!(p.representation, Representation::default());
@@ -597,7 +597,7 @@ mod tests {
 
 	#[test]
 	fn test_override_representation() -> Result<(), String> {
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::PowerBasis);
 		let q = p.clone();
@@ -627,7 +627,7 @@ mod tests {
 	#[test]
 	fn test_small() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let q = Modulus::new(*modulus).unwrap();
 			assert!(Poly::small(&ctx, Representation::PowerBasis, 0).is_err_and(
 				|e| e.to_string() == "The variance should be an integer between 1 and 16"
@@ -652,7 +652,7 @@ mod tests {
 
 		// TODO: This is *way* too slow??
 		// // Generate a very large polynomial to check the variance (here equal to 8).
-		// let ctx = Rc::new(Context::new(&[4611686018326724609], 1 << 13)?);
+		// let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 13)?);
 		// let q = Modulus::new(4611686018326724609).unwrap();
 		// let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
 		// let coefficients = p.coefficients().to_slice().unwrap();
@@ -671,7 +671,7 @@ mod tests {
 	#[test]
 	fn test_substitute() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);
 			let mut p_ntt = p.clone();
 			p_ntt.change_representation(Representation::Ntt);
@@ -735,7 +735,7 @@ mod tests {
 			assert_eq!(p_ntt_shoup, p_ntt_shoup.substitute(3)?.substitute(11)?);
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let p = Poly::random(&ctx, Representation::PowerBasis);
 		let mut p_ntt = p.clone();
 		p_ntt.change_representation(Representation::Ntt);

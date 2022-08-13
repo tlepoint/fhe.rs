@@ -3,7 +3,7 @@
 //! Traits associated with polynomials.
 
 use super::{Context, Poly, Representation};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Conversions to create polynomials.
 ///
@@ -24,7 +24,7 @@ where
 	/// value that encodes the representation (e.g., serialization, protobuf, etc.).
 	fn try_convert_from<R>(
 		value: T,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where

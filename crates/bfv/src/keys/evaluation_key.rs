@@ -1,6 +1,7 @@
 //! Evaluation keys for the BFV encryption scheme.
 
 use super::{GaloisKey, RelinearizationKey, SecretKey};
+use crate::traits::{Deserialize, Serialize};
 use crate::BfvParameters;
 use crate::{traits::TryConvertFrom, Ciphertext};
 use fhers_protos::protos::bfv::{
@@ -9,9 +10,9 @@ use fhers_protos::protos::bfv::{
 };
 use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use math::zq::Modulus;
-use protobuf::MessageField;
+use protobuf::{Message, MessageField};
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Evaluation key for the BFV encryption scheme.
@@ -23,7 +24,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// - inner sum
 #[derive(Debug, PartialEq, Eq)]
 pub struct EvaluationKey {
-	par: Rc<BfvParameters>,
+	par: Arc<BfvParameters>,
 
 	/// Relinearization key
 	rk: Option<RelinearizationKey>,
@@ -168,7 +169,7 @@ impl EvaluationKey {
 		}
 	}
 
-	fn construct_rot_to_gk_exponent(par: &Rc<BfvParameters>) -> HashMap<usize, usize> {
+	fn construct_rot_to_gk_exponent(par: &Arc<BfvParameters>) -> HashMap<usize, usize> {
 		let mut m = HashMap::new();
 		let q = Modulus::new(2 * par.degree() as u64).unwrap();
 		for i in 1..par.degree() / 2 {
@@ -176,6 +177,26 @@ impl EvaluationKey {
 			m.insert(i, exp);
 		}
 		m
+	}
+}
+
+impl Serialize for EvaluationKey {
+	fn serialize(&self) -> Vec<u8> {
+		let ekp = EvaluationKeyProto::from(self);
+		ekp.write_to_bytes().unwrap()
+	}
+}
+
+impl Deserialize for EvaluationKey {
+	type Error = String;
+
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
+		let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
+		if let Ok(gkp) = gkp {
+			EvaluationKey::try_convert_from(&gkp, par)
+		} else {
+			Err("Invalid serialization".to_string())
+		}
 	}
 }
 
@@ -328,7 +349,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 
 	fn try_convert_from(
 		value: &EvaluationKeyProto,
-		par: &Rc<crate::BfvParameters>,
+		par: &Arc<crate::BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		let mut rk = None;
 		if value.rk.is_some() {
@@ -369,16 +390,16 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 mod tests {
 	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::{
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		traits::{Decoder, Decryptor, Deserialize, Encoder, Encryptor, Serialize, TryConvertFrom},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::EvaluationKey as EvaluationKeyProto;
 	use itertools::izip;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_builder() -> Result<(), String> {
-		let params = Rc::new(BfvParameters::default(2));
+		let params = Arc::new(BfvParameters::default(2));
 		let sk = SecretKey::random(&params);
 		let mut builder = EvaluationKeyBuilder::new(&sk);
 
@@ -434,7 +455,7 @@ mod tests {
 
 	#[test]
 	fn test_inner_sum() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
@@ -460,7 +481,7 @@ mod tests {
 
 	#[test]
 	fn test_row_rotation() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk)
@@ -486,7 +507,7 @@ mod tests {
 
 	#[test]
 	fn test_column_rotation() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let row_size = params.degree() >> 1;
 			for _ in 0..50 {
 				for i in 1..row_size {
@@ -517,7 +538,7 @@ mod tests {
 
 	#[test]
 	fn test_expansion() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let log_degree = 64 - 1 - params.degree().leading_zeros();
 			for _ in 0..1 {
 				for i in 1..1 + log_degree as usize {
@@ -549,8 +570,8 @@ mod tests {
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 
@@ -584,6 +605,48 @@ mod tests {
 				.build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_serialize() -> Result<(), String> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_row_rotation()
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk).build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+			let ek = EvaluationKeyBuilder::new(&sk)
+				.enable_inner_sum()
+				.enable_relinearization()
+				.enable_expansion(params.degree().ilog2() as usize)?
+				.build()?;
+			let bytes = ek.serialize();
+			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
 		}
 		Ok(())
 	}

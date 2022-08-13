@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use math::rq::extender::Extender;
 use math::rq::traits::ContextSwitcher;
 use math::rq::*;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 static MODULI: &[u64; 4] = &[
@@ -23,12 +23,19 @@ pub fn rq_benchmark(c: &mut Criterion) {
 			if !nmoduli.is_power_of_two() {
 				continue;
 			}
-			let ctx = Rc::new(Context::new(&MODULI[0..nmoduli], *degree).unwrap());
+			let ctx = Arc::new(Context::new(&MODULI[0..nmoduli], *degree).unwrap());
 			let mut p = Poly::random(&ctx, Representation::Ntt);
 			let mut q = Poly::random(&ctx, Representation::Ntt);
 
 			group.bench_function(
 				BenchmarkId::new("add", format!("{}/{}", degree, 62 * nmoduli)),
+				|b| {
+					b.iter(|| p = &p + &q);
+				},
+			);
+
+			group.bench_function(
+				BenchmarkId::new("add_assign", format!("{}/{}", degree, 62 * nmoduli)),
 				|b| {
 					b.iter(|| p += &q);
 				},
@@ -37,12 +44,26 @@ pub fn rq_benchmark(c: &mut Criterion) {
 			group.bench_function(
 				BenchmarkId::new("sub", format!("{}/{}", degree, 62 * nmoduli)),
 				|b| {
+					b.iter(|| p = &p - &q);
+				},
+			);
+
+			group.bench_function(
+				BenchmarkId::new("sub_assign", format!("{}/{}", degree, 62 * nmoduli)),
+				|b| {
 					b.iter(|| p -= &q);
 				},
 			);
 
 			group.bench_function(
 				BenchmarkId::new("mul", format!("{}/{}", degree, 62 * nmoduli)),
+				|b| {
+					b.iter(|| p = &p * &q);
+				},
+			);
+
+			group.bench_function(
+				BenchmarkId::new("mul_assign", format!("{}/{}", degree, 62 * nmoduli)),
 				|b| {
 					b.iter(|| p *= &q);
 				},
@@ -52,6 +73,13 @@ pub fn rq_benchmark(c: &mut Criterion) {
 
 			group.bench_function(
 				BenchmarkId::new("mul_shoup", format!("{}/{}", degree, 62 * nmoduli)),
+				|b| {
+					b.iter(|| p = &p * &q);
+				},
+			);
+
+			group.bench_function(
+				BenchmarkId::new("mul_shoup_assign", format!("{}/{}", degree, 62 * nmoduli)),
 				|b| {
 					b.iter(|| p *= &q);
 				},
@@ -172,10 +200,10 @@ pub fn rq_switchers_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("rq_switchers");
 
 	for degree in &[1024usize, 4096] {
-		let from = Rc::new(Context::new(Q, *degree).unwrap());
+		let from = Arc::new(Context::new(Q, *degree).unwrap());
 		let mut all_moduli = Q.to_vec();
 		all_moduli.append(&mut P.to_vec());
-		let to = Rc::new(Context::new(&all_moduli, *degree).unwrap());
+		let to = Arc::new(Context::new(&all_moduli, *degree).unwrap());
 
 		let p = Poly::random(&from, Representation::PowerBasis);
 		let extender = Extender::new(&from, &to).unwrap();

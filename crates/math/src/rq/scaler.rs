@@ -6,13 +6,13 @@ use super::{Context, Poly, Representation};
 use crate::rns::{RnsScaler, ScalingFactor};
 use itertools::izip;
 use ndarray::{s, Array2, Axis};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Context extender.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Scaler {
-	from: Rc<Context>,
-	to: Rc<Context>,
+	from: Arc<Context>,
+	to: Arc<Context>,
 	number_common_moduli: usize,
 	scaler: RnsScaler,
 }
@@ -20,8 +20,8 @@ pub struct Scaler {
 impl Scaler {
 	/// Create a scaler from a context `from` to a context `to`.
 	pub fn new(
-		from: &Rc<Context>,
-		to: &Rc<Context>,
+		from: &Arc<Context>,
+		to: &Arc<Context>,
 		factor: ScalingFactor,
 	) -> Result<Self, String> {
 		let mut number_common_moduli = 0;
@@ -130,7 +130,7 @@ mod tests {
 	use crate::rq::{Context, Poly, Representation};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	// Moduli to be used in tests.
 	static Q: &[u64; 3] = &[
@@ -148,8 +148,8 @@ mod tests {
 	#[test]
 	fn test_scaler() -> Result<(), String> {
 		let ntests = 100;
-		let from = Rc::new(Context::new(Q, 8)?);
-		let to = Rc::new(Context::new(P, 8)?);
+		let from = Arc::new(Context::new(Q, 8)?);
+		let to = Arc::new(Context::new(P, 8)?);
 
 		for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
 			for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {

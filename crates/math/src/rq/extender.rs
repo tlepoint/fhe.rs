@@ -7,20 +7,20 @@ use super::{traits::ContextSwitcher, Context, Poly, Representation};
 use crate::rns::{RnsContext, RnsConverter};
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, Axis};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Context extender.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Extender {
-	from: Rc<Context>,
-	to: Rc<Context>,
+	from: Arc<Context>,
+	to: Arc<Context>,
 	converter: RnsConverter,
 }
 
 impl Extender {
 	/// Create a context extender from a context `from` to a context `to`. The moduli used
 	/// in the context `to` must be distinct from the moduli in `from`.
-	pub fn new(from: &Rc<Context>, to: &Rc<Context>) -> Result<Self, String> {
+	pub fn new(from: &Arc<Context>, to: &Arc<Context>) -> Result<Self, String> {
 		if from.degree != to.degree {
 			return Err("The context should be for polynomials of the same degree".to_string());
 		}
@@ -133,7 +133,7 @@ mod tests {
 		rq::{traits::ContextSwitcher, Context, Poly, Representation},
 	};
 	use num_bigint::BigUint;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	// Moduli to be used in tests.
 	static Q: &[u64; 3] = &[
@@ -157,10 +157,10 @@ mod tests {
 	#[test]
 	fn test_extender() -> Result<(), String> {
 		let ntests = 100;
-		let from = Rc::new(Context::new(Q, 8)?);
+		let from = Arc::new(Context::new(Q, 8)?);
 		let mut all_moduli = Q.to_vec();
 		all_moduli.append(&mut P.to_vec());
-		let to = Rc::new(Context::new(&all_moduli, 8)?);
+		let to = Arc::new(Context::new(&all_moduli, 8)?);
 
 		let extender = Extender::new(&from, &to)?;
 

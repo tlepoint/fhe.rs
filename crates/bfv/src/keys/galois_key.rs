@@ -1,6 +1,6 @@
 //! Galois keys for the BFV encryption scheme
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::key_switching_key::KeySwitchingKey;
 use crate::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
@@ -70,7 +70,7 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 
 	fn try_convert_from(
 		value: &GaloisKeyProto,
-		par: &Rc<BfvParameters>,
+		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
 		let exponent = (value.exponent as usize) % (2 * par.degree());
 		if exponent & 1 == 0 {
@@ -95,11 +95,11 @@ mod tests {
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::GaloisKey as GaloisKeyProto;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	#[test]
 	fn test_relinearization() -> Result<(), String> {
-		for params in [Rc::new(BfvParameters::default(2))] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let v = params.plaintext.random_vec(params.degree());
@@ -146,8 +146,8 @@ mod tests {
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
 		for params in [
-			Rc::new(BfvParameters::default(1)),
-			Rc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
 		] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9)?;

@@ -8,10 +8,10 @@ use bfv::{
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
 use math::rq::{Context, Poly, Representation};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
-fn params() -> Result<Vec<Rc<BfvParameters>>, String> {
+fn params() -> Result<Vec<Arc<BfvParameters>>, String> {
 	let par_small = BfvParametersBuilder::new()
 		.set_degree(2048)?
 		.set_plaintext_modulus(1153)?
@@ -23,7 +23,7 @@ fn params() -> Result<Vec<Rc<BfvParameters>>, String> {
 		.set_ciphertext_moduli_sizes(&[62; 7])?
 		.build()
 		.unwrap();
-	Ok(vec![Rc::new(par_small), Rc::new(par_large)])
+	Ok(vec![Arc::new(par_small), Arc::new(par_large)])
 }
 
 pub fn ops_benchmark(c: &mut Criterion) {
@@ -121,7 +121,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let ctx = Rc::new(Context::new(par.moduli(), par.degree()).unwrap());
+		let ctx = Arc::new(Context::new(par.moduli(), par.degree()).unwrap());
 		let p3 = Poly::random(&ctx, Representation::PowerBasis);
 		let mut p2 = Poly::random(&ctx, Representation::Ntt);
 		let mut p1 = Poly::random(&ctx, Representation::Ntt);

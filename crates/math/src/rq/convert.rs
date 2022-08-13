@@ -6,7 +6,7 @@ use itertools::{izip, Itertools};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
 use protobuf::EnumOrUnknown;
-use std::rc::Rc;
+use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
 impl Unsigned for u8 {}
@@ -19,7 +19,7 @@ impl<T: Unsigned> TryConvertFrom<T> for Poly {
 
 	fn try_convert_from<R>(
 		value: T,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -68,7 +68,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 
 	fn try_convert_from<R>(
 		mut v: Vec<u64>,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -144,7 +144,7 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 
 	fn try_convert_from<R>(
 		value: &proto_rq::Rq,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -180,11 +180,8 @@ impl TryConvertFrom<&proto_rq::Rq> for Poly {
 		for i in 0..ctx.q.len() {
 			let qi = &ctx.q[i];
 			let size = qi.serialization_length(degree);
-			let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
-			if v == None {
-				return Err("Could not deserialize the polynomial coefficients".to_string());
-			}
-			coefficients.append(&mut v.unwrap());
+			let mut v = qi.deserialize_vec(&value.coefficients[index..index + size]);
+			coefficients.append(&mut v);
 			index += size;
 		}
 
@@ -197,7 +194,7 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 
 	fn try_convert_from<R>(
 		a: Array2<u64>,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -228,7 +225,7 @@ impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[T],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -244,7 +241,7 @@ impl TryConvertFrom<&[i64]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[i64],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -273,7 +270,7 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[BigUint],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -290,7 +287,6 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 			let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
 
 			izip!(coefficients.axis_iter_mut(Axis(1)), v).for_each(|(mut c, vi)| {
-				// c.clone_from(&ctx.rns.project(vi));
 				c.assign(&ArrayView::from(&ctx.rns.project(vi)));
 			});
 
@@ -324,7 +320,7 @@ impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
 
 	fn try_convert_from<R>(
 		v: &Vec<T>,
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -340,7 +336,7 @@ impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[T; N],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -355,7 +351,7 @@ impl<const N: usize> TryConvertFrom<&[BigUint; N]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[BigUint; N],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -370,7 +366,7 @@ impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
 
 	fn try_convert_from<R>(
 		v: &[i64; N],
-		ctx: &Rc<Context>,
+		ctx: &Arc<Context>,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where
@@ -399,14 +395,14 @@ mod tests {
 	use crate::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 	use fhers_protos::protos::rq as proto_rq;
 	use num_bigint::BigUint;
-	use std::rc::Rc;
+	use std::sync::Arc;
 
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
 
 	#[test]
 	fn test_proto() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);
 			let proto = proto_rq::Rq::from(&p);
 			assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
@@ -423,7 +419,7 @@ mod tests {
 			);
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let p = Poly::random(&ctx, Representation::PowerBasis);
 		let proto = proto_rq::Rq::from(&p);
 		assert!(Poly::try_convert_from(&proto, &ctx, None).is_ok_and(|q| q == &p));
@@ -439,7 +435,7 @@ mod tests {
 			"The representation asked for does not match the representation in the serialization"
 		);
 
-		let ctx = Rc::new(Context::new(&MODULI[0..1], 8)?);
+		let ctx = Arc::new(Context::new(&MODULI[0..1], 8)?);
 		assert_eq!(
 			Poly::try_convert_from(&proto, &ctx, None)
 				.expect_err("Should fail because of incorrect context"),
@@ -452,7 +448,7 @@ mod tests {
 	#[test]
 	fn test_try_convert_from_slice_zero() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 
 			// Power Basis
 			let p = Poly::try_convert_from(&[0u64], &ctx, Representation::PowerBasis);
@@ -487,7 +483,7 @@ mod tests {
 			assert!(p.is_err());
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let mut p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 		p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, Representation::Ntt);
@@ -519,7 +515,7 @@ mod tests {
 	#[test]
 	fn test_try_convert_from_vec_zero() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
 			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 			p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
@@ -541,7 +537,7 @@ mod tests {
 			assert!(p.is_err());
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let mut p = Poly::try_convert_from(vec![], &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
 		p = Poly::try_convert_from(vec![], &ctx, Representation::Ntt);
@@ -573,7 +569,7 @@ mod tests {
 	#[test]
 	fn test_try_convert_from_u64_zero() -> Result<(), String> {
 		for modulus in MODULI {
-			let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let mut p = <Poly as TryConvertFrom<u64>>::try_convert_from(
 				0,
 				&ctx,
@@ -584,7 +580,7 @@ mod tests {
 			assert!(p.is_err());
 		}
 
-		let ctx = Rc::new(Context::new(MODULI, 8)?);
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let mut p =
 			<Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, Representation::PowerBasis);
 		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
@@ -598,7 +594,7 @@ mod tests {
 	fn test_biguint() -> Result<(), String> {
 		for _ in 0..100 {
 			for modulus in MODULI {
-				let ctx = Rc::new(Context::new(&[*modulus], 8)?);
+				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 				let p = Poly::random(&ctx, Representation::PowerBasis);
 				let p_coeffs = Vec::<BigUint>::from(&p);
 				let q =
@@ -606,7 +602,7 @@ mod tests {
 				assert_eq!(p, q);
 			}
 
-			let ctx = Rc::new(Context::new(MODULI, 8)?);
+			let ctx = Arc::new(Context::new(MODULI, 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);
 			let p_coeffs = Vec::<BigUint>::from(&p);
 			assert_eq!(p_coeffs.len(), ctx.degree);

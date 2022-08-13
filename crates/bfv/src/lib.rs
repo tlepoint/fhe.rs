@@ -4,6 +4,7 @@
 #![feature(is_some_with)]
 #![feature(option_get_or_insert_default)]
 #![feature(int_log)]
+#![feature(int_roundings)]
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 

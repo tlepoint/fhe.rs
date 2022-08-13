@@ -9,7 +9,7 @@ use math::{
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Parameters for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq)]
@@ -32,10 +32,10 @@ pub struct BfvParameters {
 	pub(crate) variance: usize,
 
 	/// Context for the underlying polynomials
-	pub(crate) ctx: Rc<Context>,
+	pub(crate) ctx: Arc<Context>,
 
 	/// Ntt operator for the SIMD plaintext, if possible.
-	pub(crate) op: Option<Rc<NttOperator>>,
+	pub(crate) op: Option<Arc<NttOperator>>,
 
 	/// Scaling polynomial for the plaintext
 	pub(crate) delta: Poly,
@@ -57,6 +57,8 @@ pub struct BfvParameters {
 
 	pub(crate) matrix_reps_index_map: Vec<usize>,
 }
+
+unsafe impl Send for BfvParameters {}
 
 impl BfvParameters {
 	/// Returns the underlying polynomial degree
@@ -216,9 +218,8 @@ impl BfvParametersBuilder {
 
 		// Compute the scaling factors for the plaintext
 		let rns = RnsContext::new(&moduli)?;
-
-		let ctx = Rc::new(Context::new(&moduli, self.degree)?);
-		let plaintext_ctx = Rc::new(Context::new(&moduli[..1], self.degree)?);
+		let ctx = Arc::new(Context::new(&moduli, self.degree)?);
+		let plaintext_ctx = Arc::new(Context::new(&moduli[..1], self.degree)?);
 		let scaler = Scaler::new(
 			&ctx,
 			&plaintext_ctx,
@@ -256,7 +257,7 @@ impl BfvParametersBuilder {
 		let mut mul_1_moduli = vec![];
 		mul_1_moduli.append(&mut moduli.clone());
 		mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
-		let mul_1_ctx = Rc::new(Context::new(&mul_1_moduli, self.degree)?);
+		let mul_1_ctx = Arc::new(Context::new(&mul_1_moduli, self.degree)?);
 		let mul_1_params = MultiplicationParameters::new(
 			&ctx,
 			&mul_1_ctx,
@@ -271,7 +272,7 @@ impl BfvParametersBuilder {
 		mul_2_moduli.append(&mut moduli.clone());
 		mul_2_moduli.append(&mut extended_basis[..n_moduli].to_vec());
 		let rns_2 = RnsContext::new(&extended_basis[..n_moduli])?;
-		let mul_2_ctx = Rc::new(Context::new(&mul_2_moduli, self.degree)?);
+		let mul_2_ctx = Arc::new(Context::new(&mul_2_moduli, self.degree)?);
 		let mul_2_params = MultiplicationParameters::new(
 			&ctx,
 			&mul_2_ctx,
@@ -304,7 +305,7 @@ impl BfvParametersBuilder {
 			ciphertext_moduli_sizes: moduli_sizes,
 			variance: self.variance,
 			ctx,
-			op: op.map(Rc::new),
+			op: op.map(Arc::new),
 			delta: delta_poly,
 			q_mod_t,
 			scaler,
@@ -322,14 +323,14 @@ pub(crate) struct MultiplicationParameters {
 	pub(crate) extender_self: Scaler,
 	pub(crate) extender_other: Scaler,
 	pub(crate) down_scaler: Scaler,
-	pub(crate) from: Rc<Context>,
-	pub(crate) to: Rc<Context>,
+	pub(crate) from: Arc<Context>,
+	pub(crate) to: Arc<Context>,
 }
 
 impl MultiplicationParameters {
 	fn new(
-		from: &Rc<Context>,
-		to: &Rc<Context>,
+		from: &Arc<Context>,
+		to: &Arc<Context>,
 		up_self_factor: ScalingFactor,
 		up_other_factor: ScalingFactor,
 		down_factor: ScalingFactor,
