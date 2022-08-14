@@ -7,13 +7,12 @@ package fhers;
 message Ciphertext {
     repeated Rq c = 1;
     bytes seed = 2;
-    bool minimized = 3;
 }
 
 message KeySwitchingKey {
-    bytes seed = 1;
-    uint32 size = 2;
-    repeated Rq c0 = 3;
+    repeated Rq c0 = 1;
+    bytes seed = 2;
+    uint32 size = 3;
 }
 
 message RelinearizationKey {

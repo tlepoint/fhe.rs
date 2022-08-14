@@ -28,9 +28,6 @@ pub struct Ciphertext {
 
 	/// The ciphertext elements.
 	pub(crate) c: Vec<Poly>,
-
-	/// A ciphertext may be minimized for communication, and not support homomorphic operations anymore.
-	pub(crate) minimized: bool,
 }
 
 impl Ciphertext {
@@ -40,16 +37,7 @@ impl Ciphertext {
 			par: par.clone(),
 			seed: None,
 			c: Default::default(),
-			minimized: false,
 		}
-	}
-
-	/// Minimizes the ciphertext for communication.
-	pub fn minimizes(&mut self) {
-		self.minimized = true;
-		self.c
-			.iter_mut()
-			.for_each(|ci| *ci = self.par.modswitch.scale(ci, false).unwrap())
 	}
 }
 
@@ -66,7 +54,6 @@ impl Add<&Ciphertext> for &Ciphertext {
 impl AddAssign<&Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: &Ciphertext) {
 		assert_eq!(self.par, rhs.par);
-		assert!(!self.minimized && !rhs.minimized);
 
 		if self.c.is_empty() {
 			*self = rhs.clone()
@@ -81,7 +68,6 @@ impl AddAssign<&Ciphertext> for Ciphertext {
 impl AddAssign<Ciphertext> for Ciphertext {
 	fn add_assign(&mut self, rhs: Ciphertext) {
 		assert_eq!(self.par, rhs.par);
-		assert!(!self.minimized && !rhs.minimized);
 
 		if self.c.is_empty() {
 			*self = rhs
@@ -106,7 +92,6 @@ impl Sub<&Ciphertext> for &Ciphertext {
 impl SubAssign<&Ciphertext> for Ciphertext {
 	fn sub_assign(&mut self, rhs: &Ciphertext) {
 		assert_eq!(self.par, rhs.par);
-		assert!(!self.minimized && !rhs.minimized);
 
 		if self.c.is_empty() {
 			*self = -rhs
@@ -122,13 +107,11 @@ impl Neg for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn neg(self) -> Ciphertext {
-		assert!(!self.minimized);
 		let c = self.c.iter().map(|c1i| -c1i).collect_vec();
 		Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
-			minimized: false,
 		}
 	}
 }
@@ -136,7 +119,6 @@ impl Neg for &Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
 	fn mul_assign(&mut self, rhs: &Plaintext) {
 		assert_eq!(self.par, rhs.par);
-		assert!(!self.minimized);
 		self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
 		self.seed = None
 	}
@@ -162,40 +144,30 @@ impl Mul<&Ciphertext> for &Ciphertext {
 
 	fn mul(self, rhs: &Ciphertext) -> Self::Output {
 		assert_eq!(self.par, rhs.par);
-		assert!(!self.minimized && !rhs.minimized);
+
+		if self.c.is_empty() {
+			return self.clone();
+		}
+
+		let mp = &self.par.mul_1_params;
 
 		// Scale all ciphertexts
 		// let mut now = std::time::SystemTime::now();
 		let self_c = self
 			.c
 			.iter()
-			.map(|ci| {
-				self.par
-					.mul_1_params
-					.extender_self
-					.scale(ci, false)
-					.unwrap()
-			})
+			.map(|ci| mp.extender_self.scale(ci, false).unwrap())
 			.collect_vec();
 		let other_c = rhs
 			.c
 			.iter()
-			.map(|ci| {
-				self.par
-					.mul_1_params
-					.extender_self
-					.scale(ci, false)
-					.unwrap()
-			})
+			.map(|ci| mp.extender_self.scale(ci, false).unwrap())
 			.collect_vec();
 		// println!("Extend: {:?}", now.elapsed().unwrap());
 
 		// Multiply
 		// now = std::time::SystemTime::now();
-		let mut c = vec![
-			Poly::zero(&self.par.mul_1_params.to, Representation::Ntt);
-			self_c.len() + other_c.len() - 1
-		];
+		let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
 		for i in 0..self_c.len() {
 			for j in 0..other_c.len() {
 				c[i + j] += &(&self_c[i] * &other_c[j])
@@ -209,7 +181,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			.iter_mut()
 			.map(|ci| {
 				ci.change_representation(Representation::PowerBasis);
-				let mut ci = self.par.mul_1_params.down_scaler.scale(ci, false).unwrap();
+				let mut ci = mp.down_scaler.scale(ci, false).unwrap();
 				ci.change_representation(Representation::Ntt);
 				ci
 			})
@@ -220,7 +192,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
-			minimized: false,
 		}
 	}
 }
@@ -237,9 +208,6 @@ fn mul_internal(
 	}
 	if ct0.par != ct1.par {
 		return Err("Incompatible parameters".to_string());
-	}
-	if ct0.minimized || ct1.minimized {
-		return Err("A ciphertext is minimized and cannot be operated on".to_string());
 	}
 	if ct0.par.ciphertext_moduli.len() == 1 {
 		return Err("Parameters do not allow for multiplication".to_string());
@@ -286,7 +254,6 @@ fn mul_internal(
 		par: ct0.par.clone(),
 		seed: None,
 		c: vec![c0, c1],
-		minimized: false,
 	})
 }
 
@@ -312,7 +279,6 @@ impl From<&Ciphertext> for CiphertextProto {
 		} else {
 			proto.c.push(Rq::from(&ct.c[ct.c.len() - 1]))
 		}
-		proto.minimized = ct.minimized;
 		proto
 	}
 }
@@ -327,17 +293,12 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
 			return Err("Not enough polynomials".to_string());
 		}
-		let ctx = if value.minimized {
-			&par.plaintext_ctx
-		} else {
-			&par.ctx
-		};
 
 		let mut seed = None;
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			let mut ci = Poly::try_convert_from(cip, ctx, None)?;
+			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
 			unsafe { ci.allow_variable_time_computations() }
 			c.push(ci)
 		}
@@ -348,7 +309,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 				return Err("Invalid seed".to_string());
 			}
 			seed = try_seed.ok();
-			let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, seed.unwrap());
+			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
 			c.push(c1)
 		}
@@ -357,7 +318,6 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			par: par.clone(),
 			seed,
 			c,
-			minimized: value.minimized,
 		})
 	}
 }
@@ -583,7 +543,7 @@ mod tests {
 
 			let mut sk = SecretKey::random(&par);
 			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_relinearization()
+				.enable_relinearization()?
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
@@ -610,7 +570,7 @@ mod tests {
 
 			let mut sk = SecretKey::random(&par);
 			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_relinearization()
+				.enable_relinearization()?
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 

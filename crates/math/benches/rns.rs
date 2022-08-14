@@ -40,14 +40,14 @@ pub fn rns_benchmark(c: &mut Criterion) {
 	group.bench_function(
 		BenchmarkId::new("scaler", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| scaler.scale(&(&x).into(), &mut (&mut y).into(), 0, true));
+			b.iter(|| scaler.scale((&x).into(), (&mut y).into(), 0, true));
 		},
 	);
 
 	group.bench_function(
 		BenchmarkId::new("scaler_as_converter", format!("{}->{}", q.len(), p.len())),
 		|b| {
-			b.iter(|| scaler_as_converter.scale(&(&x).into(), &mut (&mut y).into(), 0, true));
+			b.iter(|| scaler_as_converter.scale((&x).into(), (&mut y).into(), 0, true));
 		},
 	);
 

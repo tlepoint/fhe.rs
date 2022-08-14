@@ -39,7 +39,6 @@ impl GaloisKey {
 	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
 		assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
-		assert!(!ct.minimized);
 
 		let mut c0 = ct.c[0].substitute(self.exponent)?;
 		let mut c1 = Poly::zero(&self.ksk.par.ctx, Representation::Ntt);
@@ -53,7 +52,6 @@ impl GaloisKey {
 			par: ct.par.clone(),
 			seed: None,
 			c: vec![c0, c1],
-			minimized: false,
 		})
 	}
 }
@@ -78,11 +76,11 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 		if exponent & 1 == 0 {
 			return Err("Invalid exponent".to_string());
 		}
-		if value.ksk.is_some() {
-			Ok(GaloisKey {
-				exponent,
-				ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
-			})
+		if par.ciphertext_moduli.len() == 1 {
+			Err("Invalid parameters for a relinearization key".to_string())
+		} else if value.ksk.is_some() {
+			let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
+			Ok(GaloisKey { exponent, ksk })
 		} else {
 			Err("Invalid serialization".to_string())
 		}
@@ -147,10 +145,7 @@ mod tests {
 
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
-		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
-		] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9)?;
 			let proto = GaloisKeyProto::from(&gk);

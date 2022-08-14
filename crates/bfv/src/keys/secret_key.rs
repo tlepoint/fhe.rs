@@ -15,7 +15,6 @@ use num_bigint::BigUint;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use util::sample_vec_cbd;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Secret key for the BFV encryption scheme.
@@ -23,12 +22,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub struct SecretKey {
 	pub(crate) par: Arc<BfvParameters>,
 	pub(crate) s: Vec<Poly>,
-	pub(crate) s_minimized: Vec<Poly>,
 }
 
 impl Zeroize for SecretKey {
 	fn zeroize(&mut self) {
-		self.s.iter_mut().for_each(|si| si.zeroize());
+		self.s.zeroize()
 	}
 }
 
@@ -37,33 +35,12 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Arc<BfvParameters>) -> Self {
-		let mut s_coefficients = sample_vec_cbd(par.degree(), par.variance).unwrap();
-		let mut s = Poly::try_convert_from(
-			&s_coefficients as &[i64],
-			&par.ctx,
-			Representation::PowerBasis,
-		)
-		.unwrap();
-		let mut s_minimized = Poly::try_convert_from(
-			&s_coefficients as &[i64],
-			&par.plaintext_ctx,
-			Representation::PowerBasis,
-		)
-		.unwrap();
-		s_coefficients.zeroize();
-		s.change_representation(Representation::Ntt);
-		s_minimized.change_representation(Representation::Ntt);
+		let s = Poly::small(&par.ctx, Representation::NttShoup, par.variance).unwrap();
 		let mut s2 = &s * &s;
-		let mut s2_minimized = &s_minimized * &s_minimized;
-		// TODO: Can I multiply in NttShoup representation directly?
-		s.change_representation(Representation::NttShoup);
 		s2.change_representation(Representation::NttShoup);
-		s_minimized.change_representation(Representation::NttShoup);
-		s2_minimized.change_representation(Representation::NttShoup);
 		Self {
 			par: par.clone(),
 			s: vec![s, s2],
-			s_minimized: vec![s_minimized, s2_minimized],
 		}
 	}
 
@@ -74,36 +51,28 @@ impl SecretKey {
 	/// This operations may run in a variable time depending on the value of the noise.
 	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize, String> {
 		let plaintext = self.decrypt(ct)?;
-		let mut m = plaintext.encode(ct.minimized)?;
+		let mut m = plaintext.encode()?;
 
 		// Let's disable variable time computations
 		let mut c = ct.c[0].clone();
 		c.disallow_variable_time_computations();
 
-		let s = if ct.minimized {
-			&mut self.s_minimized
-		} else {
-			&mut self.s
-		};
 		for i in 1..ct.c.len() {
-			if s.len() < i {
-				s.push(s.last().unwrap() * s.first().unwrap());
-				debug_assert_eq!(s.len(), i)
+			if self.s.len() < i {
+				self.s
+					.push(self.s.last().unwrap() * self.s.first().unwrap());
+				debug_assert_eq!(self.s.len(), i)
 			}
 			let mut cis = ct.c[i].clone();
 			cis.disallow_variable_time_computations();
-			cis *= &s[i - 1];
+			cis *= &self.s[i - 1];
 			c += &cis;
 			cis.zeroize();
 		}
 		c -= &m;
 		c.change_representation(Representation::PowerBasis);
 
-		let ciphertext_modulus = if ct.minimized {
-			self.par.plaintext_ctx.modulus()
-		} else {
-			self.par.ctx.modulus()
-		};
+		let ciphertext_modulus = self.par.ctx.modulus();
 		let mut noise = 0usize;
 		for coeff in Vec::<BigUint>::from(&c) {
 			noise = std::cmp::max(
@@ -123,6 +92,8 @@ impl Encryptor for SecretKey {
 	type Error = String;
 
 	fn encrypt(&self, pt: &Plaintext) -> Result<Ciphertext, Self::Error> {
+		assert_eq!(self.par, pt.par);
+
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
 
@@ -132,7 +103,7 @@ impl Encryptor for SecretKey {
 		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
 
-		let mut m = pt.encode(false)?;
+		let mut m = pt.encode()?;
 		b += &m;
 
 		// Zeroize the temporary variables holding sensitive information.
@@ -149,7 +120,6 @@ impl Encryptor for SecretKey {
 			par: self.par.clone(),
 			seed: Some(seed),
 			c: vec![b, a],
-			minimized: false,
 		})
 	}
 }
@@ -164,29 +134,21 @@ impl Decryptor for SecretKey {
 			let mut c = ct.c[0].clone();
 			c.disallow_variable_time_computations();
 
-			let s = if ct.minimized {
-				&mut self.s_minimized
-			} else {
-				&mut self.s
-			};
 			for i in 1..ct.c.len() {
-				if s.len() < i {
-					s.push(s.last().unwrap() * s.first().unwrap());
-					debug_assert_eq!(s.len(), i)
+				if self.s.len() < i {
+					self.s
+						.push(self.s.last().unwrap() * self.s.first().unwrap());
+					debug_assert_eq!(self.s.len(), i)
 				}
 				let mut cis = ct.c[i].clone();
 				cis.disallow_variable_time_computations();
-				cis *= &s[i - 1];
+				cis *= &self.s[i - 1];
 				c += &cis;
 				cis.zeroize();
 			}
 			c.change_representation(Representation::PowerBasis);
 
-			let mut d = if ct.minimized {
-				self.par.scaler_minimized.scale(&c, false)?
-			} else {
-				self.par.scaler.scale(&c, false)?
-			};
+			let mut d = self.par.scaler.scale(&c, false)?;
 
 			// TODO: Can we handle plaintext moduli that are BigUint?
 			let mut v = Vec::<u64>::from(&d)
@@ -262,13 +224,7 @@ mod tests {
 					Encoding::Poly,
 					&params,
 				)?;
-				let mut ct = sk.encrypt(&pt)?;
-				let pt2 = sk.decrypt(&ct);
-
-				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
-
-				ct.minimizes();
+				let ct = sk.encrypt(&pt)?;
 				let pt2 = sk.decrypt(&ct);
 
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });

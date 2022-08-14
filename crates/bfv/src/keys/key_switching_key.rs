@@ -31,6 +31,10 @@ pub struct KeySwitchingKey {
 impl KeySwitchingKey {
 	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial `from`.
 	pub fn new(sk: &SecretKey, from: &Poly) -> Result<Self, String> {
+		if sk.par.ciphertext_moduli.len() == 1 {
+			return Err("These parameters do not support key switching".to_string());
+		}
+
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
 		let c1 = Self::generate_c1(&sk.par, seed, sk.par.ciphertext_moduli.len());
@@ -174,10 +178,7 @@ mod tests {
 
 	#[test]
 	fn test_constructor() -> Result<(), String> {
-		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
-		] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
 			let ksk = KeySwitchingKey::new(&sk, &p);
@@ -218,10 +219,7 @@ mod tests {
 
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
-		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
-		] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
 			let ksk = KeySwitchingKey::new(&sk, &p)?;

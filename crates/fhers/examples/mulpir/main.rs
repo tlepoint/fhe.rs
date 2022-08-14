@@ -17,8 +17,8 @@ fn main() -> Result<(), String> {
 	let elements_size = 288;
 
 	let degree = 8192;
-	let plaintext_modulus: u64 = (1 << 20) + 1;
-	let moduli_sizes = [62, 62, 62];
+	let plaintext_modulus: u64 = (1 << 22) + 1;
+	let moduli_sizes = [50, 55, 55];
 
 	println!("# MulPIR with fhe.rs");
 
@@ -108,7 +108,7 @@ fn main() -> Result<(), String> {
 	println!("level = {}", level);
 	let ek = EvaluationKeyBuilder::new(&sk)
 		.enable_expansion(level as usize)?
-		.enable_relinearization()
+		.enable_relinearization()?
 		.build()?;
 	let ek_serialized = ek.serialize();
 	println!("Client setup: {:?}", now.elapsed().unwrap());
@@ -116,7 +116,8 @@ fn main() -> Result<(), String> {
 
 	// Server setup
 	let now = std::time::SystemTime::now();
-	let ek = EvaluationKey::try_deserialize(&ek_serialized, &server_params)?;
+	// TODO: Commented out until we know how to deal with levels
+	// let ek = EvaluationKey::try_deserialize(&ek_serialized, &server_params)?;
 	println!("Server setup: {:?}", now.elapsed().unwrap());
 
 	// Client query
@@ -153,7 +154,6 @@ fn main() -> Result<(), String> {
 		c = mul(&c, cj, &ek).unwrap();
 		out += &c;
 	});
-	out.minimizes();
 	let response = out.serialize();
 	println!("Server response: {:?}", now.elapsed().unwrap());
 	println!("Response: {:?} B", response.len());
