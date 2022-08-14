@@ -2,7 +2,7 @@
 
 //! Traits associated with polynomials.
 
-use super::{Context, Poly, Representation};
+use super::{Context, Representation};
 use std::sync::Arc;
 
 /// Conversions to create polynomials.
@@ -29,15 +29,6 @@ where
 	) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>;
-}
-
-/// Switch a polynomial from one context to another.
-pub trait ContextSwitcher {
-	/// The type of errors.
-	type Error;
-
-	/// Switch the context of the polynomial.
-	fn switch_context(&self, polynomial: &Poly) -> Result<Poly, Self::Error>;
 }
 
 /// Unsigned trait.

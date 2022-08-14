@@ -10,10 +10,8 @@ use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, Mo
 use num_traits::{cast::ToPrimitive, One, Zero};
 use std::cmp::Ordering;
 
-mod converter;
 mod scaler;
 
-pub use converter::RnsConverter;
 pub use scaler::{RnsScaler, ScalingFactor};
 
 /// Context for a Residue Number System.

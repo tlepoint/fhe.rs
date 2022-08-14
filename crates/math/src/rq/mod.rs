@@ -5,7 +5,6 @@
 mod convert;
 mod ops;
 
-pub mod extender;
 pub mod scaler;
 pub mod traits;
 
