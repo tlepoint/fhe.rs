@@ -153,6 +153,7 @@ fn main() -> Result<(), String> {
 		c = mul(&c, cj, &ek).unwrap();
 		out += &c;
 	});
+	out.minimizes();
 	let response = out.serialize();
 	println!("Server response: {:?}", now.elapsed().unwrap());
 	println!("Response: {:?} B", response.len());

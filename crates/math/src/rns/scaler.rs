@@ -220,7 +220,8 @@ impl RnsScaler {
 		floor: bool,
 	) {
 		debug_assert_eq!(rests.len(), self.from.moduli_u64.len());
-		debug_assert!(!out.is_empty() && starting_index + out.len() <= self.to.moduli_u64.len());
+		debug_assert!(!out.is_empty());
+		debug_assert!(starting_index + out.len() <= self.to.moduli_u64.len());
 
 		// First, let's compute the inner product of the rests with theta_omega.
 		let mut sum_theta_garner = U256::zero();

@@ -39,16 +39,21 @@ pub struct BfvParameters {
 
 	/// Scaling polynomial for the plaintext
 	pub(crate) delta: Poly,
+	pub(crate) delta_minimized: Poly,
 
 	/// Q modulo the plaintext modulus
 	pub(crate) q_mod_t: u64,
+	pub(crate) q_mod_t_minimized: u64,
 
 	/// Down scaler for the plaintext
 	pub(crate) scaler: Scaler,
+	pub(crate) scaler_minimized: Scaler,
 
 	/// Plaintext Modulus
 	// TODO: How can we handle this?
 	pub(crate) plaintext: Modulus,
+
+	pub(crate) plaintext_ctx: Arc<Context>,
 
 	// Parameters for the multiplications
 	pub(crate) mul_1_params: MultiplicationParameters, // type 1
@@ -56,6 +61,8 @@ pub struct BfvParameters {
 	pub(crate) mul_2_params: MultiplicationParameters, // type 2
 
 	pub(crate) matrix_reps_index_map: Vec<usize>,
+
+	pub(crate) modswitch: Scaler,
 }
 
 unsafe impl Send for BfvParameters {}
@@ -229,17 +236,24 @@ impl BfvParametersBuilder {
 		// Compute the NttShoup representation of delta = -1/t mod Q
 		let mut delta_rests = vec![];
 		for m in &moduli {
-			let q = Modulus::new(*m).unwrap();
+			let q = Modulus::new(*m)?;
 			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
 		}
 		let delta = rns.lift(&ArrayView1::from(&delta_rests)); // -1/t mod Q
 		let mut delta_poly = Poly::try_convert_from(&[delta], &ctx, Representation::PowerBasis)?;
 		delta_poly.change_representation(Representation::NttShoup);
+		let mut delta_minimized_poly = Poly::try_convert_from(
+			&delta_rests[..1],
+			&plaintext_ctx,
+			Representation::PowerBasis,
+		)?;
+		delta_minimized_poly.change_representation(Representation::NttShoup);
 
 		// Compute Q mod t
 		let q_mod_t = (rns.modulus() % plaintext_modulus.modulus())
 			.to_u64()
 			.unwrap();
+		let q_mod_t_minimized = moduli[0] % plaintext_modulus.modulus();
 
 		// Create n+1 moduli of 62 bits for multiplication.
 		let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
@@ -298,6 +312,23 @@ impl BfvParametersBuilder {
 			pos &= m - 1;
 		}
 
+		let modswitch = Scaler::new(
+			&ctx,
+			&plaintext_ctx,
+			ScalingFactor::new(
+				&BigUint::from(1u64),
+				&(ctx.modulus() / plaintext_ctx.modulus()),
+			),
+		)?;
+		let scaler_minimized = Scaler::new(
+			&plaintext_ctx,
+			&plaintext_ctx,
+			ScalingFactor::new(
+				&BigUint::from(plaintext_modulus.modulus()),
+				plaintext_ctx.modulus(),
+			),
+		)?;
+
 		Ok(BfvParameters {
 			polynomial_degree: self.degree,
 			plaintext_modulus: self.plaintext,
@@ -307,12 +338,17 @@ impl BfvParametersBuilder {
 			ctx,
 			op: op.map(Arc::new),
 			delta: delta_poly,
+			delta_minimized: delta_minimized_poly,
 			q_mod_t,
+			q_mod_t_minimized,
 			scaler,
+			scaler_minimized,
 			plaintext: plaintext_modulus,
+			plaintext_ctx,
 			mul_1_params,
 			mul_2_params,
 			matrix_reps_index_map,
+			modswitch,
 		})
 	}
 }

@@ -33,15 +33,27 @@ pub struct Plaintext {
 }
 
 impl Plaintext {
-	pub(crate) fn encode(&self) -> Result<Poly, String> {
+	pub(crate) fn encode(&self, minimized: bool) -> Result<Poly, String> {
 		let mut m_v = self.par.plaintext.reduce_vec_i64(&self.value);
-		self.par
-			.plaintext
-			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
-		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
-		m.change_representation(Representation::Ntt);
-		m *= &self.par.delta;
-		Ok(m)
+
+		if minimized {
+			self.par
+				.plaintext
+				.scalar_mul_vec(&mut m_v, self.par.q_mod_t_minimized);
+			let mut m =
+				Poly::try_convert_from(&m_v, &self.par.plaintext_ctx, Representation::PowerBasis)?;
+			m.change_representation(Representation::Ntt);
+			m *= &self.par.delta_minimized;
+			Ok(m)
+		} else {
+			self.par
+				.plaintext
+				.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
+			let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
+			m.change_representation(Representation::Ntt);
+			m *= &self.par.delta;
+			Ok(m)
+		}
 	}
 
 	/// Generate a zero plaintext.

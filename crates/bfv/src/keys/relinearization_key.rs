@@ -94,6 +94,7 @@ mod tests {
 					par: params.clone(),
 					seed: None,
 					c: vec![c0, c1],
+					minimized: false,
 				};
 
 				// Print the noise and decrypt
