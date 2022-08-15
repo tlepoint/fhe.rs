@@ -36,7 +36,9 @@ pub fn ops_benchmark(c: &mut Criterion) {
 		let sk = SecretKey::random(&par);
 		let ek = EvaluationKeyBuilder::new(&sk)
 			.enable_inner_sum()
+			.unwrap()
 			.enable_relinearization()
+			.unwrap()
 			.enable_column_rotation(1)
 			.unwrap()
 			.enable_expansion(par.degree().ilog2() as usize)

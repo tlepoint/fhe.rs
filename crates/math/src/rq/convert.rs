@@ -385,7 +385,7 @@ impl From<&Poly> for Vec<u64> {
 impl From<&Poly> for Vec<BigUint> {
 	fn from(p: &Poly) -> Self {
 		izip!(p.coefficients.axis_iter(Axis(1)))
-			.map(|c| p.ctx.rns.lift(&c))
+			.map(|c| p.ctx.rns.lift(c))
 			.collect_vec()
 	}
 }

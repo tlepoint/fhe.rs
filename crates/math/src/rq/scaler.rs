@@ -67,9 +67,9 @@ impl Scaler {
 						.axis_iter_mut(Axis(1)),
 					p.coefficients.axis_iter(Axis(1))
 				)
-				.for_each(|(mut new_column, column)| {
+				.for_each(|(new_column, column)| {
 					self.scaler
-						.scale(&column, &mut new_column, self.number_common_moduli, floor)
+						.scale(column, new_column, self.number_common_moduli, floor)
 				});
 			} else if self.number_common_moduli < self.to.q.len() {
 				let mut p_coefficients_powerbasis = p.coefficients.clone();
@@ -89,9 +89,9 @@ impl Scaler {
 						.axis_iter_mut(Axis(1)),
 					p_coefficients_powerbasis.axis_iter(Axis(1))
 				)
-				.for_each(|(mut new_column, column)| {
+				.for_each(|(new_column, column)| {
 					self.scaler
-						.scale(&column, &mut new_column, self.number_common_moduli, floor)
+						.scale(column, new_column, self.number_common_moduli, floor)
 				});
 				// Forward NTT on the second half
 				if p.allow_variable_time_computations {

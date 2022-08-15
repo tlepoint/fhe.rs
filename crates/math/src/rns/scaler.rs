@@ -201,9 +201,9 @@ impl RnsScaler {
 	///
 	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
 	/// if the size is not in [1, ..., rests.len()].
-	pub fn scale_new(&self, rests: &ArrayView1<u64>, size: usize, floor: bool) -> Vec<u64> {
+	pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize, floor: bool) -> Vec<u64> {
 		let mut out = vec![0; size];
-		self.scale(rests, &mut (&mut out).into(), 0, floor);
+		self.scale(rests, (&mut out).into(), 0, floor);
 		out
 	}
 
@@ -214,8 +214,8 @@ impl RnsScaler {
 	/// if the size of out is not in [1, ..., rests.len()].
 	pub fn scale(
 		&self,
-		rests: &ArrayView1<u64>,
-		out: &mut ArrayViewMut1<u64>,
+		rests: ArrayView1<u64>,
+		mut out: ArrayViewMut1<u64>,
 		starting_index: usize,
 		floor: bool,
 	) {
@@ -229,7 +229,7 @@ impl RnsScaler {
 		{
 			let lo = (*ri as u128) * (*thetag_lo as u128);
 			let hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-			sum_theta_garner.overflowing_add(U256::from([
+			sum_theta_garner.wrapping_add_assign(U256::from([
 				lo as u64,
 				hi as u64,
 				(hi >> 64) as u64,
@@ -238,8 +238,7 @@ impl RnsScaler {
 		}
 		// Let's compute v = round(sum_theta_garner / 2^127)
 		sum_theta_garner >>= 126;
-		let v = sum_theta_garner.as_u128();
-		let v = (v & 1) + (v >> 1);
+		let v = u128::from(&sum_theta_garner).div_ceil(2);
 
 		// If the scaling factor is not 1, compute the inner product with the theta_omega
 		let mut w_sign = false;
@@ -255,14 +254,14 @@ impl RnsScaler {
 				let lo = (*ri as u128) * (*thetao_lo as u128);
 				let hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
 				if *thetao_sign {
-					sum_theta_omega.overflowing_sub(U256::from([
+					sum_theta_omega.wrapping_sub_assign(U256::from([
 						lo as u64,
 						hi as u64,
 						(hi >> 64) as u64,
 						0,
 					]));
 				} else {
-					sum_theta_omega.overflowing_add(U256::from([
+					sum_theta_omega.wrapping_add_assign(U256::from([
 						lo as u64,
 						hi as u64,
 						(hi >> 64) as u64,
@@ -280,14 +279,14 @@ impl RnsScaler {
 				(vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
 			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
 			if self.theta_gamma_sign {
-				sum_theta_omega.overflowing_add(U256::from([
+				sum_theta_omega.wrapping_add_assign(U256::from([
 					vt_lo_lo as u64,
 					vt_mi as u64,
 					vt_hi as u64,
 					0,
 				]))
 			} else {
-				sum_theta_omega.overflowing_sub(U256::from([
+				sum_theta_omega.wrapping_sub_assign(U256::from([
 					vt_lo_lo as u64,
 					vt_mi as u64,
 					vt_hi as u64,
@@ -299,16 +298,16 @@ impl RnsScaler {
 			w_sign = sum_theta_omega.msb() > 0;
 
 			if w_sign {
-				w = ((!sum_theta_omega) >> 126).as_u128() + 1;
+				w = u128::from(&((!sum_theta_omega) >> 126)) + 1;
 				if !floor {
-					w = w.div_ceil(2) - (w & 1);
+					w = w.div_floor(2);
 				} else {
 					w = w.div_ceil(2);
 				}
 			} else {
-				w = (sum_theta_omega >> 126).as_u128();
+				w = u128::from(&(sum_theta_omega >> 126));
 				if !floor {
-					w = w.div_floor(2) + (w & 1)
+					w = w.div_ceil(2)
 				} else {
 					w = w.div_floor(2)
 				}
@@ -397,13 +396,13 @@ mod tests {
 						rng.next_u64() % q.moduli_u64[1],
 						rng.next_u64() % q.moduli_u64[2],
 					];
-					let mut x_lift = q.lift(&ArrayView1::from(&x));
+					let mut x_lift = q.lift(ArrayView1::from(&x));
 					let x_sign = x_lift >= (q.modulus() >> 1);
 					if x_sign {
 						x_lift = q.modulus() - x_lift;
 					}
 
-					let y = scaler.scale_new(&(&x).into(), x.len(), true);
+					let y = scaler.scale_new((&x).into(), x.len(), true);
 					let x_scaled_floor = if x_sign {
 						q.modulus() - (&(&x_lift * &n + &d - 1u64) / &d) % q.modulus()
 					} else {
@@ -411,7 +410,7 @@ mod tests {
 					};
 					assert_eq!(y, q.project(&x_scaled_floor));
 
-					let z = scaler.scale_new(&(&x).into(), x.len(), false);
+					let z = scaler.scale_new((&x).into(), x.len(), false);
 					let x_scaled_round = if x_sign {
 						if d.to_u64().unwrap() % 2 == 0 {
 							q.modulus()
@@ -431,7 +430,7 @@ mod tests {
 
 	#[test]
 	fn test_scale_different_contexts() -> Result<(), String> {
-		let ntests = 10;
+		let ntests = 100;
 		let q = Arc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
 		let r = Arc::new(RnsContext::new(&[
 			4u64,
@@ -459,13 +458,13 @@ mod tests {
 						rng.next_u64() % q.moduli_u64[2],
 					];
 
-					let mut x_lift = q.lift(&ArrayView1::from(&x));
+					let mut x_lift = q.lift(ArrayView1::from(&x));
 					let x_sign = x_lift >= (q.modulus() >> 1);
 					if x_sign {
 						x_lift = q.modulus() - x_lift;
 					}
 
-					let y = scaler.scale_new(&(&x).into(), r.moduli.len(), true);
+					let y = scaler.scale_new((&x).into(), r.moduli.len(), true);
 					let x_scaled_floor = if x_sign {
 						&r.product - (&(&x_lift * &n + &d - 1u64) / &d) % &r.product
 					} else {

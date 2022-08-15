@@ -42,22 +42,24 @@ pub struct EvaluationKey {
 impl EvaluationKey {
 	/// Reports whether the evaluation key enables to compute an homomorphic inner sums.
 	pub fn supports_inner_sum(&self) -> bool {
-		let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
-		let mut i = 1;
-		while i < self.par.degree() / 2 {
-			ret &= self
-				.gk
-				.contains_key(self.rot_to_gk_exponent.get(&i).unwrap());
-			i *= 2
+		if self.par.ciphertext_moduli.len() == 1 {
+			false
+		} else {
+			let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
+			let mut i = 1;
+			while i < self.par.degree() / 2 {
+				ret &= self
+					.gk
+					.contains_key(self.rot_to_gk_exponent.get(&i).unwrap());
+				i *= 2
+			}
+			ret
 		}
-		ret
 	}
 
 	/// Computes the homomorphic inner sum.
 	pub fn computes_inner_sum(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
-		if ct.minimized {
-			Err("The ciphertext is minimized".to_string())
-		} else if !self.supports_inner_sum() {
+		if !self.supports_inner_sum() {
 			Err("This key does not support the inner sum functionality".to_string())
 		} else {
 			let mut out = ct.clone();
@@ -81,14 +83,16 @@ impl EvaluationKey {
 
 	/// Reports whether the evaluation key enables to rotate the rows of the plaintext.
 	pub fn supports_row_rotation(&self) -> bool {
-		self.gk.contains_key(&(self.par.degree() * 2 - 1))
+		if self.par.ciphertext_moduli.len() == 1 {
+			false
+		} else {
+			self.gk.contains_key(&(self.par.degree() * 2 - 1))
+		}
 	}
 
 	/// Homomorphically rotate the rows of the plaintext
 	pub fn rotates_row(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
-		if ct.minimized {
-			Err("The ciphertext is minimized".to_string())
-		} else if !self.supports_row_rotation() {
+		if !self.supports_row_rotation() {
 			Err("This key does not support the row rotation functionality".to_string())
 		} else {
 			let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
@@ -98,7 +102,9 @@ impl EvaluationKey {
 
 	/// Reports whether the evaluation key enables to rotate the columns of the plaintext.
 	pub fn supports_column_rotation_by(&self, i: usize) -> bool {
-		if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
+		if self.par.ciphertext_moduli.len() == 1 {
+			false
+		} else if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
 			self.gk.contains_key(exp)
 		} else {
 			false
@@ -107,9 +113,7 @@ impl EvaluationKey {
 
 	/// Homomorphically rotate the columns of the plaintext
 	pub fn rotates_column_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext, String> {
-		if ct.minimized {
-			Err("The ciphertext is minimized".to_string())
-		} else if !self.supports_column_rotation_by(i) {
+		if !self.supports_column_rotation_by(i) {
 			Err("This key does not support rotating the columns by this index".to_string())
 		} else {
 			let gk = self
@@ -136,20 +140,22 @@ impl EvaluationKey {
 
 	/// Reports whether the evaluation key supports oblivious expansion.
 	pub fn supports_expansion(&self, level: usize) -> bool {
-		let mut ret = level < self.par.degree().leading_zeros() as usize;
-		for l in 0..level {
-			ret &= self.gk.contains_key(&((self.par.degree() >> l) + 1));
+		if self.par.ciphertext_moduli.len() == 1 {
+			false
+		} else {
+			let mut ret = level < self.par.degree().leading_zeros() as usize;
+			for l in 0..level {
+				ret &= self.gk.contains_key(&((self.par.degree() >> l) + 1));
+			}
+			ret
 		}
-		ret
 	}
 
 	/// Obliviously expands the ciphertext. Returns an error if this evaluation does not
 	/// support expansion to this level, or if the ciphertext does not have size 2.
 	/// The output is a vector of 2^level ciphertexts.
 	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>, String> {
-		if ct.minimized {
-			Err("The ciphertext is minimized".to_string())
-		} else if ct.c.len() != 2 {
+		if ct.c.len() != 2 {
 			Err("The ciphertext is not of size 2".to_string())
 		} else if level == 0 {
 			Ok(vec![ct.clone()])
@@ -243,16 +249,22 @@ impl EvaluationKeyBuilder {
 
 	/// Allow relinearizations by this evaluation key.
 	#[allow(unused_must_use)]
-	pub fn enable_relinearization(&mut self) -> &mut Self {
-		self.relin = true;
-		self
+	pub fn enable_relinearization(&mut self) -> Result<&mut Self, String> {
+		if self.sk.par.ciphertext_moduli.len() == 1 {
+			Err("Not enough moduli to enable relinearization".to_string())
+		} else {
+			self.relin = true;
+			Ok(self)
+		}
 	}
 
 	/// Allow relinearizations by this evaluation key.
 	#[allow(unused_must_use)]
 	pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self, String> {
-		if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
-			Err("Invalid level".to_string())
+		if self.sk.par.ciphertext_moduli.len() == 1 {
+			Err("Not enough moduli to enable expansion".to_string())
+		} else if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
+			Err("Invalid level 2".to_string())
 		} else {
 			self.expansion_level = level;
 			Ok(self)
@@ -261,16 +273,24 @@ impl EvaluationKeyBuilder {
 
 	/// Allow this evaluation key to compute homomorphic inner sums.
 	#[allow(unused_must_use)]
-	pub fn enable_inner_sum(&mut self) -> &mut Self {
-		self.inner_sum = true;
-		self
+	pub fn enable_inner_sum(&mut self) -> Result<&mut Self, String> {
+		if self.sk.par.ciphertext_moduli.len() == 1 {
+			Err("Not enough moduli to enable relinearization".to_string())
+		} else {
+			self.inner_sum = true;
+			Ok(self)
+		}
 	}
 
 	/// Allow this evaluation key to homomorphically rotate the plaintext rows.
 	#[allow(unused_must_use)]
-	pub fn enable_row_rotation(&mut self) -> &mut Self {
-		self.row_rotation = true;
-		self
+	pub fn enable_row_rotation(&mut self) -> Result<&mut Self, String> {
+		if self.sk.par.ciphertext_moduli.len() == 1 {
+			Err("Not enough moduli to enable relinearization".to_string())
+		} else {
+			self.row_rotation = true;
+			Ok(self)
+		}
 	}
 
 	/// Allow this evaluation key to homomorphically rotate the plaintext columns.
@@ -428,12 +448,12 @@ mod tests {
 		assert!(!builder.build()?.supports_inner_sum());
 		assert!(!builder.build()?.supports_expansion(1));
 
-		builder.enable_row_rotation();
+		builder.enable_row_rotation()?;
 		assert!(builder.build()?.supports_row_rotation());
 		assert!(!builder.build()?.supports_inner_sum());
 		assert!(!builder.build()?.supports_expansion(1));
 
-		builder.enable_inner_sum();
+		builder.enable_inner_sum()?;
 		assert!(builder.build()?.supports_inner_sum());
 		assert!(builder.build()?.supports_expansion(1));
 		assert!(!builder
@@ -448,7 +468,7 @@ mod tests {
 		assert!(builder.build().is_ok());
 
 		// Enabling inner sum enables row rotation and a few column rotations :)
-		let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
+		let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum()?.build()?;
 		assert!(ek.supports_inner_sum());
 		assert!(ek.supports_row_rotation());
 		let mut i = 1;
@@ -466,7 +486,7 @@ mod tests {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
-				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum().build()?;
+				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum()?.build()?;
 
 				let v = params.plaintext.random_vec(params.degree());
 				let expected = params
@@ -493,7 +513,7 @@ mod tests {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
 				let ek = EvaluationKeyBuilder::new(&sk)
-					.enable_row_rotation()
+					.enable_row_rotation()?
 					.build()?;
 
 				let v = params.plaintext.random_vec(params.degree());
@@ -583,36 +603,38 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_row_rotation()
-				.build()?;
-			let proto = EvaluationKeyProto::from(&ek);
-			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
-
 			let ek = EvaluationKeyBuilder::new(&sk).build()?;
 			let proto = EvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_inner_sum()
-				.enable_relinearization()
-				.build()?;
-			let proto = EvaluationKeyProto::from(&ek);
-			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+			if params.ciphertext_moduli.len() > 1 {
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_row_rotation()?
+					.build()?;
+				let proto = EvaluationKeyProto::from(&ek);
+				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_expansion(params.degree().ilog2() as usize)?
-				.build()?;
-			let proto = EvaluationKeyProto::from(&ek);
-			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_inner_sum()?
+					.enable_relinearization()?
+					.build()?;
+				let proto = EvaluationKeyProto::from(&ek);
+				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_inner_sum()
-				.enable_relinearization()
-				.enable_expansion(params.degree().ilog2() as usize)?
-				.build()?;
-			let proto = EvaluationKeyProto::from(&ek);
-			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_expansion(params.degree().ilog2() as usize)?
+					.build()?;
+				let proto = EvaluationKeyProto::from(&ek);
+				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_inner_sum()?
+					.enable_relinearization()?
+					.enable_expansion(params.degree().ilog2() as usize)?
+					.build()?;
+				let proto = EvaluationKeyProto::from(&ek);
+				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+			}
 		}
 		Ok(())
 	}
@@ -625,36 +647,38 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_row_rotation()
-				.build()?;
-			let bytes = ek.serialize();
-			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
-
 			let ek = EvaluationKeyBuilder::new(&sk).build()?;
 			let bytes = ek.serialize();
 			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_inner_sum()
-				.enable_relinearization()
-				.build()?;
-			let bytes = ek.serialize();
-			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+			if params.ciphertext_moduli.len() > 1 {
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_row_rotation()?
+					.build()?;
+				let bytes = ek.serialize();
+				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_expansion(params.degree().ilog2() as usize)?
-				.build()?;
-			let bytes = ek.serialize();
-			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_inner_sum()?
+					.enable_relinearization()?
+					.build()?;
+				let bytes = ek.serialize();
+				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
 
-			let ek = EvaluationKeyBuilder::new(&sk)
-				.enable_inner_sum()
-				.enable_relinearization()
-				.enable_expansion(params.degree().ilog2() as usize)?
-				.build()?;
-			let bytes = ek.serialize();
-			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_expansion(params.degree().ilog2() as usize)?
+					.build()?;
+				let bytes = ek.serialize();
+				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+
+				let ek = EvaluationKeyBuilder::new(&sk)
+					.enable_inner_sum()?
+					.enable_relinearization()?
+					.enable_expansion(params.degree().ilog2() as usize)?
+					.build()?;
+				let bytes = ek.serialize();
+				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+			}
 		}
 		Ok(())
 	}

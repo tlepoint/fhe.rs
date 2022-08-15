@@ -1,7 +1,7 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::parameters::BfvParameters;
 use crate::traits::{Decoder, Encoder};
-use math::rq::{traits::TryConvertFrom, Poly, Representation};
+use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -33,27 +33,16 @@ pub struct Plaintext {
 }
 
 impl Plaintext {
-	pub(crate) fn encode(&self, minimized: bool) -> Result<Poly, String> {
+	pub(crate) fn encode(&self) -> Result<Poly, String> {
 		let mut m_v = self.par.plaintext.reduce_vec_i64(&self.value);
 
-		if minimized {
-			self.par
-				.plaintext
-				.scalar_mul_vec(&mut m_v, self.par.q_mod_t_minimized);
-			let mut m =
-				Poly::try_convert_from(&m_v, &self.par.plaintext_ctx, Representation::PowerBasis)?;
-			m.change_representation(Representation::Ntt);
-			m *= &self.par.delta_minimized;
-			Ok(m)
-		} else {
-			self.par
-				.plaintext
-				.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
-			let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
-			m.change_representation(Representation::Ntt);
-			m *= &self.par.delta;
-			Ok(m)
-		}
+		self.par
+			.plaintext
+			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
+		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
+		m.change_representation(Representation::Ntt);
+		m *= &self.par.delta;
+		Ok(m)
 	}
 
 	/// Generate a zero plaintext.
@@ -88,11 +77,7 @@ impl Eq for Plaintext {}
 impl TryConvertFrom<&Plaintext> for Poly {
 	type Error = String;
 
-	fn try_convert_from<R>(
-		pt: &Plaintext,
-		ctx: &Arc<math::rq::Context>,
-		_: R,
-	) -> Result<Self, Self::Error>
+	fn try_convert_from<R>(pt: &Plaintext, ctx: &Arc<Context>, _: R) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>,
 	{

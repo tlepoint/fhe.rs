@@ -50,7 +50,9 @@ impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
 		value: &RelinearizationKeyProto,
 		par: &Arc<BfvParameters>,
 	) -> Result<Self, Self::Error> {
-		if value.ksk.is_some() {
+		if par.ciphertext_moduli.len() == 1 {
+			Err("Invalid parameters for a relinearization key".to_string())
+		} else if value.ksk.is_some() {
 			Ok(RelinearizationKey {
 				ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
 			})
@@ -94,7 +96,6 @@ mod tests {
 					par: params.clone(),
 					seed: None,
 					c: vec![c0, c1],
-					minimized: false,
 				};
 
 				// Print the noise and decrypt
@@ -108,10 +109,7 @@ mod tests {
 
 	#[test]
 	fn test_proto_conversion() -> Result<(), String> {
-		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
-		] {
+		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let rk = RelinearizationKey::new(&sk)?;
 			let proto = RelinearizationKeyProto::from(&rk);

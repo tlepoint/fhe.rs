@@ -1,6 +1,4 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use math::rq::extender::Extender;
-use math::rq::traits::ContextSwitcher;
 use math::rq::*;
 use std::sync::Arc;
 use std::time::Duration;
@@ -185,42 +183,5 @@ pub fn rq_benchmark(c: &mut Criterion) {
 	group.finish();
 }
 
-static Q: &[u64; 3] = &[
-	4611686018326724609,
-	4611686018309947393,
-	4611686018282684417,
-];
-static P: &[u64; 3] = &[
-	4611686018257518593,
-	4611686018232352769,
-	4611686018171535361,
-];
-
-pub fn rq_switchers_benchmark(c: &mut Criterion) {
-	let mut group = c.benchmark_group("rq_switchers");
-
-	for degree in &[1024usize, 4096] {
-		let from = Arc::new(Context::new(Q, *degree).unwrap());
-		let mut all_moduli = Q.to_vec();
-		all_moduli.append(&mut P.to_vec());
-		let to = Arc::new(Context::new(&all_moduli, *degree).unwrap());
-
-		let p = Poly::random(&from, Representation::PowerBasis);
-		let extender = Extender::new(&from, &to).unwrap();
-
-		group.bench_function(
-			BenchmarkId::new(
-				"extender",
-				format!("{}/{}_to_{}", degree, Q.len(), all_moduli.len()),
-			),
-			|b| {
-				b.iter(|| extender.switch_context(&p));
-			},
-		);
-	}
-
-	group.finish();
-}
-
-criterion_group!(rq, rq_benchmark, rq_switchers_benchmark);
+criterion_group!(rq, rq_benchmark);
 criterion_main!(rq);
