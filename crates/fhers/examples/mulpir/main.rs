@@ -3,8 +3,8 @@
 
 mod common;
 
-use common::{encode_database, generate_database, number_elements_per_plaintext};
 use bfv::{traits::*, *};
+use common::{encode_database, generate_database, number_elements_per_plaintext};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;
