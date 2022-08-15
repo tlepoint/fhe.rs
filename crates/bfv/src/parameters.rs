@@ -73,6 +73,11 @@ impl BfvParameters {
 		&self.ciphertext_moduli_sizes
 	}
 
+	/// Returns the plaintext modulus
+	pub fn plaintext(&self) -> u64 {
+		self.plaintext_modulus
+	}
+
 	#[cfg(test)]
 	pub fn default(num_moduli: usize) -> Self {
 		BfvParametersBuilder::new()
