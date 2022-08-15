@@ -14,7 +14,6 @@ bfv = { version = "0.0.1", path = "../bfv" }
 util = { version = "0.0.1", path = "../util" }
 
 [dev-dependencies]
-rayon = "1.5.3"
 rand = "0.8.5"
 ndarray = "0.15.6"
 itertools = "0.10.3"
