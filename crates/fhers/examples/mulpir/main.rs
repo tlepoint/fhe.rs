@@ -1,16 +1,15 @@
 #![feature(int_log)]
 #![feature(int_roundings)]
-
-mod common;
+#![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
 use bfv::{traits::*, *};
-use common::{encode_database, generate_database, number_elements_per_plaintext};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;
 use rand::{thread_rng, RngCore};
 use std::sync::Arc;
 use util::transcode_forward;
+use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
 fn main() -> Result<(), String> {
 	let database_size = 1 << 20;
@@ -52,7 +51,7 @@ fn main() -> Result<(), String> {
 
 	// Database preprocessing on the server side
 	let preprocessed_database = timeit!("Database preprocessing", {
-		encode_database(&database, &params[1])
+		encode_database(&database, params[1].clone())
 	});
 
 	// Client setup
@@ -97,7 +96,7 @@ fn main() -> Result<(), String> {
 	let query = timeit!("Client query", {
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
-		let query_index = index / number_elements_per_plaintext(&params[0], elements_size);
+		let query_index = index / number_elements_per_plaintext(params[0].clone(), elements_size);
 		let mut pt = vec![0u64; dim[0] + dim[1]];
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim[1]] = inv;
@@ -145,7 +144,7 @@ fn main() -> Result<(), String> {
 		let pt = sk.decrypt(&response).unwrap();
 		let pt = Vec::<u64>::try_decode(&pt, Encoding::Poly).unwrap();
 		let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
-		let offset = index % number_elements_per_plaintext(&params[2], elements_size);
+		let offset = index % number_elements_per_plaintext(params[2].clone(), elements_size);
 
 		println!("Noise in response: {:?}", unsafe {
 			sk.measure_noise(&response)

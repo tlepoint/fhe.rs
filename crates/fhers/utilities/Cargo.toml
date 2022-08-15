@@ -1,5 +1,5 @@
 [package]
-name = "fhers"
+name = "utilities"
 description = "Fully homomorphic encryption in Rust"
 version = "0.0.1"
 edition = "2021"
@@ -10,12 +10,7 @@ repository = "https://github.com/tlepoint/fhe.rs"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-bfv = { version = "0.0.1", path = "../bfv" }
-util = { version = "0.0.1", path = "../util" }
-
-[dev-dependencies]
-rand = "0.8.5"
+fhers = { version = "0.0.1", path = "../" }
 ndarray = "0.15.6"
-itertools = "0.10.3"
 indicatif = "0.17.0"
-utilities = { version = "0.0.1", path = "utilities" }
+util = { version = "0.0.1", path = "../../util" }

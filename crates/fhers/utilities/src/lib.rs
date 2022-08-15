@@ -1,5 +1,9 @@
+#![feature(int_log)]
+#![feature(int_roundings)]
+
 //! Utility functions for the examples
-use bfv::{traits::Encoder, BfvParameters, Encoding, Plaintext};
+
+use fhers::bfv::{traits::Encoder, BfvParameters, Encoding, Plaintext};
 use ndarray::Array2;
 use std::{fmt, sync::Arc, time::Duration};
 use util::transcode_backward;
@@ -22,7 +26,7 @@ impl fmt::Display for DisplayDuration {
 #[macro_export]
 macro_rules! timeit {
 	($name:expr, $code:expr) => {{
-		use crate::common::DisplayDuration;
+		use utilities::DisplayDuration;
 		let start = std::time::Instant::now();
 		let r = $code;
 		println!("⏱  {}: {}", $name, DisplayDuration(start.elapsed()));
@@ -32,20 +36,21 @@ macro_rules! timeit {
 
 // Utility functions for PIR
 pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<u8>> {
+	assert!(elements_size >= 4);
 	let mut database = vec![vec![0u8; elements_size]; database_size];
-	for i in 0..database.len() {
-		database[i][..4].copy_from_slice(&(i as u32).to_le_bytes());
+	for (i, element) in database.iter_mut().enumerate() {
+		element[..4].copy_from_slice(&(i as u32).to_le_bytes());
 	}
 	database
 }
 
-pub fn number_elements_per_plaintext(par: &Arc<BfvParameters>, elements_size: usize) -> usize {
+pub fn number_elements_per_plaintext(par: Arc<BfvParameters>, elements_size: usize) -> usize {
 	(par.plaintext().ilog2() as usize * par.degree()) / (elements_size * 8)
 }
 
-pub fn encode_database(database: &Vec<Vec<u8>>, par: &Arc<BfvParameters>) -> Array2<Plaintext> {
+pub fn encode_database(database: &Vec<Vec<u8>>, par: Arc<BfvParameters>) -> Array2<Plaintext> {
 	let elements_size = database[0].len();
-	let number_elements_per_plaintext = number_elements_per_plaintext(par, elements_size);
+	let number_elements_per_plaintext = number_elements_per_plaintext(par.clone(), elements_size);
 	let number_rows = database.len().div_ceil(number_elements_per_plaintext);
 	println!("number_rows = {}", number_rows);
 	println!(
@@ -62,13 +67,12 @@ pub fn encode_database(database: &Vec<Vec<u8>>, par: &Arc<BfvParameters>) -> Arr
 		let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
 		for j in 0..number_elements_per_plaintext {
 			if let Some(pt) = database.get(j + i * number_elements_per_plaintext) {
-				serialized_plaintext[j * elements_size..(j + 1) * elements_size]
-					.copy_from_slice(&pt)
+				serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
 			}
 		}
 		let pt_values = transcode_backward(&serialized_plaintext, par.plaintext().ilog2() as usize);
-		let pt = Plaintext::try_encode(&pt_values as &[u64], Encoding::Poly, &par).unwrap();
-		preprocessed_database[i] = pt.clone();
+		preprocessed_database[i] =
+			Plaintext::try_encode(&pt_values as &[u64], Encoding::Poly, &par).unwrap();
 	});
 	Array2::from_shape_vec((dimension_1, dimension_2), preprocessed_database).unwrap()
 }
