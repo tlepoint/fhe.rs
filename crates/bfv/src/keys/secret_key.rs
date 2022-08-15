@@ -15,6 +15,7 @@ use num_bigint::BigUint;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
+use util::sample_vec_cbd;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Secret key for the BFV encryption scheme.
@@ -22,11 +23,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub struct SecretKey {
 	pub(crate) par: Arc<BfvParameters>,
 	pub(crate) s: Vec<Poly>,
+	pub(crate) s_coefficients: Vec<i64>,
 }
 
 impl Zeroize for SecretKey {
 	fn zeroize(&mut self) {
-		self.s.zeroize()
+		self.s.zeroize();
+		self.s_coefficients.zeroize();
 	}
 }
 
@@ -35,12 +38,25 @@ impl ZeroizeOnDrop for SecretKey {}
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
 	pub fn random(par: &Arc<BfvParameters>) -> Self {
-		let s = Poly::small(&par.ctx, Representation::NttShoup, par.variance).unwrap();
+		let s_coefficients = sample_vec_cbd(par.degree(), par.variance).unwrap();
+		Self::new(s_coefficients, par)
+	}
+
+	/// Generate a [`SecretKey`] from its coefficients.
+	pub(crate) fn new(s_coefficients: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
+		let mut s = Poly::try_convert_from(
+			&s_coefficients as &[i64],
+			&par.ctx,
+			Representation::PowerBasis,
+		)
+		.unwrap();
+		s.change_representation(Representation::NttShoup);
 		let mut s2 = &s * &s;
 		s2.change_representation(Representation::NttShoup);
 		Self {
 			par: par.clone(),
 			s: vec![s, s2],
+			s_coefficients,
 		}
 	}
 

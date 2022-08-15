@@ -24,6 +24,10 @@ impl Scaler {
 		to: &Arc<Context>,
 		factor: ScalingFactor,
 	) -> Result<Self, String> {
+		if from.degree != to.degree {
+			return Err("Incompatible degrees".to_string());
+		}
+
 		let mut number_common_moduli = 0;
 		if factor.is_one {
 			for (qi, pi) in izip!(&from.q, &to.q) {
