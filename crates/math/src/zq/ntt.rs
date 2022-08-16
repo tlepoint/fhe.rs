@@ -195,11 +195,8 @@ impl NttOperator {
 	/// Compute the forward NTT in place in variable time.
 	///
 	/// Aborts if a is not of the size handled by the operator.
-	pub unsafe fn forward_vt(&self, a: &mut [u64]) {
-		debug_assert!(a.len() == self.size);
-
+	pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
 		let n = self.size;
-		let a_ptr = a.as_mut_ptr();
 
 		let mut l = n >> 1;
 		let mut m = 1;
@@ -241,11 +238,7 @@ impl NttOperator {
 	/// Compute the backward NTT in place in variable time.
 	///
 	/// Aborts if a is not of the size handled by the operator.
-	pub unsafe fn backward_vt(&self, a: &mut [u64]) {
-		debug_assert!(a.len() == self.size);
-
-		let a_ptr = a.as_mut_ptr();
-
+	pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
 		let mut k = 0;
 		let mut m = self.size >> 1;
 		let mut l = 1;
@@ -294,8 +287,11 @@ impl NttOperator {
 			m >>= 1;
 		}
 
-		a.iter_mut()
-			.for_each(|ai| *ai = self.p.mul_shoup(*ai, self.size_inv, self.size_inv_shoup));
+		for i in 0..self.size as isize {
+			*a_ptr.offset(i) =
+				self.p
+					.mul_shoup(*a_ptr.offset(i), self.size_inv, self.size_inv_shoup)
+		}
 	}
 
 	/// Reduce a modulo p.
@@ -456,13 +452,13 @@ mod tests {
 						op.forward(&mut a);
 						assert_ne!(a, a_clone);
 
-						unsafe { op.forward_vt(&mut b) }
+						unsafe { op.forward_vt(b.as_mut_ptr()) }
 						assert_eq!(a, b);
 
 						op.backward(&mut a);
 						assert_eq!(a, a_clone);
 
-						unsafe { op.backward_vt(&mut b) }
+						unsafe { op.backward_vt(b.as_mut_ptr()) }
 						assert_eq!(a, b);
 					}
 				}

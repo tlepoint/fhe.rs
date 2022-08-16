@@ -7,14 +7,13 @@ mod ops;
 
 pub mod scaler;
 pub mod traits;
-
 pub use ops::dot_product;
 
 use crate::{
 	rns::RnsContext,
 	zq::{ntt::NttOperator, Modulus},
 };
-use itertools::izip;
+use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2};
 use num_bigint::BigUint;
 use rand::{Rng, SeedableRng};
@@ -31,6 +30,7 @@ pub struct Context {
 	rns: Arc<RnsContext>,
 	ops: Vec<NttOperator>,
 	degree: usize,
+	bitrev: Vec<usize>,
 }
 
 impl Context {
@@ -53,12 +53,16 @@ impl Context {
 					return Err("Impossible to construct a Ntt operator".to_string());
 				}
 			}
+			let bitrev = (0..degree)
+				.map(|j| (j.reverse_bits() >> (degree.leading_zeros() + 1)) as usize)
+				.collect_vec();
 
 			Ok(Self {
 				q,
 				rns,
 				ops,
 				degree,
+				bitrev,
 			})
 		}
 	}
@@ -280,7 +284,7 @@ impl Poly {
 	fn ntt_forward(&mut self) {
 		if self.allow_variable_time_computations {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_slice_mut().unwrap()) });
+				.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_mut_ptr()) });
 		} else {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
 				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
@@ -291,7 +295,7 @@ impl Poly {
 	fn ntt_backward(&mut self) {
 		if self.allow_variable_time_computations {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
-				.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_slice_mut().unwrap()) });
+				.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
 		} else {
 			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
 				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
@@ -318,17 +322,24 @@ impl Poly {
 				if exponent & 1 == 0 {
 					return Err("The exponent should be odd modulo 2 * degree".to_string());
 				}
-
 				let mut power = (exponent - 1) / 2;
-				for j in 0..degree {
-					let j_bitrev = (j.reverse_bits() >> (degree.leading_zeros() + 1)) as usize;
-					let power_bitrev =
-						((power & mask).reverse_bits() >> (degree.leading_zeros() + 1)) as usize;
-					q.coefficients
-						.slice_mut(s![.., j_bitrev])
-						.assign(&self.coefficients.slice(s![.., power_bitrev]));
-					power += exponent;
-				}
+				let power_bitrev = (0..degree)
+					.map(|_| {
+						let r = ((power & mask).reverse_bits() >> (degree.leading_zeros() + 1))
+							as usize;
+						power += exponent;
+						r
+					})
+					.collect_vec();
+				izip!(
+					q.coefficients.outer_iter_mut(),
+					self.coefficients.outer_iter()
+				)
+				.for_each(|(mut q_row, p_row)| {
+					for (j, k) in izip!(&self.ctx.bitrev, &power_bitrev) {
+						*q_row.get_mut(*j).unwrap() = *p_row.get(*k).unwrap()
+					}
+				});
 			}
 			Representation::NttShoup => {
 				if exponent & 1 == 0 {

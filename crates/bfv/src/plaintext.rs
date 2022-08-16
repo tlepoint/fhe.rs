@@ -25,7 +25,7 @@ pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Arc<BfvParameters>,
 	/// The value after encoding.
-	pub(crate) value: Vec<i64>,
+	pub(crate) value: Vec<u64>,
 	/// The encoding of the plaintext, if known
 	pub(crate) encoding: Option<Encoding>,
 	/// The plaintext as a polynomial.
@@ -34,20 +34,20 @@ pub struct Plaintext {
 
 impl Plaintext {
 	pub(crate) fn encode(&self) -> Result<Poly, String> {
-		let mut m_v = self.par.plaintext.reduce_vec_i64(&self.value);
-
+		let mut m_v = self.value.clone();
 		self.par
 			.plaintext
 			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
 		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, false, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
 		m *= &self.par.delta;
+		m_v.zeroize();
 		Ok(m)
 	}
 
 	/// Generate a zero plaintext.
 	pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Self {
-		let value = vec![0i64; par.degree()];
+		let value = vec![0u64; par.degree()];
 		let poly_ntt = Poly::zero(&par.ctx, Representation::Ntt);
 		Self {
 			par: par.clone(),
@@ -90,7 +90,7 @@ impl TryConvertFrom<&Plaintext> for Poly {
 			Err("Incompatible contexts".to_string())
 		} else {
 			Poly::try_convert_from(
-				&pt.value as &[i64],
+				&pt.value as &[u64],
 				&pt.par.ctx,
 				variable_time,
 				Representation::PowerBasis,
@@ -162,16 +162,15 @@ impl Encoder<&[u64]> for Vec<Plaintext> {
 				}
 			}
 
-			let w = unsafe { par.plaintext.center_vec_vt(&v) };
-			v.zeroize();
-
+			let mut w = unsafe { par.plaintext.center_vec_vt(&v) };
 			let mut poly =
 				Poly::try_convert_from(&w as &[i64], &par.ctx, false, Representation::PowerBasis)?;
 			poly.change_representation(Representation::Ntt);
+			w.zeroize();
 
 			out.push(Plaintext {
 				par: par.clone(),
-				value: w,
+				value: v,
 				encoding: Some(encoding.clone()),
 				poly_ntt: poly,
 			})
@@ -213,16 +212,15 @@ impl Encoder<&[i64]> for Plaintext {
 			value_u64.zeroize()
 		}
 
-		let w = unsafe { par.plaintext.center_vec_vt(&v) };
-		v.zeroize();
-
+		let mut w = unsafe { par.plaintext.center_vec_vt(&v) };
 		let mut poly =
 			Poly::try_convert_from(&w as &[i64], &par.ctx, false, Representation::PowerBasis)?;
 		poly.change_representation(Representation::Ntt);
+		w.zeroize();
 
 		Ok(Self {
 			par: par.clone(),
-			value: w,
+			value: v,
 			encoding: Some(encoding),
 			poly_ntt: poly,
 		})
@@ -252,7 +250,7 @@ impl Decoder for Vec<u64> {
 			}
 		}
 
-		let mut w = pt.par.plaintext.reduce_vec_i64(&pt.value);
+		let mut w = pt.value.clone();
 
 		match enc {
 			Encoding::Poly => Ok(w),
