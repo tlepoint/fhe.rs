@@ -244,31 +244,21 @@ impl RnsScaler {
 		debug_assert!(starting_index + out.len() <= self.to.moduli_u64.len());
 
 		// First, let's compute the inner product of the rests with theta_omega.
-		let mut sum_theta_garner2 = U192::ZERO;
-		// let mut sum_theta_garner = U256::zero();
+		let mut sum_theta_garner = U192::ZERO;
 		for (thetag_lo, thetag_hi, ri) in izip!(&self.theta_garner_lo, &self.theta_garner_hi, rests)
 		{
 			let lo = (*ri as u128) * (*thetag_lo as u128);
 			let hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-			// sum_theta_garner.wrapping_add_assign(U256::from([
-			// 	lo as u64,
-			// 	hi as u64,
-			// 	(hi >> 64) as u64,
-			// 	0,
-			// ]));
-			sum_theta_garner2 = sum_theta_garner2.wrapping_add(&U192::from_words([
+			sum_theta_garner = sum_theta_garner.wrapping_add(&U192::from_words([
 				lo as u64,
 				hi as u64,
 				(hi >> 64) as u64,
 			]));
 		}
 		// Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
-		// sum_theta_garner >>= 126;
-		// let v = u128::from(&sum_theta_garner).div_ceil(2);
-		sum_theta_garner2 >>= self.theta_garner_shift - 1;
-		let v = <[u64; 3]>::from(sum_theta_garner2);
+		sum_theta_garner >>= self.theta_garner_shift - 1;
+		let v = <[u64; 3]>::from(sum_theta_garner);
 		let v = v[0].div_ceil(2);
-		// assert_eq!(v, v2 as u128);
 
 		// If the scaling factor is not 1, compute the inner product with the theta_omega
 		let mut w_sign = false;

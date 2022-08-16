@@ -7,7 +7,6 @@ use bfv::{
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::{izip, Itertools};
-use math::rq::{Context, Poly, Representation};
 use std::sync::Arc;
 use std::time::Duration;
 

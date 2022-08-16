@@ -127,10 +127,9 @@ fn main() -> Result<(), String> {
 		)
 		.for_each(|(cj, column)| {
 			let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
-			// out += &mul(&c, cj, &ek_relin).unwrap();
 			out += &c * cj;
 		});
-		out = ek_relin.relinearizes(&out)?;
+		ek_relin.relinearizes(&mut out)?;
 		out.switch_parameters(&params_switchers[1])?;
 		out.serialize()
 	});
