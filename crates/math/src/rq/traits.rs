@@ -25,6 +25,7 @@ where
 	fn try_convert_from<R>(
 		value: T,
 		ctx: &Arc<Context>,
+		variable_time: bool,
 		representation: R,
 	) -> Result<Self, Self::Error>
 	where

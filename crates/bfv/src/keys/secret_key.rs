@@ -47,6 +47,7 @@ impl SecretKey {
 		let mut s = Poly::try_convert_from(
 			&s_coefficients as &[i64],
 			&par.ctx,
+			false,
 			Representation::PowerBasis,
 		)
 		.unwrap();
@@ -176,8 +177,12 @@ impl Decryptor for SecretKey {
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
 
-			let mut poly =
-				Poly::try_convert_from(&w as &[u64], &self.par.ctx, Representation::PowerBasis)?;
+			let mut poly = Poly::try_convert_from(
+				&w as &[u64],
+				&self.par.ctx,
+				false,
+				Representation::PowerBasis,
+			)?;
 			poly.change_representation(Representation::Ntt);
 
 			let pt = Plaintext {

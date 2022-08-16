@@ -1,21 +1,20 @@
 #![feature(int_log)]
 
 use bfv::{
-	mul, mul2,
+	dot_product_scalar, mul, mul2,
 	traits::{Encoder, Encryptor},
 	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use itertools::Itertools;
-use math::rq::{Context, Poly, Representation};
+use itertools::{izip, Itertools};
 use std::sync::Arc;
 use std::time::Duration;
 
 fn params() -> Result<Vec<Arc<BfvParameters>>, String> {
 	let par_small = BfvParametersBuilder::new()
-		.set_degree(2048)?
+		.set_degree(4096)?
 		.set_plaintext_modulus(1153)?
-		.set_ciphertext_moduli_sizes(&[54, 55])?
+		.set_ciphertext_moduli_sizes(&[36, 37, 37])?
 		.build()?;
 	let par_large = BfvParametersBuilder::new()
 		.set_degree(16384)?
@@ -52,6 +51,24 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			.unwrap();
 		let mut c1 = sk.encrypt(&pt1).unwrap();
 		let c2 = sk.encrypt(&pt2).unwrap();
+
+		let ct_vec = (0..128)
+			.map(|i| {
+				let pt = Plaintext::try_encode(
+					&(i..16u64).collect_vec() as &[u64],
+					Encoding::Poly,
+					&par,
+				)
+				.unwrap();
+				sk.encrypt(&pt).unwrap()
+			})
+			.collect_vec();
+		let pt_vec = (0..128)
+			.map(|i| {
+				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::Poly, &par)
+					.unwrap()
+			})
+			.collect_vec();
 
 		group.bench_function(
 			BenchmarkId::new(
@@ -123,11 +140,35 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let ctx = Arc::new(Context::new(par.moduli(), par.degree()).unwrap());
-		let p3 = Poly::random(&ctx, Representation::PowerBasis);
-		let mut p2 = Poly::random(&ctx, Representation::Ntt);
-		let mut p1 = Poly::random(&ctx, Representation::Ntt);
+		group.bench_function(
+			BenchmarkId::new(
+				"dot_product/128/naive",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| izip!(&ct_vec, &pt_vec).for_each(|(cti, pti)| c1 += cti * pti));
+			},
+		);
 
+		group.bench_function(
+			BenchmarkId::new(
+				"dot_product/128/opt",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| dot_product_scalar(ct_vec.iter(), pt_vec.iter()));
+			},
+		);
+
+		let c3 = &c1 * &c1;
 		group.bench_function(
 			BenchmarkId::new(
 				"relinearize",
@@ -138,7 +179,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| ek.relinearizes(&mut p1, &mut p2, &p3));
+				b.iter(|| ek.relinearizes_new(&c3));
 			},
 		);
 

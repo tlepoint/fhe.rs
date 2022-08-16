@@ -42,7 +42,6 @@ impl Modulus {
 			Err("modulus should be between 2 and 2^62-1".to_string())
 		} else {
 			let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
-
 			Ok(Self {
 				p,
 				barrett_hi: (barrett >> 64) as u64,
@@ -73,7 +72,7 @@ impl Modulus {
 	/// Modular addition of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
+	pub unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 
 		Self::reduce1_vt(a + b, self.p)

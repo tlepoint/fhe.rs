@@ -59,7 +59,7 @@ fn main() -> Result<(), String> {
 		timeit!("Client setup", {
 			let sk_encrypt = SecretKey::random(&params[0]);
 			let dim = preprocessed_database.shape();
-			let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
+			let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 			println!("level = {}", level);
 			let ek_expansion = EvaluationKeyBuilder::new(&sk_encrypt)
 				.enable_expansion(level as usize)?
@@ -95,7 +95,7 @@ fn main() -> Result<(), String> {
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
 		let dim = preprocessed_database.shape();
-		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
+		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 		let query_index = index / number_elements_per_plaintext(params[0].clone(), elements_size);
 		let mut pt = vec![0u64; dim[0] + dim[1]];
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
@@ -112,8 +112,9 @@ fn main() -> Result<(), String> {
 		let start = std::time::Instant::now();
 		let query = Ciphertext::try_deserialize(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
-		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
+		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
+		expanded_query.truncate(dim[0] + dim[1]);
 		println!("Expand: {:?}", start.elapsed());
 		expanded_query.iter_mut().for_each(|ct| {
 			assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
@@ -121,17 +122,14 @@ fn main() -> Result<(), String> {
 		println!("Switch parameters: {:?}", start.elapsed());
 		let mut out = Ciphertext::zero(&params[1]);
 		izip!(
-			&expanded_query[dim[0]..dim[0] + dim[1]],
+			&expanded_query[dim[0]..],
 			preprocessed_database.axis_iter(Axis(1))
 		)
 		.for_each(|(cj, column)| {
-			let mut c = Ciphertext::zero(&params[1]);
-			izip!(&expanded_query[..dim[0]], column.iter()).for_each(|(ci, pt)| {
-				c += ci * pt;
-			});
-			c = mul(&c, cj, &ek_relin).unwrap();
-			out += &c;
+			let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+			out += &c * cj;
 		});
+		ek_relin.relinearizes(&mut out)?;
 		out.switch_parameters(&params_switchers[1])?;
 		out.serialize()
 	});

@@ -1,6 +1,8 @@
 //! Unsigned 256-bit integer.
 
-use std::ops::{Not, Shr, ShrAssign};
+use std::ops::{Add, Not, Shr, ShrAssign};
+
+use num_traits::Zero;
 
 /// Struct holding a unsigned 256-bit integer.
 #[repr(C)]
@@ -129,6 +131,26 @@ impl ShrAssign<usize> for U256 {
 			self.2 = (self.2 >> rhs) | (self.3 << (64 - rhs));
 			self.3 >>= rhs;
 		}
+	}
+}
+
+impl Zero for U256 {
+	fn zero() -> Self {
+		Self(0, 0, 0, 0)
+	}
+
+	fn is_zero(&self) -> bool {
+		self.0 == 0 && self.1 == 0 && self.2 == 0 && self.3 == 0
+	}
+}
+
+impl Add for U256 {
+	type Output = Self;
+
+	fn add(self, rhs: Self) -> Self::Output {
+		let mut u = self;
+		u.wrapping_add_assign(rhs);
+		u
 	}
 }
 

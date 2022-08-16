@@ -228,7 +228,8 @@ impl BfvParametersBuilder {
 			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
 		}
 		let delta = rns.lift((&delta_rests).into()); // -1/t mod Q
-		let mut delta_poly = Poly::try_convert_from(&[delta], &ctx, Representation::PowerBasis)?;
+		let mut delta_poly =
+			Poly::try_convert_from(&[delta], &ctx, true, Representation::PowerBasis)?;
 		delta_poly.change_representation(Representation::NttShoup);
 
 		// Compute Q mod t

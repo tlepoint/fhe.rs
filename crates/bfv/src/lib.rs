@@ -15,7 +15,7 @@ mod parameters_switcher;
 mod plaintext;
 
 pub mod traits;
-pub use ciphertext::{mul, mul2, Ciphertext};
+pub use ciphertext::{dot_product_scalar, mul, mul2, Ciphertext};
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use parameters_switcher::{BfvParametersSwitcher, ParametersSwitchable};

@@ -7,7 +7,10 @@ use crate::{
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
 use itertools::{izip, Itertools};
-use math::rq::{traits::TryConvertFrom as PolyTryConvertFrom, Poly, Representation};
+use math::rq::{
+	dot_product as poly_dot_product, traits::TryConvertFrom as PolyTryConvertFrom, Poly,
+	Representation,
+};
 use num_bigint::BigUint;
 use protobuf::Message;
 use rand::SeedableRng;
@@ -196,6 +199,47 @@ impl Mul<&Ciphertext> for &Ciphertext {
 	}
 }
 
+/// Compute the dot product between an iterator of [`Ciphertext`] and an iterator of [`Plaintext`].
+/// Returns an error if the iterator counts are 0, if the parameters don't match, or if the ciphertexts have different
+/// number of parts.
+pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext, String>
+where
+	I: Iterator<Item = &'a Ciphertext> + Clone,
+	J: Iterator<Item = &'a Plaintext> + Clone,
+{
+	let p_count = ct.clone().count();
+	let q_count = pt.clone().count();
+	if p_count == 0 || q_count == 0 {
+		return Err("At least one iterator is empty".to_string());
+	}
+
+	let ct_first = ct.clone().next().unwrap();
+	if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
+		cti.par != ct_first.par || pti.par != ct_first.par || cti.c.len() != ct_first.c.len()
+	}) {
+		return Err("Mismatched parameters".to_string());
+	}
+	if ct.clone().any(|cti| cti.c.len() != ct_first.c.len()) {
+		return Err("Mismatched number of parts in the ciphertexts".to_string());
+	}
+
+	let c = (0..ct_first.c.len())
+		.map(|i| {
+			poly_dot_product(
+				ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
+				pt.clone().map(|pti| &pti.poly_ntt),
+			)
+			.unwrap()
+		})
+		.collect_vec();
+
+	Ok(Ciphertext {
+		par: ct_first.par.clone(),
+		seed: None,
+		c,
+	})
+}
+
 /// Multiply two ciphertext and relinearize.
 fn mul_internal(
 	ct0: &Ciphertext,
@@ -247,7 +291,7 @@ fn mul_internal(
 	// now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	ek.relinearizes(&mut c0, &mut c1, &c2)?;
+	ek.relinearizes_with_poly(&c2, &mut c0, &mut c1)?;
 	// println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
@@ -298,9 +342,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
-			unsafe { ci.allow_variable_time_computations() }
-			c.push(ci)
+			c.push(Poly::try_convert_from(cip, &par.ctx, true, None)?)
 		}
 
 		if !value.seed.is_empty() {
@@ -342,12 +384,13 @@ impl Deserialize for Ciphertext {
 
 #[cfg(test)]
 mod tests {
-	use super::{mul, mul2};
+	use super::{dot_product_scalar, mul, mul2};
 	use crate::{
 		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
 		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
+	use itertools::{izip, Itertools};
 	use std::sync::Arc;
 
 	#[test]
@@ -601,6 +644,39 @@ mod tests {
 			let ct = &ct * &ct;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_dot_product() -> Result<(), String> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			for size in 1..128 {
+				let ct = (0..size)
+					.map(|_| {
+						let v = params.plaintext.random_vec(params.degree());
+						let pt =
+							Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params).unwrap();
+						sk.encrypt(&pt).unwrap()
+					})
+					.collect_vec();
+				let pt = (0..size)
+					.map(|_| {
+						let v = params.plaintext.random_vec(params.degree());
+						Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params).unwrap()
+					})
+					.collect_vec();
+
+				let r = dot_product_scalar(ct.iter(), pt.iter())?;
+
+				let mut expected = Ciphertext::zero(&params);
+				izip!(&ct, &pt).for_each(|(cti, pti)| expected += cti * pti);
+				assert_eq!(r, expected);
+			}
 		}
 		Ok(())
 	}

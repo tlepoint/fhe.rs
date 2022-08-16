@@ -130,11 +130,43 @@ impl EvaluationKey {
 	}
 
 	/// Relinearizes the expanded ciphertext
-	pub fn relinearizes(&self, c0: &mut Poly, c1: &mut Poly, c2: &Poly) -> Result<(), String> {
+	pub fn relinearizes_new(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
 		if !self.supports_relinearization() {
 			Err("This key does not support relinearization".to_string())
 		} else {
-			self.rk.as_ref().unwrap().relinearize(c0, c1, c2)
+			self.rk.as_ref().unwrap().relinearizes(ct)
+		}
+	}
+
+	/// Relinearize a 3-part ciphertext in place.
+	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<(), String> {
+		if !self.supports_relinearization() {
+			Err("This key does not support relinearization".to_string())
+		} else {
+			let mut c2 = ct.c[2].clone();
+			c2.change_representation(Representation::PowerBasis);
+			let mut c1 = ct.c[1].clone();
+			self.rk
+				.as_ref()
+				.unwrap()
+				.relinearizes_with_poly(&c2, &mut ct.c[0], &mut c1)?;
+			ct.c[1] = c1;
+			ct.c.truncate(2);
+			Ok(())
+		}
+	}
+
+	/// Relinearize using polynomials.
+	pub(crate) fn relinearizes_with_poly(
+		&self,
+		c2: &Poly,
+		c0: &mut Poly,
+		c1: &mut Poly,
+	) -> Result<(), String> {
+		if !self.supports_relinearization() {
+			Err("This key does not support relinearization".to_string())
+		} else {
+			self.rk.as_ref().unwrap().relinearizes_with_poly(c2, c0, c1)
 		}
 	}
 
@@ -344,6 +376,7 @@ impl EvaluationKeyBuilder {
 			let mut monomial = Poly::try_convert_from(
 				&monomial as &[i64],
 				&self.sk.par.ctx,
+				true,
 				Representation::PowerBasis,
 			)?;
 			unsafe { monomial.allow_variable_time_computations() }
@@ -397,8 +430,12 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 		for l in 0..par.degree().ilog2() {
 			let mut monomial = vec![0i64; par.degree()];
 			monomial[par.degree() - (1 << l)] = -1;
-			let mut monomial =
-				Poly::try_convert_from(&monomial as &[i64], &par.ctx, Representation::PowerBasis)?;
+			let mut monomial = Poly::try_convert_from(
+				&monomial as &[i64],
+				&par.ctx,
+				true,
+				Representation::PowerBasis,
+			)?;
 			unsafe { monomial.allow_variable_time_computations() }
 			monomial.change_representation(Representation::Ntt);
 			monomials.push(monomial);

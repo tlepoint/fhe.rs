@@ -107,6 +107,7 @@ impl KeySwitchingKey {
 			let mut c2_i = Poly::try_convert_from(
 				c2_i_coefficients.as_slice().unwrap(),
 				&self.par.ctx,
+				true,
 				Representation::PowerBasis,
 			)?;
 			unsafe { c2_i.allow_variable_time_computations() }
@@ -149,9 +150,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 		let c1 = Self::generate_c1(par, seed, par.ciphertext_moduli.len());
 		let mut c0 = Vec::with_capacity(par.ciphertext_moduli.len());
 		for c0i in &value.c0 {
-			let mut p = Poly::try_convert_from(c0i, &par.ctx, None)?;
-			unsafe { p.allow_variable_time_computations() }
-			c0.push(p)
+			c0.push(Poly::try_convert_from(c0i, &par.ctx, true, None)?)
 		}
 
 		Ok(Self {
