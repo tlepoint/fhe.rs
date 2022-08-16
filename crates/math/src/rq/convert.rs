@@ -268,10 +268,7 @@ impl TryConvertFrom<&[i64]> for Poly {
 			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
 				let wi = w.as_slice_mut().unwrap();
 				if variable_time {
-					unsafe {
-						wi[..v.len()]
-							.copy_from_slice(Zeroizing::new(qi.reduce_vec_i64_vt(v)).as_ref())
-					}
+					unsafe { wi[..v.len()].copy_from_slice(&qi.reduce_vec_i64_vt(v)) }
 				} else {
 					wi[..v.len()].copy_from_slice(Zeroizing::new(qi.reduce_vec_i64(v)).as_ref());
 				}

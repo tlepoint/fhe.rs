@@ -11,8 +11,8 @@ use zeroize::Zeroize;
 
 /// Switcher that enable to switch the underlying [`BfvParameters`]
 pub struct BfvParametersSwitcher {
-	from: Arc<BfvParameters>,
-	to: Arc<BfvParameters>,
+	pub(crate) from: Arc<BfvParameters>,
+	pub(crate) to: Arc<BfvParameters>,
 	scaler: Scaler,
 }
 
@@ -73,7 +73,7 @@ impl ParametersSwitchable for Plaintext {
 			Err("Mismatched parameters".to_string())
 		} else {
 			self.poly_ntt = Poly::try_convert_from(
-				&self.value as &[i64],
+				&self.value as &[u64],
 				&switcher.to.ctx,
 				false,
 				Representation::PowerBasis,

@@ -110,7 +110,6 @@ impl KeySwitchingKey {
 				true,
 				Representation::PowerBasis,
 			)?;
-			unsafe { c2_i.allow_variable_time_computations() }
 			c2_i.change_representation(Representation::Ntt);
 			*acc_0 += &(&c2_i * c0_i);
 			c2_i *= c1_i;

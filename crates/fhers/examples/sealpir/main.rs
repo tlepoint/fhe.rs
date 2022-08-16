@@ -54,7 +54,7 @@ fn main() -> Result<(), String> {
 	});
 
 	// Client setup
-	let (sk_encrypt, mut sk_1, mut sk_2, ek_expansion_serialized) = timeit!("Client setup", {
+	let (sk_encrypt, mut sk_2, ek_expansion_serialized) = timeit!("Client setup", {
 		let sk_encrypt = SecretKey::random(&params[0]);
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
@@ -67,7 +67,7 @@ fn main() -> Result<(), String> {
 		let mut sk_2 = sk_1.clone();
 		sk_2.switch_parameters(&params_switchers[1])?;
 		let ek_expansion_serialized = ek_expansion.serialize();
-		(sk_encrypt, sk_1, sk_2, ek_expansion_serialized)
+		(sk_encrypt, sk_2, ek_expansion_serialized)
 	});
 	println!(
 		"📄 Evaluation key (expansion): {}",
@@ -112,7 +112,9 @@ fn main() -> Result<(), String> {
 		let fold = preprocessed_database
 			.axis_iter(Axis(1))
 			.map(|column| {
-				let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+				let mut c =
+					dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+				assert!(c.switch_parameters(&params_switchers[1]).is_ok());
 				let c_serialized = c.serialize();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
@@ -165,16 +167,16 @@ fn main() -> Result<(), String> {
 		for i in 0..decrypted_ct.len() {
 			if let Ok(ct) = Ciphertext::try_deserialize(
 				&decrypted_ct[..decrypted_ct.len() - i],
-				params.get(1).unwrap(),
+				params.get(2).unwrap(),
 			) {
-				let pt = sk_1.decrypt(&ct).unwrap();
+				let pt = sk_2.decrypt(&ct).unwrap();
 				let pt = Vec::<u64>::try_decode(&pt, Encoding::Poly).unwrap();
 				let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 				let offset = index
 					% number_elements_per_plaintext(params.last().unwrap().clone(), elements_size);
 
 				println!("Noise in response (ct): {:?}", unsafe {
-					sk_1.measure_noise(&ct)
+					sk_2.measure_noise(&ct)
 				});
 
 				answer = plaintext[offset * elements_size..(offset + 1) * elements_size].to_vec();

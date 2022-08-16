@@ -4,7 +4,10 @@ use super::{traits::TryConvertFrom, Poly, Representation};
 use itertools::{izip, Itertools};
 use ndarray::Array2;
 use num_bigint::BigUint;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::{
+	cmp::min,
+	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 use zeroize::Zeroize;
 
 impl AddAssign<&Poly> for Poly {
@@ -297,18 +300,18 @@ where
 		.clone()
 		.any(|qi| qi.representation == Representation::PowerBasis));
 
-	let p_count = p.clone().count();
-	let q_count = q.clone().count();
-	if p_count == 0 || q_count == 0 {
+	let count = min(p.clone().count(), q.clone().count());
+	if count == 0 {
 		return Err("At least one iterator is empty".to_string());
 	}
 
 	let p_first = p.clone().next().unwrap();
 
 	// Initialize the accumulator
-	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-	let acc_ptr = acc.as_mut_ptr();
 	let size = (p_first.ctx.degree * p_first.ctx.q.len()) as isize;
+	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	// let mut acc = vec![0u128; size as usize];
+	let acc_ptr = acc.as_mut_ptr();
 
 	// Current number of products accumulated
 	let mut num_acc = vec![1u128; p_first.ctx.q.len()];
@@ -327,7 +330,7 @@ where
 	let degree = p_first.ctx.degree as isize;
 
 	let min_of_max = max_acc.iter().min().unwrap();
-	if p_count as u128 > *min_of_max || q_count as u128 > *min_of_max {
+	if count as u128 > *min_of_max {
 		for (pi, qi) in izip!(p, q) {
 			let pi_ptr = pi.coefficients().as_ptr();
 			let qi_ptr = qi.coefficients().as_ptr();
@@ -368,15 +371,16 @@ where
 	}
 
 	// Last (conditional) reduction to create the coefficients
-	let mut coeffs = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	// let coeffs_ptr = coeffs.as_mut_ptr();
 	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
 		|(mut coeffsj, accj, m)| {
 			if p_first.allow_variable_time_computations {
 				izip!(coeffsj.iter_mut(), accj.iter())
-					.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
+					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
 			} else {
 				izip!(coeffsj.iter_mut(), accj.iter())
-					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
+					.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
 			}
 		},
 	);

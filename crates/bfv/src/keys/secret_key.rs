@@ -187,7 +187,7 @@ impl Decryptor for SecretKey {
 
 			let pt = Plaintext {
 				par: self.par.clone(),
-				value: unsafe { self.par.plaintext.center_vec_vt(&w[..self.par.degree()]) },
+				value: w,
 				encoding: None,
 				poly_ntt: poly,
 			};

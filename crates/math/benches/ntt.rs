@@ -20,7 +20,7 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 
 			group.bench_function(
 				BenchmarkId::new("forward_vt", format!("{}/{}", vector_size, p_nbits)),
-				|b| b.iter(|| unsafe { op.forward_vt(&mut a) }),
+				|b| b.iter(|| unsafe { op.forward_vt(a.as_mut_ptr()) }),
 			);
 
 			group.bench_function(
@@ -30,7 +30,7 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 
 			group.bench_function(
 				BenchmarkId::new("backward_vt", format!("{}/{}", vector_size, p_nbits)),
-				|b| b.iter(|| unsafe { op.backward_vt(&mut a) }),
+				|b| b.iter(|| unsafe { op.backward_vt(a.as_mut_ptr()) }),
 			);
 		}
 	}
