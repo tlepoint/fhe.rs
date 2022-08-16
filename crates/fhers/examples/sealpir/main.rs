@@ -12,7 +12,7 @@ use util::{transcode_backward, transcode_forward};
 use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
 fn main() -> Result<(), String> {
-	let database_size = 1 << 21;
+	let database_size = 1 << 20;
 	let elements_size = 288;
 
 	let degree = 2048;

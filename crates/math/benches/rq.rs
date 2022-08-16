@@ -118,56 +118,51 @@ pub fn rq_op_benchmark(c: &mut Criterion) {
 pub fn rq_dot_product(c: &mut Criterion) {
 	let mut group = create_group(c, "rq_dot_product".to_string());
 	for degree in DEGREE {
-		let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
-		let p_vec = (0..128)
-			.map(|_| Poly::random(&ctx, Representation::Ntt))
-			.collect_vec();
-		let mut q_vec = (0..128)
-			.map(|_| Poly::random(&ctx, Representation::Ntt))
-			.collect_vec();
-		let mut out = Poly::zero(&ctx, Representation::Ntt);
+		for i in [1, 4] {
+			let ctx = Arc::new(Context::new(&MODULI[..i], *degree).unwrap());
+			let p_vec = (0..256)
+				.map(|_| Poly::random(&ctx, Representation::Ntt))
+				.collect_vec();
+			let mut q_vec = (0..256)
+				.map(|_| Poly::random(&ctx, Representation::Ntt))
+				.collect_vec();
+			let mut out = Poly::zero(&ctx, Representation::Ntt);
 
-		group.bench_function(
-			BenchmarkId::from_parameter(format!("naive/{}/{}", degree, ctx.modulus().bits())),
-			|b| {
-				b.iter(|| izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi));
-			},
-		);
+			group.bench_function(
+				BenchmarkId::from_parameter(format!("naive/{}/{}", degree, ctx.modulus().bits())),
+				|b| {
+					b.iter(|| {
+						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi)
+					});
+				},
+			);
 
-		q_vec
-			.iter_mut()
-			.for_each(|qi| qi.change_representation(Representation::NttShoup));
-		group.bench_function(
-			BenchmarkId::from_parameter(format!("naive_shoup/{}/{}", degree, ctx.modulus().bits())),
-			|b| {
-				b.iter(|| izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi));
-			},
-		);
+			q_vec
+				.iter_mut()
+				.for_each(|qi| qi.change_representation(Representation::NttShoup));
+			group.bench_function(
+				BenchmarkId::from_parameter(format!(
+					"naive_shoup/{}/{}",
+					degree,
+					ctx.modulus().bits()
+				)),
+				|b| {
+					b.iter(|| {
+						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi)
+					});
+				},
+			);
 
-		q_vec
-			.iter_mut()
-			.for_each(|qi| qi.change_representation(Representation::Ntt));
-		group.bench_function(
-			BenchmarkId::from_parameter(format!("opt/{}/{}", degree, ctx.modulus().bits())),
-			|b| {
-				b.iter(|| dot_product(p_vec.iter(), q_vec.iter()));
-			},
-		);
-
-		let ctx = Arc::new(Context::new(&MODULI[1..2], *degree).unwrap());
-		let p_vec = (0..128)
-			.map(|_| Poly::random(&ctx, Representation::Ntt))
-			.collect_vec();
-		let q_vec = (0..128)
-			.map(|_| Poly::random(&ctx, Representation::Ntt))
-			.collect_vec();
-
-		group.bench_function(
-			BenchmarkId::from_parameter(format!("opt/{}/{}", degree, ctx.modulus().bits())),
-			|b| {
-				b.iter(|| dot_product(p_vec.iter(), q_vec.iter()));
-			},
-		);
+			q_vec
+				.iter_mut()
+				.for_each(|qi| qi.change_representation(Representation::Ntt));
+			group.bench_function(
+				BenchmarkId::from_parameter(format!("opt/{}/{}", degree, ctx.modulus().bits())),
+				|b| {
+					b.iter(|| dot_product(p_vec.iter(), q_vec.iter()));
+				},
+			);
+		}
 	}
 }
 
@@ -184,47 +179,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 			let ctx = Arc::new(Context::new(&MODULI[..nmoduli], *degree).unwrap());
 			let mut p = Poly::random(&ctx, Representation::Ntt);
 			let mut q = Poly::random(&ctx, Representation::Ntt);
-			let p_vec = (0..128)
-				.map(|_| Poly::random(&ctx, Representation::Ntt))
-				.collect_vec();
-			let mut q_vec = (0..128)
-				.map(|_| Poly::random(&ctx, Representation::Ntt))
-				.collect_vec();
-
-			group.bench_function(
-				BenchmarkId::new(
-					"dot_product/128/naive",
-					format!("{}/{}", degree, ctx.modulus().bits()),
-				),
-				|b| {
-					b.iter(|| izip!(&p_vec, &q_vec).for_each(|(pi, qi)| p += pi * qi));
-				},
-			);
-
-			group.bench_function(
-				BenchmarkId::new(
-					"dot_product/128/opt",
-					format!("{}/{}", degree, ctx.modulus().bits()),
-				),
-				|b| {
-					b.iter(|| dot_product(p_vec.iter(), q_vec.iter()));
-				},
-			);
-
 			q.change_representation(Representation::NttShoup);
-
-			q_vec
-				.iter_mut()
-				.for_each(|qi| qi.change_representation(Representation::NttShoup));
-			group.bench_function(
-				BenchmarkId::new(
-					"dot_product/128/shoup",
-					format!("{}/{}", degree, ctx.modulus().bits()),
-				),
-				|b| {
-					b.iter(|| izip!(&p_vec, &q_vec).for_each(|(pi, qi)| p += pi * qi));
-				},
-			);
 
 			group.bench_function(
 				BenchmarkId::new("mul_shoup", format!("{}/{}", degree, ctx.modulus().bits())),
@@ -278,46 +233,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 
 			unsafe {
 				q.allow_variable_time_computations();
-				q_vec.iter_mut().for_each(|qi| {
-					qi.change_representation(Representation::Ntt);
-					qi.allow_variable_time_computations()
-				});
-
-				group.bench_function(
-					BenchmarkId::new("add_vt", format!("{}/{}", degree, ctx.modulus().bits())),
-					|b| {
-						b.iter(|| p += &q);
-					},
-				);
-
-				group.bench_function(
-					BenchmarkId::new("sub_vt", format!("{}/{}", degree, ctx.modulus().bits())),
-					|b| {
-						b.iter(|| p -= &q);
-					},
-				);
-
-				group.bench_function(
-					BenchmarkId::new("mul_vt", format!("{}/{}", degree, ctx.modulus().bits())),
-					|b| {
-						b.iter(|| p *= &q);
-					},
-				);
-
-				group.bench_function(
-					BenchmarkId::new(
-						"dot_product/128/naive_vt",
-						format!("{}/{}", degree, ctx.modulus().bits()),
-					),
-					|b| {
-						b.iter(|| izip!(&p_vec, &q_vec).for_each(|(pi, qi)| p += pi * qi));
-					},
-				);
-
 				q.change_representation(Representation::NttShoup);
-				q_vec
-					.iter_mut()
-					.for_each(|qi| qi.change_representation(Representation::NttShoup));
 
 				group.bench_function(
 					BenchmarkId::new(
@@ -326,16 +242,6 @@ pub fn rq_benchmark(c: &mut Criterion) {
 					),
 					|b| {
 						b.iter(|| p *= &q);
-					},
-				);
-
-				group.bench_function(
-					BenchmarkId::new(
-						"dot_product/128/shoup_vt",
-						format!("{}/{}", degree, ctx.modulus().bits()),
-					),
-					|b| {
-						b.iter(|| izip!(&p_vec, &q_vec).for_each(|(pi, qi)| p += pi * qi));
 					},
 				);
 

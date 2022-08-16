@@ -19,7 +19,8 @@ impl AddAssign<&Poly> for Poly {
 			"Incompatible representations"
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		if self.allow_variable_time_computations || p.allow_variable_time_computations {
+		self.allow_variable_time_computations |= p.allow_variable_time_computations;
+		if self.allow_variable_time_computations {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
@@ -28,7 +29,6 @@ impl AddAssign<&Poly> for Poly {
 			.for_each(|(mut v1, v2, qi)| unsafe {
 				qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
 			});
-			self.allow_variable_time_computations = true
 		} else {
 			izip!(
 				self.coefficients.outer_iter_mut(),
@@ -77,7 +77,8 @@ impl SubAssign<&Poly> for Poly {
 			"Incompatible representations"
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-		if self.allow_variable_time_computations || p.allow_variable_time_computations {
+		self.allow_variable_time_computations |= p.allow_variable_time_computations;
+		if self.allow_variable_time_computations {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
@@ -86,7 +87,6 @@ impl SubAssign<&Poly> for Poly {
 			.for_each(|(mut v1, v2, qi)| unsafe {
 				qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
 			});
-			self.allow_variable_time_computations = true
 		} else {
 			izip!(
 				self.coefficients.outer_iter_mut(),
@@ -122,10 +122,11 @@ impl MulAssign<&Poly> for Poly {
 			"Multiplication requires an Ntt representation."
 		);
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+		self.allow_variable_time_computations |= p.allow_variable_time_computations;
 
 		match p.representation {
 			Representation::Ntt => {
-				if self.allow_variable_time_computations || p.allow_variable_time_computations {
+				if self.allow_variable_time_computations {
 					unsafe {
 						izip!(
 							self.coefficients.outer_iter_mut(),
@@ -136,7 +137,6 @@ impl MulAssign<&Poly> for Poly {
 							qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap());
 						});
 					}
-					self.allow_variable_time_computations = true
 				} else {
 					izip!(
 						self.coefficients.outer_iter_mut(),
@@ -149,7 +149,7 @@ impl MulAssign<&Poly> for Poly {
 				}
 			}
 			Representation::NttShoup => {
-				if self.allow_variable_time_computations || p.allow_variable_time_computations {
+				if self.allow_variable_time_computations {
 					izip!(
 						self.coefficients.outer_iter_mut(),
 						p.coefficients.outer_iter(),
@@ -163,7 +163,6 @@ impl MulAssign<&Poly> for Poly {
 							v2_shoup.as_slice().unwrap(),
 						)
 					});
-					self.allow_variable_time_computations = true
 				} else {
 					izip!(
 						self.coefficients.outer_iter_mut(),
@@ -179,6 +178,7 @@ impl MulAssign<&Poly> for Poly {
 						)
 					});
 				}
+				// TODO: What about the coefficients_shoup?
 			}
 			_ => {
 				panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
@@ -289,90 +289,87 @@ where
 	I: Iterator<Item = &'a Poly> + Clone,
 	J: Iterator<Item = &'b Poly> + Clone,
 {
+	debug_assert!(!p
+		.clone()
+		.any(|pi| pi.representation == Representation::PowerBasis));
+	debug_assert!(!q
+		.clone()
+		.any(|qi| qi.representation == Representation::PowerBasis));
+
 	let p_count = p.clone().count();
 	let q_count = q.clone().count();
 	if p_count == 0 || q_count == 0 {
 		return Err("At least one iterator is empty".to_string());
-	}
-	if p.clone()
-		.any(|pi| pi.representation == Representation::PowerBasis)
-	{
-		return Err("All polynomials in p should be in Ntt representation".to_string());
-	}
-	if q.clone()
-		.any(|pi| pi.representation == Representation::PowerBasis)
-	{
-		return Err("All polynomials in q should be in Ntt representation".to_string());
 	}
 
 	let p_first = p.clone().next().unwrap();
 
 	// Initialize the accumulator
 	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	let acc_ptr = acc.as_mut_ptr();
+	let size = (p_first.ctx.degree * p_first.ctx.q.len()) as isize;
+
 	// Current number of products accumulated
 	let mut num_acc = vec![1u128; p_first.ctx.q.len()];
+	let num_acc_ptr = num_acc.as_mut_ptr();
+
 	// Maximum number of products that can be accumulated
-	let mut max_acc = p_first
+	let max_acc = p_first
 		.ctx
 		.q
 		.iter()
 		.map(|qi| 1u128 << (2 * qi.modulus().leading_zeros()))
 		.collect_vec();
+	let max_acc_ptr = max_acc.as_ptr();
+
+	let q_ptr = p_first.ctx.q.as_ptr();
+	let degree = p_first.ctx.degree as isize;
 
 	let min_of_max = max_acc.iter().min().unwrap();
 	if p_count as u128 > *min_of_max || q_count as u128 > *min_of_max {
 		for (pi, qi) in izip!(p, q) {
-			izip!(
-				acc.outer_iter_mut(),
-				pi.coefficients().outer_iter(),
-				qi.coefficients().outer_iter(),
-				num_acc.iter_mut(),
-				max_acc.iter_mut(),
-				&p_first.ctx.q,
-			)
-			.for_each(|(mut accj, pij, qij, na, ma, m)| {
-				izip!(accj.iter_mut(), pij.iter(), qij.iter())
-					.for_each(|(accjk, pijk, qijk)| *accjk += (*pijk as u128) * (*qijk as u128));
-				*na += 1;
-				if *na == *ma {
-					if p_first.allow_variable_time_computations {
-						accj.iter_mut()
-							.for_each(|accjk| *accjk = m.reduce_u128(*accjk) as u128);
-					} else {
-						accj.iter_mut()
-							.for_each(|accjk| *accjk = unsafe { m.reduce_u128_vt(*accjk) as u128 });
-					}
-					*na = 1
+			let pi_ptr = pi.coefficients().as_ptr();
+			let qi_ptr = qi.coefficients().as_ptr();
+			unsafe {
+				for i in 0..size {
+					*acc_ptr.offset(i) += (*pi_ptr.offset(i) as u128) * (*qi_ptr.offset(i) as u128);
 				}
-			});
+				for j in 0..p_first.ctx.q.len() as isize {
+					*num_acc_ptr.offset(j) += 1;
+					if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
+						if p_first.allow_variable_time_computations {
+							for i in j * degree..(j + 1) * degree {
+								*acc_ptr.offset(i) =
+									(*q_ptr.offset(j)).reduce_u128(*acc_ptr.offset(i)) as u128;
+							}
+						} else {
+							for i in j * degree..(j + 1) * degree {
+								*acc_ptr.offset(i) =
+									(*q_ptr.offset(j)).reduce_u128_vt(*acc_ptr.offset(i)) as u128;
+							}
+						}
+						*num_acc_ptr.offset(j) = 1;
+					}
+				}
+			}
 		}
 	} else {
 		// We don't need to check the condition on the max, it should shave off a few cycles.
 		for (pi, qi) in izip!(p, q) {
-			izip!(
-				acc.outer_iter_mut(),
-				pi.coefficients().outer_iter(),
-				qi.coefficients().outer_iter(),
-				num_acc.iter_mut(),
-			)
-			.for_each(|(mut accj, pij, qij, na)| {
-				izip!(accj.iter_mut(), pij.iter(), qij.iter())
-					.for_each(|(accjk, pijk, qijk)| *accjk += (*pijk as u128) * (*qijk as u128));
-				*na += 1;
-			});
+			let pi_ptr = pi.coefficients().as_ptr();
+			let qi_ptr = qi.coefficients().as_ptr();
+			unsafe {
+				for i in 0..size {
+					*acc_ptr.offset(i) += (*pi_ptr.offset(i) as u128) * (*qi_ptr.offset(i) as u128);
+				}
+			}
 		}
 	}
 
 	// Last (conditional) reduction to create the coefficients
 	let mut coeffs = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-	izip!(
-		coeffs.outer_iter_mut(),
-		acc.outer_iter(),
-		num_acc.iter(),
-		&p_first.ctx.q,
-	)
-	.for_each(|(mut coeffsj, accj, na, m)| {
-		if *na > 1 {
+	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
+		|(mut coeffsj, accj, m)| {
 			if p_first.allow_variable_time_computations {
 				izip!(coeffsj.iter_mut(), accj.iter())
 					.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
@@ -380,10 +377,8 @@ where
 				izip!(coeffsj.iter_mut(), accj.iter())
 					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
 			}
-		} else {
-			izip!(coeffsj.iter_mut(), accj.iter()).for_each(|(cj, accjk)| *cj = *accjk as u64);
-		}
-	});
+		},
+	);
 
 	Ok(Poly {
 		ctx: p_first.ctx.clone(),

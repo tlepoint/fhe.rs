@@ -42,7 +42,6 @@ impl Modulus {
 			Err("modulus should be between 2 and 2^62-1".to_string())
 		} else {
 			let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
-
 			Ok(Self {
 				p,
 				barrett_hi: (barrett >> 64) as u64,
