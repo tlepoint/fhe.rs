@@ -168,6 +168,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
+		let c3 = &c1 * &c1;
 		group.bench_function(
 			BenchmarkId::new(
 				"relinearize",
@@ -178,7 +179,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| ek.relinearizes(&c1));
+				b.iter(|| ek.relinearizes_new(&c3));
 			},
 		);
 
