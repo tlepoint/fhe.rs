@@ -8,6 +8,8 @@ mod ops;
 pub mod scaler;
 pub mod traits;
 
+pub use ops::dot_product;
+
 use crate::{
 	rns::RnsContext,
 	zq::{ntt::NttOperator, Modulus},

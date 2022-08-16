@@ -73,7 +73,7 @@ impl Modulus {
 	/// Modular addition of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
+	pub unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 
 		Self::reduce1_vt(a + b, self.p)

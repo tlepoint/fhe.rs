@@ -1,7 +1,8 @@
 //! Implementation of operations over polynomials.
 
 use super::{traits::TryConvertFrom, Poly, Representation};
-use itertools::izip;
+use itertools::{izip, Itertools};
+use ndarray::Array2;
 use num_bigint::BigUint;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use zeroize::Zeroize;
@@ -280,8 +281,124 @@ impl Neg for &Poly {
 	}
 }
 
+/// Compute the dot product between two iterators of polynomials.
+/// Returna an error if the iterator counts are 0, or if any of the polynomial is not
+/// in Ntt or NttShoup representation.
+pub fn dot_product<'a, 'b, I, J>(p: I, q: J) -> Result<Poly, String>
+where
+	I: Iterator<Item = &'a Poly> + Clone,
+	J: Iterator<Item = &'b Poly> + Clone,
+{
+	let p_count = p.clone().count();
+	let q_count = q.clone().count();
+	if p_count == 0 || q_count == 0 {
+		return Err("At least one iterator is empty".to_string());
+	}
+	if p.clone()
+		.any(|pi| pi.representation == Representation::PowerBasis)
+	{
+		return Err("All polynomials in p should be in Ntt representation".to_string());
+	}
+	if q.clone()
+		.any(|pi| pi.representation == Representation::PowerBasis)
+	{
+		return Err("All polynomials in q should be in Ntt representation".to_string());
+	}
+
+	let p_first = p.clone().next().unwrap();
+
+	// Initialize the accumulator
+	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	// Current number of products accumulated
+	let mut num_acc = vec![1u128; p_first.ctx.q.len()];
+	// Maximum number of products that can be accumulated
+	let mut max_acc = p_first
+		.ctx
+		.q
+		.iter()
+		.map(|qi| 1u128 << (2 * qi.modulus().leading_zeros()))
+		.collect_vec();
+
+	let min_of_max = max_acc.iter().min().unwrap();
+	if p_count as u128 > *min_of_max || q_count as u128 > *min_of_max {
+		for (pi, qi) in izip!(p, q) {
+			izip!(
+				acc.outer_iter_mut(),
+				pi.coefficients().outer_iter(),
+				qi.coefficients().outer_iter(),
+				num_acc.iter_mut(),
+				max_acc.iter_mut(),
+				&p_first.ctx.q,
+			)
+			.for_each(|(mut accj, pij, qij, na, ma, m)| {
+				izip!(accj.iter_mut(), pij.iter(), qij.iter())
+					.for_each(|(accjk, pijk, qijk)| *accjk += (*pijk as u128) * (*qijk as u128));
+				*na += 1;
+				if *na == *ma {
+					if p_first.allow_variable_time_computations {
+						accj.iter_mut()
+							.for_each(|accjk| *accjk = m.reduce_u128(*accjk) as u128);
+					} else {
+						accj.iter_mut()
+							.for_each(|accjk| *accjk = unsafe { m.reduce_u128_vt(*accjk) as u128 });
+					}
+					*na = 1
+				}
+			});
+		}
+	} else {
+		// We don't need to check the condition on the max, it should shave off a few cycles.
+		for (pi, qi) in izip!(p, q) {
+			izip!(
+				acc.outer_iter_mut(),
+				pi.coefficients().outer_iter(),
+				qi.coefficients().outer_iter(),
+				num_acc.iter_mut(),
+			)
+			.for_each(|(mut accj, pij, qij, na)| {
+				izip!(accj.iter_mut(), pij.iter(), qij.iter())
+					.for_each(|(accjk, pijk, qijk)| *accjk += (*pijk as u128) * (*qijk as u128));
+				*na += 1;
+			});
+		}
+	}
+
+	// Last (conditional) reduction to create the coefficients
+	let mut coeffs = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
+	izip!(
+		coeffs.outer_iter_mut(),
+		acc.outer_iter(),
+		num_acc.iter(),
+		&p_first.ctx.q,
+	)
+	.for_each(|(mut coeffsj, accj, na, m)| {
+		if *na > 1 {
+			if p_first.allow_variable_time_computations {
+				izip!(coeffsj.iter_mut(), accj.iter())
+					.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
+			} else {
+				izip!(coeffsj.iter_mut(), accj.iter())
+					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
+			}
+		} else {
+			izip!(coeffsj.iter_mut(), accj.iter()).for_each(|(cj, accjk)| *cj = *accjk as u64);
+		}
+	});
+
+	Ok(Poly {
+		ctx: p_first.ctx.clone(),
+		representation: Representation::Ntt,
+		allow_variable_time_computations: p_first.allow_variable_time_computations,
+		coefficients: coeffs,
+		coefficients_shoup: None,
+	})
+}
+
 #[cfg(test)]
 mod tests {
+	use itertools::{izip, Itertools};
+
+	use super::dot_product;
 	use crate::{
 		rq::{Context, Poly, Representation},
 		zq::Modulus,
@@ -466,6 +583,45 @@ mod tests {
 			let r = -&p;
 			assert_eq!(r.representation, Representation::PowerBasis);
 			assert_eq!(Vec::<u64>::from(&r), a);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_dot_product() -> Result<(), String> {
+		for _ in 0..20 {
+			for modulus in MODULI {
+				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+
+				for len in 1..50 {
+					let p = (0..len)
+						.map(|_| Poly::random(&ctx, Representation::Ntt))
+						.collect_vec();
+					let q = (0..len)
+						.map(|_| Poly::random(&ctx, Representation::Ntt))
+						.collect_vec();
+					let r = dot_product(p.iter(), q.iter())?;
+
+					let mut expected = Poly::zero(&ctx, Representation::Ntt);
+					izip!(&p, &q).for_each(|(pi, qi)| expected += pi * qi);
+					assert_eq!(r, expected);
+				}
+			}
+
+			let ctx = Arc::new(Context::new(MODULI, 8)?);
+			for len in 1..50 {
+				let p = (0..len)
+					.map(|_| Poly::random(&ctx, Representation::Ntt))
+					.collect_vec();
+				let q = (0..len)
+					.map(|_| Poly::random(&ctx, Representation::Ntt))
+					.collect_vec();
+				let r = dot_product(p.iter(), q.iter())?;
+
+				let mut expected = Poly::zero(&ctx, Representation::Ntt);
+				izip!(&p, &q).for_each(|(pi, qi)| expected += pi * qi);
+				assert_eq!(r, expected);
+			}
 		}
 		Ok(())
 	}

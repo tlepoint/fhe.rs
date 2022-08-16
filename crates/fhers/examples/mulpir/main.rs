@@ -12,7 +12,7 @@ use util::transcode_forward;
 use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
 fn main() -> Result<(), String> {
-	let database_size = 1 << 20;
+	let database_size = 1 << 22;
 	let elements_size = 288;
 
 	// We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
@@ -125,10 +125,7 @@ fn main() -> Result<(), String> {
 			preprocessed_database.axis_iter(Axis(1))
 		)
 		.for_each(|(cj, column)| {
-			let mut c = Ciphertext::zero(&params[1]);
-			izip!(&expanded_query[..dim[0]], column.iter()).for_each(|(ci, pt)| {
-				c += ci * pt;
-			});
+			let mut c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
 			c = mul(&c, cj, &ek_relin).unwrap();
 			out += &c;
 		});
