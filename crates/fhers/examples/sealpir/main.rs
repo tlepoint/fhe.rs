@@ -15,7 +15,7 @@ fn main() -> Result<(), String> {
 	let database_size = 1 << 21;
 	let elements_size = 288;
 
-	let degree = 2048;
+	let degree = 4096;
 	let plaintext_modulus: u64 = (1 << 22) + 1;
 	let moduli_sizes = [36, 37, 37];
 
