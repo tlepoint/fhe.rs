@@ -130,11 +130,25 @@ impl EvaluationKey {
 	}
 
 	/// Relinearizes the expanded ciphertext
-	pub fn relinearizes(&self, c0: &mut Poly, c1: &mut Poly, c2: &Poly) -> Result<(), String> {
+	pub fn relinearizes(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
 		if !self.supports_relinearization() {
 			Err("This key does not support relinearization".to_string())
 		} else {
-			self.rk.as_ref().unwrap().relinearize(c0, c1, c2)
+			self.rk.as_ref().unwrap().relinearizes(ct)
+		}
+	}
+
+	/// Relinearize using polynomials.
+	pub(crate) fn relinearizes_with_poly(
+		&self,
+		c2: &Poly,
+		c0: &mut Poly,
+		c1: &mut Poly,
+	) -> Result<(), String> {
+		if !self.supports_relinearization() {
+			Err("This key does not support relinearization".to_string())
+		} else {
+			self.rk.as_ref().unwrap().relinearizes_with_poly(c2, c0, c1)
 		}
 	}
 

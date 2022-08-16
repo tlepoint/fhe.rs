@@ -291,7 +291,7 @@ fn mul_internal(
 	// now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	ek.relinearizes(&mut c0, &mut c1, &c2)?;
+	ek.relinearizes_with_poly(&c2, &mut c0, &mut c1)?;
 	// println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {

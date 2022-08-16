@@ -130,6 +130,7 @@ fn main() -> Result<(), String> {
 			// out += &mul(&c, cj, &ek_relin).unwrap();
 			out += &c * cj;
 		});
+		out = ek_relin.relinearizes(&out)?;
 		out.switch_parameters(&params_switchers[1])?;
 		out.serialize()
 	});

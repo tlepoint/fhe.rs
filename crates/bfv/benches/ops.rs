@@ -169,11 +169,6 @@ pub fn ops_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let ctx = Arc::new(Context::new(par.moduli(), par.degree()).unwrap());
-		let p3 = Poly::random(&ctx, Representation::PowerBasis);
-		let mut p2 = Poly::random(&ctx, Representation::Ntt);
-		let mut p1 = Poly::random(&ctx, Representation::Ntt);
-
 		group.bench_function(
 			BenchmarkId::new(
 				"relinearize",
@@ -184,7 +179,7 @@ pub fn ops_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| ek.relinearizes(&mut p1, &mut p2, &p3));
+				b.iter(|| ek.relinearizes(&c1));
 			},
 		);
 
