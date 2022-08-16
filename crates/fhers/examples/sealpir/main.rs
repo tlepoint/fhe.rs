@@ -4,7 +4,7 @@
 
 use bfv::{traits::*, *};
 use indicatif::HumanBytes;
-use itertools::{izip, Itertools};
+use itertools::Itertools;
 use ndarray::Axis;
 use rand::{thread_rng, RngCore};
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use util::{transcode_backward, transcode_forward};
 use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
 fn main() -> Result<(), String> {
-	let database_size = 1 << 20;
+	let database_size = 1 << 21;
 	let elements_size = 288;
 
 	let degree = 2048;
@@ -103,40 +103,34 @@ fn main() -> Result<(), String> {
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
+		expanded_query.truncate(dim[0] + dim[1]);
 		println!("Expand: {:?}", start.elapsed());
 		expanded_query.iter_mut().for_each(|ct| {
 			assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
 		});
 		println!("Switch parameters: {:?}", start.elapsed());
-		let mut out = (0..7).map(|_| Ciphertext::zero(&params[1])).collect_vec();
-		izip!(
-			&expanded_query[dim[0]..dim[0] + dim[1]],
-			preprocessed_database.axis_iter(Axis(1))
-		)
-		.for_each(|(cj, column)| {
-			let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
-			// println!("Noise c: {:?}", unsafe { sk_1.measure_noise(&c) });
-			// 1496
-			let c_serialized = c.serialize();
-			// println!("c_serialized = {:?}", &c_serialized[..30]);
-			// 1547
-			let pt_values = transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
-			// 1706
-			let pts =
+		let fold = preprocessed_database
+			.axis_iter(Axis(1))
+			.map(|column| {
+				let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+				let c_serialized = c.serialize();
+				let pt_values =
+					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
 				Vec::<Plaintext>::try_encode(&pt_values as &[u64], Encoding::Poly, &params[1])
-					.unwrap();
-			// 1784
-			// println!("pts = {:?}", pts.len());
-			izip!(out.iter_mut(), pts.iter()).for_each(|(outi, pti)| *outi += cj * pti)
-		});
-		out.iter_mut().for_each(|outi| {
-			// println!("Noise outi: {:?}", unsafe { sk_1.measure_noise(outi) });
-			// assert!(outi.switch_parameters(&params_switchers[0]).is_ok());
-			assert!(outi.switch_parameters(&params_switchers[1]).is_ok());
-			// println!("Noise outi: {:?}", unsafe { sk_2.measure_noise(outi) });
-		});
-		out.iter().map(|outi| outi.serialize()).collect_vec()
-		// vec![]
+					.unwrap()
+			})
+			.collect_vec();
+		(0..fold[0].len())
+			.map(|i| {
+				let mut outi = dot_product_scalar(
+					expanded_query[dim[0]..].iter(),
+					fold.iter().map(|pts| pts.get(i).unwrap()).into_iter(),
+				)
+				.unwrap();
+				assert!(outi.switch_parameters(&params_switchers[1]).is_ok());
+				outi.serialize()
+			})
+			.collect_vec()
 	});
 
 	println!(

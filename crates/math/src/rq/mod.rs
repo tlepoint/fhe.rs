@@ -121,6 +121,12 @@ impl Poly {
 		self.allow_variable_time_computations = false
 	}
 
+	/// Current representation of the polynomial.
+	/// TODO: To test
+	pub fn representation(&self) -> &Representation {
+		&self.representation
+	}
+
 	/// Change the representation of the underlying polynomial.
 	pub fn change_representation(&mut self, to: Representation) {
 		match self.representation {

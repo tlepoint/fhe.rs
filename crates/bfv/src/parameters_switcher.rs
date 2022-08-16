@@ -1,6 +1,7 @@
 //! Switching parameters
 
 use crate::{BfvParameters, Ciphertext, Plaintext, SecretKey};
+use itertools::Itertools;
 use math::{
 	rns::ScalingFactor,
 	rq::{scaler::Scaler, traits::TryConvertFrom, Poly, Representation},
@@ -42,11 +43,11 @@ impl ParametersSwitchable for Ciphertext {
 			Err("Mismatched parameters".to_string())
 		} else {
 			self.seed = None;
-			self.c.iter_mut().for_each(|ci| {
-				ci.change_representation(Representation::PowerBasis);
-				*ci = switcher.scaler.scale(ci, false).unwrap();
-				ci.change_representation(Representation::Ntt);
-			});
+			self.c = self
+				.c
+				.iter()
+				.map(|ci| switcher.scaler.scale(ci, false).unwrap())
+				.collect_vec();
 			self.par = switcher.to.clone();
 			Ok(())
 		}

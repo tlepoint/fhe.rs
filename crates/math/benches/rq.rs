@@ -171,7 +171,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 	group.warm_up_time(Duration::from_millis(100));
 	group.measurement_time(Duration::from_secs(1));
 
-	for degree in &[1024usize, 4096] {
+	for degree in DEGREE {
 		for nmoduli in 1..=MODULI.len() {
 			if !nmoduli.is_power_of_two() {
 				continue;
