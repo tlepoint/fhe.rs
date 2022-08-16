@@ -358,6 +358,7 @@ impl EvaluationKeyBuilder {
 			let mut monomial = Poly::try_convert_from(
 				&monomial as &[i64],
 				&self.sk.par.ctx,
+				true,
 				Representation::PowerBasis,
 			)?;
 			unsafe { monomial.allow_variable_time_computations() }
@@ -411,8 +412,12 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 		for l in 0..par.degree().ilog2() {
 			let mut monomial = vec![0i64; par.degree()];
 			monomial[par.degree() - (1 << l)] = -1;
-			let mut monomial =
-				Poly::try_convert_from(&monomial as &[i64], &par.ctx, Representation::PowerBasis)?;
+			let mut monomial = Poly::try_convert_from(
+				&monomial as &[i64],
+				&par.ctx,
+				true,
+				Representation::PowerBasis,
+			)?;
 			unsafe { monomial.allow_variable_time_computations() }
 			monomial.change_representation(Representation::Ntt);
 			monomials.push(monomial);

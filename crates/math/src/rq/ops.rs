@@ -193,6 +193,7 @@ impl MulAssign<&BigUint> for Poly {
 		let mut q = Poly::try_convert_from(
 			v.as_ref() as &[BigUint],
 			&self.ctx,
+			self.allow_variable_time_computations,
 			self.representation.clone(),
 		)
 		.unwrap();

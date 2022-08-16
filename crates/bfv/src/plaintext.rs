@@ -39,7 +39,7 @@ impl Plaintext {
 		self.par
 			.plaintext
 			.scalar_mul_vec(&mut m_v, self.par.q_mod_t);
-		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, Representation::PowerBasis)?;
+		let mut m = Poly::try_convert_from(&m_v, &self.par.ctx, false, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
 		m *= &self.par.delta;
 		Ok(m)
@@ -77,14 +77,24 @@ impl Eq for Plaintext {}
 impl TryConvertFrom<&Plaintext> for Poly {
 	type Error = String;
 
-	fn try_convert_from<R>(pt: &Plaintext, ctx: &Arc<Context>, _: R) -> Result<Self, Self::Error>
+	fn try_convert_from<R>(
+		pt: &Plaintext,
+		ctx: &Arc<Context>,
+		variable_time: bool,
+		_: R,
+	) -> Result<Self, Self::Error>
 	where
 		R: Into<Option<Representation>>,
 	{
 		if ctx != &pt.par.ctx {
 			Err("Incompatible contexts".to_string())
 		} else {
-			Poly::try_convert_from(&pt.value as &[i64], &pt.par.ctx, Representation::PowerBasis)
+			Poly::try_convert_from(
+				&pt.value as &[i64],
+				&pt.par.ctx,
+				variable_time,
+				Representation::PowerBasis,
+			)
 		}
 	}
 }
@@ -156,7 +166,7 @@ impl Encoder<&[u64]> for Vec<Plaintext> {
 			v.zeroize();
 
 			let mut poly =
-				Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
+				Poly::try_convert_from(&w as &[i64], &par.ctx, false, Representation::PowerBasis)?;
 			poly.change_representation(Representation::Ntt);
 
 			out.push(Plaintext {
@@ -206,7 +216,8 @@ impl Encoder<&[i64]> for Plaintext {
 		let w = unsafe { par.plaintext.center_vec_vt(&v) };
 		v.zeroize();
 
-		let mut poly = Poly::try_convert_from(&w as &[i64], &par.ctx, Representation::PowerBasis)?;
+		let mut poly =
+			Poly::try_convert_from(&w as &[i64], &par.ctx, false, Representation::PowerBasis)?;
 		poly.change_representation(Representation::Ntt);
 
 		Ok(Self {

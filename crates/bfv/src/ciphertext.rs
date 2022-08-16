@@ -342,9 +342,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			let mut ci = Poly::try_convert_from(cip, &par.ctx, None)?;
-			unsafe { ci.allow_variable_time_computations() }
-			c.push(ci)
+			c.push(Poly::try_convert_from(cip, &par.ctx, true, None)?)
 		}
 
 		if !value.seed.is_empty() {

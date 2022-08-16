@@ -75,6 +75,7 @@ impl ParametersSwitchable for Plaintext {
 			self.poly_ntt = Poly::try_convert_from(
 				&self.value as &[i64],
 				&switcher.to.ctx,
+				false,
 				Representation::PowerBasis,
 			)?;
 			self.poly_ntt.change_representation(Representation::Ntt);

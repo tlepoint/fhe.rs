@@ -257,8 +257,12 @@ impl Poly {
 			Err("The variance should be an integer between 1 and 16".to_string())
 		} else {
 			let mut coeffs = sample_vec_cbd(ctx.degree, variance)?;
-			let mut p =
-				Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, Representation::PowerBasis)?;
+			let mut p = Poly::try_convert_from(
+				coeffs.as_ref() as &[i64],
+				ctx,
+				false,
+				Representation::PowerBasis,
+			)?;
 			if representation != Representation::PowerBasis {
 				p.change_representation(representation);
 			}
