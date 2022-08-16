@@ -16,6 +16,7 @@ use protobuf::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{
+	cmp::min,
 	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 	sync::Arc,
 };
@@ -207,9 +208,8 @@ where
 	I: Iterator<Item = &'a Ciphertext> + Clone,
 	J: Iterator<Item = &'a Plaintext> + Clone,
 {
-	let p_count = ct.clone().count();
-	let q_count = pt.clone().count();
-	if p_count == 0 || q_count == 0 {
+	let count = min(ct.clone().count(), pt.clone().count());
+	if count == 0 {
 		return Err("At least one iterator is empty".to_string());
 	}
 
@@ -649,7 +649,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_dot_product() -> Result<(), String> {
+	fn test_dot_product_scalar() -> Result<(), String> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),

@@ -142,6 +142,8 @@ impl EvaluationKey {
 	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<(), String> {
 		if !self.supports_relinearization() {
 			Err("This key does not support relinearization".to_string())
+		} else if ct.c.len() != 3 {
+			Err("The ciphertext does not have 3 parts".to_string())
 		} else {
 			let mut c2 = ct.c[2].clone();
 			c2.change_representation(Representation::PowerBasis);

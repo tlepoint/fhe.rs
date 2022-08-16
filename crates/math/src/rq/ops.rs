@@ -310,7 +310,6 @@ where
 	// Initialize the accumulator
 	let size = (p_first.ctx.degree * p_first.ctx.q.len()) as isize;
 	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-	// let mut acc = vec![0u128; size as usize];
 	let acc_ptr = acc.as_mut_ptr();
 
 	// Current number of products accumulated
@@ -370,9 +369,8 @@ where
 		}
 	}
 
-	// Last (conditional) reduction to create the coefficients
+	// Last reduction to create the coefficients
 	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-	// let coeffs_ptr = coeffs.as_mut_ptr();
 	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
 		|(mut coeffsj, accj, m)| {
 			if p_first.allow_variable_time_computations {
