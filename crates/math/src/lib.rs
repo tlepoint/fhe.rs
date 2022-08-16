@@ -5,6 +5,7 @@
 #![feature(int_roundings)]
 #![feature(is_some_with)]
 #![feature(test)]
+#![feature(int_log)]
 
 //! Mathematical utilities for the fhe.rs library.
 

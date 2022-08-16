@@ -4,11 +4,12 @@
 
 use super::RnsContext;
 use crate::u256::U256;
+use crypto_bigint::U192;
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 
 /// Scaling factor when performing a RNS scaling.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -60,6 +61,7 @@ pub struct RnsScaler {
 
 	theta_garner_lo: Vec<u64>,
 	theta_garner_hi: Vec<u64>,
+	theta_garner_shift: usize,
 }
 
 impl RnsScaler {
@@ -113,11 +115,28 @@ impl RnsScaler {
 			theta_omega_sign.push(theta_omega_i_sign);
 		}
 
+		// Determine the shift so that the sum of the scaled theta_garner fit on an U192
+		// (shift + 1) + log(q * n) <= 192
+		let theta_garner_shift = min(
+			from.moduli_u64
+				.iter()
+				.map(|qi| {
+					192 - 1
+						- ((*qi as u128) * (from.moduli_u64.len() as u128))
+							.next_power_of_two()
+							.ilog2()
+				})
+				.into_iter()
+				.min()
+				.unwrap() as usize,
+			127,
+		);
 		// Finally, define theta_garner_i = from.garner_i / product, also scaled by 2^127.
 		let mut theta_garner_lo = Vec::with_capacity(from.garner.len());
 		let mut theta_garner_hi = Vec::with_capacity(from.garner.len());
 		for garner_i in &from.garner {
-			let mut theta: BigUint = ((garner_i << 127) + (&from.product >> 1)) / &from.product;
+			let mut theta: BigUint =
+				((garner_i << theta_garner_shift) + (&from.product >> 1)) / &from.product;
 			let theta_hi: BigUint = &theta >> 64;
 			theta -= &theta_hi << 64;
 			theta_garner_lo.push(theta.to_u64().unwrap());
@@ -140,6 +159,7 @@ impl RnsScaler {
 			theta_omega_sign,
 			theta_garner_lo,
 			theta_garner_hi,
+			theta_garner_shift,
 		}
 	}
 
@@ -224,21 +244,31 @@ impl RnsScaler {
 		debug_assert!(starting_index + out.len() <= self.to.moduli_u64.len());
 
 		// First, let's compute the inner product of the rests with theta_omega.
-		let mut sum_theta_garner = U256::zero();
+		let mut sum_theta_garner2 = U192::ZERO;
+		// let mut sum_theta_garner = U256::zero();
 		for (thetag_lo, thetag_hi, ri) in izip!(&self.theta_garner_lo, &self.theta_garner_hi, rests)
 		{
 			let lo = (*ri as u128) * (*thetag_lo as u128);
 			let hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-			sum_theta_garner.wrapping_add_assign(U256::from([
+			// sum_theta_garner.wrapping_add_assign(U256::from([
+			// 	lo as u64,
+			// 	hi as u64,
+			// 	(hi >> 64) as u64,
+			// 	0,
+			// ]));
+			sum_theta_garner2 = sum_theta_garner2.wrapping_add(&U192::from_words([
 				lo as u64,
 				hi as u64,
 				(hi >> 64) as u64,
-				0,
 			]));
 		}
-		// Let's compute v = round(sum_theta_garner / 2^127)
-		sum_theta_garner >>= 126;
-		let v = u128::from(&sum_theta_garner).div_ceil(2);
+		// Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
+		// sum_theta_garner >>= 126;
+		// let v = u128::from(&sum_theta_garner).div_ceil(2);
+		sum_theta_garner2 >>= self.theta_garner_shift - 1;
+		let v = <[u64; 3]>::from(sum_theta_garner2);
+		let v = v[0].div_ceil(2);
+		// assert_eq!(v, v2 as u128);
 
 		// If the scaling factor is not 1, compute the inner product with the theta_omega
 		let mut w_sign = false;
@@ -271,13 +301,10 @@ impl RnsScaler {
 			}
 
 			// Let's substract v * theta_gamma to sum_theta_omega.
-			let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
-			let vt_lo_hi = ((v as u64) as u128) * (self.theta_gamma_hi as u128);
-			let vt_hi_lo = ((v >> 64) as u128) * (self.theta_gamma_lo as u128);
-			let vt_hi_hi = ((v >> 64) as u128) * (self.theta_gamma_hi as u128);
-			let vt_mi =
-				(vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
-			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
+			let vt_lo_lo = (v as u128) * (self.theta_gamma_lo as u128);
+			let vt_lo_hi = (v as u128) * (self.theta_gamma_hi as u128);
+			let vt_mi = (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128);
+			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64);
 			if self.theta_gamma_sign {
 				sum_theta_omega.wrapping_add_assign(U256::from([
 					vt_lo_lo as u64,
@@ -328,9 +355,8 @@ impl RnsScaler {
 				let gamma_i = self.gamma.get_unchecked(starting_index + i);
 				let gamma_shoup_i = self.gamma_shoup.get_unchecked(starting_index + i);
 
-				let mut yi = (qi.modulus() * 2
-					- qi.lazy_mul_shoup(qi.lazy_reduce_u128(v), *gamma_i, *gamma_shoup_i))
-					as u128;
+				let mut yi =
+					(qi.modulus() * 2 - qi.lazy_mul_shoup(v, *gamma_i, *gamma_shoup_i)) as u128;
 
 				if !self.scaling_factor.is_one {
 					let wi = qi.lazy_reduce_u128(w);
