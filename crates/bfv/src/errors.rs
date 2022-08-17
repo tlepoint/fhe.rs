@@ -6,7 +6,7 @@ use crate::Encoding;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Enum encapsulation all the possible errors from this library.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
 	/// Indicates that an error in the underlying mathematical library was encountered.
 	#[error("{0}")]
@@ -49,7 +49,7 @@ impl From<math::Error> for Error {
 }
 
 /// Separate enum to indicate parameters-related errors.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum ParametersError {
 	/// Indicates that the degree is invalid.
 	#[error("Invalid degree: {0} is not a power of 2 larger than 8")]
