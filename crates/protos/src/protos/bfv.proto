@@ -28,3 +28,10 @@ message EvaluationKey {
     RelinearizationKey rk = 1;
     repeated GaloisKey gk = 2;
 }
+
+message Parameters {
+    uint32 degree = 1;
+    repeated uint64 moduli = 2;
+    uint64 plaintext = 3;
+    uint32 variance = 4;
+}
