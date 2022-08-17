@@ -13,4 +13,4 @@ bench = false  # Disable default bench (we use criterion)
 fhers = { version = "0.0.1", path = "../" }
 ndarray = "0.15.6"
 indicatif = "0.17.0"
-util = { version = "0.0.1", path = "../../util" }
+util = { version = "0.0.1", path = "../../../internal/util" }
