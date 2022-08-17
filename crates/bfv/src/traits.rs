@@ -76,8 +76,8 @@ pub trait Serialize {
 	fn serialize(&self) -> Vec<u8>;
 }
 
-/// Deserialization with a context.
-pub trait Deserialize
+/// Deserialization using the specified parameters.
+pub trait DeserializeWithParams
 where
 	Self: Sized,
 {
@@ -86,4 +86,16 @@ where
 
 	/// Attempt to deserialize from a vector of bytes
 	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error>;
+}
+
+/// Deserialization without parameters.
+pub trait Deserialize
+where
+	Self: Sized,
+{
+	/// The type of errors.
+	type Error;
+
+	/// Attempt to deserialize from a vector of bytes
+	fn try_deserialize(bytes: &[u8]) -> Result<Self, Self::Error>;
 }

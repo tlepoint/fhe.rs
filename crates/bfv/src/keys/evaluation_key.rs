@@ -1,7 +1,7 @@
 //! Evaluation keys for the BFV encryption scheme.
 
 use super::{GaloisKey, RelinearizationKey, SecretKey};
-use crate::traits::{Deserialize, Serialize};
+use crate::traits::{DeserializeWithParams, Serialize};
 use crate::BfvParameters;
 use crate::{traits::TryConvertFrom, Ciphertext};
 use fhers_protos::protos::bfv::{
@@ -235,7 +235,7 @@ impl Serialize for EvaluationKey {
 	}
 }
 
-impl Deserialize for EvaluationKey {
+impl DeserializeWithParams for EvaluationKey {
 	type Error = String;
 
 	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
@@ -457,7 +457,10 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 mod tests {
 	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::{
-		traits::{Decoder, Decryptor, Deserialize, Encoder, Encryptor, Serialize, TryConvertFrom},
+		traits::{
+			Decoder, Decryptor, DeserializeWithParams, Encoder, Encryptor, Serialize,
+			TryConvertFrom,
+		},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::EvaluationKey as EvaluationKeyProto;

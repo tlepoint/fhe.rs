@@ -2,7 +2,7 @@
 
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
-	traits::{Deserialize, Serialize, TryConvertFrom},
+	traits::{DeserializeWithParams, Serialize, TryConvertFrom},
 	EvaluationKey, Plaintext,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
@@ -370,7 +370,7 @@ impl Serialize for Ciphertext {
 	}
 }
 
-impl Deserialize for Ciphertext {
+impl DeserializeWithParams for Ciphertext {
 	type Error = String;
 
 	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {

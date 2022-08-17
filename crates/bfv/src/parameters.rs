@@ -1,5 +1,7 @@
 //! Create parameters for the BFV encryption scheme
 
+use crate::traits::{Deserialize, Serialize};
+use fhers_protos::protos::bfv::Parameters;
 use itertools::Itertools;
 use math::{
 	rns::{RnsContext, ScalingFactor},
@@ -8,6 +10,7 @@ use math::{
 };
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
+use protobuf::Message;
 use std::sync::Arc;
 
 /// Parameters for the BFV encryption scheme.
@@ -319,6 +322,34 @@ impl BfvParametersBuilder {
 	}
 }
 
+impl Serialize for BfvParameters {
+	fn serialize(&self) -> Vec<u8> {
+		let mut params = Parameters::new();
+		params.degree = self.polynomial_degree as u32;
+		params.plaintext = self.plaintext_modulus;
+		params.moduli = self.ciphertext_moduli.clone();
+		params.variance = self.variance as u32;
+		params.write_to_bytes().unwrap()
+	}
+}
+
+impl Deserialize for BfvParameters {
+	type Error = String;
+
+	fn try_deserialize(bytes: &[u8]) -> Result<Self, Self::Error> {
+		if let Ok(params) = Parameters::parse_from_bytes(bytes) {
+			BfvParametersBuilder::new()
+				.set_degree(params.degree as usize)?
+				.set_plaintext_modulus(params.plaintext)?
+				.set_ciphertext_moduli(&params.moduli)?
+				.set_variance(params.variance as usize)?
+				.build()
+		} else {
+			Err("Incorrect serialization".to_string())
+		}
+	}
+}
+
 /// Multiplication parameters
 #[derive(Debug, PartialEq, Eq, Default)]
 pub(crate) struct MultiplicationParameters {
@@ -349,6 +380,8 @@ impl MultiplicationParameters {
 
 #[cfg(test)]
 mod tests {
+	use crate::traits::{Deserialize, Serialize};
+
 	use super::{BfvParameters, BfvParametersBuilder};
 
 	#[test]
@@ -465,6 +498,19 @@ mod tests {
 			.build();
 		assert!(params.is_ok_and(|p| p.ciphertext_moduli_sizes == &[62, 62, 62, 61, 60, 11]));
 
+		Ok(())
+	}
+
+	#[test]
+	fn test_serialize() -> Result<(), String> {
+		let params = BfvParametersBuilder::new()
+			.set_degree(8)?
+			.set_plaintext_modulus(2)?
+			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])?
+			.set_variance(4)?
+			.build()?;
+		let bytes = params.serialize();
+		assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
 		Ok(())
 	}
 }
