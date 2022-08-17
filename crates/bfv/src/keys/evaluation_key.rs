@@ -1,9 +1,10 @@
 //! Evaluation keys for the BFV encryption scheme.
 
 use super::{GaloisKey, RelinearizationKey, SecretKey};
-use crate::traits::{DeserializeWithParams, Serialize};
-use crate::BfvParameters;
-use crate::{traits::TryConvertFrom, Ciphertext};
+use crate::{
+	traits::{DeserializeWithParams, Serialize, TryConvertFrom},
+	BfvParameters, Ciphertext, Error, Result,
+};
 use fhers_protos::protos::bfv::{
 	EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto,
 	RelinearizationKey as RelinearizationKeyProto,
@@ -58,9 +59,11 @@ impl EvaluationKey {
 	}
 
 	/// Computes the homomorphic inner sum.
-	pub fn computes_inner_sum(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+	pub fn computes_inner_sum(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		if !self.supports_inner_sum() {
-			Err("This key does not support the inner sum functionality".to_string())
+			Err(Error::DefaultError(
+				"This key does not support the inner sum functionality".to_string(),
+			))
 		} else {
 			let mut out = ct.clone();
 
@@ -91,9 +94,11 @@ impl EvaluationKey {
 	}
 
 	/// Homomorphically rotate the rows of the plaintext
-	pub fn rotates_row(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+	pub fn rotates_row(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		if !self.supports_row_rotation() {
-			Err("This key does not support the row rotation functionality".to_string())
+			Err(Error::DefaultError(
+				"This key does not support the row rotation functionality".to_string(),
+			))
 		} else {
 			let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
 			gk.relinearize(ct)
@@ -112,9 +117,11 @@ impl EvaluationKey {
 	}
 
 	/// Homomorphically rotate the columns of the plaintext
-	pub fn rotates_column_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext, String> {
+	pub fn rotates_column_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext> {
 		if !self.supports_column_rotation_by(i) {
-			Err("This key does not support rotating the columns by this index".to_string())
+			Err(Error::DefaultError(
+				"This key does not support rotating the columns by this index".to_string(),
+			))
 		} else {
 			let gk = self
 				.gk
@@ -130,20 +137,26 @@ impl EvaluationKey {
 	}
 
 	/// Relinearizes the expanded ciphertext
-	pub fn relinearizes_new(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+	pub fn relinearizes_new(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		if !self.supports_relinearization() {
-			Err("This key does not support relinearization".to_string())
+			Err(Error::DefaultError(
+				"This key does not support relinearization".to_string(),
+			))
 		} else {
 			self.rk.as_ref().unwrap().relinearizes(ct)
 		}
 	}
 
 	/// Relinearize a 3-part ciphertext in place.
-	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<(), String> {
+	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
 		if !self.supports_relinearization() {
-			Err("This key does not support relinearization".to_string())
+			Err(Error::DefaultError(
+				"This key does not support relinearization".to_string(),
+			))
 		} else if ct.c.len() != 3 {
-			Err("The ciphertext does not have 3 parts".to_string())
+			Err(Error::DefaultError(
+				"The ciphertext does not have 3 parts".to_string(),
+			))
 		} else {
 			let mut c2 = ct.c[2].clone();
 			c2.change_representation(Representation::PowerBasis);
@@ -164,9 +177,11 @@ impl EvaluationKey {
 		c2: &Poly,
 		c0: &mut Poly,
 		c1: &mut Poly,
-	) -> Result<(), String> {
+	) -> Result<()> {
 		if !self.supports_relinearization() {
-			Err("This key does not support relinearization".to_string())
+			Err(Error::DefaultError(
+				"This key does not support relinearization".to_string(),
+			))
 		} else {
 			self.rk.as_ref().unwrap().relinearizes_with_poly(c2, c0, c1)
 		}
@@ -188,9 +203,11 @@ impl EvaluationKey {
 	/// Obliviously expands the ciphertext. Returns an error if this evaluation does not
 	/// support expansion to this level, or if the ciphertext does not have size 2.
 	/// The output is a vector of 2^level ciphertexts.
-	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>, String> {
+	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>> {
 		if ct.c.len() != 2 {
-			Err("The ciphertext is not of size 2".to_string())
+			Err(Error::DefaultError(
+				"The ciphertext is not of size 2".to_string(),
+			))
 		} else if level == 0 {
 			Ok(vec![ct.clone()])
 		} else if self.supports_expansion(level) {
@@ -213,7 +230,9 @@ impl EvaluationKey {
 
 			Ok(out)
 		} else {
-			Err("This key does not support expansion at this level".to_string())
+			Err(Error::DefaultError(
+				"This key does not support expansion at this level".to_string(),
+			))
 		}
 	}
 
@@ -236,14 +255,12 @@ impl Serialize for EvaluationKey {
 }
 
 impl DeserializeWithParams for EvaluationKey {
-	type Error = String;
-
-	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
 		let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
 		if let Ok(gkp) = gkp {
 			EvaluationKey::try_convert_from(&gkp, par)
 		} else {
-			Err("Invalid serialization".to_string())
+			Err(Error::DefaultError("Invalid serialization".to_string()))
 		}
 	}
 }
@@ -283,9 +300,11 @@ impl EvaluationKeyBuilder {
 
 	/// Allow relinearizations by this evaluation key.
 	#[allow(unused_must_use)]
-	pub fn enable_relinearization(&mut self) -> Result<&mut Self, String> {
+	pub fn enable_relinearization(&mut self) -> Result<&mut Self> {
 		if self.sk.par.ciphertext_moduli.len() == 1 {
-			Err("Not enough moduli to enable relinearization".to_string())
+			Err(Error::DefaultError(
+				"Not enough moduli to enable relinearization".to_string(),
+			))
 		} else {
 			self.relin = true;
 			Ok(self)
@@ -294,11 +313,13 @@ impl EvaluationKeyBuilder {
 
 	/// Allow relinearizations by this evaluation key.
 	#[allow(unused_must_use)]
-	pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self, String> {
+	pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self> {
 		if self.sk.par.ciphertext_moduli.len() == 1 {
-			Err("Not enough moduli to enable expansion".to_string())
+			Err(Error::DefaultError(
+				"Not enough moduli to enable expansion".to_string(),
+			))
 		} else if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
-			Err("Invalid level 2".to_string())
+			Err(Error::DefaultError("Invalid level 2".to_string()))
 		} else {
 			self.expansion_level = level;
 			Ok(self)
@@ -307,9 +328,11 @@ impl EvaluationKeyBuilder {
 
 	/// Allow this evaluation key to compute homomorphic inner sums.
 	#[allow(unused_must_use)]
-	pub fn enable_inner_sum(&mut self) -> Result<&mut Self, String> {
+	pub fn enable_inner_sum(&mut self) -> Result<&mut Self> {
 		if self.sk.par.ciphertext_moduli.len() == 1 {
-			Err("Not enough moduli to enable relinearization".to_string())
+			Err(Error::DefaultError(
+				"Not enough moduli to enable relinearization".to_string(),
+			))
 		} else {
 			self.inner_sum = true;
 			Ok(self)
@@ -318,9 +341,11 @@ impl EvaluationKeyBuilder {
 
 	/// Allow this evaluation key to homomorphically rotate the plaintext rows.
 	#[allow(unused_must_use)]
-	pub fn enable_row_rotation(&mut self) -> Result<&mut Self, String> {
+	pub fn enable_row_rotation(&mut self) -> Result<&mut Self> {
 		if self.sk.par.ciphertext_moduli.len() == 1 {
-			Err("Not enough moduli to enable relinearization".to_string())
+			Err(Error::DefaultError(
+				"Not enough moduli to enable relinearization".to_string(),
+			))
 		} else {
 			self.row_rotation = true;
 			Ok(self)
@@ -329,17 +354,17 @@ impl EvaluationKeyBuilder {
 
 	/// Allow this evaluation key to homomorphically rotate the plaintext columns.
 	#[allow(unused_must_use)]
-	pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self, String> {
+	pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self> {
 		if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
 			self.column_rotation.insert(*exp);
 			Ok(self)
 		} else {
-			Err("Invalid column index".to_string())
+			Err(Error::DefaultError("Invalid column index".to_string()))
 		}
 	}
 
 	/// Build an [`EvaluationKey`] with the specified attributes.
-	pub fn build(&self) -> Result<EvaluationKey, String> {
+	pub fn build(&self) -> Result<EvaluationKey> {
 		let mut ek = EvaluationKey {
 			rk: None,
 			gk: HashMap::default(),
@@ -408,12 +433,10 @@ impl From<&EvaluationKey> for EvaluationKeyProto {
 }
 
 impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
-	type Error = String;
-
 	fn try_convert_from(
 		value: &EvaluationKeyProto,
 		par: &Arc<crate::BfvParameters>,
-	) -> Result<Self, Self::Error> {
+	) -> Result<Self> {
 		let mut rk = None;
 		if value.rk.is_some() {
 			rk = Some(RelinearizationKey::try_convert_from(
@@ -465,10 +488,10 @@ mod tests {
 	};
 	use fhers_protos::protos::bfv::EvaluationKey as EvaluationKeyProto;
 	use itertools::izip;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_builder() -> Result<(), String> {
+	fn test_builder() -> Result<(), Box<dyn Error>> {
 		let params = Arc::new(BfvParameters::default(2));
 		let sk = SecretKey::random(&params);
 		let mut builder = EvaluationKeyBuilder::new(&sk);
@@ -524,7 +547,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_inner_sum() -> Result<(), String> {
+	fn test_inner_sum() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
@@ -550,7 +573,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_row_rotation() -> Result<(), String> {
+	fn test_row_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
@@ -576,7 +599,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_column_rotation() -> Result<(), String> {
+	fn test_column_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let row_size = params.degree() >> 1;
 			for _ in 0..50 {
@@ -607,7 +630,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_expansion() -> Result<(), String> {
+	fn test_expansion() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let log_degree = 64 - 1 - params.degree().leading_zeros();
 			for _ in 0..1 {
@@ -638,7 +661,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), String> {
+	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),
@@ -682,7 +705,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize() -> Result<(), String> {
+	fn test_serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),

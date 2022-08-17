@@ -1,14 +1,13 @@
 //! Galois keys for the BFV encryption scheme
 
-use std::sync::Arc;
-
 use super::key_switching_key::KeySwitchingKey;
-use crate::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::{traits::TryConvertFrom, BfvParameters, Ciphertext, Error, Result, SecretKey};
 use fhers_protos::protos::bfv::{
 	GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto,
 };
 use math::rq::{Poly, Representation};
 use protobuf::MessageField;
+use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// Galois key for the BFV encryption scheme.
@@ -22,10 +21,10 @@ pub struct GaloisKey {
 
 impl GaloisKey {
 	/// Generate a [`GaloisKey`] from a [`SecretKey`].
-	pub fn new(sk: &SecretKey, exponent: usize) -> Result<Self, String> {
+	pub fn new(sk: &SecretKey, exponent: usize) -> Result<Self> {
 		let exponent = exponent % (2 * sk.par.degree());
 		if exponent == 0 {
-			return Err("Invalid exponent".to_string());
+			return Err(Error::DefaultError("Invalid exponent".to_string()));
 		}
 
 		let mut s_sub = sk.s[0].substitute(exponent)?;
@@ -36,7 +35,7 @@ impl GaloisKey {
 	}
 
 	/// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
-	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
 
@@ -66,23 +65,20 @@ impl From<&GaloisKey> for GaloisKeyProto {
 }
 
 impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
-	type Error = String;
-
-	fn try_convert_from(
-		value: &GaloisKeyProto,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self, Self::Error> {
+	fn try_convert_from(value: &GaloisKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
 		let exponent = (value.exponent as usize) % (2 * par.degree());
 		if exponent & 1 == 0 {
-			return Err("Invalid exponent".to_string());
+			return Err(Error::DefaultError("Invalid exponent".to_string()));
 		}
 		if par.ciphertext_moduli.len() == 1 {
-			Err("Invalid parameters for a relinearization key".to_string())
+			Err(Error::DefaultError(
+				"Invalid parameters for a relinearization key".to_string(),
+			))
 		} else if value.ksk.is_some() {
 			let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
 			Ok(GaloisKey { exponent, ksk })
 		} else {
-			Err("Invalid serialization".to_string())
+			Err(Error::DefaultError("Invalid serialization".to_string()))
 		}
 	}
 }
@@ -95,10 +91,10 @@ mod tests {
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_protos::protos::bfv::GaloisKey as GaloisKeyProto;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_relinearization() -> Result<(), String> {
+	fn test_relinearization() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..50 {
 				let mut sk = SecretKey::random(&params);
@@ -144,7 +140,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), String> {
+	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9)?;

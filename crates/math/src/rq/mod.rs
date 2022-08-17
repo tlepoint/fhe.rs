@@ -12,6 +12,7 @@ pub use ops::dot_product;
 use crate::{
 	rns::RnsContext,
 	zq::{ntt::NttOperator, Modulus},
+	Error, Result,
 };
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2};
@@ -37,9 +38,11 @@ impl Context {
 	/// Creates a context from a list of moduli and a polynomial degree.
 	///
 	/// Returns an error if the moduli are not primes less than 62 bits which supports the NTT of size `degree`.
-	pub fn new(moduli: &[u64], degree: usize) -> Result<Self, String> {
+	pub fn new(moduli: &[u64], degree: usize) -> Result<Self> {
 		if !degree.is_power_of_two() || degree < 8 {
-			Err("The degree is not a power of two larger or equal to 8".to_string())
+			Err(Error::DefaultError(
+				"The degree is not a power of two larger or equal to 8".to_string(),
+			))
 		} else {
 			let mut q = Vec::with_capacity(moduli.len());
 			let rns = Arc::new(RnsContext::new(moduli)?);
@@ -50,7 +53,9 @@ impl Context {
 					q.push(qi);
 					ops.push(op);
 				} else {
-					return Err("Impossible to construct a Ntt operator".to_string());
+					return Err(Error::DefaultError(
+						"Impossible to construct a Ntt operator".to_string(),
+					));
 				}
 			}
 			let bitrev = (0..degree)
@@ -256,11 +261,14 @@ impl Poly {
 		ctx: &Arc<Context>,
 		representation: Representation,
 		variance: usize,
-	) -> Result<Self, String> {
+	) -> Result<Self> {
 		if !(1..=16).contains(&variance) {
-			Err("The variance should be an integer between 1 and 16".to_string())
+			Err(Error::DefaultError(
+				"The variance should be an integer between 1 and 16".to_string(),
+			))
 		} else {
-			let mut coeffs = sample_vec_cbd(ctx.degree, variance)?;
+			let mut coeffs = sample_vec_cbd(ctx.degree, variance)
+				.map_err(|e| Error::DefaultError(e.to_string()))?;
 			let mut p = Poly::try_convert_from(
 				coeffs.as_ref() as &[i64],
 				ctx,
@@ -305,11 +313,13 @@ impl Poly {
 	/// Substitute x by x^i in a polynomial.
 	/// In PowerBasis representation, i can be any integer that is not a multiple of 2 * degree.
 	/// In Ntt and NttShoup representation, i can be any odd integer that is not a multiple of 2 * degree.
-	pub fn substitute(&self, i: usize) -> Result<Poly, String> {
+	pub fn substitute(&self, i: usize) -> Result<Poly> {
 		let degree = self.ctx.degree as u32;
 		let exponent = (i as u32) % (2 * degree);
 		if exponent == 0 {
-			return Err("The exponent is a multiple of 2 * degree".to_string());
+			return Err(Error::DefaultError(
+				"The exponent is a multiple of 2 * degree".to_string(),
+			));
 		}
 
 		let mut q = Poly::zero(&self.ctx, self.representation.clone());
@@ -320,7 +330,9 @@ impl Poly {
 		match self.representation {
 			Representation::Ntt => {
 				if exponent & 1 == 0 {
-					return Err("The exponent should be odd modulo 2 * degree".to_string());
+					return Err(Error::DefaultError(
+						"The exponent should be odd modulo 2 * degree".to_string(),
+					));
 				}
 				let mut power = (exponent - 1) / 2;
 				let power_bitrev = (0..degree)
@@ -343,7 +355,9 @@ impl Poly {
 			}
 			Representation::NttShoup => {
 				if exponent & 1 == 0 {
-					return Err("The exponent should be odd modulo 2 * degree".to_string());
+					return Err(Error::DefaultError(
+						"The exponent should be odd modulo 2 * degree".to_string(),
+					));
 				}
 
 				let mut power = (exponent - 1) / 2;
@@ -411,7 +425,7 @@ mod tests {
 	use num_traits::{One, Zero};
 	use rand::{thread_rng, Rng, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	// Moduli to be used in tests.
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
@@ -432,7 +446,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_poly_zero() -> Result<(), String> {
+	fn test_poly_zero() -> Result<(), Box<dyn Error>> {
 		let reference = &[
 			BigUint::zero(),
 			BigUint::zero(),
@@ -466,7 +480,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_random() -> Result<(), String> {
+	fn test_random() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 			thread_rng().fill(&mut seed);
@@ -495,7 +509,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_coefficients() -> Result<(), String> {
+	fn test_coefficients() -> Result<(), Box<dyn Error>> {
 		for _ in 0..50 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -513,7 +527,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_modulus() -> Result<(), String> {
+	fn test_modulus() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let modulus_biguint = BigUint::from(*modulus);
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -529,7 +543,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_allow_variable_time_computations() -> Result<(), String> {
+	fn test_allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let mut p = Poly::random(&ctx, Representation::default());
@@ -579,7 +593,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_change_representation() -> Result<(), String> {
+	fn test_change_representation() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::default());
@@ -618,7 +632,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_override_representation() -> Result<(), String> {
+	fn test_override_representation() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::PowerBasis);
@@ -647,7 +661,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_small() -> Result<(), String> {
+	fn test_small() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let q = Modulus::new(*modulus).unwrap();
@@ -691,7 +705,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_substitute() -> Result<(), String> {
+	fn test_substitute() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);

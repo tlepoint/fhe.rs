@@ -9,6 +9,7 @@
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
 mod ciphertext;
+mod errors;
 mod keys;
 mod parameters;
 mod parameters_switcher;
@@ -16,6 +17,7 @@ mod plaintext;
 
 pub mod traits;
 pub use ciphertext::{dot_product_scalar, mul, mul2, Ciphertext};
+pub use errors::{Error, ParametersError, Result};
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use parameters_switcher::{BfvParametersSwitcher, ParametersSwitchable};

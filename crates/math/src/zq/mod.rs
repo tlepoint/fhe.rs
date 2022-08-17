@@ -5,6 +5,7 @@
 pub mod nfl;
 pub mod ntt;
 
+use crate::errors::{Error, Result};
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -12,8 +13,8 @@ use rand::{distributions::Uniform, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use util::is_prime;
 
-/// Structure holding a modulus up to 62 bits.
-#[derive(Debug, Clone)]
+/// Structure encapsulating an integer modulus up to 62 bits.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
 	p: u64,
 	barrett_hi: u64,
@@ -23,23 +24,14 @@ pub struct Modulus {
 	distribution: Uniform<u64>,
 }
 
+// We need to declare Eq manually because of the `Uniform` member.
 impl Eq for Modulus {}
-impl PartialEq for Modulus {
-	fn eq(&self, other: &Self) -> bool {
-		self.p == other.p
-			&& self.barrett_hi == other.barrett_hi
-			&& self.barrett_lo == other.barrett_lo
-			&& self.leading_zeros == other.leading_zeros
-			&& self.supports_opt == other.supports_opt
-			&& self.distribution == other.distribution
-	}
-}
 
 impl Modulus {
 	/// Create a modulus from an integer of at most 62 bits.
-	pub fn new(p: u64) -> Result<Self, String> {
+	pub fn new(p: u64) -> Result<Self> {
 		if p < 2 || (p >> 62) != 0 {
-			Err("modulus should be between 2 and 2^62-1".to_string())
+			Err(Error::InvalidModulus(p))
 		} else {
 			let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
 			Ok(Self {
@@ -58,63 +50,57 @@ impl Modulus {
 		self.p
 	}
 
-	/// Modular addition of a and b in constant time.
-	///
+	/// Performs the modular addition of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn add(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		Self::reduce1(a + b, self.p)
 	}
 
-	/// # Safety
-	///
-	/// Modular addition of a and b in variable time.
-	///
+	/// Performs the modular addition of a and b in variable time.
 	/// Aborts if a >= p or b >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being added.
 	pub unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		Self::reduce1_vt(a + b, self.p)
 	}
 
-	/// Modular subtraction of a and b in constant time.
-	///
+	/// Performs the modular subtraction of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn sub(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		Self::reduce1(a + self.p - b, self.p)
 	}
 
-	/// # Safety
-	///
-	/// Modular subtraction of a and b in variable time.
-	///
+	/// Performs the modular subtraction of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being subtracted.
 	unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		Self::reduce1_vt(a + self.p - b, self.p)
 	}
 
-	/// Modular multiplication of a and b in constant time.
-	///
+	/// Performs the modular multiplication of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
 	pub fn mul(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		self.reduce_u128((a as u128) * (b as u128))
 	}
 
-	/// # Safety
-	///
-	/// Modular multiplication of a and b in variable time.
-	///
+	/// Performs the modular multiplication of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being multiplied.
 	unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
-
 		Self::reduce1_vt(self.lazy_reduce_u128((a as u128) * (b as u128)), self.p)
 	}
 

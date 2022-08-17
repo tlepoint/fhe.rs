@@ -3,7 +3,7 @@
 use crate::{
 	parameters::{BfvParameters, MultiplicationParameters},
 	traits::{DeserializeWithParams, Serialize, TryConvertFrom},
-	EvaluationKey, Plaintext,
+	Error, EvaluationKey, Plaintext, Result,
 };
 use fhers_protos::protos::{bfv::Ciphertext as CiphertextProto, rq::Rq};
 use itertools::{izip, Itertools};
@@ -203,24 +203,28 @@ impl Mul<&Ciphertext> for &Ciphertext {
 /// Compute the dot product between an iterator of [`Ciphertext`] and an iterator of [`Plaintext`].
 /// Returns an error if the iterator counts are 0, if the parameters don't match, or if the ciphertexts have different
 /// number of parts.
-pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext, String>
+pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext>
 where
 	I: Iterator<Item = &'a Ciphertext> + Clone,
 	J: Iterator<Item = &'a Plaintext> + Clone,
 {
 	let count = min(ct.clone().count(), pt.clone().count());
 	if count == 0 {
-		return Err("At least one iterator is empty".to_string());
+		return Err(Error::DefaultError(
+			"At least one iterator is empty".to_string(),
+		));
 	}
 
 	let ct_first = ct.clone().next().unwrap();
 	if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
 		cti.par != ct_first.par || pti.par != ct_first.par || cti.c.len() != ct_first.c.len()
 	}) {
-		return Err("Mismatched parameters".to_string());
+		return Err(Error::DefaultError("Mismatched parameters".to_string()));
 	}
 	if ct.clone().any(|cti| cti.c.len() != ct_first.c.len()) {
-		return Err("Mismatched number of parts in the ciphertexts".to_string());
+		return Err(Error::DefaultError(
+			"Mismatched number of parts in the ciphertexts".to_string(),
+		));
 	}
 
 	let c = (0..ct_first.c.len())
@@ -246,18 +250,24 @@ fn mul_internal(
 	ct1: &Ciphertext,
 	ek: &EvaluationKey,
 	mp: &MultiplicationParameters,
-) -> Result<Ciphertext, String> {
+) -> Result<Ciphertext> {
 	if !ek.supports_relinearization() {
-		return Err("The evaluation key does not support relinearization".to_string());
+		return Err(Error::DefaultError(
+			"The evaluation key does not support relinearization".to_string(),
+		));
 	}
 	if ct0.par != ct1.par {
-		return Err("Incompatible parameters".to_string());
+		return Err(Error::DefaultError("Incompatible parameters".to_string()));
 	}
 	if ct0.par.ciphertext_moduli.len() == 1 {
-		return Err("Parameters do not allow for multiplication".to_string());
+		return Err(Error::DefaultError(
+			"Parameters do not allow for multiplication".to_string(),
+		));
 	}
 	if ct0.c.len() != 2 || ct1.c.len() != 2 {
-		return Err("Multiplication can only be performed on ciphertexts of size 2".to_string());
+		return Err(Error::DefaultError(
+			"Multiplication can only be performed on ciphertexts of size 2".to_string(),
+		));
 	}
 
 	// Extend
@@ -302,12 +312,12 @@ fn mul_internal(
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext> {
 	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params)
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext, String> {
+pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext> {
 	mul_internal(ct0, ct1, ek, &ct0.par.mul_2_params)
 }
 
@@ -328,14 +338,9 @@ impl From<&Ciphertext> for CiphertextProto {
 }
 
 impl TryConvertFrom<&CiphertextProto> for Ciphertext {
-	type Error = String;
-
-	fn try_convert_from(
-		value: &CiphertextProto,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self, Self::Error> {
+	fn try_convert_from(value: &CiphertextProto, par: &Arc<BfvParameters>) -> Result<Self> {
 		if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
-			return Err("Not enough polynomials".to_string());
+			return Err(Error::DefaultError("Not enough polynomials".to_string()));
 		}
 
 		let mut seed = None;
@@ -348,7 +353,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		if !value.seed.is_empty() {
 			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 			if try_seed.is_err() {
-				return Err("Invalid seed".to_string());
+				return Err(Error::DefaultError("Invalid seed".to_string()));
 			}
 			seed = try_seed.ok();
 			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
@@ -371,13 +376,13 @@ impl Serialize for Ciphertext {
 }
 
 impl DeserializeWithParams for Ciphertext {
-	type Error = String;
-
-	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error> {
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
 		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
 			Ciphertext::try_convert_from(&ctp, par)
 		} else {
-			Err("This serialization is incorrect".to_string())
+			Err(Error::DefaultError(
+				"This serialization is incorrect".to_string(),
+			))
 		}
 	}
 }
@@ -391,7 +396,7 @@ mod tests {
 	};
 	use fhers_protos::protos::bfv::Ciphertext as CiphertextProto;
 	use itertools::{izip, Itertools};
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn test_add() {
@@ -546,7 +551,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul() -> Result<(), String> {
+	fn test_mul() -> Result<(), Box<dyn Error>> {
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
@@ -576,7 +581,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul_3() -> Result<(), String> {
+	fn test_mul_3() -> Result<(), Box<dyn Error>> {
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is computed correctly.
@@ -602,7 +607,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul2() -> Result<(), String> {
+	fn test_mul2() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..ntests {
@@ -629,7 +634,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), String> {
+	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),
@@ -649,7 +654,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_dot_product_scalar() -> Result<(), String> {
+	fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),

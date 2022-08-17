@@ -2,16 +2,16 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use bfv::{traits::*, *};
+use bfv::{self, traits::*, ParametersSwitchable};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use ndarray::Axis;
 use rand::{thread_rng, RngCore};
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 use util::{transcode_backward, transcode_forward};
 use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
-fn main() -> Result<(), String> {
+fn main() -> Result<(), Box<dyn Error>> {
 	let database_size = 1 << 21;
 	let elements_size = 288;
 
@@ -35,15 +35,15 @@ fn main() -> Result<(), String> {
 		let mut params_switchers = vec![];
 		for i in 0..moduli_sizes.len() {
 			params.push(Arc::new(
-				BfvParametersBuilder::new()
-					.set_degree(degree)?
-					.set_plaintext_modulus(plaintext_modulus)?
-					.set_ciphertext_moduli_sizes(&moduli_sizes[..moduli_sizes.len() - i])?
+				bfv::BfvParametersBuilder::new()
+					.set_degree(degree)
+					.set_plaintext_modulus(plaintext_modulus)
+					.set_ciphertext_moduli_sizes(&moduli_sizes[..moduli_sizes.len() - i])
 					.build()?,
 			))
 		}
 		for i in 0..params.len() - 1 {
-			params_switchers.push(BfvParametersSwitcher::new(&params[i], &params[i + 1])?)
+			params_switchers.push(bfv::BfvParametersSwitcher::new(&params[i], &params[i + 1])?)
 		}
 		(params, params_switchers)
 	});
@@ -55,11 +55,11 @@ fn main() -> Result<(), String> {
 
 	// Client setup
 	let (sk_encrypt, mut sk_2, ek_expansion_serialized) = timeit!("Client setup", {
-		let sk_encrypt = SecretKey::random(&params[0]);
+		let sk_encrypt = bfv::SecretKey::random(&params[0]);
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		println!("level = {}", level);
-		let ek_expansion = EvaluationKeyBuilder::new(&sk_encrypt)
+		let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk_encrypt)
 			.enable_expansion(level as usize)?
 			.build()?;
 		let mut sk_1 = sk_encrypt.clone();
@@ -77,7 +77,7 @@ fn main() -> Result<(), String> {
 	// Server setup
 	let ek_expansion = timeit!(
 		"Server setup",
-		EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?
+		bfv::EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?
 	);
 
 	// Client query
@@ -90,7 +90,7 @@ fn main() -> Result<(), String> {
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
-		let query_pt = Plaintext::try_encode(&pt as &[u64], Encoding::Poly, &params[0])?;
+		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
 		let query = sk_encrypt.encrypt(&query_pt)?;
 		query.serialize()
 	});
@@ -99,7 +99,7 @@ fn main() -> Result<(), String> {
 	// Server response
 	let responses: Vec<Vec<u8>> = timeit!("Server response", {
 		let start = std::time::Instant::now();
-		let query = Ciphertext::try_deserialize(&query, &params[0])?;
+		let query = bfv::Ciphertext::try_deserialize(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
@@ -112,19 +112,23 @@ fn main() -> Result<(), String> {
 		let fold = preprocessed_database
 			.axis_iter(Axis(1))
 			.map(|column| {
-				let mut c =
-					dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+				let mut c = bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter())
+					.unwrap();
 				assert!(c.switch_parameters(&params_switchers[1]).is_ok());
 				let c_serialized = c.serialize();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
-				Vec::<Plaintext>::try_encode(&pt_values as &[u64], Encoding::Poly, &params[1])
-					.unwrap()
+				Vec::<bfv::Plaintext>::try_encode(
+					&pt_values as &[u64],
+					bfv::Encoding::Poly,
+					&params[1],
+				)
+				.unwrap()
 			})
 			.collect_vec();
 		(0..fold[0].len())
 			.map(|i| {
-				let mut outi = dot_product_scalar(
+				let mut outi = bfv::dot_product_scalar(
 					expanded_query[dim[0]..].iter(),
 					fold.iter().map(|pts| pts.get(i).unwrap()).into_iter(),
 				)
@@ -144,7 +148,7 @@ fn main() -> Result<(), String> {
 	let answer = timeit!("Client answer", {
 		let responses = responses
 			.iter()
-			.map(|r| Ciphertext::try_deserialize(r, params.last().unwrap()).unwrap())
+			.map(|r| bfv::Ciphertext::try_deserialize(r, params.last().unwrap()).unwrap())
 			.collect_vec();
 		let decrypted_pt = responses
 			.iter()
@@ -152,7 +156,7 @@ fn main() -> Result<(), String> {
 			.collect_vec();
 		let decrypted_vec = decrypted_pt
 			.iter()
-			.map(|pt| Vec::<u64>::try_decode(&pt, Encoding::Poly).unwrap())
+			.map(|pt| Vec::<u64>::try_decode(&pt, bfv::Encoding::Poly).unwrap())
 			.collect_vec();
 		let mut decrypted_ct = vec![];
 		for v in &decrypted_vec {
@@ -165,12 +169,12 @@ fn main() -> Result<(), String> {
 		let mut answer = vec![];
 		// There may be a few 0 bytes, let's bruteforce for now
 		for i in 0..decrypted_ct.len() {
-			if let Ok(ct) = Ciphertext::try_deserialize(
+			if let Ok(ct) = bfv::Ciphertext::try_deserialize(
 				&decrypted_ct[..decrypted_ct.len() - i],
 				params.get(2).unwrap(),
 			) {
 				let pt = sk_2.decrypt(&ct).unwrap();
-				let pt = Vec::<u64>::try_decode(&pt, Encoding::Poly).unwrap();
+				let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::Poly).unwrap();
 				let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 				let offset = index
 					% number_elements_per_plaintext(params.last().unwrap().clone(), elements_size);

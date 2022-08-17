@@ -9,10 +9,14 @@
 
 //! Mathematical utilities for the fhe.rs library.
 
+mod errors;
+
 pub mod rns;
 pub mod rq;
 pub mod u256;
 pub mod zq;
+
+pub use errors::{Error, Result};
 
 #[cfg(test)]
 #[macro_use]

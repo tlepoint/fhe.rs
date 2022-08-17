@@ -5,6 +5,7 @@ use crate::{
 	parameters::BfvParameters,
 	plaintext::Plaintext,
 	traits::{Decryptor, Encryptor},
+	Error, Result,
 };
 use itertools::Itertools;
 use math::{
@@ -66,7 +67,7 @@ impl SecretKey {
 	/// # Safety
 	///
 	/// This operations may run in a variable time depending on the value of the noise.
-	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize, String> {
+	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize> {
 		let plaintext = self.decrypt(ct)?;
 		let mut m = plaintext.encode()?;
 
@@ -106,9 +107,7 @@ impl SecretKey {
 }
 
 impl Encryptor for SecretKey {
-	type Error = String;
-
-	fn encrypt(&self, pt: &Plaintext) -> Result<Ciphertext, Self::Error> {
+	fn encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
@@ -142,11 +141,11 @@ impl Encryptor for SecretKey {
 }
 
 impl Decryptor for SecretKey {
-	type Error = String;
-
-	fn decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext, Self::Error> {
+	fn decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext> {
 		if self.par != ct.par {
-			Err("Incompatible BFV parameters".to_string())
+			Err(Error::DefaultError(
+				"Incompatible BFV parameters".to_string(),
+			))
 		} else {
 			let mut c = ct.c[0].clone();
 			c.disallow_variable_time_computations();
@@ -211,7 +210,7 @@ mod tests {
 		Encoding, Plaintext,
 	};
 	use math::rq::Representation;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn test_keygen() {
@@ -232,7 +231,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_encrypt_decrypt() -> Result<(), String> {
+	fn test_encrypt_decrypt() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1)),
 			Arc::new(BfvParameters::default(2)),

@@ -3,7 +3,10 @@
 //! Polynomial scaler.
 
 use super::{Context, Poly, Representation};
-use crate::rns::{RnsScaler, ScalingFactor};
+use crate::{
+	rns::{RnsScaler, ScalingFactor},
+	Error, Result,
+};
 use itertools::izip;
 use ndarray::{s, Array2, Axis};
 use std::sync::Arc;
@@ -19,13 +22,9 @@ pub struct Scaler {
 
 impl Scaler {
 	/// Create a scaler from a context `from` to a context `to`.
-	pub fn new(
-		from: &Arc<Context>,
-		to: &Arc<Context>,
-		factor: ScalingFactor,
-	) -> Result<Self, String> {
+	pub fn new(from: &Arc<Context>, to: &Arc<Context>, factor: ScalingFactor) -> Result<Self> {
 		if from.degree != to.degree {
-			return Err("Incompatible degrees".to_string());
+			return Err(Error::DefaultError("Incompatible degrees".to_string()));
 		}
 
 		let mut number_common_moduli = 0;
@@ -52,9 +51,11 @@ impl Scaler {
 
 impl Scaler {
 	/// Scale a polynomial
-	pub fn scale(&self, p: &Poly, floor: bool) -> Result<Poly, String> {
+	pub fn scale(&self, p: &Poly, floor: bool) -> Result<Poly> {
 		if p.ctx.as_ref() != self.from.as_ref() {
-			Err("The input polynomial does not have the correct context".to_string())
+			Err(Error::DefaultError(
+				"The input polynomial does not have the correct context".to_string(),
+			))
 		} else {
 			let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));
 
@@ -133,7 +134,7 @@ mod tests {
 	use crate::rq::{Context, Poly, Representation};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	// Moduli to be used in tests.
 	static Q: &[u64; 3] = &[
@@ -149,7 +150,7 @@ mod tests {
 	];
 
 	#[test]
-	fn test_scaler() -> Result<(), String> {
+	fn test_scaler() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let from = Arc::new(Context::new(Q, 8)?);
 		let to = Arc::new(Context::new(P, 8)?);

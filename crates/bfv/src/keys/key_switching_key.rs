@@ -1,6 +1,6 @@
 //! Key-switching keys for the BFV encryption scheme
 
-use crate::{traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey};
+use crate::{traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, Error, Result, SecretKey};
 use fhers_protos::protos::{bfv::KeySwitchingKey as KeySwitchingKeyProto, rq::Rq};
 use itertools::izip;
 use math::{
@@ -30,9 +30,11 @@ pub struct KeySwitchingKey {
 
 impl KeySwitchingKey {
 	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial `from`.
-	pub fn new(sk: &SecretKey, from: &Poly) -> Result<Self, String> {
+	pub fn new(sk: &SecretKey, from: &Poly) -> Result<Self> {
 		if sk.par.ciphertext_moduli.len() == 1 {
-			return Err("These parameters do not support key switching".to_string());
+			return Err(Error::DefaultError(
+				"These parameters do not support key switching".to_string(),
+			));
 		}
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
@@ -67,9 +69,9 @@ impl KeySwitchingKey {
 	}
 
 	/// Generate the c0's from the c1's and the secret key
-	fn generate_c0(sk: &SecretKey, from: &Poly, c1: &[Poly]) -> Result<Vec<Poly>, String> {
+	fn generate_c0(sk: &SecretKey, from: &Poly, c1: &[Poly]) -> Result<Vec<Poly>> {
 		if c1.len() != sk.par.ciphertext_moduli.len() {
-			return Err("Invalid number of c1".to_string());
+			return Err(Error::DefaultError("Invalid number of c1".to_string()));
 		}
 		let rns = RnsContext::new(&sk.par.ciphertext_moduli)?;
 		let mut c0 = Vec::with_capacity(sk.par.ciphertext_moduli.len());
@@ -99,7 +101,7 @@ impl KeySwitchingKey {
 	}
 
 	/// Key switch a polynomial.
-	pub fn key_switch(&self, p: &Poly, acc_0: &mut Poly, acc_1: &mut Poly) -> Result<(), String> {
+	pub fn key_switch(&self, p: &Poly, acc_0: &mut Poly, acc_1: &mut Poly) -> Result<()> {
 		// TODO: Check representation of input polynomials
 		for (c2_i_coefficients, c0_i, c1_i) in
 			izip!(p.coefficients().outer_iter(), &self.c0, &self.c1)
@@ -131,18 +133,13 @@ impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
 }
 
 impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
-	type Error = String;
-
-	fn try_convert_from(
-		value: &KeySwitchingKeyProto,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self, Self::Error> {
+	fn try_convert_from(value: &KeySwitchingKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
 		let seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 		if seed.is_err() {
-			return Err("Invalid seed".to_string());
+			return Err(Error::DefaultError("Invalid seed".to_string()));
 		}
 		if value.c0.len() != par.ciphertext_moduli.len() {
-			return Err("Invalid number of c0".to_string());
+			return Err(Error::DefaultError("Invalid number of c0".to_string()));
 		}
 
 		let seed = seed.unwrap();
@@ -172,10 +169,10 @@ mod tests {
 		rq::{Poly, Representation},
 	};
 	use num_bigint::BigUint;
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_constructor() -> Result<(), String> {
+	fn test_constructor() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;
@@ -186,7 +183,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_key_switch() -> Result<(), String> {
+	fn test_key_switch() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
@@ -216,7 +213,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), String> {
+	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let p = Poly::small(&params.ctx, Representation::PowerBasis, 10)?;

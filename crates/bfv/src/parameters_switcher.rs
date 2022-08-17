@@ -1,6 +1,6 @@
 //! Switching parameters
 
-use crate::{BfvParameters, Ciphertext, Plaintext, SecretKey};
+use crate::{BfvParameters, Ciphertext, Error, Plaintext, Result, SecretKey};
 use itertools::Itertools;
 use math::{
 	rns::ScalingFactor,
@@ -18,7 +18,7 @@ pub struct BfvParametersSwitcher {
 
 impl BfvParametersSwitcher {
 	/// Create a switcher between two sets of parameters
-	pub fn new(from: &Arc<BfvParameters>, to: &Arc<BfvParameters>) -> Result<Self, String> {
+	pub fn new(from: &Arc<BfvParameters>, to: &Arc<BfvParameters>) -> Result<Self> {
 		Ok(Self {
 			from: from.clone(),
 			to: to.clone(),
@@ -34,13 +34,13 @@ impl BfvParametersSwitcher {
 /// Indicate that the [`BfvParameters`] of Self can be switched.
 pub trait ParametersSwitchable {
 	/// Switch the underlying [`BfvParameters`]
-	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<(), String>;
+	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()>;
 }
 
 impl ParametersSwitchable for Ciphertext {
-	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<(), String> {
+	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
-			Err("Mismatched parameters".to_string())
+			Err(Error::DefaultError("Mismatched parameters".to_string()))
 		} else {
 			self.seed = None;
 			self.c = self
@@ -55,9 +55,9 @@ impl ParametersSwitchable for Ciphertext {
 }
 
 impl ParametersSwitchable for SecretKey {
-	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<(), String> {
+	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
-			Err("Mismatched parameters".to_string())
+			Err(Error::DefaultError("Mismatched parameters".to_string()))
 		} else {
 			let s_coefficients = self.s_coefficients.clone();
 			self.zeroize();
@@ -68,9 +68,9 @@ impl ParametersSwitchable for SecretKey {
 }
 
 impl ParametersSwitchable for Plaintext {
-	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<(), String> {
+	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
-			Err("Mismatched parameters".to_string())
+			Err(Error::DefaultError("Mismatched parameters".to_string()))
 		} else {
 			self.poly_ntt = Poly::try_convert_from(
 				&self.value as &[u64],
@@ -92,10 +92,10 @@ mod tests {
 		traits::{Decoder, Decryptor, Encoder, Encryptor},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_parameters_switcher() -> Result<(), String> {
+	fn test_parameters_switcher() -> Result<(), Box<dyn Error>> {
 		let from = Arc::new(BfvParameters::default(5));
 		let to = Arc::new(BfvParameters::default(2));
 
