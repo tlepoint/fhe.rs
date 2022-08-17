@@ -7,19 +7,19 @@ use bfv::{
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::{izip, Itertools};
-use std::sync::Arc;
 use std::time::Duration;
+use std::{error::Error, sync::Arc};
 
-fn params() -> Result<Vec<Arc<BfvParameters>>, String> {
+fn params() -> Result<Vec<Arc<BfvParameters>>, Box<dyn Error>> {
 	let par_small = BfvParametersBuilder::new()
-		.set_degree(4096)?
-		.set_plaintext_modulus(1153)?
-		.set_ciphertext_moduli_sizes(&[36, 37, 37])?
+		.set_degree(4096)
+		.set_plaintext_modulus(1153)
+		.set_ciphertext_moduli_sizes(&[36, 37, 37])
 		.build()?;
 	let par_large = BfvParametersBuilder::new()
-		.set_degree(16384)?
-		.set_plaintext_modulus(1153)?
-		.set_ciphertext_moduli_sizes(&[62; 7])?
+		.set_degree(16384)
+		.set_plaintext_modulus(1153)
+		.set_ciphertext_moduli_sizes(&[62; 7])
 		.build()
 		.unwrap();
 	Ok(vec![Arc::new(par_small), Arc::new(par_large)])

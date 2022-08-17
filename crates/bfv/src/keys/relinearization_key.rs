@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::{traits::TryConvertFrom, BfvParameters, Ciphertext, Error, Result, SecretKey};
 use fhers_protos::protos::bfv::{
 	KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
@@ -21,7 +21,7 @@ pub struct RelinearizationKey {
 
 impl RelinearizationKey {
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
-	pub fn new(sk: &SecretKey) -> Result<Self, String> {
+	pub fn new(sk: &SecretKey) -> Result<Self> {
 		let mut s_squared = sk.s[1].clone();
 		s_squared.change_representation(Representation::PowerBasis);
 		let ksk = KeySwitchingKey::new(sk, &s_squared)?;
@@ -30,9 +30,11 @@ impl RelinearizationKey {
 	}
 
 	/// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
-	pub fn relinearizes(&self, ct: &Ciphertext) -> Result<Ciphertext, String> {
+	pub fn relinearizes(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		if ct.c.len() != 3 {
-			Err("Only supports relinearization of ciphertext with 3 parts".to_string())
+			Err(Error::DefaultError(
+				"Only supports relinearization of ciphertext with 3 parts".to_string(),
+			))
 		} else {
 			let mut c2 = ct.c[2].clone();
 			c2.change_representation(Representation::PowerBasis);
@@ -53,9 +55,11 @@ impl RelinearizationKey {
 		c2: &Poly,
 		c0: &mut Poly,
 		c1: &mut Poly,
-	) -> Result<(), String> {
+	) -> Result<()> {
 		if c2.representation() != &Representation::PowerBasis {
-			Err("Incorrect representation for c2".to_string())
+			Err(Error::DefaultError(
+				"Incorrect representation for c2".to_string(),
+			))
 		} else {
 			self.ksk.key_switch(c2, c0, c1)
 		}
@@ -71,20 +75,17 @@ impl From<&RelinearizationKey> for RelinearizationKeyProto {
 }
 
 impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
-	type Error = String;
-
-	fn try_convert_from(
-		value: &RelinearizationKeyProto,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self, Self::Error> {
+	fn try_convert_from(value: &RelinearizationKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
 		if par.ciphertext_moduli.len() == 1 {
-			Err("Invalid parameters for a relinearization key".to_string())
+			Err(Error::DefaultError(
+				"Invalid parameters for a relinearization key".to_string(),
+			))
 		} else if value.ksk.is_some() {
 			Ok(RelinearizationKey {
 				ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
 			})
 		} else {
-			Err("Invalid serialization".to_string())
+			Err(Error::DefaultError("Invalid serialization".to_string()))
 		}
 	}
 }
@@ -98,10 +99,10 @@ mod tests {
 	};
 	use fhers_protos::protos::bfv::RelinearizationKey as RelinearizationKeyProto;
 	use math::rq::{Poly, Representation};
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_relinearization() -> Result<(), String> {
+	fn test_relinearization() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			for _ in 0..100 {
 				let mut sk = SecretKey::random(&params);
@@ -146,7 +147,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), String> {
+	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let rk = RelinearizationKey::new(&sk)?;

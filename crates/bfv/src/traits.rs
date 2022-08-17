@@ -3,6 +3,7 @@
 use crate::ciphertext::Ciphertext;
 use crate::parameters::BfvParameters;
 use crate::plaintext::{Encoding, Plaintext};
+use crate::Result;
 use std::sync::Arc;
 
 /// Encode values into [`Plaintext`].
@@ -10,15 +11,8 @@ pub trait Encoder<T>
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to encode the `value` with the specified [`Encoding`] and [`BfvParameters`].
-	fn try_encode(
-		value: T,
-		encoding: Encoding,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self, Self::Error>;
+	fn try_encode(value: T, encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self>;
 }
 
 /// Decode [`Plaintext`] values.
@@ -26,31 +20,22 @@ pub trait Decoder
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to decode the [`Plaintext`], with an optional [`Encoding`].
-	fn try_decode<E>(a: &Plaintext, encoding: E) -> Result<Self, Self::Error>
+	fn try_decode<E>(a: &Plaintext, encoding: E) -> Result<Self>
 	where
 		E: Into<Option<Encoding>>;
 }
 
 /// Encrypt a [`Plaintext`] into a [`Ciphertext`].
 pub trait Encryptor {
-	/// The type of errors.
-	type Error;
-
 	/// Encrypt a [`Plaintext`].
-	fn encrypt(&self, plaintext: &Plaintext) -> Result<Ciphertext, Self::Error>;
+	fn encrypt(&self, plaintext: &Plaintext) -> Result<Ciphertext>;
 }
 
 /// Decrypt a [`Ciphertext`] into a [`Plaintext`].
 pub trait Decryptor {
-	/// The type of errors.
-	type Error;
-
 	/// Decrypt a [`Ciphertext`].
-	fn decrypt(&mut self, ciphertext: &Ciphertext) -> Result<Plaintext, Self::Error>;
+	fn decrypt(&mut self, ciphertext: &Ciphertext) -> Result<Plaintext>;
 }
 
 /// Conversions.
@@ -63,11 +48,8 @@ pub trait TryConvertFrom<T>
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to convert the `value` with a specific parameter.
-	fn try_convert_from(value: T, par: &Arc<BfvParameters>) -> Result<Self, Self::Error>;
+	fn try_convert_from(value: T, par: &Arc<BfvParameters>) -> Result<Self>;
 }
 
 /// Serialization.
@@ -81,11 +63,8 @@ pub trait DeserializeWithParams
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to deserialize from a vector of bytes
-	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self, Self::Error>;
+	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self>;
 }
 
 /// Deserialization without parameters.
@@ -93,9 +72,6 @@ pub trait Deserialize
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to deserialize from a vector of bytes
-	fn try_deserialize(bytes: &[u8]) -> Result<Self, Self::Error>;
+	fn try_deserialize(bytes: &[u8]) -> Result<Self>;
 }

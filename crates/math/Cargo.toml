@@ -10,18 +10,20 @@ repository = "https://github.com/tlepoint/fhe.rs"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
+fhers_protos = { version = "0.0.1", path = "../protos" }
+util = { version = "0.0.1", path = "../util" }
+
+crypto-bigint = "0.4.8"
 itertools = "0.10.3"
+ndarray = "0.15.6"
 num-bigint = "0.4.3"
 num-bigint-dig = "0.8.1"
 num-traits = "0.2.15"
+protobuf = "3.1.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-ndarray = "0.15.6"
-util = { version = "0.0.1", path = "../util" }
-fhers_protos = { version = "0.0.1", path = "../protos" }
-protobuf = "3.1.0"
+thiserror = "1.0.32"
 zeroize = "1.5.7"
-crypto-bigint = "0.4.8"
 
 [dev-dependencies]
 criterion = "0.3.6"

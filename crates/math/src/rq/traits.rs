@@ -3,6 +3,7 @@
 //! Traits associated with polynomials.
 
 use super::{Context, Representation};
+use crate::Result;
 use std::sync::Arc;
 
 /// Conversions to create polynomials.
@@ -15,9 +16,6 @@ pub trait TryConvertFrom<T>
 where
 	Self: Sized,
 {
-	/// The type of errors.
-	type Error;
-
 	/// Attempt to convert the `value` into a polynomial with a specific context and
 	/// under a specific representation. The representation may optional and be
 	/// specified as `None`; this is useful for example when converting from a
@@ -27,7 +25,7 @@ where
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
-	) -> Result<Self, Self::Error>
+	) -> Result<Self>
 	where
 		R: Into<Option<Representation>>;
 }

@@ -2,16 +2,16 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use bfv::{traits::*, *};
+use bfv::{self, traits::*, ParametersSwitchable};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;
 use rand::{thread_rng, RngCore};
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 use util::transcode_forward;
 use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
 
-fn main() -> Result<(), String> {
+fn main() -> Result<(), Box<dyn Error>> {
 	let database_size = 1 << 21;
 	let elements_size = 288;
 
@@ -36,15 +36,15 @@ fn main() -> Result<(), String> {
 		let mut params_switchers = vec![];
 		for i in 0..moduli_sizes.len() {
 			params.push(Arc::new(
-				BfvParametersBuilder::new()
-					.set_degree(degree)?
-					.set_plaintext_modulus(plaintext_modulus)?
-					.set_ciphertext_moduli_sizes(&moduli_sizes[..moduli_sizes.len() - i])?
+				bfv::BfvParametersBuilder::new()
+					.set_degree(degree)
+					.set_plaintext_modulus(plaintext_modulus)
+					.set_ciphertext_moduli_sizes(&moduli_sizes[..moduli_sizes.len() - i])
 					.build()?,
 			))
 		}
 		for i in 0..params.len() - 1 {
-			params_switchers.push(BfvParametersSwitcher::new(&params[i], &params[i + 1])?)
+			params_switchers.push(bfv::BfvParametersSwitcher::new(&params[i], &params[i + 1])?)
 		}
 		(params, params_switchers)
 	});
@@ -57,16 +57,16 @@ fn main() -> Result<(), String> {
 	// Client setup
 	let (sk_encrypt, mut sk, ek_expansion_serialized, ek_relin_serialized) =
 		timeit!("Client setup", {
-			let sk_encrypt = SecretKey::random(&params[0]);
+			let sk_encrypt = bfv::SecretKey::random(&params[0]);
 			let dim = preprocessed_database.shape();
 			let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 			println!("level = {}", level);
-			let ek_expansion = EvaluationKeyBuilder::new(&sk_encrypt)
+			let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk_encrypt)
 				.enable_expansion(level as usize)?
 				.build()?;
 			let mut sk = sk_encrypt.clone();
 			sk.switch_parameters(&params_switchers[0])?;
-			let ek_relin = EvaluationKeyBuilder::new(&sk)
+			let ek_relin = bfv::EvaluationKeyBuilder::new(&sk)
 				.enable_relinearization()?
 				.build()?;
 			sk.switch_parameters(&params_switchers[1])?;
@@ -86,8 +86,8 @@ fn main() -> Result<(), String> {
 	// Server setup
 	let (ek_expansion, ek_relin) = timeit!("Server setup", {
 		(
-			EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?,
-			EvaluationKey::try_deserialize(&ek_relin_serialized, &params[1])?,
+			bfv::EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?,
+			bfv::EvaluationKey::try_deserialize(&ek_relin_serialized, &params[1])?,
 		)
 	});
 
@@ -101,7 +101,7 @@ fn main() -> Result<(), String> {
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
-		let query_pt = Plaintext::try_encode(&pt as &[u64], Encoding::Poly, &params[0])?;
+		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
 		let query = sk_encrypt.encrypt(&query_pt)?;
 		query.serialize()
 	});
@@ -110,7 +110,7 @@ fn main() -> Result<(), String> {
 	// Server response
 	let response = timeit!("Server response", {
 		let start = std::time::Instant::now();
-		let query = Ciphertext::try_deserialize(&query, &params[0])?;
+		let query = bfv::Ciphertext::try_deserialize(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
@@ -120,13 +120,14 @@ fn main() -> Result<(), String> {
 			assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
 		});
 		println!("Switch parameters: {:?}", start.elapsed());
-		let mut out = Ciphertext::zero(&params[1]);
+		let mut out = bfv::Ciphertext::zero(&params[1]);
 		izip!(
 			&expanded_query[dim[0]..],
 			preprocessed_database.axis_iter(Axis(1))
 		)
 		.for_each(|(cj, column)| {
-			let c = dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
+			let c =
+				bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
 			out += &c * cj;
 		});
 		ek_relin.relinearizes(&mut out)?;
@@ -137,10 +138,10 @@ fn main() -> Result<(), String> {
 
 	// Client processing
 	let answer = timeit!("Client answer", {
-		let response = Ciphertext::try_deserialize(&response, &params[2]).unwrap();
+		let response = bfv::Ciphertext::try_deserialize(&response, &params[2]).unwrap();
 
 		let pt = sk.decrypt(&response).unwrap();
-		let pt = Vec::<u64>::try_decode(&pt, Encoding::Poly).unwrap();
+		let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::Poly).unwrap();
 		let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 		let offset = index % number_elements_per_plaintext(params[2].clone(), elements_size);
 

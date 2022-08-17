@@ -2,7 +2,7 @@
 
 //! Residue-Number System operations.
 
-use crate::zq::Modulus;
+use crate::{zq::Modulus, Error, Result};
 use itertools::izip;
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
@@ -30,9 +30,11 @@ impl RnsContext {
 	/// Create a RNS context from a list of moduli.
 	///
 	/// Returns an error if the list is empty, or if the moduli are no coprime.
-	pub fn new(moduli_u64: &[u64]) -> Result<Self, String> {
+	pub fn new(moduli_u64: &[u64]) -> Result<Self> {
 		if moduli_u64.is_empty() {
-			Err("The list of moduli is empty".to_string())
+			Err(Error::DefaultError(
+				"The list of moduli is empty".to_string(),
+			))
 		} else {
 			let mut moduli = Vec::with_capacity(moduli_u64.len());
 			let mut q_tilde = Vec::with_capacity(moduli_u64.len());
@@ -49,7 +51,9 @@ impl RnsContext {
 						let (d, _, _) = BigUintDig::from(moduli_u64[i])
 							.extended_gcd(&BigUintDig::from(moduli_u64[j]));
 						if d.cmp(&BigIntDig::from(1)) != Ordering::Equal {
-							return Err("The moduli are not coprime".to_string());
+							return Err(Error::DefaultError(
+								"The moduli are not coprime".to_string(),
+							));
 						}
 					}
 				}
@@ -125,6 +129,8 @@ impl RnsContext {
 #[cfg(test)]
 mod tests {
 
+	use std::error::Error;
+
 	use super::RnsContext;
 	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
@@ -145,7 +151,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_garner() -> Result<(), String> {
+	fn test_garner() -> Result<(), Box<dyn Error>> {
 		let rns = RnsContext::new(&[4, 15, 1153])?;
 
 		for i in 0..3 {
@@ -157,7 +163,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_modulus() -> Result<(), String> {
+	fn test_modulus() -> Result<(), Box<dyn Error>> {
 		let mut rns = RnsContext::new(&[2])?;
 		debug_assert_eq!(rns.modulus(), &BigUint::from(2u64));
 
@@ -171,7 +177,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_project_lift() -> Result<(), String> {
+	fn test_project_lift() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let rns = RnsContext::new(&[4, 15, 1153])?;
 		let product = 4u64 * 15 * 1153;

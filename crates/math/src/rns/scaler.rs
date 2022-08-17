@@ -371,7 +371,7 @@ impl RnsScaler {
 
 #[cfg(test)]
 mod tests {
-	use std::sync::Arc;
+	use std::{error::Error, sync::Arc};
 
 	use super::RnsScaler;
 	use crate::rns::{scaler::ScalingFactor, RnsContext};
@@ -382,7 +382,7 @@ mod tests {
 	use util::catch_unwind;
 
 	#[test]
-	fn test_constructor() -> Result<(), String> {
+	fn test_constructor() -> Result<(), Box<dyn Error>> {
 		let q = Arc::new(RnsContext::new(&[4, 4611686018326724609, 1153])?);
 
 		let scaler = RnsScaler::new(&q, &q, ScalingFactor::one());
@@ -395,7 +395,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_scale_same_context() -> Result<(), String> {
+	fn test_scale_same_context() -> Result<(), Box<dyn Error>> {
 		let ntests = 1000;
 		let q = Arc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
 		let mut rng = thread_rng();
@@ -445,7 +445,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_scale_different_contexts() -> Result<(), String> {
+	fn test_scale_different_contexts() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let q = Arc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
 		let r = Arc::new(RnsContext::new(&[
