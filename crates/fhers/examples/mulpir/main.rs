@@ -2,7 +2,8 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use bfv::{self, traits::*, ParametersSwitchable};
+use fhers::bfv::{self, traits::*, ParametersSwitchable};
+use fhers_traits::{DeserializeWithContext, Serialize};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;

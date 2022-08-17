@@ -1,0 +1,46 @@
+[package]
+name = "math"
+description = "Mathematical utilities for the fhers library"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tlepoint/fhe.rs"
+
+[lib]
+bench = false  # Disable default bench (we use criterion)
+
+[dependencies]
+fhers-traits = { version = "0.0.1", path = "../../crates/fhers-traits" }
+util = { version = "0.0.1", path = "../util" }
+
+crypto-bigint = "0.4.8"
+itertools = "0.10.3"
+ndarray = "0.15.6"
+num-bigint = "0.4.3"
+num-bigint-dig = "0.8.1"
+num-traits = "0.2.15"
+protobuf = "3.1.0"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+thiserror = "1.0.32"
+zeroize = "1.5.7"
+
+[dev-dependencies]
+criterion = "0.3.6"
+proptest = "1.0.0"
+
+[[bench]]
+name = "zq"
+harness = false
+
+[[bench]]
+name = "rq"
+harness = false
+
+[[bench]]
+name = "ntt"
+harness = false
+
+[[bench]]
+name = "rns"
+harness = false
