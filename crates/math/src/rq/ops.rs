@@ -287,8 +287,8 @@ impl Neg for &Poly {
 }
 
 /// Compute the dot product between two iterators of polynomials.
-/// Returna an error if the iterator counts are 0, or if any of the polynomial is not
-/// in Ntt or NttShoup representation.
+/// Returna an error if the iterator counts are 0, or if any of the polynomial
+/// is not in Ntt or NttShoup representation.
 pub fn dot_product<'a, 'b, I, J>(p: I, q: J) -> Result<Poly>
 where
 	I: Iterator<Item = &'a Poly> + Clone,
@@ -360,7 +360,8 @@ where
 			}
 		}
 	} else {
-		// We don't need to check the condition on the max, it should shave off a few cycles.
+		// We don't need to check the condition on the max, it should shave off a few
+		// cycles.
 		for (pi, qi) in izip!(p, q) {
 			let pi_ptr = pi.coefficients().as_ptr();
 			let qi_ptr = qi.coefficients().as_ptr();

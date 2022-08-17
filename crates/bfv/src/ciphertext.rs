@@ -200,8 +200,9 @@ impl Mul<&Ciphertext> for &Ciphertext {
 	}
 }
 
-/// Compute the dot product between an iterator of [`Ciphertext`] and an iterator of [`Plaintext`].
-/// Returns an error if the iterator counts are 0, if the parameters don't match, or if the ciphertexts have different
+/// Compute the dot product between an iterator of [`Ciphertext`] and an
+/// iterator of [`Plaintext`]. Returns an error if the iterator counts are 0, if
+/// the parameters don't match, or if the ciphertexts have different
 /// number of parts.
 pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext>
 where
@@ -554,7 +555,8 @@ mod tests {
 	fn test_mul() -> Result<(), Box<dyn Error>> {
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
-			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
@@ -584,7 +586,8 @@ mod tests {
 	fn test_mul_3() -> Result<(), Box<dyn Error>> {
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..50 {
-			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
@@ -611,7 +614,8 @@ mod tests {
 		let ntests = 100;
 		let par = Arc::new(BfvParameters::default(2));
 		for _ in 0..ntests {
-			// We will encode `values` in an Simd format, and check that the product is computed correctly.
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
 			let values = par.plaintext.random_vec(par.degree());
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);

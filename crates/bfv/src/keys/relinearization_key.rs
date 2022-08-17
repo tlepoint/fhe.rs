@@ -108,7 +108,8 @@ mod tests {
 				let mut sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;
 
-				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2, c1, c2) encrypting 0.
+				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2,
+				// c1, c2) encrypting 0.
 				let mut c2 = Poly::random(&params.ctx, Representation::Ntt);
 				let mut c1 = Poly::random(&params.ctx, Representation::Ntt);
 				let mut c0 = Poly::small(&params.ctx, Representation::PowerBasis, 16)?;

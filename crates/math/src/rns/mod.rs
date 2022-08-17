@@ -112,7 +112,8 @@ impl RnsContext {
 
 	/// Lift rests into a BigUint.
 	///
-	/// Aborts if the number of rests is different than the number of moduli in debug mode.
+	/// Aborts if the number of rests is different than the number of moduli in
+	/// debug mode.
 	pub fn lift(&self, rests: ArrayView1<u64>) -> BigUint {
 		let mut result = BigUint::zero();
 		izip!(rests.iter(), self.garner.iter())

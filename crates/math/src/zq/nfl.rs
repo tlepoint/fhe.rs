@@ -22,8 +22,9 @@ pub fn supports_opt(p: u64) -> bool {
 	left_side < middle
 }
 
-/// Generate a `num_bits`-bit prime, congruent to 1 mod `modulo`, strictly smaller than `upper_bound`.
-/// Note that `num_bits` must belong to (10..=62), and upper_bound must be <= 1 << num_bits.
+/// Generate a `num_bits`-bit prime, congruent to 1 mod `modulo`, strictly
+/// smaller than `upper_bound`. Note that `num_bits` must belong to (10..=62),
+/// and upper_bound must be <= 1 << num_bits.
 pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<u64> {
 	if !(10..=62).contains(&num_bits) {
 		None
@@ -111,8 +112,8 @@ mod tests {
 
 	#[test]
 	fn test_not_found() {
-		// 1033 is the smallest 11-bit prime congruent to 1 modulo 16, so looking for a smaller
-		// one should fail.
+		// 1033 is the smallest 11-bit prime congruent to 1 modulo 16, so looking for a
+		// smaller one should fail.
 		assert!(generate_prime(11, 16, 1033).is_none());
 	}
 }

@@ -26,11 +26,13 @@ pub struct BfvParameters {
 	plaintext_modulus: u64,
 
 	/// Vector of coprime moduli q_i for the ciphertext.
-	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
+	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
+	/// must be specified.
 	pub(crate) ciphertext_moduli: Vec<u64>,
 
 	/// Vector of the sized of the coprime moduli q_i for the ciphertext.
-	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes` must be specified.
+	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
+	/// must be specified.
 	ciphertext_moduli_sizes: Vec<usize>,
 
 	/// Error variance
@@ -125,22 +127,24 @@ impl BfvParametersBuilder {
 		self
 	}
 
-	/// Sets the plaintext modulus. Returns an error if the plaintext is not between
-	/// 2 and 2^62 - 1.
+	/// Sets the plaintext modulus. Returns an error if the plaintext is not
+	/// between 2 and 2^62 - 1.
 	pub fn set_plaintext_modulus(&mut self, plaintext: u64) -> &mut Self {
 		self.plaintext = plaintext;
 		self
 	}
 
 	/// Sets the sizes of the ciphertext moduli.
-	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli` can be specified.
+	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli`
+	/// can be specified.
 	pub fn set_ciphertext_moduli_sizes(&mut self, sizes: &[usize]) -> &mut Self {
 		self.ciphertext_moduli_sizes = sizes.to_owned();
 		self
 	}
 
 	/// Sets the ciphertext moduli to use.
-	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli` can be specified.
+	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli`
+	/// can be specified.
 	pub fn set_ciphertext_moduli(&mut self, moduli: &[u64]) -> &mut Self {
 		self.ciphertext_moduli = moduli.to_owned();
 		self
@@ -198,7 +202,8 @@ impl BfvParametersBuilder {
 			Error::ParametersError(ParametersError::InvalidPlaintext(e.to_string()))
 		})?;
 
-		// Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is specified.
+		// Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is
+		// specified.
 		if !self.ciphertext_moduli.is_empty() && !self.ciphertext_moduli_sizes.is_empty() {
 			return Err(Error::ParametersError(ParametersError::TooManySpecified(
 				"Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified"
@@ -260,7 +265,8 @@ impl BfvParametersBuilder {
 			}
 		}
 
-		// For the first multiplication, we want to extend to a context that is ~60 bits larger.
+		// For the first multiplication, we want to extend to a context that is ~60 bits
+		// larger.
 		let modulus_size = moduli_sizes.iter().sum::<usize>();
 		let n_moduli = ((modulus_size + 60) + 61) / 62;
 		let mut mul_1_moduli = vec![];
@@ -396,18 +402,19 @@ mod tests {
 	// 		.set_degree(7)
 	// 		.build()
 	// 		.is_err_and(
-	// 			|e| e.to_string() == "The degree should be a power of two larger or equal to 8"
-	// 		));
+	// 			|e| e.to_string() == "The degree should be a power of two larger or equal to
+	// 8" 		));
 
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(1023)
 	// 		.build()
 	// 		.is_err_and(
-	// 			|e| e.to_string() == "The degree should be a power of two larger or equal to 8"
-	// 		));
+	// 			|e| e.to_string() == "The degree should be a power of two larger or equal to
+	// 8" 		));
 
 	// 	let params = BfvParametersBuilder::new().set_degree(1024).build();
-	// 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified plaintext modulus"));
+	// 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified plaintext
+	// modulus"));
 
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(1024)
@@ -419,7 +426,8 @@ mod tests {
 	// 		.set_degree(1024)
 	// 		.set_plaintext_modulus(2)
 	// 		.build();
-	// 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified ciphertext moduli"));
+	// 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified ciphertext
+	// moduli"));
 
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(1024)
@@ -434,7 +442,8 @@ mod tests {
 	// 		.set_ciphertext_moduli(&[1153])
 	// 		.set_ciphertext_moduli_sizes(&[62])
 	// 		.build()
-	// 		.is_err_and(|e| e.to_string() == "The set of ciphertext moduli is already specified"));
+	// 		.is_err_and(|e| e.to_string() == "The set of ciphertext moduli is already
+	// specified"));
 
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(8)
@@ -448,7 +457,8 @@ mod tests {
 	// 		.set_plaintext_modulus(2)
 	// 		.set_ciphertext_moduli(&[2])
 	// 		.build();
-	// 	assert!(params.is_err_and(|e| e.to_string() == "Impossible to construct a Ntt operator"));
+	// 	assert!(params.is_err_and(|e| e.to_string() == "Impossible to construct a Ntt
+	// operator"));
 
 	// 	let params = BfvParametersBuilder::new()
 	// 		.set_degree(8)

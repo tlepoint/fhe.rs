@@ -131,7 +131,8 @@ impl RnsScaler {
 				.unwrap() as usize,
 			127,
 		);
-		// Finally, define theta_garner_i = from.garner_i / product, also scaled by 2^127.
+		// Finally, define theta_garner_i = from.garner_i / product, also scaled by
+		// 2^127.
 		let mut theta_garner_lo = Vec::with_capacity(from.garner.len());
 		let mut theta_garner_hi = Vec::with_capacity(from.garner.len());
 		for garner_i in &from.garner {
@@ -164,10 +165,11 @@ impl RnsScaler {
 	}
 
 	// Let's define gamma = round(numerator * input / denominator)
-	// and theta_gamma such that theta_gamma = numerator * input / denominator - gamma.
-	// This function projects gamma in the RNS context, and scales theta_gamma by 2**127 and rounds.
-	// It outputs the projection of gamma in the RNS context,
-	// and theta_lo, theta_hi, theta_sign such that theta_gamma = (-1)**theta_sign * (theta_lo + 2^64 * theta_hi).
+	// and theta_gamma such that theta_gamma = numerator * input / denominator -
+	// gamma. This function projects gamma in the RNS context, and scales
+	// theta_gamma by 2**127 and rounds. It outputs the projection of gamma in the
+	// RNS context, and theta_lo, theta_hi, theta_sign such that theta_gamma =
+	// (-1)**theta_sign * (theta_lo + 2^64 * theta_hi).
 	fn extract_projection_and_theta(
 		ctx: &RnsContext,
 		input: &BigUint,
@@ -216,22 +218,23 @@ impl RnsScaler {
 		(projected, theta_lo, theta_hi, theta_sign)
 	}
 
-	/// Output the RNS representation of the rests scaled by numerator * denominator,
-	/// and either rounded or floored.
+	/// Output the RNS representation of the rests scaled by numerator *
+	/// denominator, and either rounded or floored.
 	///
-	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
-	/// if the size is not in [1, ..., rests.len()].
+	/// Aborts if the number of rests is different than the number of moduli in
+	/// debug mode, or if the size is not in [1, ..., rests.len()].
 	pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize, floor: bool) -> Vec<u64> {
 		let mut out = vec![0; size];
 		self.scale(rests, (&mut out).into(), 0, floor);
 		out
 	}
 
-	/// Compute the RNS representation of the rests scaled by numerator * denominator,
-	/// and either rounded or floored, and store the result in `out`.
+	/// Compute the RNS representation of the rests scaled by numerator *
+	/// denominator, and either rounded or floored, and store the result in
+	/// `out`.
 	///
-	/// Aborts if the number of rests is different than the number of moduli in debug mode, or
-	/// if the size of out is not in [1, ..., rests.len()].
+	/// Aborts if the number of rests is different than the number of moduli in
+	/// debug mode, or if the size of out is not in [1, ..., rests.len()].
 	pub fn scale(
 		&self,
 		rests: ArrayView1<u64>,
@@ -260,7 +263,8 @@ impl RnsScaler {
 		let v = <[u64; 3]>::from(sum_theta_garner);
 		let v = v[0].div_ceil(2);
 
-		// If the scaling factor is not 1, compute the inner product with the theta_omega
+		// If the scaling factor is not 1, compute the inner product with the
+		// theta_omega
 		let mut w_sign = false;
 		let mut w = 0u128;
 		if !self.scaling_factor.is_one {

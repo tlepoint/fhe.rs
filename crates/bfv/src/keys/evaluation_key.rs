@@ -41,7 +41,8 @@ pub struct EvaluationKey {
 }
 
 impl EvaluationKey {
-	/// Reports whether the evaluation key enables to compute an homomorphic inner sums.
+	/// Reports whether the evaluation key enables to compute an homomorphic
+	/// inner sums.
 	pub fn supports_inner_sum(&self) -> bool {
 		if self.par.ciphertext_moduli.len() == 1 {
 			false
@@ -84,7 +85,8 @@ impl EvaluationKey {
 		}
 	}
 
-	/// Reports whether the evaluation key enables to rotate the rows of the plaintext.
+	/// Reports whether the evaluation key enables to rotate the rows of the
+	/// plaintext.
 	pub fn supports_row_rotation(&self) -> bool {
 		if self.par.ciphertext_moduli.len() == 1 {
 			false
@@ -105,7 +107,8 @@ impl EvaluationKey {
 		}
 	}
 
-	/// Reports whether the evaluation key enables to rotate the columns of the plaintext.
+	/// Reports whether the evaluation key enables to rotate the columns of the
+	/// plaintext.
 	pub fn supports_column_rotation_by(&self, i: usize) -> bool {
 		if self.par.ciphertext_moduli.len() == 1 {
 			false
@@ -200,9 +203,9 @@ impl EvaluationKey {
 		}
 	}
 
-	/// Obliviously expands the ciphertext. Returns an error if this evaluation does not
-	/// support expansion to this level, or if the ciphertext does not have size 2.
-	/// The output is a vector of 2^level ciphertexts.
+	/// Obliviously expands the ciphertext. Returns an error if this evaluation
+	/// does not support expansion to this level, or if the ciphertext does not
+	/// have size 2. The output is a vector of 2^level ciphertexts.
 	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>> {
 		if ct.c.len() != 2 {
 			Err(Error::DefaultError(
@@ -352,7 +355,8 @@ impl EvaluationKeyBuilder {
 		}
 	}
 
-	/// Allow this evaluation key to homomorphically rotate the plaintext columns.
+	/// Allow this evaluation key to homomorphically rotate the plaintext
+	/// columns.
 	#[allow(unused_must_use)]
 	pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self> {
 		if let Some(exp) = self.rot_to_gk_exponent.get(&i) {

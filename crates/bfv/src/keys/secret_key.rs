@@ -66,7 +66,8 @@ impl SecretKey {
 	///
 	/// # Safety
 	///
-	/// This operations may run in a variable time depending on the value of the noise.
+	/// This operations may run in a variable time depending on the value of the
+	/// noise.
 	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize> {
 		let plaintext = self.decrypt(ct)?;
 		let mut m = plaintext.encode()?;

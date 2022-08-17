@@ -16,9 +16,9 @@ pub enum Encoding {
 	/// homomorphic operations are therefore polynomial operations.
 	Poly,
 	/// A Simd encoding encodes a vector so that homomorphic operations are
-	/// component-wise operations on the coefficients of the underlying vectors. The
-	/// Simd encoding require that the plaintext modulus is congruent to 1 modulo
-	/// the degree of the underlying polynomial.
+	/// component-wise operations on the coefficients of the underlying vectors.
+	/// The Simd encoding require that the plaintext modulus is congruent to 1
+	/// modulo the degree of the underlying polynomial.
 	Simd,
 }
 
@@ -357,9 +357,10 @@ mod tests {
 		let mut same_plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly, &params)?;
 		assert_eq!(plaintext, same_plaintext);
 
-		// Equality also holds when there is no encoding specified. In this test, we use the fact that
-		// we can set it to None directly, but such a partial plaintext will be created during
-		// decryption since we do not specify the encoding at the time.
+		// Equality also holds when there is no encoding specified. In this test, we use
+		// the fact that we can set it to None directly, but such a partial plaintext
+		// will be created during decryption since we do not specify the encoding at the
+		// time.
 		same_plaintext.encoding = None;
 		assert_eq!(plaintext, same_plaintext);
 

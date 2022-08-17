@@ -29,8 +29,8 @@ pub fn is_prime(p: u64) -> bool {
 	probably_prime(&BigUint::from(p), 0)
 }
 
-/// Sample a vector of independent centered binomial distributions of a given variance.
-/// Currently, supports variance up to 16.
+/// Sample a vector of independent centered binomial distributions of a given
+/// variance. Currently, supports variance up to 16.
 pub fn sample_vec_cbd(vector_size: usize, variance: usize) -> Result<Vec<i64>, &'static str> {
 	if !(1..=16).contains(&variance) {
 		return Err("The variance should be between 1 and 16");
@@ -181,7 +181,8 @@ mod tests {
 			assert!(w.min >= (-2.0 * var as f64));
 
 			// Verifies that the variance is correct. We could probably refine the bound
-			// but for now, we will just check that the rounded value is equal to the variance.
+			// but for now, we will just check that the rounded value is equal to the
+			// variance.
 			assert!(w.var.round() == (var as f64));
 		}
 	}

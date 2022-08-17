@@ -8,7 +8,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Enum encapsulation all the possible errors from this library.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
-	/// Indicates that an error in the underlying mathematical library was encountered.
+	/// Indicates that an error in the underlying mathematical library was
+	/// encountered.
 	#[error("{0}")]
 	MathError(math::Error),
 

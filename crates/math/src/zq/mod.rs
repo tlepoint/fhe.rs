@@ -187,7 +187,8 @@ impl Modulus {
 
 	/// Modular addition of vectors in place in constant time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -198,7 +199,8 @@ impl Modulus {
 	///
 	/// Modular addition of vectors in place in variable time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -207,7 +209,8 @@ impl Modulus {
 
 	/// Modular subtraction of vectors in place in constant time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -218,7 +221,8 @@ impl Modulus {
 	///
 	/// Modular subtraction of vectors in place in variable time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -227,7 +231,8 @@ impl Modulus {
 
 	/// Modular multiplication of vectors in place in constant time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -262,7 +267,8 @@ impl Modulus {
 	///
 	/// Modular multiplication of vectors in place in variable time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub unsafe fn mul_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -284,7 +290,8 @@ impl Modulus {
 
 	/// Shoup modular multiplication of vectors in place in constant time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub fn mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 		debug_assert_eq!(a.len(), b_shoup.len());
@@ -298,7 +305,8 @@ impl Modulus {
 	///
 	/// Shoup modular multiplication of vectors in place in variable time.
 	///
-	/// Aborts if a and b differ in size, and if any of their values is >= p in debug mode.
+	/// Aborts if a and b differ in size, and if any of their values is >= p in
+	/// debug mode.
 	pub unsafe fn mul_shoup_vec_vt(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 		debug_assert_eq!(a.len(), b_shoup.len());

@@ -1,6 +1,7 @@
 #![warn(missing_docs, unused_imports)]
 
-//! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are prime moduli in zq.
+//! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are
+//! prime moduli in zq.
 
 mod convert;
 mod ops;
@@ -37,7 +38,8 @@ pub struct Context {
 impl Context {
 	/// Creates a context from a list of moduli and a polynomial degree.
 	///
-	/// Returns an error if the moduli are not primes less than 62 bits which supports the NTT of size `degree`.
+	/// Returns an error if the moduli are not primes less than 62 bits which
+	/// supports the NTT of size `degree`.
 	pub fn new(moduli: &[u64], degree: usize) -> Result<Self> {
 		if !degree.is_power_of_two() || degree < 8 {
 			Err(Error::DefaultError(
@@ -81,12 +83,14 @@ impl Context {
 /// Possible representations of the underlying polynomial.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Representation {
-	/// This is the list of coefficients ci, such that the polynomial is c0 + c1 * x + ... + c_(degree - 1) * x^(degree - 1)
+	/// This is the list of coefficients ci, such that the polynomial is c0 + c1
+	/// * x + ... + c_(degree - 1) * x^(degree - 1)
 	#[default]
 	PowerBasis,
 	/// This is the NTT representation of the PowerBasis representation.
 	Ntt,
-	/// This is a "Shoup" representation of the Ntt representation used for faster multiplication.
+	/// This is a "Shoup" representation of the Ntt representation used for
+	/// faster multiplication.
 	NttShoup,
 }
 
@@ -120,7 +124,8 @@ impl Poly {
 	///
 	/// # Safety
 	///
-	/// By default, this is marked as unsafe, but is usually safe when only public data is processed.
+	/// By default, this is marked as unsafe, but is usually safe when only
+	/// public data is processed.
 	pub unsafe fn allow_variable_time_computations(&mut self) {
 		self.allow_variable_time_computations = true
 	}
@@ -200,10 +205,11 @@ impl Poly {
 	///
 	/// # Safety
 	///
-	/// Prefer the `change_representation` function to safely modify the polynomial representation.
-	/// If the `to` representation is NttShoup, the coefficients are still computed correctly to
-	/// avoid being in an unstable state. Similarly, if we override a representation which was
-	/// NttShoup, we zeroize the existing Shoup coefficients.
+	/// Prefer the `change_representation` function to safely modify the
+	/// polynomial representation. If the `to` representation is NttShoup, the
+	/// coefficients are still computed correctly to avoid being in an unstable
+	/// state. Similarly, if we override a representation which was NttShoup, we
+	/// zeroize the existing Shoup coefficients.
 	pub unsafe fn override_representation(&mut self, to: Representation) {
 		if to == Representation::NttShoup {
 			self.compute_coefficients_shoup()
@@ -254,7 +260,8 @@ impl Poly {
 		p
 	}
 
-	/// Generate a small polynomial and convert into the specified representation.
+	/// Generate a small polynomial and convert into the specified
+	/// representation.
 	///
 	/// Returns an error if the variance does not belong to [1, ..., 16].
 	pub fn small(
@@ -311,8 +318,9 @@ impl Poly {
 	}
 
 	/// Substitute x by x^i in a polynomial.
-	/// In PowerBasis representation, i can be any integer that is not a multiple of 2 * degree.
-	/// In Ntt and NttShoup representation, i can be any odd integer that is not a multiple of 2 * degree.
+	/// In PowerBasis representation, i can be any integer that is not a
+	/// multiple of 2 * degree. In Ntt and NttShoup representation, i can be any
+	/// odd integer that is not a multiple of 2 * degree.
 	pub fn substitute(&self, i: usize) -> Result<Poly> {
 		let degree = self.ctx.degree as u32;
 		let exponent = (i as u32) % (2 * degree);

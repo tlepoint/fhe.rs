@@ -29,7 +29,8 @@ pub struct KeySwitchingKey {
 }
 
 impl KeySwitchingKey {
-	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial `from`.
+	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial
+	/// `from`.
 	pub fn new(sk: &SecretKey, from: &Poly) -> Result<Self> {
 		if sk.par.ciphertext_moduli.len() == 1 {
 			return Err(Error::DefaultError(
