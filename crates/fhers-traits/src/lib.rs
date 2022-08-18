@@ -9,17 +9,33 @@ use std::sync::Arc;
 /// The homomorphic encryption parameters.
 pub trait FheParameters {}
 
+/// Indicates that an object is parametrized.
+pub trait FheParametrized {
+	/// The type of the FHE parameters.
+	type Parameters: FheParameters;
+}
+
+/// Indicates that Self parameters can be switched.
+pub trait FheParametersSwitchable<S: FheParametrized>
+where
+	Self: FheParametrized,
+{
+	/// The type of error returned.
+	type Error;
+
+	/// Attempt to switch the underlying parameters using the associated
+	/// switcher.
+	fn switch_parameters(&mut self, switcher: &S) -> Result<(), Self::Error>;
+}
+
 /// Encoding used when encoding a [`FhePlaintext`].
 pub trait FhePlaintextEncoding {}
 
 /// A plaintext which will encode one (or more) value(s).
 pub trait FhePlaintext
 where
-	Self: Sized,
+	Self: Sized + FheParametrized,
 {
-	/// The type of the FHE parameters.
-	type Parameters: FheParameters;
-
 	/// The type of the encoding.
 	type Encoding: FhePlaintextEncoding;
 }
@@ -58,23 +74,18 @@ where
 /// A ciphertext which will encrypt a plaintext.
 pub trait FheCiphertext
 where
-	Self: Sized + Serialize + DeserializeUsingParameters,
+	Self: Sized + Serialize + FheParametrized + DeserializeParametrized,
 {
-	/// The type of the FHE parameters.
-	type Parameters: FheParameters;
 }
 
 /// Encrypt a plaintext into a ciphertext.
 pub trait FheEncrypter<
 	P: FhePlaintext<Parameters = Self::Parameters>,
 	C: FheCiphertext<Parameters = Self::Parameters>,
->
+>: FheParametrized
 {
 	/// The type of error returned.
 	type Error;
-
-	/// The type of the FHE parameters used by the encrypter.
-	type Parameters: FheParameters;
 
 	/// Try to encrypt an [`FhePlaintext`] into an [`FheCiphertext`].
 	fn try_encrypt(&self, pt: &P) -> Result<C, Self::Error>;
@@ -84,13 +95,10 @@ pub trait FheEncrypter<
 pub trait FheDecrypter<
 	P: FhePlaintext<Parameters = Self::Parameters>,
 	C: FheCiphertext<Parameters = Self::Parameters>,
->
+>: FheParametrized
 {
 	/// The type of error returned.
 	type Error;
-
-	/// The type of the FHE parameters used by the decrypter.
-	type Parameters: FheParameters;
 
 	/// Try to decrypt an [`FheCiphertext`] into an [`FhePlaintext`].
 	fn try_decrypt(&mut self, ct: &C) -> Result<P, Self::Error>;
@@ -102,20 +110,32 @@ pub trait Serialize {
 	fn to_bytes(&self) -> Vec<u8>;
 }
 
-/// Deserialization using the specified parameters.
-pub trait DeserializeUsingParameters
+/// Deserialization of a parametrized value.
+pub trait DeserializeParametrized
+where
+	Self: Sized,
+	Self: FheParametrized,
+{
+	/// The type of error returned.
+	type Error;
+
+	/// Attempt to deserialize from a vector of bytes
+	fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self, Self::Error>;
+}
+
+/// Deserialization setting an explicit context.
+pub trait DeserializeWithContext
 where
 	Self: Sized,
 {
 	/// The type of error returned.
 	type Error;
 
-	/// The type of the parameters used to deserialize. Note that these are not
-	/// necessary FheParameters.
-	type Parameters;
+	/// The type of context.
+	type Context;
 
 	/// Attempt to deserialize from a vector of bytes
-	fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self, Self::Error>;
+	fn from_bytes(bytes: &[u8], par: &Arc<Self::Context>) -> Result<Self, Self::Error>;
 }
 
 /// Deserialization without context.

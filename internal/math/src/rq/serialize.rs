@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{traits::TryConvertFrom, Context, Poly};
 use crate::{proto::rq::Rq, Error};
-use fhers_traits::{DeserializeUsingParameters, Serialize};
+use fhers_traits::{DeserializeWithContext, Serialize};
 use protobuf::Message;
 
 impl Serialize for Poly {
@@ -15,9 +15,9 @@ impl Serialize for Poly {
 	}
 }
 
-impl DeserializeUsingParameters for Poly {
+impl DeserializeWithContext for Poly {
 	type Error = Error;
-	type Parameters = Context;
+	type Context = Context;
 
 	fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Self::Error> {
 		let rq = Rq::parse_from_bytes(bytes).map_err(|e| Error::Serialization(e.to_string()))?;

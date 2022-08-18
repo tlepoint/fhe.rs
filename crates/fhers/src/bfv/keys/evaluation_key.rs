@@ -10,7 +10,7 @@ use crate::bfv::{
 	BfvParameters, Ciphertext,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeUsingParameters, Serialize};
+use fhers_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use math::zq::Modulus;
 use protobuf::{Message, MessageField};
@@ -252,6 +252,10 @@ impl EvaluationKey {
 	}
 }
 
+impl FheParametrized for EvaluationKey {
+	type Parameters = BfvParameters;
+}
+
 impl Serialize for EvaluationKey {
 	fn to_bytes(&self) -> Vec<u8> {
 		// TODO: Consume
@@ -260,10 +264,8 @@ impl Serialize for EvaluationKey {
 	}
 }
 
-impl DeserializeUsingParameters for EvaluationKey {
+impl DeserializeParametrized for EvaluationKey {
 	type Error = Error;
-
-	type Parameters = BfvParameters;
 
 	fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
 		let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
@@ -492,7 +494,7 @@ mod tests {
 		Encoding, Plaintext, SecretKey,
 	};
 	use fhers_traits::{
-		DeserializeUsingParameters, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+		DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 	};
 	use itertools::izip;
 	use std::{error::Error, sync::Arc};

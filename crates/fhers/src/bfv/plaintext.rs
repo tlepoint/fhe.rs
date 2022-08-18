@@ -1,7 +1,7 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::bfv::{BfvParameters, Encoding};
 use crate::{Error, Result};
-use fhers_traits::{FheDecoder, FheEncoder, FhePlaintext};
+use fhers_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
@@ -20,9 +20,12 @@ pub struct Plaintext {
 	pub(crate) poly_ntt: Poly,
 }
 
+impl FheParametrized for Plaintext {
+	type Parameters = BfvParameters;
+}
+
 impl FhePlaintext for Plaintext {
 	type Encoding = Encoding;
-	type Parameters = BfvParameters;
 }
 
 // Zeroizing of plaintexts.
@@ -41,6 +44,9 @@ pub struct VecPlaintext(pub Vec<Plaintext>);
 
 impl FhePlaintext for VecPlaintext {
 	type Encoding = Encoding;
+}
+
+impl FheParametrized for VecPlaintext {
 	type Parameters = BfvParameters;
 }
 

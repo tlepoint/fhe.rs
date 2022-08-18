@@ -7,7 +7,9 @@ use crate::bfv::{
 	EvaluationKey, Plaintext,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeUsingParameters, FheCiphertext, Serialize};
+use fhers_traits::{
+	DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
+};
 use itertools::{izip, Itertools};
 use math::rq::{dot_product as poly_dot_product, Poly, Representation};
 use num_bigint::BigUint;
@@ -33,7 +35,9 @@ pub struct Ciphertext {
 	pub(crate) c: Vec<Poly>,
 }
 
-impl FheCiphertext for Ciphertext {
+impl FheCiphertext for Ciphertext {}
+
+impl FheParametrized for Ciphertext {
 	type Parameters = BfvParameters;
 }
 
@@ -44,7 +48,7 @@ impl Serialize for Ciphertext {
 	}
 }
 
-impl DeserializeUsingParameters for Ciphertext {
+impl DeserializeParametrized for Ciphertext {
 	// TODO: To test
 	fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
 		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
@@ -57,8 +61,6 @@ impl DeserializeUsingParameters for Ciphertext {
 	}
 
 	type Error = Error;
-
-	type Parameters = BfvParameters;
 }
 
 impl Ciphertext {

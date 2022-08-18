@@ -2,6 +2,7 @@
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
 use crate::{Error, Result};
+use fhers_traits::{FheParametersSwitchable, FheParametrized};
 use itertools::Itertools;
 use math::{
 	rns::ScalingFactor,
@@ -15,6 +16,10 @@ pub struct BfvParametersSwitcher {
 	pub(crate) from: Arc<BfvParameters>,
 	pub(crate) to: Arc<BfvParameters>,
 	scaler: Scaler,
+}
+
+impl FheParametrized for BfvParametersSwitcher {
+	type Parameters = BfvParameters;
 }
 
 impl BfvParametersSwitcher {
@@ -32,13 +37,7 @@ impl BfvParametersSwitcher {
 	}
 }
 
-/// Indicate that the [`BfvParameters`] of Self can be switched.
-pub trait ParametersSwitchable {
-	/// Switch the underlying [`BfvParameters`]
-	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()>;
-}
-
-impl ParametersSwitchable for Ciphertext {
+impl FheParametersSwitchable<BfvParametersSwitcher> for Ciphertext {
 	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
 			Err(Error::DefaultError("Mismatched parameters".to_string()))
@@ -53,9 +52,11 @@ impl ParametersSwitchable for Ciphertext {
 			Ok(())
 		}
 	}
+
+	type Error = Error;
 }
 
-impl ParametersSwitchable for SecretKey {
+impl FheParametersSwitchable<BfvParametersSwitcher> for SecretKey {
 	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
 			Err(Error::DefaultError("Mismatched parameters".to_string()))
@@ -66,9 +67,11 @@ impl ParametersSwitchable for SecretKey {
 			Ok(())
 		}
 	}
+
+	type Error = Error;
 }
 
-impl ParametersSwitchable for Plaintext {
+impl FheParametersSwitchable<BfvParametersSwitcher> for Plaintext {
 	fn switch_parameters(&mut self, switcher: &BfvParametersSwitcher) -> Result<()> {
 		if self.par != switcher.from {
 			Err(Error::DefaultError("Mismatched parameters".to_string()))
@@ -84,13 +87,16 @@ impl ParametersSwitchable for Plaintext {
 			Ok(())
 		}
 	}
+	type Error = Error;
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{BfvParametersSwitcher, ParametersSwitchable};
+	use super::BfvParametersSwitcher;
 	use crate::bfv::{BfvParameters, Encoding, Plaintext, SecretKey};
-	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+	use fhers_traits::{
+		FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, FheParametersSwitchable,
+	};
 	use std::{error::Error, sync::Arc};
 
 	#[test]

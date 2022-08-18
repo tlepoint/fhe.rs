@@ -2,9 +2,10 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use fhers::bfv::{self, ParametersSwitchable};
+use fhers::bfv;
 use fhers_traits::{
-	DeserializeUsingParameters, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter,
+	FheParametersSwitchable, Serialize,
 };
 use indicatif::HumanBytes;
 use itertools::izip;

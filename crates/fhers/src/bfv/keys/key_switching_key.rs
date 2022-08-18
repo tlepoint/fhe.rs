@@ -5,7 +5,7 @@ use crate::bfv::{
 	traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeUsingParameters, Serialize};
+use fhers_traits::{DeserializeWithContext, Serialize};
 use itertools::izip;
 use math::{
 	rns::RnsContext,

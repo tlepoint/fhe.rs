@@ -2,7 +2,7 @@
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
-use fhers_traits::{FheDecrypter, FheEncrypter};
+use fhers_traits::{FheDecrypter, FheEncrypter, FheParametrized};
 use itertools::Itertools;
 use math::{
 	rq::{traits::TryConvertFrom, Poly, Representation},
@@ -103,9 +103,12 @@ impl SecretKey {
 	}
 }
 
+impl FheParametrized for SecretKey {
+	type Parameters = BfvParameters;
+}
+
 impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 	type Error = Error;
-	type Parameters = BfvParameters;
 
 	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
@@ -142,7 +145,6 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 
 impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 	type Error = Error;
-	type Parameters = BfvParameters;
 
 	fn try_decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext> {
 		if self.par != ct.par {
