@@ -5,7 +5,7 @@ use crate::bfv::{
 	traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeWithContext, Serialize};
+use fhers_traits::{DeserializeUsingParameters, Serialize};
 use itertools::izip;
 use math::{
 	rns::RnsContext,
@@ -131,7 +131,7 @@ impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
 		let mut ksk = KeySwitchingKeyProto::new();
 		ksk.seed = value.seed.to_vec();
 		for c0 in &value.c0 {
-			ksk.c0.push(c0.serialize())
+			ksk.c0.push(c0.to_bytes())
 		}
 		ksk
 	}
@@ -151,7 +151,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 		let c1 = Self::generate_c1(par, seed, par.ciphertext_moduli.len());
 		let mut c0 = Vec::with_capacity(par.ciphertext_moduli.len());
 		for c0i in &value.c0 {
-			c0.push(Poly::try_deserialize(c0i, &par.ctx)?)
+			c0.push(Poly::from_bytes(c0i, &par.ctx)?)
 		}
 
 		Ok(Self {

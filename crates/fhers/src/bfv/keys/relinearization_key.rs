@@ -98,10 +98,10 @@ impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
 mod tests {
 	use super::RelinearizationKey;
 	use crate::bfv::{
-		proto::bfv::RelinearizationKey as RelinearizationKeyProto,
-		traits::{Decoder, Decryptor, TryConvertFrom},
+		proto::bfv::RelinearizationKey as RelinearizationKeyProto, traits::TryConvertFrom,
 		BfvParameters, Ciphertext, Encoding, SecretKey,
 	};
+	use fhers_traits::{FheDecoder, FheDecrypter};
 	use math::rq::{Poly, Representation};
 	use std::{error::Error, sync::Arc};
 
@@ -144,7 +144,7 @@ mod tests {
 
 				// Print the noise and decrypt
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
-				let pt = sk.decrypt(&ct_relinearized)?;
+				let pt = sk.try_decrypt(&ct_relinearized)?;
 				assert!(Vec::<u64>::try_decode(&pt, Encoding::Poly).is_ok_and(|v| v == &[0u64; 8]))
 			}
 		}

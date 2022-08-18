@@ -7,7 +7,7 @@ use crate::bfv::{
 	EvaluationKey, Plaintext,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeWithContext, Serialize};
+use fhers_traits::{DeserializeUsingParameters, FheCiphertext, Serialize};
 use itertools::{izip, Itertools};
 use math::rq::{dot_product as poly_dot_product, Poly, Representation};
 use num_bigint::BigUint;
@@ -31,6 +31,34 @@ pub struct Ciphertext {
 
 	/// The ciphertext elements.
 	pub(crate) c: Vec<Poly>,
+}
+
+impl FheCiphertext for Ciphertext {
+	type Parameters = BfvParameters;
+}
+
+impl Serialize for Ciphertext {
+	// TODO: To test
+	fn to_bytes(&self) -> Vec<u8> {
+		CiphertextProto::from(self).write_to_bytes().unwrap()
+	}
+}
+
+impl DeserializeUsingParameters for Ciphertext {
+	// TODO: To test
+	fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
+		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
+			Ciphertext::try_convert_from(&ctp, par)
+		} else {
+			Err(Error::DefaultError(
+				"This serialization is incorrect".to_string(),
+			))
+		}
+	}
+
+	type Error = Error;
+
+	type Parameters = BfvParameters;
 }
 
 impl Ciphertext {
@@ -326,12 +354,12 @@ impl From<&Ciphertext> for CiphertextProto {
 	fn from(ct: &Ciphertext) -> Self {
 		let mut proto = CiphertextProto::new();
 		for i in 0..ct.c.len() - 1 {
-			proto.c.push(ct.c[i].serialize())
+			proto.c.push(ct.c[i].to_bytes())
 		}
 		if let Some(seed) = ct.seed {
 			proto.seed = seed.to_vec()
 		} else {
-			proto.c.push(ct.c[ct.c.len() - 1].serialize())
+			proto.c.push(ct.c[ct.c.len() - 1].to_bytes())
 		}
 		proto
 	}
@@ -347,7 +375,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			c.push(Poly::try_deserialize(cip, &par.ctx)?)
+			c.push(Poly::from_bytes(cip, &par.ctx)?)
 		}
 
 		if !value.seed.is_empty() {
@@ -369,34 +397,14 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 	}
 }
 
-impl Serialize for Ciphertext {
-	fn serialize(&self) -> Vec<u8> {
-		CiphertextProto::from(self).write_to_bytes().unwrap()
-	}
-}
-
-impl DeserializeWithContext<&Arc<BfvParameters>> for Ciphertext {
-	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
-		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
-			Ciphertext::try_convert_from(&ctp, par)
-		} else {
-			Err(Error::DefaultError(
-				"This serialization is incorrect".to_string(),
-			))
-		}
-	}
-
-	type Error = Error;
-}
-
 #[cfg(test)]
 mod tests {
 	use super::{dot_product_scalar, mul, mul2};
 	use crate::bfv::{
-		proto::bfv::Ciphertext as CiphertextProto,
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
-		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
+		proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom, BfvParameters,
+		Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
+	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use itertools::{izip, Itertools};
 	use std::{error::Error, sync::Arc};
 
@@ -421,14 +429,14 @@ mod tests {
 					let pt_b =
 						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
-					let mut ct_a = sk.encrypt(&pt_a).unwrap();
-					let ct_b = sk.encrypt(&pt_b).unwrap();
+					let mut ct_a = sk.try_encrypt(&pt_a).unwrap();
+					let ct_b = sk.try_encrypt(&pt_b).unwrap();
 					let ct_c = &ct_a + &ct_b;
 					ct_a += &ct_b;
 
-					let pt_c = sk.decrypt(&ct_c).unwrap();
+					let pt_c = sk.try_decrypt(&ct_c).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
-					let pt_c = sk.decrypt(&ct_a).unwrap();
+					let pt_c = sk.try_decrypt(&ct_a).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
 				}
 			}
@@ -456,14 +464,14 @@ mod tests {
 					let pt_b =
 						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
-					let mut ct_a = sk.encrypt(&pt_a).unwrap();
-					let ct_b = sk.encrypt(&pt_b).unwrap();
+					let mut ct_a = sk.try_encrypt(&pt_a).unwrap();
+					let ct_b = sk.try_encrypt(&pt_b).unwrap();
 					let ct_c = &ct_a - &ct_b;
 					ct_a -= &ct_b;
 
-					let pt_c = sk.decrypt(&ct_c).unwrap();
+					let pt_c = sk.try_decrypt(&ct_c).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
-					let pt_c = sk.decrypt(&ct_a).unwrap();
+					let pt_c = sk.try_decrypt(&ct_a).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
 				}
 			}
@@ -487,10 +495,10 @@ mod tests {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 
-					let ct_a = sk.encrypt(&pt_a).unwrap();
+					let ct_a = sk.try_encrypt(&pt_a).unwrap();
 					let ct_c = -&ct_a;
 
-					let pt_c = sk.decrypt(&ct_c).unwrap();
+					let pt_c = sk.try_decrypt(&ct_c).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
 				}
 			}
@@ -539,13 +547,13 @@ mod tests {
 					let pt_b =
 						Plaintext::try_encode(&b as &[u64], encoding.clone(), &params).unwrap();
 
-					let mut ct_a = sk.encrypt(&pt_a).unwrap();
+					let mut ct_a = sk.try_encrypt(&pt_a).unwrap();
 					let ct_c = &ct_a * &pt_b;
 					ct_a *= &pt_b;
 
-					let pt_c = sk.decrypt(&ct_c).unwrap();
+					let pt_c = sk.try_decrypt(&ct_c).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
-					let pt_c = sk.decrypt(&ct_a).unwrap();
+					let pt_c = sk.try_decrypt(&ct_a).unwrap();
 					assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone()).unwrap(), c);
 				}
 			}
@@ -565,19 +573,19 @@ mod tests {
 			let mut sk = SecretKey::random(&par);
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
-			let ct1 = sk.encrypt(&pt)?;
-			let ct2 = sk.encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = sk.try_encrypt(&pt)?;
 			let ct3 = &ct1 * &ct2;
 			let ct4 = &ct3 * &ct3;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
-			let pt = sk.decrypt(&ct3)?;
+			let pt = sk.try_decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 
 			let e = expected.clone();
 			par.plaintext.mul_vec(&mut expected, &e);
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
-			let pt = sk.decrypt(&ct4)?;
+			let pt = sk.try_decrypt(&ct4)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
 		Ok(())
@@ -599,12 +607,12 @@ mod tests {
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
-			let ct1 = sk.encrypt(&pt)?;
-			let ct2 = sk.encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = sk.try_encrypt(&pt)?;
 			let ct3 = mul(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
-			let pt = sk.decrypt(&ct3)?;
+			let pt = sk.try_decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
 		Ok(())
@@ -627,12 +635,12 @@ mod tests {
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
 
-			let ct1 = sk.encrypt(&pt)?;
-			let ct2 = sk.encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = sk.try_encrypt(&pt)?;
 			let ct3 = mul2(&ct1, &ct2, &ek)?;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
-			let pt = sk.decrypt(&ct3)?;
+			let pt = sk.try_decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
 		}
 		Ok(())
@@ -647,7 +655,7 @@ mod tests {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-			let ct = sk.encrypt(&pt)?;
+			let ct = sk.try_encrypt(&pt)?;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
 
@@ -671,7 +679,7 @@ mod tests {
 						let v = params.plaintext.random_vec(params.degree());
 						let pt =
 							Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params).unwrap();
-						sk.encrypt(&pt).unwrap()
+						sk.try_encrypt(&pt).unwrap()
 					})
 					.collect_vec();
 				let pt = (0..size)

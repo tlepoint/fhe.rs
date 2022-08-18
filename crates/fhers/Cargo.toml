@@ -27,10 +27,14 @@ thiserror = "1.0.32"
 
 
 [dev-dependencies]
-utilities = { version = "0.0.1", path = "utilities" }
+utilities = { version = "0.0.1", path = "examples/utilities" }
 
 criterion = "0.3.6"
 indicatif = "0.17.0"
 itertools = "0.10.3"
 ndarray = "0.15.6"
 rand = "0.8.5"
+
+[[bench]]
+name = "bfv"
+harness = false

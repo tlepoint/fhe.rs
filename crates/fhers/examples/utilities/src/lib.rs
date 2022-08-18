@@ -3,7 +3,8 @@
 
 //! Utility functions for the examples
 
-use fhers::bfv::{traits::Encoder, BfvParameters, Encoding, Plaintext};
+use fhers::bfv::{BfvParameters, Encoding, Plaintext};
+use fhers_traits::FheEncoder;
 use ndarray::Array2;
 use std::{fmt, sync::Arc, time::Duration};
 use util::transcode_backward;
