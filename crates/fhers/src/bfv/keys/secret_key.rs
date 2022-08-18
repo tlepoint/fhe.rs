@@ -66,7 +66,7 @@ impl SecretKey {
 	/// noise.
 	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize> {
 		let plaintext = self.try_decrypt(ct)?;
-		let mut m = plaintext.encode()?;
+		let mut m = plaintext.to_poly()?;
 
 		// Let's disable variable time computations
 		let mut c = ct.c[0].clone();
@@ -119,7 +119,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 		let mut b = Poly::small(&self.par.ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
 
-		let mut m = pt.encode()?;
+		let mut m = pt.to_poly()?;
 		b += &m;
 
 		// Zeroize the temporary variables holding sensitive information.

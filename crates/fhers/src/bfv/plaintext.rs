@@ -1,41 +1,14 @@
 //! Plaintext type in the BFV encryption scheme.
-use crate::bfv::BfvParameters;
+use crate::bfv::{BfvParameters, Encoding};
 use crate::{Error, Result};
-use fhers_traits::{FheDecoder, FheEncoder, FhePlaintext, FhePlaintextEncoding};
+use fhers_traits::{FheDecoder, FheEncoder, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// An encoding for the plaintext.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Encoding {
-	/// A Poly encoding encodes a vector as coefficients of a polynomial;
-	/// homomorphic operations are therefore polynomial operations.
-	Poly,
-	/// A Simd encoding encodes a vector so that homomorphic operations are
-	/// component-wise operations on the coefficients of the underlying vectors.
-	/// The Simd encoding require that the plaintext modulus is congruent to 1
-	/// modulo the degree of the underlying polynomial.
-	Simd,
-}
-
-impl From<Encoding> for String {
-	fn from(e: Encoding) -> Self {
-		String::from(&e)
-	}
-}
-
-impl From<&Encoding> for String {
-	fn from(e: &Encoding) -> Self {
-		format!("{:?}", e)
-	}
-}
-
-impl FhePlaintextEncoding for Encoding {}
-
 /// A plaintext object, that encodes a vector according to a specific encoding.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Arc<BfvParameters>,
@@ -52,6 +25,16 @@ impl FhePlaintext for Plaintext {
 	type Parameters = BfvParameters;
 }
 
+// Zeroizing of plaintexts.
+impl ZeroizeOnDrop for Plaintext {}
+
+impl Zeroize for Plaintext {
+	fn zeroize(&mut self) {
+		self.value.zeroize();
+		self.poly_ntt.zeroize();
+	}
+}
+
 /// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
 /// trait, and therefore can potentially be encoded to / decoded from.
 pub struct VecPlaintext(pub Vec<Plaintext>);
@@ -61,8 +44,16 @@ impl FhePlaintext for VecPlaintext {
 	type Parameters = BfvParameters;
 }
 
+impl Zeroize for VecPlaintext {
+	fn zeroize(&mut self) {
+		self.0.zeroize()
+	}
+}
+
+impl ZeroizeOnDrop for VecPlaintext {}
+
 impl Plaintext {
-	pub(crate) fn encode(&self) -> Result<Poly> {
+	pub(crate) fn to_poly(&self) -> Result<Poly> {
 		let mut m_v = self.value.clone();
 		self.par
 			.plaintext
@@ -89,18 +80,18 @@ impl Plaintext {
 
 unsafe impl Send for Plaintext {}
 
-// Equality.
+// Implement the equality manually; we want to say that two plaintexts are equal
+// even if one of them doesn't store its encoding information.
 impl PartialEq for Plaintext {
 	fn eq(&self, other: &Self) -> bool {
-		let mut eq = self.par == other.par && self.value == other.value;
+		let mut eq = self.par == other.par;
+		eq &= self.value == other.value;
 		if self.encoding.is_some() && other.encoding.is_some() {
 			eq &= self.encoding.as_ref().unwrap() == other.encoding.as_ref().unwrap()
 		}
 		eq
 	}
 }
-
-impl Eq for Plaintext {}
 
 // Conversions.
 impl TryConvertFrom<&Plaintext> for Poly {
@@ -125,16 +116,6 @@ impl TryConvertFrom<&Plaintext> for Poly {
 		}
 	}
 }
-
-// Zeroizing of plaintexts.
-
-impl Zeroize for Plaintext {
-	fn zeroize(&mut self) {
-		self.value.zeroize()
-	}
-}
-
-impl ZeroizeOnDrop for Plaintext {}
 
 // Encoding and decoding.
 
