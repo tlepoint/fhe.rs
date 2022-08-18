@@ -99,9 +99,10 @@ mod tests {
 	use super::RelinearizationKey;
 	use crate::bfv::{
 		proto::bfv::RelinearizationKey as RelinearizationKeyProto,
-		traits::{Decoder, Decryptor, TryConvertFrom},
+		traits::{Decryptor, TryConvertFrom},
 		BfvParameters, Ciphertext, Encoding, SecretKey,
 	};
+	use fhers_traits::FheDecoder;
 	use math::rq::{Poly, Representation};
 	use std::{error::Error, sync::Arc};
 

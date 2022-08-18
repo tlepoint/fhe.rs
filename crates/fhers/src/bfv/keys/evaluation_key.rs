@@ -485,10 +485,10 @@ mod tests {
 	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::bfv::{
 		proto::bfv::EvaluationKey as EvaluationKeyProto,
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		traits::{Decryptor, Encryptor, TryConvertFrom},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
-	use fhers_traits::{DeserializeWithContext, Serialize};
+	use fhers_traits::{DeserializeWithContext, FheDecoder, FheEncoder, Serialize};
 	use itertools::izip;
 	use std::{error::Error, sync::Arc};
 

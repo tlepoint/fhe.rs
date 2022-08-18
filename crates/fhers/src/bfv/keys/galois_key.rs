@@ -90,9 +90,10 @@ mod tests {
 	use super::GaloisKey;
 	use crate::bfv::{
 		proto::bfv::GaloisKey as GaloisKeyProto,
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		traits::{Decryptor, Encryptor, TryConvertFrom},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
+	use fhers_traits::{FheDecoder, FheEncoder};
 	use std::{error::Error, sync::Arc};
 
 	#[test]

@@ -3,7 +3,8 @@
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
 use fhers::bfv::{self, traits::*, ParametersSwitchable};
-use fhers_traits::{DeserializeWithContext, Serialize};
+use fhers_traits::FheEncoder;
+use fhers_traits::{DeserializeWithContext, FheDecoder, Serialize};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;

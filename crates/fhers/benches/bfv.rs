@@ -2,10 +2,10 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	dot_product_scalar, mul, mul2,
-	traits::{Encoder, Encryptor},
-	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
+	dot_product_scalar, mul, mul2, traits::Encryptor, BfvParameters, BfvParametersBuilder,
+	Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 };
+use fhers_traits::FheEncoder;
 use itertools::{izip, Itertools};
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
@@ -25,8 +25,8 @@ fn params() -> Result<Vec<Arc<BfvParameters>>, Box<dyn Error>> {
 	Ok(vec![Arc::new(par_small), Arc::new(par_large)])
 }
 
-pub fn ops_benchmark(c: &mut Criterion) {
-	let mut group = c.benchmark_group("ops");
+pub fn bfv_benchmark(c: &mut Criterion) {
+	let mut group = c.benchmark_group("bfv");
 	group.sample_size(10);
 	group.warm_up_time(Duration::from_secs(1));
 	group.measurement_time(Duration::from_secs(1));
@@ -276,5 +276,5 @@ pub fn ops_benchmark(c: &mut Criterion) {
 	group.finish();
 }
 
-criterion_group!(ops, ops_benchmark);
-criterion_main!(ops);
+criterion_group!(bfv, bfv_benchmark);
+criterion_main!(bfv);

@@ -90,9 +90,10 @@ impl ParametersSwitchable for Plaintext {
 mod tests {
 	use super::{BfvParametersSwitcher, ParametersSwitchable};
 	use crate::bfv::{
-		traits::{Decoder, Decryptor, Encoder, Encryptor},
+		traits::{Decryptor, Encryptor},
 		BfvParameters, Encoding, Plaintext, SecretKey,
 	};
+	use fhers_traits::{FheDecoder, FheEncoder};
 	use std::{error::Error, sync::Arc};
 
 	#[test]

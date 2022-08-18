@@ -394,9 +394,10 @@ mod tests {
 	use super::{dot_product_scalar, mul, mul2};
 	use crate::bfv::{
 		proto::bfv::Ciphertext as CiphertextProto,
-		traits::{Decoder, Decryptor, Encoder, Encryptor, TryConvertFrom},
+		traits::{Decryptor, Encryptor, TryConvertFrom},
 		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 	};
+	use fhers_traits::{FheDecoder, FheEncoder};
 	use itertools::{izip, Itertools};
 	use std::{error::Error, sync::Arc};
 

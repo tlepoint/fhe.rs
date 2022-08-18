@@ -1,9 +1,7 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::bfv::BfvParameters;
-use crate::{
-	bfv::traits::{Decoder, Encoder},
-	Error, Result,
-};
+use crate::{Error, Result};
+use fhers_traits::{FheDecoder, FheEncoder, FhePlaintext, FhePlaintextEncoding};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
@@ -22,6 +20,8 @@ pub enum Encoding {
 	Simd,
 }
 
+impl FhePlaintextEncoding for Encoding {}
+
 /// A plaintext object, that encodes a vector according to a specific encoding.
 #[derive(Debug, Clone)]
 pub struct Plaintext {
@@ -34,6 +34,14 @@ pub struct Plaintext {
 	/// The plaintext as a polynomial.
 	pub(crate) poly_ntt: Poly,
 }
+
+impl FhePlaintext for Plaintext {}
+
+/// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
+/// trait, and therefore can potentially be encoded to / decoded from.
+pub struct VecPlaintext(pub Vec<Plaintext>);
+
+impl FhePlaintext for VecPlaintext {}
 
 impl Plaintext {
 	pub(crate) fn encode(&self) -> Result<Poly> {
@@ -112,20 +120,22 @@ impl ZeroizeOnDrop for Plaintext {}
 
 // Encoding and decoding.
 
-impl Encoder<&[u64]> for Plaintext {
+impl FheEncoder<&[u64], Encoding, BfvParameters> for Plaintext {
+	type Error = Error;
 	fn try_encode(value: &[u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		if value.len() > par.degree() {
 			return Err(Error::TooManyValues(value.len(), par.degree()));
 		}
-		let v = Vec::<Plaintext>::try_encode(value, encoding, par)?;
-		Ok(v[0].clone())
+		let v = VecPlaintext::try_encode(value, encoding, par)?;
+		Ok(v.0[0].clone())
 	}
 }
 
-impl Encoder<&[u64]> for Vec<Plaintext> {
+impl FheEncoder<&[u64], Encoding, BfvParameters> for VecPlaintext {
+	type Error = Error;
 	fn try_encode(value: &[u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		if value.is_empty() {
-			return Ok(vec![Plaintext::zero(encoding, par)]);
+			return Ok(VecPlaintext(vec![Plaintext::zero(encoding, par)]));
 		}
 		let encoding = &encoding;
 
@@ -162,55 +172,24 @@ impl Encoder<&[u64]> for Vec<Plaintext> {
 				poly_ntt: poly,
 			})
 		}
-		Ok(out)
+		Ok(VecPlaintext(out))
 	}
 }
 
-impl Encoder<&[i64]> for Plaintext {
+impl FheEncoder<&[i64], Encoding, BfvParameters> for Plaintext {
+	type Error = Error;
 	fn try_encode(value: &[i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-		if value.len() > par.degree() {
-			return Err(Error::TooManyValues(value.len(), par.degree()));
-		}
-		let mut v = vec![0u64; par.degree()];
-
-		if !value.is_empty() {
-			let mut value_u64 = par.plaintext.reduce_vec_i64(value);
-			match encoding {
-				Encoding::Poly => v[..value_u64.len()].copy_from_slice(&value_u64),
-				Encoding::Simd => {
-					if let Some(op) = &par.op {
-						for i in 0..value_u64.len() {
-							v[par.matrix_reps_index_map[i]] = value_u64[i];
-						}
-						op.backward(&mut v);
-					} else {
-						return Err(Error::SimdUnsupported);
-					}
-				}
-			}
-			value_u64.zeroize()
-		}
-
-		let mut w = unsafe { par.plaintext.center_vec_vt(&v) };
-		let mut poly =
-			Poly::try_convert_from(&w as &[i64], &par.ctx, false, Representation::PowerBasis)
-				.map_err(Error::MathError)?;
-		poly.change_representation(Representation::Ntt);
+		let mut w = par.plaintext.reduce_vec_i64(value);
+		let r = Plaintext::try_encode(&w as &[u64], encoding, par);
 		w.zeroize();
-
-		Ok(Self {
-			par: par.clone(),
-			value: v,
-			encoding: Some(encoding),
-			poly_ntt: poly,
-		})
+		r
 	}
 }
 
-impl Decoder for Vec<u64> {
-	fn try_decode<E>(pt: &Plaintext, encoding: E) -> Result<Vec<u64>>
+impl FheDecoder<Encoding, Plaintext> for Vec<u64> {
+	fn try_decode<O>(pt: &Plaintext, encoding: O) -> Result<Vec<u64>>
 	where
-		E: Into<Option<Encoding>>,
+		O: Into<Option<Encoding>>,
 	{
 		let encoding = encoding.into();
 		let enc: Encoding;
@@ -247,9 +226,11 @@ impl Decoder for Vec<u64> {
 			}
 		}
 	}
+
+	type Error = Error;
 }
 
-impl Decoder for Vec<i64> {
+impl FheDecoder<Encoding, Plaintext> for Vec<i64> {
 	fn try_decode<E>(pt: &Plaintext, encoding: E) -> Result<Vec<i64>>
 	where
 		E: Into<Option<Encoding>>,
@@ -257,6 +238,8 @@ impl Decoder for Vec<i64> {
 		let v = Vec::<u64>::try_decode(pt, encoding)?;
 		Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
 	}
+
+	type Error = Error;
 }
 
 #[cfg(test)]
@@ -264,8 +247,9 @@ mod tests {
 	use super::{Encoding, Plaintext};
 	use crate::bfv::{
 		parameters::{BfvParameters, BfvParametersBuilder},
-		traits::{Decoder, Encoder},
+		VecPlaintext,
 	};
+	use fhers_traits::{FheDecoder, FheEncoder};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
@@ -313,13 +297,12 @@ mod tests {
 				let params = Arc::new(BfvParameters::default(1));
 				let a = params.plaintext.random_vec(params.degree() * i);
 
-				let plaintexts =
-					Vec::<Plaintext>::try_encode(&a as &[u64], Encoding::Poly, &params);
+				let plaintexts = VecPlaintext::try_encode(&a as &[u64], Encoding::Poly, &params);
 				assert!(plaintexts.is_ok());
 				let plaintexts = plaintexts.unwrap();
-				assert_eq!(plaintexts.len(), i);
+				assert_eq!(plaintexts.0.len(), i);
 				for j in 0..i {
-					let b = Vec::<u64>::try_decode(&plaintexts[j], Encoding::Poly);
+					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::Poly);
 					assert!(
 						b.is_ok_and(|b| b == &a[j * params.degree()..(j + 1) * params.degree()])
 					);

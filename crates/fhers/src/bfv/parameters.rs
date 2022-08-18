@@ -2,7 +2,7 @@
 
 use crate::bfv::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
-use fhers_traits::{Deserialize, Serialize};
+use fhers_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;
 use math::{
 	rns::{RnsContext, ScalingFactor},
@@ -60,6 +60,8 @@ pub struct BfvParameters {
 
 	pub(crate) matrix_reps_index_map: Vec<usize>,
 }
+
+impl FheParameters for BfvParameters {}
 
 unsafe impl Send for BfvParameters {}
 

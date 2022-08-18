@@ -205,9 +205,10 @@ mod tests {
 	use super::SecretKey;
 	use crate::bfv::{
 		parameters::BfvParameters,
-		traits::{Decryptor, Encoder, Encryptor},
+		traits::{Decryptor, Encryptor},
 		Encoding, Plaintext,
 	};
+	use fhers_traits::FheEncoder;
 	use math::rq::Representation;
 	use std::{error::Error, sync::Arc};
 

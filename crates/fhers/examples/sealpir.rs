@@ -4,6 +4,7 @@
 
 use fhers::bfv::{self, traits::*, ParametersSwitchable};
 use fhers_traits::{DeserializeWithContext, Serialize};
+use fhers_traits::{FheDecoder, FheEncoder};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use ndarray::Axis;
@@ -119,12 +120,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 				let c_serialized = c.serialize();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
-				Vec::<bfv::Plaintext>::try_encode(
-					&pt_values as &[u64],
-					bfv::Encoding::Poly,
-					&params[1],
-				)
-				.unwrap()
+				bfv::VecPlaintext::try_encode(&pt_values as &[u64], bfv::Encoding::Poly, &params[1])
+					.unwrap()
+					.0
 			})
 			.collect_vec();
 		(0..fold[0].len())
