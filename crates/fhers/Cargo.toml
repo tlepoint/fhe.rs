@@ -27,7 +27,7 @@ thiserror = "1.0.32"
 
 
 [dev-dependencies]
-utilities = { version = "0.0.1", path = "utilities" }
+utilities = { version = "0.0.1", path = "examples/utilities" }
 
 criterion = "0.3.6"
 indicatif = "0.17.0"

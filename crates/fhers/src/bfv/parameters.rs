@@ -333,7 +333,7 @@ impl BfvParametersBuilder {
 }
 
 impl Serialize for BfvParameters {
-	fn serialize(&self) -> Vec<u8> {
+	fn to_bytes(&self) -> Vec<u8> {
 		let mut params = Parameters::new();
 		params.degree = self.polynomial_degree as u32;
 		params.plaintext = self.plaintext_modulus;
@@ -531,7 +531,7 @@ mod tests {
 			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.set_variance(4)
 			.build()?;
-		let bytes = params.serialize();
+		let bytes = params.to_bytes();
 		assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
 		Ok(())
 	}

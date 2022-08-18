@@ -89,11 +89,10 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 mod tests {
 	use super::GaloisKey;
 	use crate::bfv::{
-		proto::bfv::GaloisKey as GaloisKeyProto,
-		traits::{Decryptor, Encryptor, TryConvertFrom},
-		BfvParameters, Encoding, Plaintext, SecretKey,
+		proto::bfv::GaloisKey as GaloisKeyProto, traits::TryConvertFrom, BfvParameters, Encoding,
+		Plaintext, SecretKey,
 	};
-	use fhers_traits::{FheDecoder, FheEncoder};
+	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
@@ -105,7 +104,7 @@ mod tests {
 				let row_size = params.degree() >> 1;
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-				let ct = sk.encrypt(&pt)?;
+				let ct = sk.try_encrypt(&pt)?;
 
 				for i in 1..16 {
 					if i & 1 == 0 {
@@ -116,7 +115,7 @@ mod tests {
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 
 						if i == 3 {
-							let pt = sk.decrypt(&ct2)?;
+							let pt = sk.try_decrypt(&ct2)?;
 
 							// The expected result is rotated one on the left
 							let mut expected = vec![0u64; params.degree()];
@@ -127,7 +126,7 @@ mod tests {
 							expected[2 * row_size - 1] = v[row_size];
 							assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::Simd)?, &expected)
 						} else if i == params.degree() * 2 - 1 {
-							let pt = sk.decrypt(&ct2)?;
+							let pt = sk.try_decrypt(&ct2)?;
 
 							// The expected result has its rows flipped
 							let mut expected = vec![0u64; params.degree()];

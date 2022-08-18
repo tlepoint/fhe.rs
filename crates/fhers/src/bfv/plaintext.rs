@@ -35,13 +35,19 @@ pub struct Plaintext {
 	pub(crate) poly_ntt: Poly,
 }
 
-impl FhePlaintext for Plaintext {}
+impl FhePlaintext for Plaintext {
+	type Encoding = Encoding;
+	type Parameters = BfvParameters;
+}
 
 /// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
 /// trait, and therefore can potentially be encoded to / decoded from.
 pub struct VecPlaintext(pub Vec<Plaintext>);
 
-impl FhePlaintext for VecPlaintext {}
+impl FhePlaintext for VecPlaintext {
+	type Encoding = Encoding;
+	type Parameters = BfvParameters;
+}
 
 impl Plaintext {
 	pub(crate) fn encode(&self) -> Result<Poly> {
@@ -120,7 +126,7 @@ impl ZeroizeOnDrop for Plaintext {}
 
 // Encoding and decoding.
 
-impl FheEncoder<&[u64], Encoding, BfvParameters> for Plaintext {
+impl FheEncoder<&[u64]> for Plaintext {
 	type Error = Error;
 	fn try_encode(value: &[u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		if value.len() > par.degree() {
@@ -131,7 +137,7 @@ impl FheEncoder<&[u64], Encoding, BfvParameters> for Plaintext {
 	}
 }
 
-impl FheEncoder<&[u64], Encoding, BfvParameters> for VecPlaintext {
+impl FheEncoder<&[u64]> for VecPlaintext {
 	type Error = Error;
 	fn try_encode(value: &[u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		if value.is_empty() {
@@ -176,7 +182,7 @@ impl FheEncoder<&[u64], Encoding, BfvParameters> for VecPlaintext {
 	}
 }
 
-impl FheEncoder<&[i64], Encoding, BfvParameters> for Plaintext {
+impl FheEncoder<&[i64]> for Plaintext {
 	type Error = Error;
 	fn try_encode(value: &[i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		let mut w = par.plaintext.reduce_vec_i64(value);
@@ -186,7 +192,7 @@ impl FheEncoder<&[i64], Encoding, BfvParameters> for Plaintext {
 	}
 }
 
-impl FheDecoder<Encoding, Plaintext> for Vec<u64> {
+impl FheDecoder<Plaintext> for Vec<u64> {
 	fn try_decode<O>(pt: &Plaintext, encoding: O) -> Result<Vec<u64>>
 	where
 		O: Into<Option<Encoding>>,
@@ -230,7 +236,7 @@ impl FheDecoder<Encoding, Plaintext> for Vec<u64> {
 	type Error = Error;
 }
 
-impl FheDecoder<Encoding, Plaintext> for Vec<i64> {
+impl FheDecoder<Plaintext> for Vec<i64> {
 	fn try_decode<E>(pt: &Plaintext, encoding: E) -> Result<Vec<i64>>
 	where
 		E: Into<Option<Encoding>>,

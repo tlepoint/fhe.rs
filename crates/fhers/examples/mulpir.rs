@@ -2,9 +2,10 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use fhers::bfv::{self, traits::*, ParametersSwitchable};
-use fhers_traits::FheEncoder;
-use fhers_traits::{DeserializeWithContext, FheDecoder, Serialize};
+use fhers::bfv::{self, ParametersSwitchable};
+use fhers_traits::{
+	DeserializeUsingParameters, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+};
 use indicatif::HumanBytes;
 use itertools::izip;
 use ndarray::Axis;
@@ -72,8 +73,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 				.enable_relinearization()?
 				.build()?;
 			sk.switch_parameters(&params_switchers[1])?;
-			let ek_expansion_serialized = ek_expansion.serialize();
-			let ek_relin_serialized = ek_relin.serialize();
+			let ek_expansion_serialized = ek_expansion.to_bytes();
+			let ek_relin_serialized = ek_relin.to_bytes();
 			(sk_encrypt, sk, ek_expansion_serialized, ek_relin_serialized)
 		});
 	println!(
@@ -88,8 +89,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server setup
 	let (ek_expansion, ek_relin) = timeit!("Server setup", {
 		(
-			bfv::EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?,
-			bfv::EvaluationKey::try_deserialize(&ek_relin_serialized, &params[1])?,
+			bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?,
+			bfv::EvaluationKey::from_bytes(&ek_relin_serialized, &params[1])?,
 		)
 	});
 
@@ -104,15 +105,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
 		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
-		let query = sk_encrypt.encrypt(&query_pt)?;
-		query.serialize()
+		let query = sk_encrypt.try_encrypt(&query_pt)?;
+		query.to_bytes()
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
 	// Server response
 	let response = timeit!("Server response", {
 		let start = std::time::Instant::now();
-		let query = bfv::Ciphertext::try_deserialize(&query, &params[0])?;
+		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
@@ -134,15 +135,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 		});
 		ek_relin.relinearizes(&mut out)?;
 		out.switch_parameters(&params_switchers[1])?;
-		out.serialize()
+		out.to_bytes()
 	});
 	println!("📄 Response: {}", HumanBytes(response.len() as u64));
 
 	// Client processing
 	let answer = timeit!("Client answer", {
-		let response = bfv::Ciphertext::try_deserialize(&response, &params[2]).unwrap();
+		let response = bfv::Ciphertext::from_bytes(&response, &params[2]).unwrap();
 
-		let pt = sk.decrypt(&response).unwrap();
+		let pt = sk.try_decrypt(&response).unwrap();
 		let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::Poly).unwrap();
 		let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 		let offset = index % number_elements_per_plaintext(params[2].clone(), elements_size);

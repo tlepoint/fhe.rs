@@ -1,20 +1,8 @@
 //! Traits used for the BFV homomorphic encryption scheme.
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
+use crate::bfv::BfvParameters;
 use crate::Result;
 use std::sync::Arc;
-
-/// Encrypt a [`Plaintext`] into a [`Ciphertext`].
-pub trait Encryptor {
-	/// Encrypt a [`Plaintext`].
-	fn encrypt(&self, plaintext: &Plaintext) -> Result<Ciphertext>;
-}
-
-/// Decrypt a [`Ciphertext`] into a [`Plaintext`].
-pub trait Decryptor {
-	/// Decrypt a [`Ciphertext`].
-	fn decrypt(&mut self, ciphertext: &Ciphertext) -> Result<Plaintext>;
-}
 
 /// Conversions.
 ///

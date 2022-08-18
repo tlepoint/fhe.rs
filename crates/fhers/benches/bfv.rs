@@ -2,10 +2,10 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	dot_product_scalar, mul, mul2, traits::Encryptor, BfvParameters, BfvParametersBuilder,
-	Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
+	dot_product_scalar, mul, mul2, BfvParameters, BfvParametersBuilder, Encoding,
+	EvaluationKeyBuilder, Plaintext, SecretKey,
 };
-use fhers_traits::FheEncoder;
+use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::{izip, Itertools};
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
@@ -49,8 +49,8 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.unwrap();
 		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::Poly, &par)
 			.unwrap();
-		let mut c1 = sk.encrypt(&pt1).unwrap();
-		let c2 = sk.encrypt(&pt2).unwrap();
+		let mut c1 = sk.try_encrypt(&pt1).unwrap();
+		let c2 = sk.try_encrypt(&pt2).unwrap();
 
 		let ct_vec = (0..128)
 			.map(|i| {
@@ -60,7 +60,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 					&par,
 				)
 				.unwrap();
-				sk.encrypt(&pt).unwrap()
+				sk.try_encrypt(&pt).unwrap()
 			})
 			.collect_vec();
 		let pt_vec = (0..128)

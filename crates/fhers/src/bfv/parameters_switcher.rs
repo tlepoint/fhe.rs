@@ -89,11 +89,8 @@ impl ParametersSwitchable for Plaintext {
 #[cfg(test)]
 mod tests {
 	use super::{BfvParametersSwitcher, ParametersSwitchable};
-	use crate::bfv::{
-		traits::{Decryptor, Encryptor},
-		BfvParameters, Encoding, Plaintext, SecretKey,
-	};
-	use fhers_traits::{FheDecoder, FheEncoder};
+	use crate::bfv::{BfvParameters, Encoding, Plaintext, SecretKey};
+	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
@@ -106,7 +103,7 @@ mod tests {
 		let v = from.plaintext.random_vec(from.degree());
 		let mut sk = SecretKey::random(&from);
 		let mut pt = Plaintext::try_encode(&v as &[u64], Encoding::Poly, &from)?;
-		let mut ct = sk.encrypt(&pt)?;
+		let mut ct = sk.try_encrypt(&pt)?;
 
 		sk.switch_parameters(&switcher)?;
 		ct.switch_parameters(&switcher)?;
@@ -117,7 +114,7 @@ mod tests {
 		assert_eq!(pt.par, to);
 
 		println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-		let pt_decrypted = sk.decrypt(&ct)?;
+		let pt_decrypted = sk.try_decrypt(&ct)?;
 		assert_eq!(pt, pt_decrypted);
 		assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Poly)?, v);
 

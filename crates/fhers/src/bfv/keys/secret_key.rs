@@ -1,10 +1,8 @@
 //! Secret keys for the BFV encryption scheme
 
-use crate::bfv::{
-	traits::{Decryptor, Encryptor},
-	BfvParameters, Ciphertext, Plaintext,
-};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
+use fhers_traits::{FheDecrypter, FheEncrypter};
 use itertools::Itertools;
 use math::{
 	rq::{traits::TryConvertFrom, Poly, Representation},
@@ -67,7 +65,7 @@ impl SecretKey {
 	/// This operations may run in a variable time depending on the value of the
 	/// noise.
 	pub unsafe fn measure_noise(&mut self, ct: &Ciphertext) -> Result<usize> {
-		let plaintext = self.decrypt(ct)?;
+		let plaintext = self.try_decrypt(ct)?;
 		let mut m = plaintext.encode()?;
 
 		// Let's disable variable time computations
@@ -105,8 +103,11 @@ impl SecretKey {
 	}
 }
 
-impl Encryptor for SecretKey {
-	fn encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
+impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
+	type Error = Error;
+	type Parameters = BfvParameters;
+
+	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
@@ -139,8 +140,11 @@ impl Encryptor for SecretKey {
 	}
 }
 
-impl Decryptor for SecretKey {
-	fn decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext> {
+impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
+	type Error = Error;
+	type Parameters = BfvParameters;
+
+	fn try_decrypt(&mut self, ct: &Ciphertext) -> Result<Plaintext> {
 		if self.par != ct.par {
 			Err(Error::DefaultError(
 				"Incompatible BFV parameters".to_string(),
@@ -203,12 +207,8 @@ impl Decryptor for SecretKey {
 #[cfg(test)]
 mod tests {
 	use super::SecretKey;
-	use crate::bfv::{
-		parameters::BfvParameters,
-		traits::{Decryptor, Encryptor},
-		Encoding, Plaintext,
-	};
-	use fhers_traits::FheEncoder;
+	use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext};
+	use fhers_traits::{FheDecrypter, FheEncoder, FheEncrypter};
 	use math::rq::Representation;
 	use std::{error::Error, sync::Arc};
 
@@ -244,8 +244,8 @@ mod tests {
 					Encoding::Poly,
 					&params,
 				)?;
-				let ct = sk.encrypt(&pt)?;
-				let pt2 = sk.decrypt(&ct);
+				let ct = sk.try_encrypt(&pt)?;
+				let pt2 = sk.try_decrypt(&ct);
 
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
 				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));

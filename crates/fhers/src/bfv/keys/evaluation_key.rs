@@ -10,7 +10,7 @@ use crate::bfv::{
 	BfvParameters, Ciphertext,
 };
 use crate::{Error, Result};
-use fhers_traits::{DeserializeWithContext, Serialize};
+use fhers_traits::{DeserializeUsingParameters, Serialize};
 use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use math::zq::Modulus;
 use protobuf::{Message, MessageField};
@@ -253,14 +253,19 @@ impl EvaluationKey {
 }
 
 impl Serialize for EvaluationKey {
-	fn serialize(&self) -> Vec<u8> {
+	fn to_bytes(&self) -> Vec<u8> {
+		// TODO: Consume
 		let ekp = EvaluationKeyProto::from(self);
 		ekp.write_to_bytes().unwrap()
 	}
 }
 
-impl DeserializeWithContext<&Arc<BfvParameters>> for EvaluationKey {
-	fn try_deserialize(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
+impl DeserializeUsingParameters for EvaluationKey {
+	type Error = Error;
+
+	type Parameters = BfvParameters;
+
+	fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
 		let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
 		if let Ok(gkp) = gkp {
 			EvaluationKey::try_convert_from(&gkp, par)
@@ -268,7 +273,6 @@ impl DeserializeWithContext<&Arc<BfvParameters>> for EvaluationKey {
 			Err(Error::DefaultError("Invalid serialization".to_string()))
 		}
 	}
-	type Error = Error;
 }
 
 /// Builder for an evaluation key from the secret key.
@@ -484,11 +488,12 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 mod tests {
 	use super::{EvaluationKey, EvaluationKeyBuilder};
 	use crate::bfv::{
-		proto::bfv::EvaluationKey as EvaluationKeyProto,
-		traits::{Decryptor, Encryptor, TryConvertFrom},
-		BfvParameters, Encoding, Plaintext, SecretKey,
+		proto::bfv::EvaluationKey as EvaluationKeyProto, traits::TryConvertFrom, BfvParameters,
+		Encoding, Plaintext, SecretKey,
 	};
-	use fhers_traits::{DeserializeWithContext, FheDecoder, FheEncoder, Serialize};
+	use fhers_traits::{
+		DeserializeUsingParameters, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+	};
 	use itertools::izip;
 	use std::{error::Error, sync::Arc};
 
@@ -561,10 +566,10 @@ mod tests {
 					.reduce_u128(v.iter().map(|vi| *vi as u128).sum());
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-				let ct = sk.encrypt(&pt)?;
+				let ct = sk.try_encrypt(&pt)?;
 
 				let ct2 = ek.computes_inner_sum(&ct)?;
-				let pt = sk.decrypt(&ct2)?;
+				let pt = sk.try_decrypt(&ct2)?;
 				assert_eq!(
 					Vec::<u64>::try_decode(&pt, Encoding::Simd)?,
 					vec![expected; params.degree()]
@@ -590,10 +595,10 @@ mod tests {
 				expected[row_size..].copy_from_slice(&v[..row_size]);
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-				let ct = sk.encrypt(&pt)?;
+				let ct = sk.try_encrypt(&pt)?;
 
 				let ct2 = ek.rotates_row(&ct)?;
-				let pt = sk.decrypt(&ct2)?;
+				let pt = sk.try_decrypt(&ct2)?;
 				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected)
 			}
 		}
@@ -620,10 +625,10 @@ mod tests {
 					expected[2 * row_size - i..].copy_from_slice(&v[row_size..row_size + i]);
 
 					let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
-					let ct = sk.encrypt(&pt)?;
+					let ct = sk.try_encrypt(&pt)?;
 
 					let ct2 = ek.rotates_column_by(&ct, i)?;
-					let pt = sk.decrypt(&ct2)?;
+					let pt = sk.try_decrypt(&ct2)?;
 					assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected)
 				}
 			}
@@ -646,14 +651,14 @@ mod tests {
 					assert!(!ek.supports_expansion(i + 1));
 					let v = params.plaintext.random_vec(1 << i);
 					let pt = Plaintext::try_encode(&v as &[u64], Encoding::Poly, &params)?;
-					let ct = sk.encrypt(&pt)?;
+					let ct = sk.try_encrypt(&pt)?;
 
 					let ct2 = ek.expands(&ct, i)?;
 					assert_eq!(ct2.len(), 1 << i);
 					for (vi, ct2i) in izip!(&v, &ct2) {
 						let mut expected = vec![0u64; params.degree()];
 						expected[0] = params.plaintext.mul(*vi, (1 << i) as u64);
-						let pt = sk.decrypt(ct2i)?;
+						let pt = sk.try_decrypt(ct2i)?;
 						assert_eq!(expected, Vec::<u64>::try_decode(&pt, Encoding::Poly)?);
 					}
 				}
@@ -715,36 +720,36 @@ mod tests {
 			let sk = SecretKey::random(&params);
 
 			let ek = EvaluationKeyBuilder::new(&sk).build()?;
-			let bytes = ek.serialize();
-			assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+			let bytes = ek.to_bytes();
+			assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 			if params.ciphertext_moduli.len() > 1 {
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_row_rotation()?
 					.build()?;
-				let bytes = ek.serialize();
-				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let bytes = ek.to_bytes();
+				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_inner_sum()?
 					.enable_relinearization()?
 					.build()?;
-				let bytes = ek.serialize();
-				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let bytes = ek.to_bytes();
+				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_expansion(params.degree().ilog2() as usize)?
 					.build()?;
-				let bytes = ek.serialize();
-				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let bytes = ek.to_bytes();
+				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_inner_sum()?
 					.enable_relinearization()?
 					.enable_expansion(params.degree().ilog2() as usize)?
 					.build()?;
-				let bytes = ek.serialize();
-				assert_eq!(ek, EvaluationKey::try_deserialize(&bytes, &params)?);
+				let bytes = ek.to_bytes();
+				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 			}
 		}
 		Ok(())

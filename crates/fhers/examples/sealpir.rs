@@ -2,9 +2,10 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use fhers::bfv::{self, traits::*, ParametersSwitchable};
-use fhers_traits::{DeserializeWithContext, Serialize};
-use fhers_traits::{FheDecoder, FheEncoder};
+use fhers::bfv::{self, ParametersSwitchable};
+use fhers_traits::{
+	DeserializeUsingParameters, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use ndarray::Axis;
@@ -68,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		sk_1.switch_parameters(&params_switchers[0])?;
 		let mut sk_2 = sk_1.clone();
 		sk_2.switch_parameters(&params_switchers[1])?;
-		let ek_expansion_serialized = ek_expansion.serialize();
+		let ek_expansion_serialized = ek_expansion.to_bytes();
 		(sk_encrypt, sk_2, ek_expansion_serialized)
 	});
 	println!(
@@ -79,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server setup
 	let ek_expansion = timeit!(
 		"Server setup",
-		bfv::EvaluationKey::try_deserialize(&ek_expansion_serialized, &params[0])?
+		bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?
 	);
 
 	// Client query
@@ -93,15 +94,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
 		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
-		let query = sk_encrypt.encrypt(&query_pt)?;
-		query.serialize()
+		let query = sk_encrypt.try_encrypt(&query_pt)?;
+		query.to_bytes()
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
 	// Server response
 	let responses: Vec<Vec<u8>> = timeit!("Server response", {
 		let start = std::time::Instant::now();
-		let query = bfv::Ciphertext::try_deserialize(&query, &params[0])?;
+		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
@@ -117,7 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				let mut c = bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter())
 					.unwrap();
 				assert!(c.switch_parameters(&params_switchers[1]).is_ok());
-				let c_serialized = c.serialize();
+				let c_serialized = c.to_bytes();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
 				bfv::VecPlaintext::try_encode(&pt_values as &[u64], bfv::Encoding::Poly, &params[1])
@@ -133,7 +134,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				)
 				.unwrap();
 				assert!(outi.switch_parameters(&params_switchers[1]).is_ok());
-				outi.serialize()
+				outi.to_bytes()
 			})
 			.collect_vec()
 	});
@@ -147,11 +148,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let answer = timeit!("Client answer", {
 		let responses = responses
 			.iter()
-			.map(|r| bfv::Ciphertext::try_deserialize(r, params.last().unwrap()).unwrap())
+			.map(|r| bfv::Ciphertext::from_bytes(r, params.last().unwrap()).unwrap())
 			.collect_vec();
 		let decrypted_pt = responses
 			.iter()
-			.map(|r| sk_2.decrypt(r).unwrap())
+			.map(|r| sk_2.try_decrypt(r).unwrap())
 			.collect_vec();
 		let decrypted_vec = decrypted_pt
 			.iter()
@@ -168,11 +169,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let mut answer = vec![];
 		// There may be a few 0 bytes, let's bruteforce for now
 		for i in 0..decrypted_ct.len() {
-			if let Ok(ct) = bfv::Ciphertext::try_deserialize(
+			if let Ok(ct) = bfv::Ciphertext::from_bytes(
 				&decrypted_ct[..decrypted_ct.len() - i],
 				params.get(2).unwrap(),
 			) {
-				let pt = sk_2.decrypt(&ct).unwrap();
+				let pt = sk_2.try_decrypt(&ct).unwrap();
 				let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::Poly).unwrap();
 				let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 				let offset = index
