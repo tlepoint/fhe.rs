@@ -20,6 +20,18 @@ pub enum Encoding {
 	Simd,
 }
 
+impl From<Encoding> for String {
+	fn from(e: Encoding) -> Self {
+		String::from(&e)
+	}
+}
+
+impl From<&Encoding> for String {
+	fn from(e: &Encoding) -> Self {
+		format!("{:?}", e)
+	}
+}
+
 impl FhePlaintextEncoding for Encoding {}
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
@@ -204,12 +216,12 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 		} else if pt.encoding.is_some() {
 			enc = pt.encoding.as_ref().unwrap().clone();
 			if let Some(arg_enc) = encoding && arg_enc != enc {
-				return Err(Error::EncodingMismatch(arg_enc, enc))
+				return Err(Error::EncodingMismatch(arg_enc.into(), enc.into()))
 			}
 		} else {
 			enc = encoding.unwrap();
 			if let Some(pt_enc) = pt.encoding.as_ref() && pt_enc != &enc {
-				return Err(Error::EncodingMismatch(pt_enc.clone(), enc))
+				return Err(Error::EncodingMismatch(pt_enc.into(), enc.into()))
 			}
 		}
 

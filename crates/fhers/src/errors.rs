@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::bfv::Encoding;
-
 /// The Result type for this library.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -26,8 +24,8 @@ pub enum Error {
 	UnspecifiedInput(String),
 
 	/// Indicates a mismatch in the encodings.
-	#[error("Encoding mismatch: found {0:?}, expected {1:?}")]
-	EncodingMismatch(Encoding, Encoding),
+	#[error("Encoding mismatch: found {0}, expected {1}")]
+	EncodingMismatch(String, String),
 
 	/// Indicates that the Simd encoding is not supported.
 	#[error("Does not support Simd encoding")]
@@ -75,18 +73,4 @@ pub enum ParametersError {
 	/// Indicates that too few parameters were specified.
 	#[error("{0}")]
 	NotEnoughSpecified(String),
-}
-
-// While switching to an Error enum, we provide a mapping to String.
-// TODO: Remove when the transition is complete.
-impl From<Error> for String {
-	fn from(e: Error) -> Self {
-		e.to_string()
-	}
-}
-
-impl From<Error> for std::io::Error {
-	fn from(e: Error) -> Self {
-		std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-	}
 }
