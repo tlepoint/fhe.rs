@@ -223,9 +223,9 @@ impl RnsScaler {
 	///
 	/// Aborts if the number of rests is different than the number of moduli in
 	/// debug mode, or if the size is not in [1, ..., rests.len()].
-	pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize, floor: bool) -> Vec<u64> {
+	pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize) -> Vec<u64> {
 		let mut out = vec![0; size];
-		self.scale(rests, (&mut out).into(), 0, floor);
+		self.scale(rests, (&mut out).into(), 0);
 		out
 	}
 
@@ -240,7 +240,6 @@ impl RnsScaler {
 		rests: ArrayView1<u64>,
 		mut out: ArrayViewMut1<u64>,
 		starting_index: usize,
-		floor: bool,
 	) {
 		debug_assert_eq!(rests.len(), self.from.moduli_u64.len());
 		debug_assert!(!out.is_empty());
@@ -260,8 +259,7 @@ impl RnsScaler {
 		}
 		// Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
 		sum_theta_garner >>= self.theta_garner_shift - 1;
-		let v = <[u64; 3]>::from(sum_theta_garner);
-		let v = v[0].div_ceil(2);
+		let v = <[u64; 3]>::from(sum_theta_garner)[0].div_ceil(2);
 
 		// If the scaling factor is not 1, compute the inner product with the
 		// theta_omega
@@ -320,18 +318,10 @@ impl RnsScaler {
 
 			if w_sign {
 				w = u128::from(&((!sum_theta_omega) >> 126)) + 1;
-				if !floor {
-					w = w.div_floor(2);
-				} else {
-					w = w.div_ceil(2);
-				}
+				w = w.div_floor(2);
 			} else {
 				w = u128::from(&(sum_theta_omega >> 126));
-				if !floor {
-					w = w.div_ceil(2)
-				} else {
-					w = w.div_floor(2)
-				}
+				w = w.div_ceil(2)
 			}
 		}
 
@@ -422,15 +412,7 @@ mod tests {
 						x_lift = q.modulus() - x_lift;
 					}
 
-					let y = scaler.scale_new((&x).into(), x.len(), true);
-					let x_scaled_floor = if x_sign {
-						q.modulus() - (&(&x_lift * &n + &d - 1u64) / &d) % q.modulus()
-					} else {
-						((&x_lift * &n) / &d) % q.modulus()
-					};
-					assert_eq!(y, q.project(&x_scaled_floor));
-
-					let z = scaler.scale_new((&x).into(), x.len(), false);
+					let z = scaler.scale_new((&x).into(), x.len());
 					let x_scaled_round = if x_sign {
 						if d.to_u64().unwrap() % 2 == 0 {
 							q.modulus()
@@ -484,13 +466,18 @@ mod tests {
 						x_lift = q.modulus() - x_lift;
 					}
 
-					let y = scaler.scale_new((&x).into(), r.moduli.len(), true);
-					let x_scaled_floor = if x_sign {
-						&r.product - (&(&x_lift * &n + &d - 1u64) / &d) % &r.product
+					let y = scaler.scale_new((&x).into(), r.moduli.len());
+					let x_scaled_round = if x_sign {
+						if d.to_u64().unwrap() % 2 == 0 {
+							r.modulus()
+								- (&(&x_lift * &n + ((&d >> 1usize) - 1u64)) / &d) % r.modulus()
+						} else {
+							r.modulus() - (&(&x_lift * &n + (&d >> 1)) / &d) % r.modulus()
+						}
 					} else {
-						((&x_lift * &n) / &d) % &r.product
+						&(&x_lift * &n + (&d >> 1)) / &d
 					};
-					assert_eq!(y, r.project(&x_scaled_floor));
+					assert_eq!(y, r.project(&x_scaled_round));
 				}
 			}
 		}

@@ -4,8 +4,8 @@
 
 use fhers::bfv;
 use fhers_traits::{
-	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter,
-	FheParametersSwitchable, Serialize,
+	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
+	FheEncrypter, FheParametersSwitchable, Serialize,
 };
 use indicatif::HumanBytes;
 use itertools::Itertools;
@@ -13,7 +13,9 @@ use ndarray::Axis;
 use rand::{thread_rng, RngCore};
 use std::{error::Error, sync::Arc};
 use util::{transcode_backward, transcode_forward};
-use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
+use utilities::{
+	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let database_size = 1 << 21;
@@ -101,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
 	// Server response
-	let responses: Vec<Vec<u8>> = timeit!("Server response", {
+	let responses: Vec<Vec<u8>> = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
 		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
@@ -122,9 +124,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 				let c_serialized = c.to_bytes();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
-				bfv::VecPlaintext::try_encode(&pt_values as &[u64], bfv::Encoding::Poly, &params[1])
+				unsafe {
+					bfv::VecPlaintext::try_encode_vt(
+						&pt_values as &[u64],
+						bfv::Encoding::Poly,
+						&params[1],
+					)
 					.unwrap()
 					.0
+				}
 			})
 			.collect_vec();
 		(0..fold[0].len())

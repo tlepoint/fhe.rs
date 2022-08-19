@@ -51,7 +51,7 @@ impl Scaler {
 
 impl Scaler {
 	/// Scale a polynomial
-	pub fn scale(&self, p: &Poly, floor: bool) -> Result<Poly> {
+	pub fn scale(&self, p: &Poly) -> Result<Poly> {
 		if p.ctx.as_ref() != self.from.as_ref() {
 			Err(Error::Default(
 				"The input polynomial does not have the correct context".to_string(),
@@ -74,7 +74,7 @@ impl Scaler {
 				)
 				.for_each(|(new_column, column)| {
 					self.scaler
-						.scale(column, new_column, self.number_common_moduli, floor)
+						.scale(column, new_column, self.number_common_moduli)
 				});
 			} else if self.number_common_moduli < self.to.q.len() {
 				let mut p_coefficients_powerbasis = p.coefficients.clone();
@@ -95,7 +95,7 @@ impl Scaler {
 				)
 				.for_each(|(new_column, column)| {
 					self.scaler
-						.scale(column, new_column, self.number_common_moduli, floor)
+						.scale(column, new_column, self.number_common_moduli)
 				});
 				// Forward NTT on the second half
 				if p.allow_variable_time_computations {
@@ -123,6 +123,7 @@ impl Scaler {
 				allow_variable_time_computations: p.allow_variable_time_computations,
 				coefficients: new_coefficients,
 				coefficients_shoup: None,
+				has_lazy_coefficients: false,
 			})
 		}
 	}
@@ -134,6 +135,7 @@ mod tests {
 	use crate::rq::{Context, Poly, Representation};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
+	use num_traits::{One, Zero};
 	use std::{error::Error, sync::Arc};
 
 	// Moduli to be used in tests.
@@ -166,25 +168,31 @@ mod tests {
 					let mut poly = Poly::random(&from, Representation::PowerBasis);
 					let poly_biguint = Vec::<BigUint>::from(&poly);
 
-					let scaled_poly = scaler.scale(&poly, true)?;
+					let scaled_poly = scaler.scale(&poly)?;
 					let scaled_biguint = Vec::<BigUint>::from(&scaled_poly);
 
 					let expected = poly_biguint
 						.iter()
 						.map(|i| {
 							if i >= &(from.modulus() >> 1usize) {
-								to.modulus()
-									- (&(&(from.modulus() - i) * &n + &d - 1u64) / &d)
-										% to.modulus()
+								if &d & BigUint::one() == BigUint::zero() {
+									to.modulus()
+										- (&(&(from.modulus() - i) * &n + ((&d >> 1usize) - 1u64))
+											/ &d) % to.modulus()
+								} else {
+									to.modulus()
+										- (&(&(from.modulus() - i) * &n + (&d >> 1)) / &d)
+											% to.modulus()
+								}
 							} else {
-								((i * &n) / &d) % to.modulus()
+								((i * &n + (&d >> 1)) / &d) % to.modulus()
 							}
 						})
 						.collect_vec();
 					assert_eq!(expected, scaled_biguint);
 
 					poly.change_representation(Representation::Ntt);
-					let mut scaled_poly = scaler.scale(&poly, true)?;
+					let mut scaled_poly = scaler.scale(&poly)?;
 					scaled_poly.change_representation(Representation::PowerBasis);
 					let scaled_biguint = Vec::<BigUint>::from(&scaled_poly);
 					assert_eq!(expected, scaled_biguint);

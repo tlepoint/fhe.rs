@@ -103,6 +103,7 @@ pub struct Poly {
 	allow_variable_time_computations: bool,
 	coefficients: Array2<u64>,
 	coefficients_shoup: Option<Array2<u64>>,
+	has_lazy_coefficients: bool,
 }
 
 impl Poly {
@@ -118,6 +119,7 @@ impl Poly {
 			} else {
 				None
 			},
+			has_lazy_coefficients: false,
 		}
 	}
 
@@ -413,6 +415,34 @@ impl Poly {
 
 		Ok(q)
 	}
+
+	/// Create a polynomial which can only be multiplied by a polynomial in
+	/// NttShoup representation. All other operations may panic.
+	///
+	/// # Safety
+	/// This operation also creates a polynomial that allows variable time
+	/// operations.
+	pub unsafe fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+		power_basis_coefficients: &[u64],
+		ctx: &Arc<Context>,
+	) -> Self {
+		let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
+		izip!(coefficients.outer_iter_mut(), &ctx.q, &ctx.ops).for_each(|(mut p, qi, op)| {
+			p.as_slice_mut()
+				.unwrap()
+				.clone_from_slice(power_basis_coefficients);
+			qi.reduce_vec(p.as_slice_mut().unwrap());
+			op.forward_vt_lazy(p.as_mut_ptr());
+		});
+		Self {
+			ctx: ctx.clone(),
+			representation: Representation::Ntt,
+			allow_variable_time_computations: true,
+			coefficients,
+			coefficients_shoup: None,
+			has_lazy_coefficients: true,
+		}
+	}
 }
 
 impl Zeroize for Poly {
@@ -695,20 +725,19 @@ mod tests {
 			}
 		}
 
-		// TODO: This is *way* too slow??
-		// // Generate a very large polynomial to check the variance (here equal to 8).
-		// let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 13)?);
-		// let q = Modulus::new(4611686018326724609).unwrap();
-		// let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
-		// let coefficients = p.coefficients().to_slice().unwrap();
-		// let v = unsafe { q.center_vec_vt(coefficients) }
-		// 	.iter()
-		// 	.map(|ai| *ai as f64)
-		// 	.collect_vec();
-		// let s = test::stats::Summary::new(&v);
-		// assert!(s.min >= -16.0);
-		// assert!(s.max <= 16.0);
-		// assert_eq!(s.var.round(), 8.0);
+		// Generate a very large polynomial to check the variance (here equal to 8).
+		let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 18)?);
+		let q = Modulus::new(4611686018326724609).unwrap();
+		let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
+		let coefficients = p.coefficients().to_slice().unwrap();
+		let v = unsafe { q.center_vec_vt(coefficients) }
+			.iter()
+			.map(|ai| *ai as f64)
+			.collect_vec();
+		let s = test::stats::Summary::new(&v);
+		assert!(s.min >= -16.0);
+		assert!(s.max <= 16.0);
+		assert_eq!(s.var.round(), 8.0);
 
 		Ok(())
 	}

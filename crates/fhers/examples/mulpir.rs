@@ -13,7 +13,9 @@ use ndarray::Axis;
 use rand::{thread_rng, RngCore};
 use std::{error::Error, sync::Arc};
 use util::transcode_forward;
-use utilities::{encode_database, generate_database, number_elements_per_plaintext, timeit};
+use utilities::{
+	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let database_size = 1 << 21;
@@ -112,7 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
 	// Server response
-	let response = timeit!("Server response", {
+	let response = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
 		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
 		let dim = preprocessed_database.shape();
