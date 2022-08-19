@@ -4,9 +4,10 @@ use super::key_switching_key::KeySwitchingKey;
 use crate::bfv::{
 	proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto},
 	traits::TryConvertFrom,
-	BfvParameters, Ciphertext, SecretKey,
+	BfvParameters, Ciphertext, SecretKey, BfvParametersSwitcher,
 };
 use crate::{Error, Result};
+use fhers_traits::FheParametersSwitchable;
 use math::rq::{Poly, Representation};
 use protobuf::MessageField;
 use std::sync::Arc;
@@ -23,31 +24,61 @@ pub struct GaloisKey {
 
 impl GaloisKey {
 	/// Generate a [`GaloisKey`] from a [`SecretKey`].
-	pub fn new(sk: &SecretKey, exponent: usize) -> Result<Self> {
+	pub fn new(sk: &SecretKey, exponent: usize, compute_par: &Arc<BfvParameters>) -> Result<Self> {
 		let exponent = exponent % (2 * sk.par.degree());
 		if exponent == 0 {
 			return Err(Error::DefaultError("Invalid exponent".to_string()));
 		}
 
+		let switcher_up = BfvParametersSwitcher::new(&sk.par, compute_par)?;
+		let mut sk_clone = sk.clone();
+		sk_clone.switch_parameters(&switcher_up)?;
 		let mut s_sub = sk.s[0].substitute(exponent)?;
 		s_sub.change_representation(Representation::PowerBasis);
-		let ksk = KeySwitchingKey::new(sk, &s_sub)?;
+		let mut s_sub_up = switcher_up.scaler.scale(&s_sub)?;
+		let ksk = KeySwitchingKey::new(&sk_clone, &s_sub_up)?;
 		s_sub.zeroize();
+		s_sub_up.zeroize();
+		sk_clone.zeroize();
 		Ok(Self { exponent, ksk })
 	}
 
 	/// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
 	pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext> {
-		assert_eq!(ct.par, self.ksk.par);
+		// assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
 
 		let mut c0 = ct.c[0].substitute(self.exponent)?;
-		let mut c1 = Poly::zero(&self.ksk.par.ctx, Representation::Ntt);
+		let mut c1 = Poly::zero(&ct.par.ctx, Representation::Ntt);
 		unsafe { c1.allow_variable_time_computations() }
 
 		let mut c2 = ct.c[1].substitute(self.exponent)?;
 		c2.change_representation(Representation::PowerBasis);
 		self.ksk.key_switch(&c2, &mut c0, &mut c1)?;
+
+		Ok(Ciphertext {
+			par: ct.par.clone(),
+			seed: None,
+			c: vec![c0, c1],
+		})
+	}
+
+	pub fn relinearize_and_params_switch(&self, ct: &Ciphertext, switcher: &BfvParametersSwitcher) -> Result<Ciphertext> {
+		// assert_eq!(ct.par, self.ksk.par);
+		assert_eq!(ct.c.len(), 2);
+
+		// let now = std::time::Instant::now();
+		let mut c0 = ct.c[0].substitute(self.exponent)?;
+		let mut c1 = Poly::zero(&ct.par.ctx, Representation::Ntt);
+		unsafe { c1.allow_variable_time_computations() }
+
+		let mut c2 = ct.c[1].substitute(self.exponent)?;
+		c2.change_representation(Representation::PowerBasis);
+		// println!("1. substitute {:?}", now.elapsed());
+		// let now = std::time::Instant::now();
+
+		self.ksk.key_switch_and_params_switch(&c2, &mut c0, &mut c1, switcher)?;
+		// println!("2. keyswitch {:?}", now.elapsed());
 
 		Ok(Ciphertext {
 			par: ct.par.clone(),
@@ -108,9 +139,9 @@ mod tests {
 
 				for i in 1..16 {
 					if i & 1 == 0 {
-						assert!(GaloisKey::new(&sk, i).is_err())
+						assert!(GaloisKey::new(&sk, i, &sk.par).is_err())
 					} else {
-						let gk = GaloisKey::new(&sk, i)?;
+						let gk = GaloisKey::new(&sk, i, &sk.par)?;
 						let ct2 = gk.relinearize(&ct)?;
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 
@@ -145,7 +176,7 @@ mod tests {
 	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
-			let gk = GaloisKey::new(&sk, 9)?;
+			let gk = GaloisKey::new(&sk, 9, &sk.par)?;
 			let proto = GaloisKeyProto::from(&gk);
 			assert_eq!(gk, GaloisKey::try_convert_from(&proto, &params)?);
 		}

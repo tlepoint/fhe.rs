@@ -1,8 +1,6 @@
 //! Unsigned 256-bit integer.
 
-use std::ops::{Add, Not, Shr, ShrAssign};
-
-use num_traits::Zero;
+use std::ops::{Not, Shr, ShrAssign};
 
 /// Struct holding a unsigned 256-bit integer.
 #[repr(C)]
@@ -11,7 +9,7 @@ pub struct U256(u64, u64, u64, u64);
 
 impl U256 {
 	/// Returns the additive identity element, 0.
-	pub fn zero() -> Self {
+	pub const fn zero() -> Self {
 		Self(0, 0, 0, 0)
 	}
 
@@ -34,7 +32,7 @@ impl U256 {
 	}
 
 	/// Returns the most significant bit of the unsigned integer.
-	pub fn msb(self) -> u64 {
+	pub const fn msb(self) -> u64 {
 		self.3 >> 63
 	}
 }
@@ -131,26 +129,6 @@ impl ShrAssign<usize> for U256 {
 			self.2 = (self.2 >> rhs) | (self.3 << (64 - rhs));
 			self.3 >>= rhs;
 		}
-	}
-}
-
-impl Zero for U256 {
-	fn zero() -> Self {
-		Self(0, 0, 0, 0)
-	}
-
-	fn is_zero(&self) -> bool {
-		self.0 == 0 && self.1 == 0 && self.2 == 0 && self.3 == 0
-	}
-}
-
-impl Add for U256 {
-	type Output = Self;
-
-	fn add(self, rhs: Self) -> Self::Output {
-		let mut u = self;
-		u.wrapping_add_assign(rhs);
-		u
 	}
 }
 

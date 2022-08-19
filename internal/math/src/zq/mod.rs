@@ -46,13 +46,13 @@ impl Modulus {
 	}
 
 	/// Returns the value of the modulus.
-	pub fn modulus(&self) -> u64 {
+	pub const fn modulus(&self) -> u64 {
 		self.p
 	}
 
 	/// Performs the modular addition of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
-	pub fn add(&self, a: u64, b: u64) -> u64 {
+	pub const fn add(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		Self::reduce1(a + b, self.p)
 	}
@@ -63,14 +63,14 @@ impl Modulus {
 	/// # Safety
 	/// This function is not constant time and its timing may reveal information
 	/// about the values being added.
-	pub unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
+	pub const unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		Self::reduce1_vt(a + b, self.p)
 	}
 
 	/// Performs the modular subtraction of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
-	pub fn sub(&self, a: u64, b: u64) -> u64 {
+	pub const fn sub(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		Self::reduce1(a + self.p - b, self.p)
 	}
@@ -81,14 +81,14 @@ impl Modulus {
 	/// # Safety
 	/// This function is not constant time and its timing may reveal information
 	/// about the values being subtracted.
-	unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
+	const unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		Self::reduce1_vt(a + self.p - b, self.p)
 	}
 
 	/// Performs the modular multiplication of a and b in constant time.
 	/// Aborts if a >= p or b >= p in debug mode.
-	pub fn mul(&self, a: u64, b: u64) -> u64 {
+	pub const fn mul(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		self.reduce_u128((a as u128) * (b as u128))
 	}
@@ -99,7 +99,7 @@ impl Modulus {
 	/// # Safety
 	/// This function is not constant time and its timing may reveal information
 	/// about the values being multiplied.
-	unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
+	const unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(a < self.p && b < self.p);
 		Self::reduce1_vt(self.lazy_reduce_u128((a as u128) * (b as u128)), self.p)
 	}
@@ -107,7 +107,7 @@ impl Modulus {
 	/// Optimized modular multiplication of a and b in constant time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	pub fn mul_opt(&self, a: u64, b: u64) -> u64 {
+	pub const fn mul_opt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(self.supports_opt);
 		debug_assert!(a < self.p && b < self.p);
 
@@ -119,7 +119,7 @@ impl Modulus {
 	/// Optimized modular multiplication of a and b in variable time.
 	///
 	/// Aborts if a >= p or b >= p in debug mode.
-	unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
+	const unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(self.supports_opt);
 		debug_assert!(a < self.p && b < self.p);
 
@@ -129,7 +129,7 @@ impl Modulus {
 	/// Modular negation in constant time.
 	///
 	/// Aborts if a >= p in debug mode.
-	pub fn neg(&self, a: u64) -> u64 {
+	pub const fn neg(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 		Self::reduce1(self.p - a, self.p)
 	}
@@ -139,7 +139,7 @@ impl Modulus {
 	/// Modular negation in variable time.
 	///
 	/// Aborts if a >= p in debug mode.
-	unsafe fn neg_vt(&self, a: u64) -> u64 {
+	const unsafe fn neg_vt(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 		Self::reduce1_vt(self.p - a, self.p)
 	}
@@ -147,7 +147,7 @@ impl Modulus {
 	/// Compute the Shoup representation of a.
 	///
 	/// Aborts if a >= p in debug mode.
-	pub fn shoup(&self, a: u64) -> u64 {
+	pub const fn shoup(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 
 		(((a as u128) << 64) / (self.p as u128)) as u64
@@ -156,7 +156,7 @@ impl Modulus {
 	/// Shoup multiplication of a and b in constant time.
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
-	pub fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+	pub const fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
@@ -165,7 +165,7 @@ impl Modulus {
 	/// Shoup multiplication of a and b in variable time.
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
-	unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+	const unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
@@ -173,9 +173,9 @@ impl Modulus {
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
-	pub fn lazy_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
+	pub const fn lazy_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		debug_assert!(b < self.p);
-		debug_assert_eq!(b_shoup, self.shoup(b));
+		debug_assert!(b_shoup == self.shoup(b));
 
 		let q = ((a as u128) * (b_shoup as u128)) >> 64;
 		let r = ((a as u128) * (b as u128) - q * (self.p as u128)) as u64;
@@ -325,7 +325,7 @@ impl Modulus {
 	///
 	/// Center a value modulo p as i64 in variable time.
 	/// TODO: To test and to make constant time?
-	unsafe fn center_vt(&self, a: u64) -> i64 {
+	const unsafe fn center_vt(&self, a: u64) -> i64 {
 		debug_assert!(a < self.p);
 
 		if a >= self.p >> 1 {
@@ -350,14 +350,14 @@ impl Modulus {
 	}
 
 	/// Modular reduction of a i64 in constant time.
-	fn reduce_i64(&self, a: i64) -> u64 {
+	const fn reduce_i64(&self, a: i64) -> u64 {
 		self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
 	}
 
 	/// # Safety
 	///
 	/// Modular reduction of a i64 in variable time.
-	unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
+	const unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
 		self.reduce_u128_vt((((self.p as i128) << 64) + (a as i128)) as u128)
 	}
 
@@ -444,32 +444,32 @@ impl Modulus {
 	}
 
 	/// Modular reduction of a u128 in constant time.
-	pub fn reduce_u128(&self, a: u128) -> u64 {
+	pub const fn reduce_u128(&self, a: u128) -> u64 {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
 	/// # Safety
 	///
 	/// Modular reduction of a u128 in variable time.
-	pub unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
+	pub const unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce_u128(a), self.p)
 	}
 
 	/// Modular reduction of a u64 in constant time.
-	pub fn reduce(&self, a: u64) -> u64 {
+	pub const fn reduce(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce(a), self.p)
 	}
 
 	/// # Safety
 	///
 	/// Modular reduction of a u64 in constant time.
-	pub unsafe fn reduce_vt(&self, a: u64) -> u64 {
+	pub const unsafe fn reduce_vt(&self, a: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u128 in constant time.
 	// TODO: to test
-	pub fn reduce_opt_u128(&self, a: u128) -> u64 {
+	pub const fn reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
@@ -477,27 +477,27 @@ impl Modulus {
 	/// # Safety
 	///
 	/// Optimized modular reduction of a u128 in constant time.
-	unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
+	const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
 	/// Optimized modular reduction of a u64 in constant time.
-	pub fn reduce_opt(&self, a: u64) -> u64 {
+	pub const fn reduce_opt(&self, a: u64) -> u64 {
 		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// # Safety
 	///
 	/// Optimized modular reduction of a u64 in constant time.
-	pub unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
+	pub const unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// Return x mod p in constant time.
 	///
 	/// Aborts if x >= 2 * p in debug mode.
-	fn reduce1(x: u64, p: u64) -> u64 {
+	const fn reduce1(x: u64, p: u64) -> u64 {
 		debug_assert!(p >> 63 == 0);
 		debug_assert!(x < 2 * p);
 
@@ -510,7 +510,7 @@ impl Modulus {
 		let (c, _) = xxy.overflowing_sub(1);
 		let r = (c & y) | ((!c) & x);
 
-		debug_assert_eq!(r, x % p);
+		debug_assert!(r == x % p);
 
 		r
 	}
@@ -520,7 +520,7 @@ impl Modulus {
 	/// Return x mod p in variable time.
 	///
 	/// Aborts if x >= 2 * p in debug mode.
-	unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
+	const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
 		debug_assert!(p >> 63 == 0);
 		debug_assert!(x < 2 * p);
 
@@ -533,7 +533,7 @@ impl Modulus {
 
 	/// Lazy modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
-	pub fn lazy_reduce_u128(&self, a: u128) -> u64 {
+	pub const fn lazy_reduce_u128(&self, a: u128) -> u64 {
 		let a_lo = a as u64;
 		let a_hi = (a >> 64) as u64;
 		let p_lo_lo = ((a_lo as u128) * (self.barrett_lo as u128)) >> 64;
@@ -544,14 +544,14 @@ impl Modulus {
 		let r = (a - q * (self.p as u128)) as u64;
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
-		debug_assert_eq!(r % self.p, (a % (self.p as u128)) as u64);
+		debug_assert!(r % self.p == (a % (self.p as u128)) as u64);
 
 		r
 	}
 
 	/// Lazy modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
-	pub fn lazy_reduce(&self, a: u64) -> u64 {
+	pub const fn lazy_reduce(&self, a: u64) -> u64 {
 		let p_lo_lo = ((a as u128) * (self.barrett_lo as u128)) >> 64;
 		let p_lo_hi = (a as u128) * (self.barrett_hi as u128);
 
@@ -559,7 +559,7 @@ impl Modulus {
 		let r = (a as u128 - q * (self.p as u128)) as u64;
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
-		debug_assert_eq!(r % self.p, a % self.p);
+		debug_assert!(r % self.p == a % self.p);
 
 		r
 	}
@@ -568,14 +568,14 @@ impl Modulus {
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
-	pub fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
+	pub const fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(a < (self.p as u128) * (self.p as u128));
 
 		let q = (((self.barrett_lo as u128) * (a >> 64)) + (a << self.leading_zeros)) >> 64;
 		let r = (a - q * (self.p as u128)) as u64;
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
-		debug_assert_eq!(r % self.p, (a % (self.p as u128)) as u64);
+		debug_assert!(r % self.p == (a % (self.p as u128)) as u64);
 
 		r
 	}
@@ -584,12 +584,12 @@ impl Modulus {
 	/// The output is in the interval [0, 2 * p).
 	///
 	/// Aborts if the input is >= 2 * p in debug mode.
-	fn lazy_reduce_opt(&self, a: u64) -> u64 {
+	const fn lazy_reduce_opt(&self, a: u64) -> u64 {
 		let q = a >> (64 - self.leading_zeros);
 		let r = ((a as u128) - (q as u128) * (self.p as u128)) as u64;
 
 		debug_assert!((r as u128) < 2 * (self.p as u128));
-		debug_assert_eq!(r % self.p, a % self.p);
+		debug_assert!(r % self.p == a % self.p);
 
 		r
 	}
@@ -619,8 +619,8 @@ impl Modulus {
 	/// Length of the serialization of a vector of size `size`.
 	///
 	/// Panics if the size is not a multiple of 8.
-	pub fn serialization_length(&self, size: usize) -> usize {
-		assert_eq!(size % 8, 0);
+	pub const fn serialization_length(&self, size: usize) -> usize {
+		assert!(size % 8 == 0);
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
 		p_nbits * size / 8
 	}

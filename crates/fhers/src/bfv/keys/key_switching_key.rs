@@ -1,5 +1,6 @@
 //! Key-switching keys for the BFV encryption scheme
 
+use crate::bfv::{Ciphertext, BfvParametersSwitcher};
 use crate::bfv::{
 	proto::bfv::KeySwitchingKey as KeySwitchingKeyProto,
 	traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey,
@@ -121,6 +122,31 @@ impl KeySwitchingKey {
 			c2_i *= c1_i;
 			*acc_1 += &c2_i;
 		}
+		Ok(())
+	}
+
+	pub fn key_switch_and_params_switch(&self, p: &Poly, acc_0: &mut Poly, acc_1: &mut Poly, switcher: &BfvParametersSwitcher) -> Result<()> {
+		if self.par != switcher.from {
+			return Err(Error::DefaultError("Invalid switcher".to_string()))
+		}
+		// let now = std::time::Instant::now();
+		let mut c0 = Poly::zero(&self.par.ctx, Representation::Ntt);
+		let mut c1 = Poly::zero(&self.par.ctx, Representation::Ntt);
+		self.key_switch(p, &mut c0, &mut c1)?;
+		// println!("key_switch_no_scale {:?}", now.elapsed());
+		// let now = std::time::Instant::now();
+		c0.change_representation(Representation::PowerBasis);
+		c1.change_representation(Representation::PowerBasis);
+		c0.mod_switch_down(acc_0.ctx())?;
+		c1.mod_switch_down(acc_1.ctx())?;
+		c0.change_representation(Representation::Ntt);
+		c1.change_representation(Representation::Ntt);
+		// println!("mod_switch_down {:?}", now.elapsed());
+		*acc_0 += &c0;
+		*acc_1 += &c1;
+		// *acc_0 += &switcher.scaler.scale(&c0).map_err(Error::MathError)?;
+		// *acc_1 += &switcher.scaler.scale(&c1).map_err(Error::MathError)?;
+
 		Ok(())
 	}
 }

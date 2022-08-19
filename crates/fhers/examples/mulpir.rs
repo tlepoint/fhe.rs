@@ -61,24 +61,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 
 	// Client setup
-	let (sk_encrypt, mut sk, ek_expansion_serialized, ek_relin_serialized) =
+	let (sk_encrypt, mut sk, ek_expansion, ek_expansion_serialized, ek_relin, ek_relin_serialized) =
 		timeit!("Client setup", {
-			let sk_encrypt = bfv::SecretKey::random(&params[0]);
+			let sk_encrypt = bfv::SecretKey::random(&params[1]);
 			let dim = preprocessed_database.shape();
 			let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 			println!("level = {}", level);
-			let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk_encrypt)
+			let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk_encrypt, &params[0])
 				.enable_expansion(level as usize)?
 				.build()?;
 			let mut sk = sk_encrypt.clone();
-			sk.switch_parameters(&params_switchers[0])?;
-			let ek_relin = bfv::EvaluationKeyBuilder::new(&sk)
+			let ek_relin = bfv::EvaluationKeyBuilder::new(&sk, &params[1])
 				.enable_relinearization()?
 				.build()?;
 			sk.switch_parameters(&params_switchers[1])?;
 			let ek_expansion_serialized = ek_expansion.to_bytes();
 			let ek_relin_serialized = ek_relin.to_bytes();
-			(sk_encrypt, sk, ek_expansion_serialized, ek_relin_serialized)
+			(sk_encrypt, sk, ek_expansion, ek_expansion_serialized, ek_relin, ek_relin_serialized)
 		});
 	println!(
 		"📄 Evaluation key (expansion): {}",
@@ -90,12 +89,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 	);
 
 	// Server setup
-	let (ek_expansion, ek_relin) = timeit!("Server setup", {
-		(
-			bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?,
-			bfv::EvaluationKey::from_bytes(&ek_relin_serialized, &params[1])?,
-		)
-	});
+	/// TODO: To fix
+	// let (ek_expansion, ek_relin) = timeit!("Server setup", {
+	// 	(
+	// 		bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?,
+	// 		bfv::EvaluationKey::from_bytes(&ek_relin_serialized, &params[1])?,
+	// 	)
+	// });
 
 	// Client query
 	let index = (thread_rng().next_u64() as usize) % database_size;
@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
-		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
+		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[1])?;
 		let query = sk_encrypt.try_encrypt(&query_pt)?;
 		query.to_bytes()
 	});
@@ -116,16 +116,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server response
 	let response = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
-		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
+		let query = bfv::Ciphertext::from_bytes(&query, &params[1])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
 		expanded_query.truncate(dim[0] + dim[1]);
 		println!("Expand: {:?}", start.elapsed());
-		expanded_query.iter_mut().for_each(|ct| {
-			assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
-		});
-		println!("Switch parameters: {:?}", start.elapsed());
+		// expanded_query.iter_mut().for_each(|ct| {
+		// 	assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
+		// });
+		// println!("Switch parameters: {:?}", start.elapsed());
 		let mut out = bfv::Ciphertext::zero(&params[1]);
 		izip!(
 			&expanded_query[dim[0]..],

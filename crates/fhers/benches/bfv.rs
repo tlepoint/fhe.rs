@@ -33,7 +33,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 
 	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
-		let ek = EvaluationKeyBuilder::new(&sk)
+		let ek = EvaluationKeyBuilder::new(&sk, &par)
 			.enable_inner_sum()
 			.unwrap()
 			.enable_relinearization()

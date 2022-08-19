@@ -93,7 +93,7 @@ impl RnsContext {
 	}
 
 	/// Returns the product of the moduli used when creating the RNS context.
-	pub fn modulus(&self) -> &BigUint {
+	pub const fn modulus(&self) -> &BigUint {
 		&self.product
 	}
 

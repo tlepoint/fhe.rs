@@ -604,7 +604,7 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let mut sk = SecretKey::random(&par);
-			let ek = EvaluationKeyBuilder::new(&sk)
+			let ek = EvaluationKeyBuilder::new(&sk, &sk.par)
 				.enable_relinearization()?
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
@@ -632,7 +632,7 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let mut sk = SecretKey::random(&par);
-			let ek = EvaluationKeyBuilder::new(&sk)
+			let ek = EvaluationKeyBuilder::new(&sk, &sk.par)
 				.enable_relinearization()?
 				.build()?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;

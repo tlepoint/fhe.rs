@@ -106,6 +106,7 @@ impl NttOperator {
 					let s = 2 * i * l;
 					match l {
 						1 => {
+							// The last level should reduce the output
 							let uj = &mut *a_ptr.add(s);
 							let ujl = &mut *a_ptr.add(s + l);
 							self.butterfly(uj, ujl, omega, omega_shoup);
@@ -153,20 +154,6 @@ impl NttOperator {
 							self.inv_butterfly(
 								&mut *a_ptr.add(s),
 								&mut *a_ptr.add(s + l),
-								zeta_inv,
-								zeta_inv_shoup,
-							);
-						}
-						2 => {
-							self.inv_butterfly(
-								&mut *a_ptr.add(s),
-								&mut *a_ptr.add(s + 2),
-								zeta_inv,
-								zeta_inv_shoup,
-							);
-							self.inv_butterfly(
-								&mut *a_ptr.add(s + 1),
-								&mut *a_ptr.add(s + 3),
 								zeta_inv,
 								zeta_inv_shoup,
 							);
@@ -248,10 +235,9 @@ impl NttOperator {
 		}
 	}
 
-	/// # Safety
-	///
 	/// Compute the backward NTT in place in variable time.
 	///
+	/// # Safety
 	/// Aborts if a is not of the size handled by the operator.
 	pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
 		let mut k = 0;
@@ -268,20 +254,6 @@ impl NttOperator {
 						self.inv_butterfly_vt(
 							&mut *a_ptr.add(s),
 							&mut *a_ptr.add(s + l),
-							zeta_inv,
-							zeta_inv_shoup,
-						);
-					}
-					2 => {
-						self.inv_butterfly_vt(
-							&mut *a_ptr.add(s),
-							&mut *a_ptr.add(s + 2),
-							zeta_inv,
-							zeta_inv_shoup,
-						);
-						self.inv_butterfly_vt(
-							&mut *a_ptr.add(s + 1),
-							&mut *a_ptr.add(s + 3),
 							zeta_inv,
 							zeta_inv_shoup,
 						);
@@ -312,7 +284,7 @@ impl NttOperator {
 	/// Reduce a modulo p.
 	///
 	/// Aborts if a >= 4 * p.
-	fn reduce3(&self, a: u64) -> u64 {
+	const fn reduce3(&self, a: u64) -> u64 {
 		debug_assert!(a < 4 * self.p.p);
 
 		let y = Modulus::reduce1(a, 2 * self.p.p);
@@ -322,7 +294,7 @@ impl NttOperator {
 	/// Reduce a modulo p in variable time.
 	///
 	/// Aborts if a >= 4 * p.
-	unsafe fn reduce3_vt(&self, a: u64) -> u64 {
+	const unsafe fn reduce3_vt(&self, a: u64) -> u64 {
 		debug_assert!(a < 4 * self.p.p);
 
 		let y = Modulus::reduce1_vt(a, 2 * self.p.p);

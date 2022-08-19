@@ -9,7 +9,6 @@ use protobuf::Message;
 
 impl Serialize for Poly {
 	fn to_bytes(&self) -> Vec<u8> {
-		// TODO: Consume self?
 		let rq = Rq::from(self);
 		rq.write_to_bytes().unwrap()
 	}

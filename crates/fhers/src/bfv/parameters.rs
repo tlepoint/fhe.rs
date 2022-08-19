@@ -67,7 +67,7 @@ unsafe impl Send for BfvParameters {}
 
 impl BfvParameters {
 	/// Returns the underlying polynomial degree
-	pub fn degree(&self) -> usize {
+	pub const fn degree(&self) -> usize {
 		self.polynomial_degree
 	}
 
@@ -82,7 +82,7 @@ impl BfvParameters {
 	}
 
 	/// Returns the plaintext modulus
-	pub fn plaintext(&self) -> u64 {
+	pub const fn plaintext(&self) -> u64 {
 		self.plaintext_modulus
 	}
 

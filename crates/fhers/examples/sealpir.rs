@@ -60,20 +60,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 
 	// Client setup
-	let (sk_encrypt, mut sk_2, ek_expansion_serialized) = timeit!("Client setup", {
-		let sk_encrypt = bfv::SecretKey::random(&params[0]);
+	let (sk_encrypt, mut sk_2, ek_expansion, ek_expansion_serialized) = timeit!("Client setup", {
+		let mut sk = bfv::SecretKey::random(&params[1]);
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		println!("level = {}", level);
-		let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk_encrypt)
+		let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk, &params[0])
 			.enable_expansion(level as usize)?
 			.build()?;
-		let mut sk_1 = sk_encrypt.clone();
-		sk_1.switch_parameters(&params_switchers[0])?;
-		let mut sk_2 = sk_1.clone();
+		let mut sk_2 = sk.clone();
 		sk_2.switch_parameters(&params_switchers[1])?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
-		(sk_encrypt, sk_2, ek_expansion_serialized)
+		(sk, sk_2, ek_expansion, ek_expansion_serialized)
 	});
 	println!(
 		"📄 Evaluation key (expansion): {}",
@@ -81,22 +79,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 	);
 
 	// Server setup
-	let ek_expansion = timeit!(
-		"Server setup",
-		bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?
-	);
+	// TODO: To put back when we know how to deal with parameters switching
+	// let ek_expansion = timeit!(
+	// 	"Server setup",
+	// 	bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params[0])?
+	// );
 
 	// Client query
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
-		let query_index = index / number_elements_per_plaintext(params[0].clone(), elements_size);
+		let query_index = index / number_elements_per_plaintext(params[1].clone(), elements_size);
 		let mut pt = vec![0u64; dim[0] + dim[1]];
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
-		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[0])?;
+		let query_pt = bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::Poly, &params[1])?;
 		let query = sk_encrypt.try_encrypt(&query_pt)?;
 		query.to_bytes()
 	});
@@ -105,26 +104,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server response
 	let responses: Vec<Vec<u8>> = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
-		let query = bfv::Ciphertext::from_bytes(&query, &params[0])?;
+		let query = bfv::Ciphertext::from_bytes(&query, &params[1])?;
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
 		expanded_query.truncate(dim[0] + dim[1]);
 		println!("Expand: {:?}", start.elapsed());
-		expanded_query.iter_mut().for_each(|ct| {
-			assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
-		});
-		println!("Switch parameters: {:?}", start.elapsed());
+		// expanded_query.iter_mut().for_each(|ct| {
+		// 	assert!(ct.switch_parameters(&params_switchers[0]).is_ok());
+		// });
+		// println!("Switch parameters: {:?}", start.elapsed());
 		let fold = preprocessed_database
 			.axis_iter(Axis(1))
 			.map(|column| {
+				let now = std::time::Instant::now();
 				let mut c = bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter())
 					.unwrap();
 				assert!(c.switch_parameters(&params_switchers[1]).is_ok());
+				// println!("dot product: {:?}", now.elapsed());
+				let now = std::time::Instant::now();
 				let c_serialized = c.to_bytes();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
-				unsafe {
+				let r = unsafe {
 					bfv::VecPlaintext::try_encode_vt(
 						&pt_values as &[u64],
 						bfv::Encoding::Poly,
@@ -132,7 +134,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 					)
 					.unwrap()
 					.0
-				}
+				};
+				// println!("encode: {:?}", now.elapsed());
+				r
 			})
 			.collect_vec();
 		(0..fold[0].len())

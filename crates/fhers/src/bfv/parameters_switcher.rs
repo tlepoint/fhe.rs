@@ -4,6 +4,7 @@ use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
 use crate::{Error, Result};
 use fhers_traits::{FheParametersSwitchable, FheParametrized};
 use itertools::Itertools;
+use math::rq::Context;
 use math::{
 	rns::ScalingFactor,
 	rq::{scaler::Scaler, traits::TryConvertFrom, Poly, Representation},
@@ -12,10 +13,12 @@ use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// Switcher that enable to switch the underlying [`BfvParameters`]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BfvParametersSwitcher {
 	pub(crate) from: Arc<BfvParameters>,
 	pub(crate) to: Arc<BfvParameters>,
-	scaler: Scaler,
+	pub(crate) scaler: Scaler,
+	mod_switch_down_ctxs: Vec<Arc<Context>>,
 }
 
 impl FheParametrized for BfvParametersSwitcher {
@@ -25,6 +28,23 @@ impl FheParametrized for BfvParametersSwitcher {
 impl BfvParametersSwitcher {
 	/// Create a switcher between two sets of parameters
 	pub fn new(from: &Arc<BfvParameters>, to: &Arc<BfvParameters>) -> Result<Self> {
+		let iter_mod_switch_down = if to.ctx.moduli().len() <= from.ctx.moduli().len()
+			&& to.ctx.moduli() == &from.ctx.moduli()[..to.ctx.moduli().len()]
+		{
+			// We can do mod switch down instead of scaling
+			from.ctx.moduli().len() - to.ctx.moduli().len()
+		} else {
+			0
+		};
+		let mut mod_switch_down_ctxs = vec![];
+		for i in 0..iter_mod_switch_down {
+			let ctx = Context::new(
+				&from.ctx.moduli()[..from.ctx.moduli().len() - i - 1],
+				from.degree(),
+			)?;
+			mod_switch_down_ctxs.push(Arc::new(ctx))
+		}
+
 		Ok(Self {
 			from: from.clone(),
 			to: to.clone(),
@@ -33,6 +53,7 @@ impl BfvParametersSwitcher {
 				&to.ctx,
 				ScalingFactor::new(to.ctx.modulus(), from.ctx.modulus()),
 			)?,
+			mod_switch_down_ctxs,
 		})
 	}
 }
@@ -43,11 +64,21 @@ impl FheParametersSwitchable<BfvParametersSwitcher> for Ciphertext {
 			Err(Error::DefaultError("Mismatched parameters".to_string()))
 		} else {
 			self.seed = None;
-			self.c = self
-				.c
-				.iter()
-				.map(|ci| switcher.scaler.scale(ci).unwrap())
-				.collect_vec();
+			if !switcher.mod_switch_down_ctxs.is_empty() {
+				self.c.iter_mut().for_each(|ci| {
+					ci.change_representation(Representation::PowerBasis);
+					for new_context in &switcher.mod_switch_down_ctxs {
+						assert!(ci.mod_switch_down(new_context).is_ok())
+					}
+					ci.change_representation(Representation::Ntt)
+				})
+			} else {
+				self.c = self
+					.c
+					.iter()
+					.map(|ci| switcher.scaler.scale(ci).unwrap())
+					.collect_vec();
+			}
 			self.par = switcher.to.clone();
 			Ok(())
 		}

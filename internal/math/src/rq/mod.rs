@@ -17,7 +17,7 @@ use crate::{
 	Error, Result,
 };
 use itertools::{izip, Itertools};
-use ndarray::{s, Array2, ArrayView2};
+use ndarray::{s, Array2, ArrayView2, Axis};
 use num_bigint::BigUint;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -29,11 +29,14 @@ use zeroize::Zeroize;
 /// Struct that holds the context associated with elements in rq.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Context {
+	moduli: Vec<u64>,
 	q: Vec<Modulus>,
 	rns: Arc<RnsContext>,
 	ops: Vec<NttOperator>,
 	degree: usize,
 	bitrev: Vec<usize>,
+	inv_last_qi_mod_qj: Vec<u64>,
+	inv_last_qi_mod_qj_shoup: Vec<u64>,
 }
 
 impl Context {
@@ -65,12 +68,24 @@ impl Context {
 				.map(|j| (j.reverse_bits() >> (degree.leading_zeros() + 1)) as usize)
 				.collect_vec();
 
+			let mut inv_last_qi_mod_qj = vec![];
+			let mut inv_last_qi_mod_qj_shoup = vec![];
+			let q_last = moduli.last().unwrap();
+			for qi in &q[..q.len() - 1] {
+				let inv = qi.inv(qi.reduce(*q_last)).unwrap();
+				inv_last_qi_mod_qj.push(inv);
+				inv_last_qi_mod_qj_shoup.push(qi.shoup(inv));
+			}
+
 			Ok(Self {
+				moduli: moduli.to_owned(),
 				q,
 				rns,
 				ops,
 				degree,
 				bitrev,
+				inv_last_qi_mod_qj,
+				inv_last_qi_mod_qj_shoup,
 			})
 		}
 	}
@@ -78,6 +93,10 @@ impl Context {
 	/// Returns the modulus as a BigUint
 	pub fn modulus(&self) -> &BigUint {
 		self.rns.modulus()
+	}
+
+	pub fn moduli(&self) -> &[u64] {
+		&self.moduli
 	}
 }
 
@@ -140,7 +159,7 @@ impl Poly {
 
 	/// Current representation of the polynomial.
 	/// TODO: To test
-	pub fn representation(&self) -> &Representation {
+	pub const fn representation(&self) -> &Representation {
 		&self.representation
 	}
 
@@ -360,7 +379,7 @@ impl Poly {
 				)
 				.for_each(|(mut q_row, p_row)| {
 					for (j, k) in izip!(&self.ctx.bitrev, &power_bitrev) {
-						*q_row.get_mut(*j).unwrap() = *p_row.get(*k).unwrap()
+						q_row[*j] = p_row[*k]
 					}
 				});
 			}
@@ -402,7 +421,7 @@ impl Poly {
 						self.coefficients.slice(s![.., j as usize])
 					)
 					.for_each(|(qi, qij, pij)| {
-						if (power / degree) & 1 == 1 {
+						if power & degree != 0 {
 							*qij = qi.sub(*qij, *pij)
 						} else {
 							*qij = qi.add(*qij, *pij)
@@ -442,6 +461,87 @@ impl Poly {
 			coefficients_shoup: None,
 			has_lazy_coefficients: true,
 		}
+	}
+
+	pub fn ctx(&self) -> &Arc<Context> {
+		&self.ctx
+	}
+
+	/// Modulus switch down.
+	pub fn mod_switch_down(&mut self, new_context: &Arc<Context>) -> Result<()> {
+		if self.representation != Representation::PowerBasis {
+			return Err(Error::Default("Incorrect representation".to_string()));
+		}
+
+		let q_len = self.ctx.q.len();
+		if new_context.q != self.ctx.q[..q_len - 1] {
+			return Err(Error::Default(
+				"New context moduli should be exactly one less than this context moduli"
+					.to_string(),
+			));
+		}
+
+		let q_last = self.ctx.q.last().unwrap();
+		let q_last_div_2 = q_last.modulus() / 2;
+		{
+			let q_last_poly = self.coefficients.slice_mut(s![q_len - 1.., ..]);
+			for coeff in q_last_poly {
+				// Add (q_last - 1) / 2 to change from flooring to rounding
+				*coeff = q_last.add(*coeff, q_last_div_2);
+			}
+		}
+
+		let (mut q_new_polys, q_last_poly) =
+			self.coefficients.view_mut().split_at(Axis(0), q_len - 1);
+
+		izip!(
+			q_new_polys.outer_iter_mut(),
+			&self.ctx.q,
+			&self.ctx.inv_last_qi_mod_qj,
+			&self.ctx.inv_last_qi_mod_qj_shoup
+		)
+		.for_each(|(coeffs, qi, inv, inv_shoup)| {
+			let q_last_div_2_mod_qi = qi.reduce(q_last_div_2);
+			for (coeff, q_last_coeff) in izip!(coeffs, &q_last_poly) {
+				// (x mod q_last - q_L/2) mod q_i
+				let mut tmp = qi.reduce(*q_last_coeff);
+				tmp = qi.sub(tmp, q_last_div_2_mod_qi);
+
+				// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
+				// = (x - x mod q_last + q_L/2) mod q_i
+				*coeff = qi.sub(*coeff, tmp);
+
+				// q_last^{-1} * (x - x mod q_last) mod q_i
+				*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
+			}
+		});
+
+		self.coefficients.remove_index(Axis(0), q_len - 1);
+		self.ctx = new_context.clone();
+
+		Ok(())
+	}
+
+	pub fn multiply_inverse_power_of_x(&mut self, power: usize) -> Result<()> {
+		let shift = ((self.ctx.degree << 1) - power) % (self.ctx.degree << 1);
+		let mask = self.ctx.degree - 1;
+		let original_coefficients = self.coefficients.clone();
+		izip!(
+			self.coefficients.outer_iter_mut(),
+			original_coefficients.outer_iter(),
+			&self.ctx.q
+		)
+		.for_each(|(mut coeffs, orig_coeffs, qi)| {
+			for k in 0..self.ctx.degree {
+				let index = shift + k;
+				if index & self.ctx.degree == 0 {
+					coeffs[index & mask] = orig_coeffs[k];
+				} else {
+					coeffs[index & mask] = qi.neg(orig_coeffs[k]);
+				}
+			}
+		});
+		Ok(())
 	}
 }
 
