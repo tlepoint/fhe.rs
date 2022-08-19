@@ -189,12 +189,12 @@ impl Mul<&Ciphertext> for &Ciphertext {
 		let self_c = self
 			.c
 			.iter()
-			.map(|ci| mp.extender_self.scale(ci, false).unwrap())
+			.map(|ci| mp.extender_self.scale(ci).unwrap())
 			.collect_vec();
 		let other_c = rhs
 			.c
 			.iter()
-			.map(|ci| mp.extender_self.scale(ci, false).unwrap())
+			.map(|ci| mp.extender_self.scale(ci).unwrap())
 			.collect_vec();
 		// println!("Extend: {:?}", now.elapsed().unwrap());
 
@@ -214,7 +214,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			.iter_mut()
 			.map(|ci| {
 				ci.change_representation(Representation::PowerBasis);
-				let mut ci = mp.down_scaler.scale(ci, false).unwrap();
+				let mut ci = mp.down_scaler.scale(ci).unwrap();
 				ci.change_representation(Representation::Ntt);
 				ci
 			})
@@ -302,10 +302,10 @@ fn mul_internal(
 
 	// Extend
 	// let mut now = std::time::SystemTime::now();
-	let c00 = mp.extender_self.scale(&ct0.c[0], false)?;
-	let c01 = mp.extender_self.scale(&ct0.c[1], false)?;
-	let c10 = mp.extender_other.scale(&ct1.c[0], false)?;
-	let c11 = mp.extender_other.scale(&ct1.c[1], false)?;
+	let c00 = mp.extender_self.scale(&ct0.c[0])?;
+	let c01 = mp.extender_self.scale(&ct0.c[1])?;
+	let c10 = mp.extender_other.scale(&ct1.c[0])?;
+	let c11 = mp.extender_other.scale(&ct1.c[1])?;
 	// println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -322,9 +322,9 @@ fn mul_internal(
 	// Scale
 	// TODO: This should be faster??
 	// now = std::time::SystemTime::now();
-	let mut c0 = mp.down_scaler.scale(&c0, false)?;
-	let mut c1 = mp.down_scaler.scale(&c1, false)?;
-	let c2 = mp.down_scaler.scale(&c2, false)?;
+	let mut c0 = mp.down_scaler.scale(&c0)?;
+	let mut c1 = mp.down_scaler.scale(&c1)?;
+	let c2 = mp.down_scaler.scale(&c2)?;
 	// println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize

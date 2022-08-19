@@ -9,7 +9,7 @@ use fhers_traits::{DeserializeWithContext, Serialize};
 use itertools::izip;
 use math::{
 	rns::RnsContext,
-	rq::{traits::TryConvertFrom, Poly, Representation},
+	rq::{Poly, Representation},
 };
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -111,13 +111,12 @@ impl KeySwitchingKey {
 		for (c2_i_coefficients, c0_i, c1_i) in
 			izip!(p.coefficients().outer_iter(), &self.c0, &self.c1)
 		{
-			let mut c2_i = Poly::try_convert_from(
-				c2_i_coefficients.as_slice().unwrap(),
-				&self.par.ctx,
-				true,
-				Representation::PowerBasis,
-			)?;
-			c2_i.change_representation(Representation::Ntt);
+			let mut c2_i = unsafe {
+				Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+					c2_i_coefficients.as_slice().unwrap(),
+					&self.par.ctx,
+				)
+			};
 			*acc_0 += &(&c2_i * c0_i);
 			c2_i *= c1_i;
 			*acc_1 += &c2_i;

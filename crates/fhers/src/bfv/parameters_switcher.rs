@@ -46,7 +46,7 @@ impl FheParametersSwitchable<BfvParametersSwitcher> for Ciphertext {
 			self.c = self
 				.c
 				.iter()
-				.map(|ci| switcher.scaler.scale(ci, false).unwrap())
+				.map(|ci| switcher.scaler.scale(ci).unwrap())
 				.collect_vec();
 			self.par = switcher.to.clone();
 			Ok(())

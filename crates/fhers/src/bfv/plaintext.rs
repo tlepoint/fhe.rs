@@ -1,7 +1,7 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::bfv::{BfvParameters, Encoding};
 use crate::{Error, Result};
-use fhers_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
+use fhers_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
@@ -133,6 +133,55 @@ impl FheEncoder<&[u64]> for Plaintext {
 		}
 		let v = VecPlaintext::try_encode(value, encoding, par)?;
 		Ok(v.0[0].clone())
+	}
+}
+
+impl FheEncoderVariableTime<&[u64]> for VecPlaintext {
+	type Error = Error;
+
+	unsafe fn try_encode_vt(
+		value: &[u64],
+		encoding: Encoding,
+		par: &Arc<BfvParameters>,
+	) -> Result<Self> {
+		if value.is_empty() {
+			return Ok(VecPlaintext(vec![Plaintext::zero(encoding, par)]));
+		}
+		let encoding = &encoding;
+
+		let num_plaintexts = value.len().div_ceil(par.degree());
+		let mut out = Vec::with_capacity(num_plaintexts);
+		for i in 0..num_plaintexts {
+			let slice = &value[i * par.degree()..min((i + 1) * par.degree(), value.len())];
+			let mut v = vec![0u64; par.degree()];
+
+			match *encoding {
+				Encoding::Poly => v[..slice.len()].copy_from_slice(slice),
+				Encoding::Simd => {
+					if let Some(op) = &par.op {
+						for i in 0..slice.len() {
+							v[par.matrix_reps_index_map[i]] = slice[i];
+						}
+						op.backward_vt(v.as_mut_ptr());
+					} else {
+						return Err(Error::SimdUnsupported);
+					}
+				}
+			}
+
+			let w = par.plaintext.center_vec_vt(&v);
+			let mut poly =
+				Poly::try_convert_from(&w as &[i64], &par.ctx, true, Representation::PowerBasis)?;
+			poly.change_representation(Representation::Ntt);
+
+			out.push(Plaintext {
+				par: par.clone(),
+				value: v,
+				encoding: Some(encoding.clone()),
+				poly_ntt: poly,
+			})
+		}
+		Ok(VecPlaintext(out))
 	}
 }
 

@@ -56,6 +56,25 @@ where
 	) -> Result<Self, Self::Error>;
 }
 
+/// Encode a value using a specified encoding.
+pub trait FheEncoderVariableTime<V>
+where
+	Self: FhePlaintext,
+{
+	/// The type of error returned.
+	type Error;
+
+	/// Attempt to encode a value using a specified encoding.
+	/// # Safety
+	/// This encoding runs in variable time and may leak information about the
+	/// value.
+	unsafe fn try_encode_vt(
+		value: V,
+		encoding: Self::Encoding,
+		par: &Arc<Self::Parameters>,
+	) -> Result<Self, Self::Error>;
+}
+
 /// Decode the value in the plaintext with the specified (optional) encoding.
 pub trait FheDecoder<P: FhePlaintext>
 where

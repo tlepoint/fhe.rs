@@ -42,6 +42,8 @@ impl<T: Unsigned> TryConvertFrom<T> for Poly {
 
 impl From<&Poly> for Rq {
 	fn from(p: &Poly) -> Self {
+		assert!(!p.has_lazy_coefficients);
+
 		let mut proto = Rq::new();
 		match p.representation {
 			Representation::PowerBasis => {
@@ -88,6 +90,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						allow_variable_time_computations: variable_time,
 						coefficients,
 						coefficients_shoup: None,
+						has_lazy_coefficients: false,
 					})
 				} else {
 					Err(Error::Default(
@@ -103,6 +106,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						allow_variable_time_computations: variable_time,
 						coefficients,
 						coefficients_shoup: None,
+						has_lazy_coefficients: false,
 					};
 					p.compute_coefficients_shoup();
 					Ok(p)
@@ -123,15 +127,29 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 						allow_variable_time_computations: variable_time,
 						coefficients,
 						coefficients_shoup: None,
+						has_lazy_coefficients: false,
 					})
 				} else if v.len() <= ctx.degree {
 					let mut out = Self::zero(ctx, repr.unwrap());
-					izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
-						let wi = w.as_slice_mut().unwrap();
-						wi[..v.len()].copy_from_slice(&v);
-						qi.reduce_vec(wi);
-					});
-					v.zeroize();
+					if variable_time {
+						unsafe {
+							izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(
+								|(mut w, qi)| {
+									let wi = w.as_slice_mut().unwrap();
+									wi[..v.len()].copy_from_slice(&v);
+									qi.reduce_vec_vt(wi);
+								},
+							);
+							out.allow_variable_time_computations();
+						}
+					} else {
+						izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
+							let wi = w.as_slice_mut().unwrap();
+							wi[..v.len()].copy_from_slice(&v);
+							qi.reduce_vec(wi);
+						});
+						v.zeroize();
+					}
 					Ok(out)
 				} else {
 					Err(Error::Default("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string()))
@@ -217,6 +235,7 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 				allow_variable_time_computations: variable_time,
 				coefficients: a,
 				coefficients_shoup: None,
+				has_lazy_coefficients: false,
 			};
 			if p.representation == Representation::NttShoup {
 				p.compute_coefficients_shoup()
@@ -308,6 +327,7 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 				allow_variable_time_computations: variable_time,
 				coefficients,
 				coefficients_shoup: None,
+				has_lazy_coefficients: false,
 			};
 
 			match p.representation {

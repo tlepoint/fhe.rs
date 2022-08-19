@@ -106,9 +106,9 @@ impl NttOperator {
 					let s = 2 * i * l;
 					match l {
 						1 => {
-							let uj = a_ptr.add(s);
-							let ujl = a_ptr.add(s + l);
-							self.butterfly(&mut *uj, &mut *ujl, omega, omega_shoup);
+							let uj = &mut *a_ptr.add(s);
+							let ujl = &mut *a_ptr.add(s + l);
+							self.butterfly(uj, ujl, omega, omega_shoup);
 							*uj = self.reduce3(*uj);
 							*ujl = self.reduce3(*ujl);
 						}
@@ -192,15 +192,15 @@ impl NttOperator {
 			.for_each(|ai| *ai = self.p.mul_shoup(*ai, self.size_inv, self.size_inv_shoup));
 	}
 
+	/// Compute the forward NTT in place in variable time in a lazily fashion.
+	/// This means that the output coefficients may be up to 4 times the
+	/// modulus.
+	///
 	/// # Safety
-	///
-	/// Compute the forward NTT in place in variable time.
-	///
-	/// Aborts if a is not of the size handled by the operator.
-	pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
-		let n = self.size;
-
-		let mut l = n >> 1;
+	/// This function runs in variable time and may leak information about the
+	/// values of the input.
+	pub unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
+		let mut l = self.size >> 1;
 		let mut m = 1;
 		let mut k = 1;
 		while l > 0 {
@@ -212,11 +212,12 @@ impl NttOperator {
 				let s = 2 * i * l;
 				match l {
 					1 => {
-						let uj = a_ptr.add(s);
-						let ujl = a_ptr.add(s + l);
-						self.butterfly_vt(&mut *uj, &mut *ujl, omega, omega_shoup);
-						*uj = self.reduce3_vt(*uj);
-						*ujl = self.reduce3_vt(*ujl);
+						self.butterfly_vt(
+							&mut *a_ptr.add(s),
+							&mut *a_ptr.add(s + l),
+							omega,
+							omega_shoup,
+						);
 					}
 					_ => {
 						for j in s..(s + l) {
@@ -232,6 +233,18 @@ impl NttOperator {
 			}
 			l >>= 1;
 			m <<= 1;
+		}
+	}
+
+	/// Compute the forward NTT in place in variable time.
+	///
+	/// # Safety
+	/// This function runs in variable time and may leak information about the
+	/// values of the input.
+	pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
+		self.forward_vt_lazy(a_ptr);
+		for i in 0..self.size {
+			*a_ptr.add(i) = self.reduce3_vt(*a_ptr.add(i))
 		}
 	}
 
@@ -462,6 +475,35 @@ mod tests {
 
 						unsafe { op.backward_vt(b.as_mut_ptr()) }
 						assert_eq!(a, b);
+					}
+				}
+			}
+		}
+	}
+
+	#[test]
+	fn test_forward_lazy() {
+		let ntests = 100;
+
+		for size in [8, 1024] {
+			for p in [1153, 4611686018326724609] {
+				let q = Modulus::new(p).unwrap();
+
+				if supports_ntt(p, size) {
+					let op = NttOperator::new(&q, size).unwrap();
+
+					for _ in 0..ntests {
+						let mut a = q.random_vec(size);
+						let mut a_lazy = a.clone();
+
+						op.forward(&mut a);
+
+						unsafe {
+							op.forward_vt_lazy(a_lazy.as_mut_ptr());
+							q.reduce_vec(&mut a_lazy);
+						}
+
+						assert_eq!(a, a_lazy);
 					}
 				}
 			}

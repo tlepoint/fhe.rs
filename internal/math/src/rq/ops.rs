@@ -13,6 +13,7 @@ use zeroize::Zeroize;
 
 impl AddAssign<&Poly> for Poly {
 	fn add_assign(&mut self, p: &Poly) {
+		assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
 		assert_ne!(
 			self.representation,
 			Representation::NttShoup,
@@ -71,6 +72,7 @@ impl Add for Poly {
 
 impl SubAssign<&Poly> for Poly {
 	fn sub_assign(&mut self, p: &Poly) {
+		assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
 		assert_ne!(
 			self.representation,
 			Representation::NttShoup,
@@ -115,16 +117,24 @@ impl Sub<&Poly> for &Poly {
 
 impl MulAssign<&Poly> for Poly {
 	fn mul_assign(&mut self, p: &Poly) {
+		assert!(!p.has_lazy_coefficients);
 		assert_ne!(
 			self.representation,
 			Representation::NttShoup,
 			"Cannot multiply to a polynomial in NttShoup representation"
 		);
-		assert_eq!(
-			self.representation,
-			Representation::Ntt,
-			"Multiplication requires an Ntt representation."
-		);
+		if self.has_lazy_coefficients && self.representation == Representation::Ntt {
+			assert!(
+				p.representation == Representation::NttShoup,
+				"Can only multiply a polynomial with lazy coefficients by an NttShoup representation."
+			);
+		} else {
+			assert_eq!(
+				self.representation,
+				Representation::Ntt,
+				"Multiplication requires an Ntt representation."
+			);
+		}
 		debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 		self.allow_variable_time_computations |= p.allow_variable_time_computations;
 
@@ -182,7 +192,7 @@ impl MulAssign<&Poly> for Poly {
 						)
 					});
 				}
-				// TODO: What about the coefficients_shoup?
+				self.has_lazy_coefficients = false
 			}
 			_ => {
 				panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
@@ -274,6 +284,7 @@ impl Neg for &Poly {
 	type Output = Poly;
 
 	fn neg(self) -> Poly {
+		assert!(!self.has_lazy_coefficients);
 		let mut out = self.clone();
 		if self.allow_variable_time_computations {
 			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
@@ -391,6 +402,7 @@ where
 		allow_variable_time_computations: p_first.allow_variable_time_computations,
 		coefficients: coeffs,
 		coefficients_shoup: None,
+		has_lazy_coefficients: false,
 	})
 }
 

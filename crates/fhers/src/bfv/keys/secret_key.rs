@@ -169,7 +169,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 			}
 			c.change_representation(Representation::PowerBasis);
 
-			let mut d = self.par.scaler.scale(&c, false)?;
+			let mut d = self.par.scaler.scale(&c)?;
 
 			// TODO: Can we handle plaintext moduli that are BigUint?
 			let mut v = Vec::<u64>::from(&d)

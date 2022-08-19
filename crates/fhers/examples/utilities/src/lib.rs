@@ -23,14 +23,28 @@ impl fmt::Display for DisplayDuration {
 	}
 }
 
-// Utility macro for timing
+// Utility macros for timing
 #[macro_export]
 macro_rules! timeit {
 	($name:expr, $code:expr) => {{
+		timeit_n!($name, 1, $code)
+	}};
+}
+
+#[macro_export]
+macro_rules! timeit_n {
+	($name:expr, $loops:expr, $code:expr) => {{
 		use utilities::DisplayDuration;
 		let start = std::time::Instant::now();
+		for i in 1..$loops {
+			let r = $code;
+		}
 		let r = $code;
-		println!("⏱  {}: {}", $name, DisplayDuration(start.elapsed()));
+		println!(
+			"⏱  {}: {}",
+			$name,
+			DisplayDuration(start.elapsed() / $loops)
+		);
 		r
 	}};
 }
