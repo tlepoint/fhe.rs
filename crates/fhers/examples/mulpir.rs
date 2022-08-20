@@ -77,7 +77,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 			sk.switch_parameters(&params_switchers[1])?;
 			let ek_expansion_serialized = ek_expansion.to_bytes();
 			let ek_relin_serialized = ek_relin.to_bytes();
-			(sk_encrypt, sk, ek_expansion, ek_expansion_serialized, ek_relin, ek_relin_serialized)
+			(
+				sk_encrypt,
+				sk,
+				ek_expansion,
+				ek_expansion_serialized,
+				ek_relin,
+				ek_relin_serialized,
+			)
 		});
 	println!(
 		"📄 Evaluation key (expansion): {}",

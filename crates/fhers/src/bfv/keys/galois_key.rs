@@ -4,7 +4,7 @@ use super::key_switching_key::KeySwitchingKey;
 use crate::bfv::{
 	proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto},
 	traits::TryConvertFrom,
-	BfvParameters, Ciphertext, SecretKey, BfvParametersSwitcher,
+	BfvParameters, BfvParametersSwitcher, Ciphertext, SecretKey,
 };
 use crate::{Error, Result};
 use fhers_traits::FheParametersSwitchable;
@@ -63,7 +63,11 @@ impl GaloisKey {
 		})
 	}
 
-	pub fn relinearize_and_params_switch(&self, ct: &Ciphertext, switcher: &BfvParametersSwitcher) -> Result<Ciphertext> {
+	pub fn relinearize_and_params_switch(
+		&self,
+		ct: &Ciphertext,
+		switcher: &BfvParametersSwitcher,
+	) -> Result<Ciphertext> {
 		// assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
 
@@ -77,7 +81,8 @@ impl GaloisKey {
 		// println!("1. substitute {:?}", now.elapsed());
 		// let now = std::time::Instant::now();
 
-		self.ksk.key_switch_and_params_switch(&c2, &mut c0, &mut c1, switcher)?;
+		self.ksk
+			.key_switch_and_params_switch(&c2, &mut c0, &mut c1, switcher)?;
 		// println!("2. keyswitch {:?}", now.elapsed());
 
 		Ok(Ciphertext {

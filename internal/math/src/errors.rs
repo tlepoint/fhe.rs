@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::rq::Representation;
+
 /// The Result type for this library.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -7,12 +9,24 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
 	/// Indicates an invalid modulus
-	#[error("Invalid modulus: modulus {0} should be between 2 and (1 << 62) - 1")]
+	#[error("Invalid modulus: modulus {0} should be between 2 and (1 << 62) - 1.")]
 	InvalidModulus(u64),
 
 	/// Indicates an error in the serialization / deserialization.
 	#[error("{0}")]
 	Serialization(String),
+
+	/// Indicates that there is no more contexts to switch to.
+	#[error("This is the last context.")]
+	NoMoreContext,
+
+	/// Indicates that the provided context is invalid.
+	#[error("Invalid context provided.")]
+	InvalidContext,
+
+	/// Indicates an incorrect representation.
+	#[error("Incorrect representation: got {0:?}, expected {1:?}.")]
+	IncorrectRepresentation(Representation, Representation),
 
 	/// Indicates a default error
 	/// TODO: To delete when transition is over
