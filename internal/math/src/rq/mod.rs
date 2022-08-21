@@ -396,7 +396,7 @@ impl Poly {
 	///
 	/// Returns an error if there is no next context or if the representation
 	/// is not PowerBasis.
-	pub fn mod_switch_down(&mut self) -> Result<()> {
+	pub fn mod_switch_down_next(&mut self) -> Result<()> {
 		if self.ctx.next_context.is_none() {
 			return Err(Error::NoMoreContext);
 		}
@@ -458,28 +458,13 @@ impl Poly {
 	/// Returns an error if there is the provided context is not a child of the
 	/// current context, or if the polynomial is not in PowerBasis
 	/// representation.
-	pub fn mod_switch_to(&mut self, context: &Arc<Context>) -> Result<()> {
-		let mut niterations = 0;
-		let mut found = false;
-		let mut current_ctx = self.ctx.clone();
-		while current_ctx.next_context.is_some() {
-			niterations += 1;
-			current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
-			if &current_ctx == context {
-				found = true;
-				break;
-			}
+	pub fn mod_switch_down_to(&mut self, context: &Arc<Context>) -> Result<()> {
+		let niterations = self.ctx.niterations_to(context)?;
+		for _ in 0..niterations {
+			self.mod_switch_down_next()?;
 		}
-
-		if !found {
-			Err(Error::InvalidContext)
-		} else {
-			for _ in 0..niterations {
-				self.mod_switch_down()?;
-			}
-			assert_eq!(&self.ctx, context);
-			Ok(())
-		}
+		assert_eq!(&self.ctx, context);
+		Ok(())
 	}
 
 	pub fn multiply_inverse_power_of_x(&mut self, power: usize) -> Result<()> {
@@ -522,13 +507,18 @@ mod tests {
 	use itertools::Itertools;
 	use num_bigint::BigUint;
 	use num_traits::{One, Zero};
-	use proptest::num;
 	use rand::{thread_rng, Rng, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
 	use std::{error::Error, sync::Arc};
 
 	// Moduli to be used in tests.
-	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
+	const MODULI: &[u64; 5] = &[
+		1153,
+		4611686018326724609,
+		4611686018309947393,
+		4611686018232352769,
+		4611686018171535361,
+	];
 
 	#[test]
 	fn test_poly_zero() -> Result<(), Box<dyn Error>> {
@@ -556,8 +546,8 @@ mod tests {
 		let p = Poly::zero(&ctx, Representation::PowerBasis);
 		let q = Poly::zero(&ctx, Representation::Ntt);
 		assert_ne!(p, q);
-		assert_eq!(Vec::<u64>::from(&p), [0; 24]);
-		assert_eq!(Vec::<u64>::from(&q), [0; 24]);
+		assert_eq!(Vec::<u64>::from(&p), [0; 8 * MODULI.len()]);
+		assert_eq!(Vec::<u64>::from(&q), [0; 8 * MODULI.len()]);
 		assert_eq!(Vec::<BigUint>::from(&p), reference);
 		assert_eq!(Vec::<BigUint>::from(&q), reference);
 
@@ -870,14 +860,14 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mod_switch_down() -> Result<(), Box<dyn Error>> {
+	fn test_mod_switch_down_next() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		for _ in 0..ntests {
 			// If the polynomial has incorrect representation, an error is returned
 			assert!(Poly::random(&ctx, Representation::Ntt)
-				.mod_switch_down()
+				.mod_switch_down_next()
 				.is_err_and(|e| e
 					== &crate::Error::IncorrectRepresentation(
 						Representation::Ntt,
@@ -893,7 +883,7 @@ mod tests {
 				let denominator = current_ctx.modulus().clone();
 				current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
 				let numerator = current_ctx.modulus().clone();
-				assert!(p.mod_switch_down().is_ok());
+				assert!(p.mod_switch_down_next().is_ok());
 				assert_eq!(p.ctx, current_ctx);
 				let p_biguint = Vec::<BigUint>::from(&p);
 				assert_eq!(
@@ -906,6 +896,31 @@ mod tests {
 				reference = p_biguint.clone();
 			}
 		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_mod_switch_down_to() -> Result<(), Box<dyn Error>> {
+		let ntests = 100;
+		let ctx1 = Arc::new(Context::new(MODULI, 8)?);
+		let ctx2 = Arc::new(Context::new(&MODULI[..2], 8)?);
+
+		for _ in 0..ntests {
+			let mut p = Poly::random(&ctx1, Representation::PowerBasis);
+			let reference = Vec::<BigUint>::from(&p);
+
+			p.mod_switch_down_to(&ctx2)?;
+
+			assert_eq!(p.ctx, ctx2);
+			assert_eq!(
+				Vec::<BigUint>::from(&p),
+				reference
+					.iter()
+					.map(|b| ((b * ctx2.modulus()) + (ctx1.modulus() >> 1)) / ctx1.modulus())
+					.collect_vec()
+			);
+		}
+
 		Ok(())
 	}
 }
