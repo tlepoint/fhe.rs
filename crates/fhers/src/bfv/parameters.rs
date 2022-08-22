@@ -12,10 +12,11 @@ use math::{
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use protobuf::Message;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Parameters for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct BfvParameters {
 	/// Number of coefficients in a polynomial.
 	polynomial_degree: usize,
@@ -26,39 +27,60 @@ pub struct BfvParameters {
 	/// Vector of coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
 	/// must be specified.
-	pub(crate) ciphertext_moduli: Vec<u64>,
+	pub(crate) moduli: Vec<u64>,
 
 	/// Vector of the sized of the coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
 	/// must be specified.
-	ciphertext_moduli_sizes: Vec<usize>,
+	moduli_sizes: Vec<usize>,
 
 	/// Error variance
 	pub(crate) variance: usize,
 
 	/// Context for the underlying polynomials
-	pub(crate) ctx: Arc<Context>,
+	ctx: Arc<Context>,
 
 	/// Ntt operator for the SIMD plaintext, if possible.
 	pub(crate) op: Option<Arc<NttOperator>>,
 
 	/// Scaling polynomial for the plaintext
-	pub(crate) delta: Poly,
+	pub(crate) delta: Vec<Poly>,
 
 	/// Q modulo the plaintext modulus
-	pub(crate) q_mod_t: u64,
+	pub(crate) q_mod_t: Vec<u64>,
 
 	/// Down scaler for the plaintext
-	pub(crate) scaler: Scaler,
+	pub(crate) scalers: Vec<Scaler>,
 
 	/// Plaintext Modulus
 	pub(crate) plaintext: Modulus,
 
 	// Parameters for the multiplications
-	pub(crate) mul_1_params: MultiplicationParameters, // type 1
-	pub(crate) mul_2_params: MultiplicationParameters, // type 2
+	pub(crate) mul_1_params: Vec<MultiplicationParameters>, // type 1
+	pub(crate) mul_2_params: Vec<MultiplicationParameters>, // type 2
 
 	pub(crate) matrix_reps_index_map: Vec<usize>,
+}
+
+impl Debug for BfvParameters {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("BfvParameters")
+			.field("polynomial_degree", &self.polynomial_degree)
+			.field("plaintext_modulus", &self.plaintext_modulus)
+			.field("moduli", &self.moduli)
+			// .field("moduli_sizes", &self.moduli_sizes)
+			// .field("variance", &self.variance)
+			// .field("ctx", &self.ctx)
+			// .field("op", &self.op)
+			// .field("delta", &self.delta)
+			// .field("q_mod_t", &self.q_mod_t)
+			// .field("scaler", &self.scaler)
+			// .field("plaintext", &self.plaintext)
+			// .field("mul_1_params", &self.mul_1_params)
+			// .field("mul_2_params", &self.mul_2_params)
+			// .field("matrix_reps_index_map", &self.matrix_reps_index_map)
+			.finish()
+	}
 }
 
 impl FheParameters for BfvParameters {}
@@ -67,23 +89,38 @@ unsafe impl Send for BfvParameters {}
 
 impl BfvParameters {
 	/// Returns the underlying polynomial degree
-	pub fn degree(&self) -> usize {
+	pub const fn degree(&self) -> usize {
 		self.polynomial_degree
 	}
 
 	/// Returns a reference to the ciphertext moduli
 	pub fn moduli(&self) -> &[u64] {
-		&self.ciphertext_moduli
+		&self.moduli
 	}
 
 	/// Returns a reference to the ciphertext moduli
 	pub fn moduli_sizes(&self) -> &[usize] {
-		&self.ciphertext_moduli_sizes
+		&self.moduli_sizes
 	}
 
 	/// Returns the plaintext modulus
-	pub fn plaintext(&self) -> u64 {
+	pub const fn plaintext(&self) -> u64 {
 		self.plaintext_modulus
+	}
+
+	/// Returns the maximum level allowed by these parameters.
+	pub fn max_level(&self) -> usize {
+		self.moduli.len() - 1
+	}
+
+	/// Returns the context corresponding to the level.
+	pub(crate) fn ctx_at_level(&self, level: usize) -> Result<Arc<Context>> {
+		self.ctx.context_at_level(level).map_err(Error::MathError)
+	}
+
+	/// Returns the level of a given context
+	pub(crate) fn level_of_ctx(&self, ctx: &Arc<Context>) -> Result<usize> {
+		self.ctx.niterations_to(ctx).map_err(Error::MathError)
 	}
 
 	#[cfg(test)]
@@ -228,33 +265,6 @@ impl BfvParametersBuilder {
 			.map(|m| 64 - m.leading_zeros() as usize)
 			.collect_vec();
 
-		let op = NttOperator::new(&plaintext_modulus, self.degree);
-
-		let ctx = Arc::new(Context::new(&moduli, self.degree)?);
-		let plaintext_ctx = Arc::new(Context::new(&moduli[..1], self.degree)?);
-
-		let rns = RnsContext::new(&moduli)?;
-		let mut delta_rests = vec![];
-		for m in &moduli {
-			let q = Modulus::new(*m)?;
-			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
-		}
-		let delta = rns.lift((&delta_rests).into()); // -1/t mod Q
-		let mut delta_poly =
-			Poly::try_convert_from(&[delta], &ctx, true, Representation::PowerBasis)?;
-		delta_poly.change_representation(Representation::NttShoup);
-
-		// Compute Q mod t
-		let q_mod_t = (rns.modulus() % plaintext_modulus.modulus())
-			.to_u64()
-			.unwrap();
-
-		let scaler = Scaler::new(
-			&ctx,
-			&plaintext_ctx,
-			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns.modulus()),
-		)?;
-
 		// Create n+1 moduli of 62 bits for multiplication.
 		let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
 		let mut upper_bound = 1 << 62;
@@ -265,36 +275,77 @@ impl BfvParametersBuilder {
 			}
 		}
 
-		// For the first multiplication, we want to extend to a context that is ~60 bits
-		// larger.
-		let modulus_size = moduli_sizes.iter().sum::<usize>();
-		let n_moduli = ((modulus_size + 60) + 61) / 62;
-		let mut mul_1_moduli = vec![];
-		mul_1_moduli.append(&mut moduli.to_vec());
-		mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
-		let mul_1_ctx = Arc::new(Context::new(&mul_1_moduli, self.degree)?);
-		let mul_1_params = MultiplicationParameters::new(
-			&ctx,
-			&mul_1_ctx,
-			ScalingFactor::one(),
-			ScalingFactor::one(),
-			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx.modulus()),
-		)?;
+		let op = NttOperator::new(&plaintext_modulus, self.degree);
 
-		// For the second multiplication, we use two moduli of roughly the same size
-		let n_moduli = moduli.len();
-		let mut mul_2_moduli = vec![];
-		mul_2_moduli.append(&mut moduli.to_vec());
-		mul_2_moduli.append(&mut extended_basis[..n_moduli].to_vec());
-		let rns_2 = RnsContext::new(&extended_basis[..n_moduli])?;
-		let mul_2_ctx = Arc::new(Context::new(&mul_2_moduli, self.degree)?);
-		let mul_2_params = MultiplicationParameters::new(
-			&ctx,
-			&mul_2_ctx,
-			ScalingFactor::one(),
-			ScalingFactor::new(rns_2.modulus(), ctx.modulus()),
-			ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
-		)?;
+		let ctx = Arc::new(Context::new(&moduli, self.degree)?);
+		let plaintext_ctx = Arc::new(Context::new(&moduli[..1], self.degree)?);
+
+		let mut delta_rests = vec![];
+		for m in &moduli {
+			let q = Modulus::new(*m)?;
+			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
+		}
+
+		let mut delta = Vec::with_capacity(moduli.len());
+		let mut q_mod_t = Vec::with_capacity(moduli.len());
+		let mut scalers = Vec::with_capacity(moduli.len());
+		let mut mul_1_params = Vec::with_capacity(moduli.len());
+		let mut mul_2_params = Vec::with_capacity(moduli.len());
+		for i in 0..moduli.len() {
+			let rns = RnsContext::new(&moduli[..moduli.len() - i]).unwrap();
+			let ctx_i = Arc::new(Context::new(&moduli[..moduli.len() - i], self.degree).unwrap());
+			let mut p = Poly::try_convert_from(
+				&[rns.lift((&delta_rests).into())],
+				&ctx_i,
+				true,
+				Representation::PowerBasis,
+			)?;
+			p.change_representation(Representation::NttShoup);
+			delta.push(p);
+
+			q_mod_t.push(
+				(rns.modulus() % plaintext_modulus.modulus())
+					.to_u64()
+					.unwrap(),
+			);
+
+			scalers.push(Scaler::new(
+				&ctx_i,
+				&plaintext_ctx,
+				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns.modulus()),
+			)?);
+
+			// For the first multiplication, we want to extend to a context that
+			// is ~60 bits larger.
+			let modulus_size = moduli_sizes[..moduli_sizes.len() - i].iter().sum::<usize>();
+			let n_moduli = ((modulus_size + 60) + 61) / 62;
+			let mut mul_1_moduli = vec![];
+			mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
+			mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
+			let mul_1_ctx = Arc::new(Context::new(&mul_1_moduli, self.degree)?);
+			mul_1_params.push(MultiplicationParameters::new(
+				&ctx_i,
+				&mul_1_ctx,
+				ScalingFactor::one(),
+				ScalingFactor::one(),
+				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx_i.modulus()),
+			)?);
+
+			// For the second multiplication, we use two moduli of roughly the same size
+			let n_moduli = moduli.len() - i;
+			let mut mul_2_moduli = vec![];
+			mul_2_moduli.append(&mut moduli[..n_moduli].to_vec());
+			mul_2_moduli.append(&mut extended_basis[..n_moduli].to_vec());
+			let rns_2 = RnsContext::new(&extended_basis[..n_moduli])?;
+			let mul_2_ctx = Arc::new(Context::new(&mul_2_moduli, self.degree)?);
+			mul_2_params.push(MultiplicationParameters::new(
+				&ctx_i,
+				&mul_2_ctx,
+				ScalingFactor::one(),
+				ScalingFactor::new(rns_2.modulus(), ctx_i.modulus()),
+				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
+			)?);
+		}
 
 		// We use the same code as SEAL
 		// https://github.com/microsoft/SEAL/blob/82b07db635132e297282649e2ab5908999089ad2/native/src/seal/batchencoder.cpp
@@ -316,14 +367,14 @@ impl BfvParametersBuilder {
 		Ok(BfvParameters {
 			polynomial_degree: self.degree,
 			plaintext_modulus: self.plaintext,
-			ciphertext_moduli: moduli,
-			ciphertext_moduli_sizes: moduli_sizes,
+			moduli,
+			moduli_sizes,
 			variance: self.variance,
 			ctx,
 			op: op.map(Arc::new),
-			delta: delta_poly,
+			delta,
 			q_mod_t,
-			scaler,
+			scalers,
 			plaintext: plaintext_modulus,
 			mul_1_params,
 			mul_2_params,
@@ -337,7 +388,7 @@ impl Serialize for BfvParameters {
 		let mut params = Parameters::new();
 		params.degree = self.polynomial_degree as u32;
 		params.plaintext = self.plaintext_modulus;
-		params.moduli = self.ciphertext_moduli.clone();
+		params.moduli = self.moduli.clone();
 		params.variance = self.variance as u32;
 		params.write_to_bytes().unwrap()
 	}
@@ -483,10 +534,10 @@ mod tests {
 	#[test]
 	fn test_default() {
 		let params = BfvParameters::default(1);
-		assert_eq!(params.ciphertext_moduli.len(), 1);
+		assert_eq!(params.moduli.len(), 1);
 
 		let params = BfvParameters::default(2);
-		assert_eq!(params.ciphertext_moduli.len(), 2);
+		assert_eq!(params.moduli.len(), 2);
 	}
 
 	#[test]
@@ -496,7 +547,7 @@ mod tests {
 			.set_plaintext_modulus(2)
 			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.build();
-		assert!(params.is_ok_and(|p| p.ciphertext_moduli
+		assert!(params.is_ok_and(|p| p.moduli
 			== &[
 				4611686018427387761,
 				4611686018427387617,
@@ -518,7 +569,7 @@ mod tests {
 				2017,
 			])
 			.build();
-		assert!(params.is_ok_and(|p| p.ciphertext_moduli_sizes == &[62, 62, 62, 61, 60, 11]));
+		assert!(params.is_ok_and(|p| p.moduli_sizes == &[62, 62, 62, 61, 60, 11]));
 
 		Ok(())
 	}

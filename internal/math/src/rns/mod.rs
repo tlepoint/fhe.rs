@@ -8,14 +8,14 @@ use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
 use num_traits::{cast::ToPrimitive, One, Zero};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt::Debug};
 
 mod scaler;
 
 pub use scaler::{RnsScaler, ScalingFactor};
 
 /// Context for a Residue Number System.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct RnsContext {
 	moduli_u64: Vec<u64>,
 	moduli: Vec<Modulus>,
@@ -24,6 +24,20 @@ pub struct RnsContext {
 	q_star: Vec<BigUint>,
 	garner: Vec<BigUint>,
 	product: BigUint,
+}
+
+impl Debug for RnsContext {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("RnsContext")
+			.field("moduli_u64", &self.moduli_u64)
+			// .field("moduli", &self.moduli)
+			// .field("q_tilde", &self.q_tilde)
+			// .field("q_tilde_shoup", &self.q_tilde_shoup)
+			// .field("q_star", &self.q_star)
+			// .field("garner", &self.garner)
+			.field("product", &self.product)
+			.finish()
+	}
 }
 
 impl RnsContext {
@@ -93,7 +107,7 @@ impl RnsContext {
 	}
 
 	/// Returns the product of the moduli used when creating the RNS context.
-	pub fn modulus(&self) -> &BigUint {
+	pub const fn modulus(&self) -> &BigUint {
 		&self.product
 	}
 

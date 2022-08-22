@@ -120,7 +120,7 @@ pub trait FheDecrypter<
 	type Error;
 
 	/// Try to decrypt an [`FheCiphertext`] into an [`FhePlaintext`].
-	fn try_decrypt(&mut self, ct: &C) -> Result<P, Self::Error>;
+	fn try_decrypt(&self, ct: &C) -> Result<P, Self::Error>;
 }
 
 /// Serialization.
@@ -154,7 +154,7 @@ where
 	type Context;
 
 	/// Attempt to deserialize from a vector of bytes
-	fn from_bytes(bytes: &[u8], par: &Arc<Self::Context>) -> Result<Self, Self::Error>;
+	fn from_bytes(bytes: &[u8], ctx: &Arc<Self::Context>) -> Result<Self, Self::Error>;
 }
 
 /// Deserialization without context.

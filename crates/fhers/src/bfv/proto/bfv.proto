@@ -5,12 +5,14 @@ package fhers;
 message Ciphertext {
     repeated bytes c = 1;
     bytes seed = 2;
+    uint32 level = 3;
 }
 
 message KeySwitchingKey {
     repeated bytes c0 = 1;
     bytes seed = 2;
-    uint32 size = 3;
+    uint32 ciphertext_level = 3;
+    uint32 ksk_level = 4;
 }
 
 message RelinearizationKey {
@@ -25,6 +27,8 @@ message GaloisKey {
 message EvaluationKey {
     RelinearizationKey rk = 1;
     repeated GaloisKey gk = 2;
+    uint32 ciphertext_level = 3;
+    uint32 evaluation_key_level = 4;
 }
 
 message Parameters {

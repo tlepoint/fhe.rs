@@ -3,7 +3,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
 	dot_product_scalar, mul, mul2, BfvParameters, BfvParametersBuilder, Encoding,
-	EvaluationKeyBuilder, Plaintext, SecretKey,
+	LeveledEvaluationKeyBuilder, Plaintext, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::{izip, Itertools};
@@ -33,7 +33,8 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 
 	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
-		let ek = EvaluationKeyBuilder::new(&sk)
+		let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)
+			.unwrap()
 			.enable_inner_sum()
 			.unwrap()
 			.enable_relinearization()
@@ -45,10 +46,12 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.build()
 			.unwrap();
 
-		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::Poly, &par)
-			.unwrap();
-		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::Poly, &par)
-			.unwrap();
+		let pt1 =
+			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
+				.unwrap();
+		let pt2 =
+			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
+				.unwrap();
 		let mut c1 = sk.try_encrypt(&pt1).unwrap();
 		let c2 = sk.try_encrypt(&pt2).unwrap();
 
@@ -56,7 +59,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.map(|i| {
 				let pt = Plaintext::try_encode(
 					&(i..16u64).collect_vec() as &[u64],
-					Encoding::Poly,
+					Encoding::Poly(0),
 					&par,
 				)
 				.unwrap();
@@ -65,7 +68,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.collect_vec();
 		let pt_vec = (0..128)
 			.map(|i| {
-				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::Poly, &par)
+				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
 					.unwrap()
 			})
 			.collect_vec();
