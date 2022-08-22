@@ -4,7 +4,7 @@ use crate::bfv::{
 	parameters::{BfvParameters, MultiplicationParameters},
 	proto::bfv::Ciphertext as CiphertextProto,
 	traits::TryConvertFrom,
-	EvaluationKey, Plaintext,
+	LeveledEvaluationKey, Plaintext,
 };
 use crate::{Error, Result};
 use fhers_traits::{
@@ -33,6 +33,24 @@ pub struct Ciphertext {
 
 	/// The ciphertext elements.
 	pub(crate) c: Vec<Poly>,
+
+	/// The ciphertext level
+	pub(crate) level: usize,
+}
+
+impl Ciphertext {
+	/// Modulo switch the ciphertext to the next level.
+	pub fn mod_switch_to_last_level(&mut self) {
+		let last_ctx = self.par.ctx_at_level(self.par.max_level()).unwrap();
+		self.seed = None;
+		self.c.iter_mut().for_each(|ci| {
+			if ci.ctx() != &last_ctx {
+				ci.change_representation(Representation::PowerBasis);
+				assert!(ci.mod_switch_down_to(&last_ctx).is_ok());
+				ci.change_representation(Representation::Ntt);
+			}
+		})
+	}
 }
 
 impl FheCiphertext for Ciphertext {}
@@ -70,6 +88,7 @@ impl Ciphertext {
 			par: par.clone(),
 			seed: None,
 			c: Default::default(),
+			level: 0,
 		}
 	}
 }
@@ -91,6 +110,7 @@ impl AddAssign<&Ciphertext> for Ciphertext {
 		if self.c.is_empty() {
 			*self = rhs.clone()
 		} else {
+			assert_eq!(self.level, rhs.level);
 			assert_eq!(self.c.len(), rhs.c.len());
 			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
 			self.seed = None
@@ -105,6 +125,7 @@ impl AddAssign<Ciphertext> for Ciphertext {
 		if self.c.is_empty() {
 			*self = rhs
 		} else {
+			assert_eq!(self.level, rhs.level);
 			assert_eq!(self.c.len(), rhs.c.len());
 			izip!(&mut self.c, rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
 			self.seed = None
@@ -129,6 +150,7 @@ impl SubAssign<&Ciphertext> for Ciphertext {
 		if self.c.is_empty() {
 			*self = -rhs
 		} else {
+			assert_eq!(self.level, rhs.level);
 			assert_eq!(self.c.len(), rhs.c.len());
 			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
 			self.seed = None
@@ -145,6 +167,7 @@ impl Neg for &Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
+			level: self.level,
 		}
 	}
 }
@@ -152,7 +175,10 @@ impl Neg for &Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
 	fn mul_assign(&mut self, rhs: &Plaintext) {
 		assert_eq!(self.par, rhs.par);
-		self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
+		if !self.c.is_empty() {
+			assert_eq!(self.level, rhs.level);
+			self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
+		}
 		self.seed = None
 	}
 }
@@ -181,20 +207,21 @@ impl Mul<&Ciphertext> for &Ciphertext {
 		if self.c.is_empty() {
 			return self.clone();
 		}
+		assert_eq!(self.level, rhs.level);
 
-		let mp = &self.par.mul_1_params;
+		let mp = &self.par.mul_1_params[self.level];
 
 		// Scale all ciphertexts
 		// let mut now = std::time::SystemTime::now();
 		let self_c = self
 			.c
 			.iter()
-			.map(|ci| mp.extender_self.scale(ci).unwrap())
+			.map(|ci| ci.scale(&mp.extender_self).unwrap())
 			.collect_vec();
 		let other_c = rhs
 			.c
 			.iter()
-			.map(|ci| mp.extender_self.scale(ci).unwrap())
+			.map(|ci| ci.scale(&mp.extender_self).unwrap())
 			.collect_vec();
 		// println!("Extend: {:?}", now.elapsed().unwrap());
 
@@ -214,7 +241,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			.iter_mut()
 			.map(|ci| {
 				ci.change_representation(Representation::PowerBasis);
-				let mut ci = mp.down_scaler.scale(ci).unwrap();
+				let mut ci = ci.scale(&mp.down_scaler).unwrap();
 				ci.change_representation(Representation::Ntt);
 				ci
 			})
@@ -225,6 +252,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			par: self.par.clone(),
 			seed: None,
 			c,
+			level: rhs.level,
 		}
 	}
 }
@@ -271,6 +299,7 @@ where
 		par: ct_first.par.clone(),
 		seed: None,
 		c,
+		level: ct_first.level,
 	})
 }
 
@@ -278,7 +307,7 @@ where
 fn mul_internal(
 	ct0: &Ciphertext,
 	ct1: &Ciphertext,
-	ek: &EvaluationKey,
+	ek: &LeveledEvaluationKey,
 	mp: &MultiplicationParameters,
 ) -> Result<Ciphertext> {
 	if !ek.supports_relinearization() {
@@ -289,7 +318,10 @@ fn mul_internal(
 	if ct0.par != ct1.par {
 		return Err(Error::DefaultError("Incompatible parameters".to_string()));
 	}
-	if ct0.par.ciphertext_moduli.len() == 1 {
+	if ct0.level != ct1.level {
+		return Err(Error::DefaultError("Incompatible levels".to_string()));
+	}
+	if ct0.par.moduli.len() == 1 {
 		return Err(Error::DefaultError(
 			"Parameters do not allow for multiplication".to_string(),
 		));
@@ -302,10 +334,10 @@ fn mul_internal(
 
 	// Extend
 	// let mut now = std::time::SystemTime::now();
-	let c00 = mp.extender_self.scale(&ct0.c[0])?;
-	let c01 = mp.extender_self.scale(&ct0.c[1])?;
-	let c10 = mp.extender_other.scale(&ct1.c[0])?;
-	let c11 = mp.extender_other.scale(&ct1.c[1])?;
+	let c00 = ct0.c[0].scale(&mp.extender_self)?;
+	let c01 = ct0.c[1].scale(&mp.extender_self)?;
+	let c10 = ct1.c[0].scale(&mp.extender_other)?;
+	let c11 = ct1.c[1].scale(&mp.extender_other)?;
 	// println!("Extend: {:?}", now.elapsed().unwrap());
 
 	// Multiply
@@ -322,33 +354,36 @@ fn mul_internal(
 	// Scale
 	// TODO: This should be faster??
 	// now = std::time::SystemTime::now();
-	let mut c0 = mp.down_scaler.scale(&c0)?;
-	let mut c1 = mp.down_scaler.scale(&c1)?;
-	let c2 = mp.down_scaler.scale(&c2)?;
+	let mut c0 = c0.scale(&mp.down_scaler)?;
+	let mut c1 = c1.scale(&mp.down_scaler)?;
+	let c2 = c2.scale(&mp.down_scaler)?;
 	// println!("Scale: {:?}", now.elapsed().unwrap());
 
 	// Relinearize
 	// now = std::time::SystemTime::now();
 	c0.change_representation(Representation::Ntt);
 	c1.change_representation(Representation::Ntt);
-	ek.relinearizes_with_poly(&c2, &mut c0, &mut c1)?;
+	let (c0r, c1r) = ek.relinearizes_with_poly(&c2)?;
+	c0 += &c0r;
+	c1 += &c1r;
 	// println!("Relinearize: {:?}", now.elapsed().unwrap());
 
 	Ok(Ciphertext {
 		par: ct0.par.clone(),
 		seed: None,
 		c: vec![c0, c1],
+		level: ct0.level,
 	})
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext> {
-	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params)
+pub fn mul(ct0: &Ciphertext, ct1: &Ciphertext, ek: &LeveledEvaluationKey) -> Result<Ciphertext> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params[ct0.level])
 }
 
 /// Multiply two ciphertext and relinearize.
-pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &EvaluationKey) -> Result<Ciphertext> {
-	mul_internal(ct0, ct1, ek, &ct0.par.mul_2_params)
+pub fn mul2(ct0: &Ciphertext, ct1: &Ciphertext, ek: &LeveledEvaluationKey) -> Result<Ciphertext> {
+	mul_internal(ct0, ct1, ek, &ct0.par.mul_1_params[ct0.level])
 }
 
 /// Conversions from and to protobuf.
@@ -363,6 +398,7 @@ impl From<&Ciphertext> for CiphertextProto {
 		} else {
 			proto.c.push(ct.c[ct.c.len() - 1].to_bytes())
 		}
+		proto.level = ct.level as u32;
 		proto
 	}
 }
@@ -373,11 +409,17 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			return Err(Error::DefaultError("Not enough polynomials".to_string()));
 		}
 
+		if value.level as usize > par.max_level() {
+			return Err(Error::DefaultError("Invalid level".to_string()));
+		}
+
+		let ctx = par.ctx_at_level(value.level as usize)?;
+
 		let mut seed = None;
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			c.push(Poly::from_bytes(cip, &par.ctx)?)
+			c.push(Poly::from_bytes(cip, &ctx)?)
 		}
 
 		if !value.seed.is_empty() {
@@ -386,7 +428,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 				return Err(Error::DefaultError("Invalid seed".to_string()));
 			}
 			seed = try_seed.ok();
-			let mut c1 = Poly::random_from_seed(&par.ctx, Representation::Ntt, seed.unwrap());
+			let mut c1 = Poly::random_from_seed(&ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
 			c.push(c1)
 		}
@@ -395,6 +437,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			par: par.clone(),
 			seed,
 			c,
+			level: value.level as usize,
 		})
 	}
 }
@@ -404,7 +447,7 @@ mod tests {
 	use super::{dot_product_scalar, mul, mul2};
 	use crate::bfv::{
 		proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom, BfvParameters,
-		Ciphertext, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
+		Ciphertext, Encoding, LeveledEvaluationKeyBuilder, Plaintext, SecretKey,
 	};
 	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use itertools::{izip, Itertools};
@@ -423,9 +466,9 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
-				let mut sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params);
 
-				for encoding in [Encoding::Poly, Encoding::Simd] {
+				for encoding in [Encoding::Poly(0), Encoding::Simd(0)] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 					let pt_b =
@@ -458,9 +501,9 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
-				let mut sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params);
 
-				for encoding in [Encoding::Poly, Encoding::Simd] {
+				for encoding in [Encoding::Poly(0), Encoding::Simd(0)] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 					let pt_b =
@@ -492,8 +535,8 @@ mod tests {
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
 
-				let mut sk = SecretKey::random(&params);
-				for encoding in [Encoding::Poly, Encoding::Simd] {
+				let sk = SecretKey::random(&params);
+				for encoding in [Encoding::Poly(0), Encoding::Simd(0)] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 
@@ -518,11 +561,11 @@ mod tests {
 				let a = params.plaintext.random_vec(params.degree());
 				let b = params.plaintext.random_vec(params.degree());
 
-				let mut sk = SecretKey::random(&params);
-				for encoding in [Encoding::Poly, Encoding::Simd] {
+				let sk = SecretKey::random(&params);
+				for encoding in [Encoding::Poly(0), Encoding::Simd(0)] {
 					let mut c = vec![0u64; params.degree()];
 					match encoding {
-						Encoding::Poly => {
+						Encoding::Poly(_) => {
 							for i in 0..params.degree() {
 								for j in 0..params.degree() {
 									if i + j >= params.degree() {
@@ -538,7 +581,7 @@ mod tests {
 								}
 							}
 						}
-						Encoding::Simd => {
+						Encoding::Simd(_) => {
 							c = a.clone();
 							params.plaintext.mul_vec(&mut c, &b);
 						}
@@ -572,8 +615,8 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let mut sk = SecretKey::random(&par);
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+			let sk = SecretKey::random(&par);
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd(0), &par)?;
 
 			let ct1 = sk.try_encrypt(&pt)?;
 			let ct2 = sk.try_encrypt(&pt)?;
@@ -582,13 +625,13 @@ mod tests {
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.try_decrypt(&ct3)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, expected);
 
 			let e = expected.clone();
 			par.plaintext.mul_vec(&mut expected, &e);
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
 			let pt = sk.try_decrypt(&ct4)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, expected);
 		}
 		Ok(())
 	}
@@ -603,11 +646,11 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let mut sk = SecretKey::random(&par);
-			let ek = EvaluationKeyBuilder::new(&sk, &sk.par)
+			let sk = SecretKey::random(&par);
+			let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 				.enable_relinearization()?
 				.build()?;
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd(0), &par)?;
 
 			let ct1 = sk.try_encrypt(&pt)?;
 			let ct2 = sk.try_encrypt(&pt)?;
@@ -615,7 +658,7 @@ mod tests {
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.try_decrypt(&ct3)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, expected);
 		}
 		Ok(())
 	}
@@ -631,11 +674,11 @@ mod tests {
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let mut sk = SecretKey::random(&par);
-			let ek = EvaluationKeyBuilder::new(&sk, &sk.par)
+			let sk = SecretKey::random(&par);
+			let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 				.enable_relinearization()?
 				.build()?;
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd, &par)?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::Simd(0), &par)?;
 
 			let ct1 = sk.try_encrypt(&pt)?;
 			let ct2 = sk.try_encrypt(&pt)?;
@@ -643,7 +686,7 @@ mod tests {
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.try_decrypt(&ct3)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd)?, expected);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, expected);
 		}
 		Ok(())
 	}
@@ -656,7 +699,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params)?;
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd(0), &params)?;
 			let ct = sk.try_encrypt(&pt)?;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
@@ -679,15 +722,15 @@ mod tests {
 				let ct = (0..size)
 					.map(|_| {
 						let v = params.plaintext.random_vec(params.degree());
-						let pt =
-							Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params).unwrap();
+						let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd(0), &params)
+							.unwrap();
 						sk.try_encrypt(&pt).unwrap()
 					})
 					.collect_vec();
 				let pt = (0..size)
 					.map(|_| {
 						let v = params.plaintext.random_vec(params.degree());
-						Plaintext::try_encode(&v as &[u64], Encoding::Simd, &params).unwrap()
+						Plaintext::try_encode(&v as &[u64], Encoding::Simd(0), &params).unwrap()
 					})
 					.collect_vec();
 

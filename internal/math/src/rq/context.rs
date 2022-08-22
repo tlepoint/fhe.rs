@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use itertools::Itertools;
 use num_bigint::BigUint;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{
 	rns::RnsContext,
@@ -10,7 +9,7 @@ use crate::{
 };
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq)]
 pub struct Context {
 	pub(crate) moduli: Vec<u64>,
 	pub(crate) q: Vec<Modulus>,
@@ -21,6 +20,22 @@ pub struct Context {
 	pub(crate) inv_last_qi_mod_qj: Vec<u64>,
 	pub(crate) inv_last_qi_mod_qj_shoup: Vec<u64>,
 	pub(crate) next_context: Option<Arc<Context>>,
+}
+
+impl Debug for Context {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Context")
+			.field("moduli", &self.moduli)
+			// .field("q", &self.q)
+			// .field("rns", &self.rns)
+			// .field("ops", &self.ops)
+			// .field("degree", &self.degree)
+			// .field("bitrev", &self.bitrev)
+			// .field("inv_last_qi_mod_qj", &self.inv_last_qi_mod_qj)
+			// .field("inv_last_qi_mod_qj_shoup", &self.inv_last_qi_mod_qj_shoup)
+			.field("next_context", &self.next_context)
+			.finish()
+	}
 }
 
 impl Context {
@@ -94,6 +109,10 @@ impl Context {
 	/// Returns the number of iterations to switch to a children context.
 	/// Returns an error if the context provided is not a child context.
 	pub fn niterations_to(&self, context: &Arc<Context>) -> Result<usize> {
+		if context.as_ref() == self {
+			return Ok(0);
+		}
+
 		let mut niterations = 0;
 		let mut found = false;
 		let mut current_ctx = Arc::new(self.clone());
@@ -109,6 +128,21 @@ impl Context {
 			Ok(niterations)
 		} else {
 			Err(Error::InvalidContext)
+		}
+	}
+
+	/// Returns the context after `i` iterations.
+	pub fn context_at_level(&self, i: usize) -> Result<Arc<Self>> {
+		if i >= self.moduli.len() {
+			Err(Error::Default(
+				"No context at the specified level".to_string(),
+			))
+		} else {
+			let mut current_ctx = Arc::new(self.clone());
+			for _ in 0..i {
+				current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
+			}
+			Ok(current_ctx)
 		}
 	}
 }
@@ -173,10 +207,7 @@ mod tests {
 		// A context should have a children pointing to a context with one less modulus.
 		let context = Arc::new(Context::new(MODULI, 8)?);
 
-		assert_eq!(
-			context.niterations_to(&context).err(),
-			Some(crate::Error::InvalidContext)
-		);
+		assert_eq!(context.niterations_to(&context).ok(), Some(0));
 
 		assert_eq!(
 			context

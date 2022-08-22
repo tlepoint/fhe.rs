@@ -283,9 +283,7 @@ impl Modulus {
 	///
 	/// Aborts if any of the values of the vector is >= p in debug mode.
 	pub fn shoup_vec(&self, a: &[u64]) -> Vec<u64> {
-		let mut a_shoup = Vec::with_capacity(a.len());
-		a.iter().for_each(|ai| a_shoup.push(self.shoup(*ai)));
-		a_shoup
+		a.iter().map(|ai| self.shoup(*ai)).collect_vec()
 	}
 
 	/// Shoup modular multiplication of vectors in place in constant time.
@@ -375,18 +373,14 @@ impl Modulus {
 
 	/// Reduce a vector in constant time.
 	pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
-		let mut b = a.to_vec();
-		b.iter_mut().for_each(|bi| *bi = self.reduce(*bi));
-		b
+		a.iter().map(|ai| self.reduce(*ai)).collect_vec()
 	}
 
 	/// # Safety
 	///
 	/// Reduce a vector in variable time.
 	pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
-		let mut b = a.to_vec();
-		b.iter_mut().for_each(|bi| *bi = self.reduce_vt(*bi));
-		b
+		a.iter().map(|bi| self.reduce_vt(*bi)).collect_vec()
 	}
 
 	/// Modular negation of a vector in place in constant time.

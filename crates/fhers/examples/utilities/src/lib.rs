@@ -63,7 +63,11 @@ pub fn number_elements_per_plaintext(par: Arc<BfvParameters>, elements_size: usi
 	(par.plaintext().ilog2() as usize * par.degree()) / (elements_size * 8)
 }
 
-pub fn encode_database(database: &Vec<Vec<u8>>, par: Arc<BfvParameters>) -> Array2<Plaintext> {
+pub fn encode_database(
+	database: &Vec<Vec<u8>>,
+	par: Arc<BfvParameters>,
+	level: usize,
+) -> Array2<Plaintext> {
 	let elements_size = database[0].len();
 	let number_elements_per_plaintext = number_elements_per_plaintext(par.clone(), elements_size);
 	let number_rows = database.len().div_ceil(number_elements_per_plaintext);
@@ -77,7 +81,7 @@ pub fn encode_database(database: &Vec<Vec<u8>>, par: Arc<BfvParameters>) -> Arra
 	println!("dimensions = {} {}", dimension_1, dimension_2);
 	println!("dimension = {}", dimension_1 * dimension_2);
 	let mut preprocessed_database =
-		vec![Plaintext::zero(Encoding::Poly, &par); dimension_1 * dimension_2];
+		vec![Plaintext::zero(Encoding::Poly(level), &par).unwrap(); dimension_1 * dimension_2];
 	(0..number_rows).for_each(|i| {
 		let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
 		for j in 0..number_elements_per_plaintext {
@@ -87,7 +91,7 @@ pub fn encode_database(database: &Vec<Vec<u8>>, par: Arc<BfvParameters>) -> Arra
 		}
 		let pt_values = transcode_backward(&serialized_plaintext, par.plaintext().ilog2() as usize);
 		preprocessed_database[i] =
-			Plaintext::try_encode(&pt_values as &[u64], Encoding::Poly, &par).unwrap();
+			Plaintext::try_encode(&pt_values as &[u64], Encoding::Poly(level), &par).unwrap();
 	});
 	Array2::from_shape_vec((dimension_1, dimension_2), preprocessed_database).unwrap()
 }

@@ -9,17 +9,18 @@ mod ops;
 mod serialize;
 
 pub mod scaler;
+pub mod switcher;
 pub mod traits;
 pub use context::Context;
 pub use ops::dot_product;
 
+use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
 use crate::{Error, Result};
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2, Axis};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use traits::TryConvertFrom;
 use util::sample_vec_cbd;
 use zeroize::Zeroize;
 
@@ -42,10 +43,10 @@ pub enum Representation {
 pub struct Poly {
 	ctx: Arc<Context>,
 	representation: Representation,
+	has_lazy_coefficients: bool,
 	allow_variable_time_computations: bool,
 	coefficients: Array2<u64>,
 	coefficients_shoup: Option<Array2<u64>>,
-	has_lazy_coefficients: bool,
 }
 
 impl Poly {
@@ -55,13 +56,13 @@ impl Poly {
 			ctx: ctx.clone(),
 			representation: representation.clone(),
 			allow_variable_time_computations: false,
+			has_lazy_coefficients: false,
 			coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
 			coefficients_shoup: if representation == Representation::NttShoup {
 				Some(Array2::zeros((ctx.q.len(), ctx.degree)))
 			} else {
 				None
 			},
-			has_lazy_coefficients: false,
 		}
 	}
 
@@ -81,7 +82,6 @@ impl Poly {
 	}
 
 	/// Current representation of the polynomial.
-	/// TODO: To test
 	pub const fn representation(&self) -> &Representation {
 		&self.representation
 	}
@@ -386,10 +386,6 @@ impl Poly {
 		}
 	}
 
-	pub fn ctx(&self) -> &Arc<Context> {
-		&self.ctx
-	}
-
 	/// Modulus switch down the polynomial by dividing and rounding each
 	/// coefficient by the last modulus in the chain, then drops the last
 	/// modulus, as described in Algorithm 2 of <https://eprint.iacr.org/2018/931.pdf>.
@@ -421,7 +417,7 @@ impl Poly {
 			.iter_mut()
 			.for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
 
-		let (mut q_new_polys, q_last_poly) =
+		let (mut q_new_polys, mut q_last_poly) =
 			self.coefficients.view_mut().split_at(Axis(0), q_len - 1);
 
 		izip!(
@@ -432,7 +428,7 @@ impl Poly {
 		)
 		.for_each(|(coeffs, qi, inv, inv_shoup)| {
 			let q_last_div_2_mod_qi = qi.reduce(q_last_div_2);
-			for (coeff, q_last_coeff) in izip!(coeffs, &q_last_poly) {
+			for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
 				// (x mod q_last - q_L/2) mod q_i
 				let mut tmp = qi.reduce(*q_last_coeff);
 				tmp = qi.sub(tmp, q_last_div_2_mod_qi);
@@ -447,13 +443,16 @@ impl Poly {
 		});
 
 		// Remove the last row, and update the context.
+		if !self.allow_variable_time_computations {
+			q_last_poly.as_slice_mut().unwrap().zeroize();
+		}
 		self.coefficients.remove_index(Axis(0), q_len - 1);
 		self.ctx = next_context.clone();
 
 		Ok(())
 	}
 
-	/// Modulo switch to a smaller context.
+	/// Modulo switch down to a smaller context.
 	///
 	/// Returns an error if there is the provided context is not a child of the
 	/// current context, or if the polynomial is not in PowerBasis
@@ -467,7 +466,32 @@ impl Poly {
 		Ok(())
 	}
 
+	/// Modulo switch to another context. The target context needs not to be
+	/// related to the current context.
+	pub fn mod_switch_to(&self, switcher: &Switcher) -> Result<Poly> {
+		switcher.switch(self)
+	}
+
+	/// Scale a polynomial using a scaler.
+	pub fn scale(&self, scaler: &Scaler) -> Result<Poly> {
+		scaler.scale(self)
+	}
+
+	/// Returns the context of the underlying polynomial
+	/// TODO: To test?
+	pub fn ctx(&self) -> &Arc<Context> {
+		&self.ctx
+	}
+
+	/// Multiplies a polynomial in PowerBasis representation by x^(-power).
 	pub fn multiply_inverse_power_of_x(&mut self, power: usize) -> Result<()> {
+		if self.representation != Representation::PowerBasis {
+			return Err(Error::IncorrectRepresentation(
+				self.representation.clone(),
+				Representation::PowerBasis,
+			));
+		}
+
 		let shift = ((self.ctx.degree << 1) - power) % (self.ctx.degree << 1);
 		let mask = self.ctx.degree - 1;
 		let original_coefficients = self.coefficients.clone();
@@ -502,7 +526,7 @@ impl Zeroize for Poly {
 #[cfg(test)]
 mod tests {
 	extern crate test;
-	use super::{Context, Poly, Representation};
+	use super::{switcher::Switcher, Context, Poly, Representation};
 	use crate::zq::Modulus;
 	use itertools::Itertools;
 	use num_bigint::BigUint;
@@ -673,20 +697,24 @@ mod tests {
 
 		let mut p = Poly::random(&ctx, Representation::default());
 		assert_eq!(p.representation, Representation::default());
+		assert_eq!(p.representation(), &Representation::default());
 
 		p.change_representation(Representation::PowerBasis);
 		assert_eq!(p.representation, Representation::PowerBasis);
+		assert_eq!(p.representation(), &Representation::PowerBasis);
 		assert!(p.coefficients_shoup.is_none());
 		let q = p.clone();
 
 		p.change_representation(Representation::Ntt);
 		assert_eq!(p.representation, Representation::Ntt);
+		assert_eq!(p.representation(), &Representation::Ntt);
 		assert_ne!(p.coefficients, q.coefficients);
 		assert!(p.coefficients_shoup.is_none());
 		let q_ntt = p.clone();
 
 		p.change_representation(Representation::NttShoup);
 		assert_eq!(p.representation, Representation::NttShoup);
+		assert_eq!(p.representation(), &Representation::NttShoup);
 		assert_ne!(p.coefficients, q.coefficients);
 		assert!(p.coefficients_shoup.is_some());
 		let q_ntt_shoup = p.clone();
@@ -711,15 +739,18 @@ mod tests {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::PowerBasis);
+		assert_eq!(p.representation(), &p.representation);
 		let q = p.clone();
 
 		unsafe { p.override_representation(Representation::Ntt) }
 		assert_eq!(p.representation, Representation::Ntt);
+		assert_eq!(p.representation(), &p.representation);
 		assert_eq!(p.coefficients, q.coefficients);
 		assert!(p.coefficients_shoup.is_none());
 
 		unsafe { p.override_representation(Representation::NttShoup) }
 		assert_eq!(p.representation, Representation::NttShoup);
+		assert_eq!(p.representation(), &p.representation);
 		assert_eq!(p.coefficients, q.coefficients);
 		assert!(p.coefficients_shoup.is_some());
 
@@ -890,7 +921,10 @@ mod tests {
 					p_biguint,
 					reference
 						.iter()
-						.map(|b| ((b * &numerator) + (&denominator >> 1)) / &denominator)
+						.map(
+							|b| (((b * &numerator) + (&denominator >> 1)) / &denominator)
+								% current_ctx.modulus()
+						)
 						.collect_vec()
 				);
 				reference = p_biguint.clone();
@@ -920,6 +954,66 @@ mod tests {
 					.collect_vec()
 			);
 		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_mod_switch_to() -> Result<(), Box<dyn Error>> {
+		let ntests = 100;
+		let ctx1 = Arc::new(Context::new(&MODULI[..2], 8)?);
+		let ctx2 = Arc::new(Context::new(&MODULI[3..], 8)?);
+		let switcher = Switcher::new(&ctx1, &ctx2)?;
+		for _ in 0..ntests {
+			let p = Poly::random(&ctx1, Representation::PowerBasis);
+			let reference = Vec::<BigUint>::from(&p);
+
+			let q = p.mod_switch_to(&switcher)?;
+
+			assert_eq!(q.ctx, ctx2);
+			assert_eq!(
+				Vec::<BigUint>::from(&q),
+				reference
+					.iter()
+					.map(|b| ((b * ctx2.modulus()) + (ctx1.modulus() >> 1)) / ctx1.modulus())
+					.collect_vec()
+			);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_mul_x_power() -> Result<(), Box<dyn Error>> {
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
+
+		assert!(Poly::random(&ctx, Representation::Ntt)
+			.multiply_inverse_power_of_x(1)
+			.is_err_and(|e| e
+				== &crate::Error::IncorrectRepresentation(
+					Representation::Ntt,
+					Representation::PowerBasis
+				)));
+
+		let mut p = Poly::random(&ctx, Representation::PowerBasis);
+		let q = p.clone();
+
+		p.multiply_inverse_power_of_x(0)?;
+		assert_eq!(p, q);
+
+		p.multiply_inverse_power_of_x(1)?;
+		assert_ne!(p, q);
+
+		p.multiply_inverse_power_of_x(2 * ctx.degree - 1)?;
+		assert_eq!(p, q);
+
+		p.multiply_inverse_power_of_x(ctx.degree)?;
+		assert_eq!(
+			Vec::<BigUint>::from(&p)
+				.iter()
+				.map(|c| ctx.modulus() - c)
+				.collect_vec(),
+			Vec::<BigUint>::from(&q)
+		);
 
 		Ok(())
 	}

@@ -47,16 +47,19 @@ impl Scaler {
 			scaler,
 		})
 	}
-}
 
-impl Scaler {
 	/// Scale a polynomial
-	pub fn scale(&self, p: &Poly) -> Result<Poly> {
+	pub(crate) fn scale(&self, p: &Poly) -> Result<Poly> {
 		if p.ctx.as_ref() != self.from.as_ref() {
 			Err(Error::Default(
 				"The input polynomial does not have the correct context".to_string(),
 			))
 		} else {
+			let mut representation = p.representation.clone();
+			if representation == Representation::NttShoup {
+				representation = Representation::Ntt;
+			}
+
 			let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));
 
 			if self.number_common_moduli > 0 {
@@ -65,61 +68,63 @@ impl Scaler {
 					.assign(&p.coefficients.slice(s![..self.number_common_moduli, ..]));
 			}
 
-			if p.representation == Representation::PowerBasis {
-				izip!(
-					new_coefficients
-						.slice_mut(s![self.number_common_moduli.., ..])
-						.axis_iter_mut(Axis(1)),
-					p.coefficients.axis_iter(Axis(1))
-				)
-				.for_each(|(new_column, column)| {
-					self.scaler
-						.scale(column, new_column, self.number_common_moduli)
-				});
-			} else if self.number_common_moduli < self.to.q.len() {
-				let mut p_coefficients_powerbasis = p.coefficients.clone();
-				// Backward NTT
-				if p.allow_variable_time_computations {
-					izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
-						.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
-				} else {
-					izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
-						.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
-				}
-				// Conversion
-				izip!(
-					new_coefficients
-						.slice_mut(s![self.number_common_moduli.., ..])
-						.axis_iter_mut(Axis(1)),
-					p_coefficients_powerbasis.axis_iter(Axis(1))
-				)
-				.for_each(|(new_column, column)| {
-					self.scaler
-						.scale(column, new_column, self.number_common_moduli)
-				});
-				// Forward NTT on the second half
-				if p.allow_variable_time_computations {
+			if self.number_common_moduli < self.to.q.len() {
+				if p.representation == Representation::PowerBasis {
 					izip!(
 						new_coefficients
 							.slice_mut(s![self.number_common_moduli.., ..])
-							.outer_iter_mut(),
-						&self.to.ops[self.number_common_moduli..]
+							.axis_iter_mut(Axis(1)),
+						p.coefficients.axis_iter(Axis(1))
 					)
-					.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_mut_ptr()) });
-				} else {
+					.for_each(|(new_column, column)| {
+						self.scaler
+							.scale(column, new_column, self.number_common_moduli)
+					});
+				} else if self.number_common_moduli < self.to.q.len() {
+					let mut p_coefficients_powerbasis = p.coefficients.clone();
+					// Backward NTT
+					if p.allow_variable_time_computations {
+						izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+							.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
+					} else {
+						izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+							.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
+					}
+					// Conversion
 					izip!(
 						new_coefficients
 							.slice_mut(s![self.number_common_moduli.., ..])
-							.outer_iter_mut(),
-						&self.to.ops[self.number_common_moduli..]
+							.axis_iter_mut(Axis(1)),
+						p_coefficients_powerbasis.axis_iter(Axis(1))
 					)
-					.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+					.for_each(|(new_column, column)| {
+						self.scaler
+							.scale(column, new_column, self.number_common_moduli)
+					});
+					// Forward NTT on the second half
+					if p.allow_variable_time_computations {
+						izip!(
+							new_coefficients
+								.slice_mut(s![self.number_common_moduli.., ..])
+								.outer_iter_mut(),
+							&self.to.ops[self.number_common_moduli..]
+						)
+						.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_mut_ptr()) });
+					} else {
+						izip!(
+							new_coefficients
+								.slice_mut(s![self.number_common_moduli.., ..])
+								.outer_iter_mut(),
+							&self.to.ops[self.number_common_moduli..]
+						)
+						.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
+					}
 				}
 			}
 
 			Ok(Poly {
 				ctx: self.to.clone(),
-				representation: p.representation.clone(),
+				representation,
 				allow_variable_time_computations: p.allow_variable_time_computations,
 				coefficients: new_coefficients,
 				coefficients_shoup: None,
