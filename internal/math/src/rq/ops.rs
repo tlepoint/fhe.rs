@@ -391,17 +391,25 @@ where
 				fma(out_slice, pi_slice, qi_slice);
 
 				for j in 0..p_first.ctx.q.len() as isize {
+					let qj = &*q_ptr.offset(j);
 					*num_acc_ptr.offset(j) += 1;
 					if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
-						if p_first.allow_variable_time_computations {
+						if p_first.allow_variable_time_computations && qj.supports_opt {
 							for i in j * degree..(j + 1) * degree {
 								*acc_ptr.offset(i) =
-									(*q_ptr.offset(j)).reduce_u128(*acc_ptr.offset(i)) as u128;
+									qj.reduce_opt_u128_vt(*acc_ptr.offset(i)) as u128;
+							}
+						} else if qj.supports_opt {
+							for i in j * degree..(j + 1) * degree {
+								*acc_ptr.offset(i) = qj.reduce_opt_u128(*acc_ptr.offset(i)) as u128;
+							}
+						} else if p_first.allow_variable_time_computations {
+							for i in j * degree..(j + 1) * degree {
+								*acc_ptr.offset(i) = qj.reduce_u128_vt(*acc_ptr.offset(i)) as u128;
 							}
 						} else {
 							for i in j * degree..(j + 1) * degree {
-								*acc_ptr.offset(i) =
-									(*q_ptr.offset(j)).reduce_u128_vt(*acc_ptr.offset(i)) as u128;
+								*acc_ptr.offset(i) = qj.reduce_u128(*acc_ptr.offset(i)) as u128;
 							}
 						}
 						*num_acc_ptr.offset(j) = 1;
@@ -425,7 +433,13 @@ where
 	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
 	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
 		|(mut coeffsj, accj, m)| {
-			if p_first.allow_variable_time_computations {
+			if p_first.allow_variable_time_computations && m.supports_opt {
+				izip!(coeffsj.iter_mut(), accj.iter())
+					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_opt_u128_vt(*accjk) });
+			} else if m.supports_opt {
+				izip!(coeffsj.iter_mut(), accj.iter())
+					.for_each(|(cj, accjk)| *cj = m.reduce_opt_u128(*accjk));
+			} else if p_first.allow_variable_time_computations {
 				izip!(coeffsj.iter_mut(), accj.iter())
 					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
 			} else {

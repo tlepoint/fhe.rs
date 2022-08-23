@@ -373,7 +373,7 @@ impl Poly {
 			p.as_slice_mut()
 				.unwrap()
 				.clone_from_slice(power_basis_coefficients);
-			qi.reduce_vec(p.as_slice_mut().unwrap());
+			qi.lazy_reduce_vec(p.as_slice_mut().unwrap());
 			op.forward_vt_lazy(p.as_mut_ptr());
 		});
 		Self {
