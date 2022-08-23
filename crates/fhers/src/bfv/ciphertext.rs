@@ -328,7 +328,7 @@ mod tests {
 
 				let sk = SecretKey::random(&params);
 
-				for encoding in [Encoding::PolyLeveled(0), Encoding::SimdLeveled(0)] {
+				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 					let pt_b =
@@ -363,7 +363,7 @@ mod tests {
 
 				let sk = SecretKey::random(&params);
 
-				for encoding in [Encoding::PolyLeveled(0), Encoding::SimdLeveled(0)] {
+				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 					let pt_b =
@@ -396,7 +396,7 @@ mod tests {
 				params.plaintext.neg_vec(&mut c);
 
 				let sk = SecretKey::random(&params);
-				for encoding in [Encoding::PolyLeveled(0), Encoding::SimdLeveled(0)] {
+				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a =
 						Plaintext::try_encode(&a as &[u64], encoding.clone(), &params).unwrap();
 
@@ -422,7 +422,7 @@ mod tests {
 				let b = params.plaintext.random_vec(params.degree());
 
 				let sk = SecretKey::random(&params);
-				for encoding in [Encoding::PolyLeveled(0), Encoding::SimdLeveled(0)] {
+				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let mut c = vec![0u64; params.degree()];
 					match encoding {
 						Encoding::PolyLeveled(_) => {
@@ -476,7 +476,7 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let sk = SecretKey::random(&par);
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::SimdLeveled(0), &par)?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
 
 			let ct1 = sk.try_encrypt(&pt)?;
 			let ct2 = sk.try_encrypt(&pt)?;
@@ -485,19 +485,13 @@ mod tests {
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 			let pt = sk.try_decrypt(&ct3)?;
-			assert_eq!(
-				Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
-				expected
-			);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
 			let e = expected.clone();
 			par.plaintext.mul_vec(&mut expected, &e);
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
 			let pt = sk.try_decrypt(&ct4)?;
-			assert_eq!(
-				Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
-				expected
-			);
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 		}
 		Ok(())
 	}
@@ -510,7 +504,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::SimdLeveled(0), &params)?;
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
 			let ct = sk.try_encrypt(&pt)?;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);

@@ -45,18 +45,12 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.build()
 			.unwrap();
 
-		let pt1 = Plaintext::try_encode(
-			&(1..16u64).collect_vec() as &[u64],
-			Encoding::PolyLeveled(0),
-			&par,
-		)
-		.unwrap();
-		let pt2 = Plaintext::try_encode(
-			&(3..39u64).collect_vec() as &[u64],
-			Encoding::PolyLeveled(0),
-			&par,
-		)
-		.unwrap();
+		let pt1 =
+			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), &par)
+				.unwrap();
+		let pt2 =
+			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
+				.unwrap();
 		let mut c1 = sk.try_encrypt(&pt1).unwrap();
 		let c2 = sk.try_encrypt(&pt2).unwrap();
 
@@ -64,7 +58,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.map(|i| {
 				let pt = Plaintext::try_encode(
 					&(i..16u64).collect_vec() as &[u64],
-					Encoding::PolyLeveled(0),
+					Encoding::poly(),
 					&par,
 				)
 				.unwrap();
@@ -73,12 +67,8 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.collect_vec();
 		let pt_vec = (0..128)
 			.map(|i| {
-				Plaintext::try_encode(
-					&(i..39u64).collect_vec() as &[u64],
-					Encoding::PolyLeveled(0),
-					&par,
-				)
-				.unwrap()
+				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
+					.unwrap()
 			})
 			.collect_vec();
 
