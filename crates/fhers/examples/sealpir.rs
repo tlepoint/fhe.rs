@@ -18,12 +18,12 @@ use utilities::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
-	let database_size = 1 << 21;
-	let elements_size = 288;
+	let database_size = 1 << 16;
+	let elements_size = 1024;
 
 	let degree = 4096;
-	let plaintext_modulus: u64 = (1 << 22) + 1;
-	let moduli_sizes = [33, 38, 38];
+	let plaintext_modulus: u64 = (1 << 20) - 1;
+	let moduli_sizes = [36, 36, 37];
 
 	println!("# SealPIR with fhe.rs");
 

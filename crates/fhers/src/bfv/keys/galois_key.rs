@@ -9,6 +9,7 @@ use crate::bfv::{
 use crate::{Error, Result};
 use math::rq::{
 	switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
+	SubstitutionExponent,
 };
 use protobuf::MessageField;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use zeroize::Zeroize;
 /// which switch from `s(x^i)` to `s(x)` where `s(x)` is the secret key.
 #[derive(Debug, PartialEq, Eq)]
 pub struct GaloisKey {
-	pub(crate) exponent: usize,
+	pub(crate) element: SubstitutionExponent,
 	pub(crate) ksk: KeySwitchingKey,
 }
 
@@ -31,13 +32,11 @@ impl GaloisKey {
 		ciphertext_level: usize,
 		galois_key_level: usize,
 	) -> Result<Self> {
-		let exponent = exponent % (2 * sk.par.degree());
-		if exponent & 1 == 0 {
-			return Err(Error::DefaultError("Invalid exponent".to_string()));
-		}
-
 		let ctx_galois_key = sk.par.ctx_at_level(galois_key_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+
+		let ciphertext_exponent =
+			SubstitutionExponent::new(&ctx_ciphertext, exponent).map_err(Error::MathError)?;
 
 		let switcher_up = Switcher::new(&ctx_ciphertext, &ctx_galois_key)?;
 		let mut s = Poly::try_convert_from(
@@ -46,7 +45,7 @@ impl GaloisKey {
 			false,
 			Representation::PowerBasis,
 		)?;
-		let mut s_sub = s.substitute(exponent)?;
+		let mut s_sub = s.substitute(&ciphertext_exponent)?;
 		let mut s_sub_switched_up = s_sub.mod_switch_to(&switcher_up)?;
 		s_sub_switched_up.change_representation(Representation::PowerBasis);
 
@@ -55,7 +54,10 @@ impl GaloisKey {
 		s_sub_switched_up.zeroize();
 		s.zeroize();
 
-		Ok(Self { exponent, ksk })
+		Ok(Self {
+			element: ciphertext_exponent,
+			ksk,
+		})
 	}
 
 	/// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
@@ -63,7 +65,7 @@ impl GaloisKey {
 		// assert_eq!(ct.par, self.ksk.par);
 		assert_eq!(ct.c.len(), 2);
 
-		let mut c2 = ct.c[1].substitute(self.exponent)?;
+		let mut c2 = ct.c[1].substitute(&self.element)?;
 		c2.change_representation(Representation::PowerBasis);
 		let (mut c0, mut c1) = self.ksk.key_switch(&c2)?;
 
@@ -76,7 +78,7 @@ impl GaloisKey {
 			c1.change_representation(Representation::Ntt);
 		}
 
-		c0 += ct.c[0].substitute(self.exponent)?;
+		c0 += ct.c[0].substitute(&self.element)?;
 
 		Ok(Ciphertext {
 			par: ct.par.clone(),
@@ -90,7 +92,7 @@ impl GaloisKey {
 impl From<&GaloisKey> for GaloisKeyProto {
 	fn from(value: &GaloisKey) -> Self {
 		let mut gk = GaloisKeyProto::new();
-		gk.exponent = value.exponent as u32;
+		gk.exponent = value.element.exponent as u32;
 		gk.ksk = MessageField::some(KeySwitchingKeyProto::from(&value.ksk));
 		gk
 	}
@@ -98,17 +100,18 @@ impl From<&GaloisKey> for GaloisKeyProto {
 
 impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 	fn try_convert_from(value: &GaloisKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-		let exponent = (value.exponent as usize) % (2 * par.degree());
-		if exponent & 1 == 0 {
-			return Err(Error::DefaultError("Invalid exponent".to_string()));
-		}
 		if par.moduli.len() == 1 {
 			Err(Error::DefaultError(
 				"Invalid parameters for a relinearization key".to_string(),
 			))
 		} else if value.ksk.is_some() {
 			let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
-			Ok(GaloisKey { exponent, ksk })
+
+			let ctx = par.ctx_at_level(ksk.ciphertext_level)?;
+			let element = SubstitutionExponent::new(&ctx, value.exponent as usize)
+				.map_err(Error::MathError)?;
+
+			Ok(GaloisKey { element, ksk })
 		} else {
 			Err(Error::DefaultError("Invalid serialization".to_string()))
 		}
