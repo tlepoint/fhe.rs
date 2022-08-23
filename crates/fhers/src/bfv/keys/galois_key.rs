@@ -136,7 +136,7 @@ mod tests {
 				let v = params.plaintext.random_vec(params.degree());
 				let row_size = params.degree() >> 1;
 
-				let pt = Plaintext::try_encode(&v as &[u64], Encoding::Simd(0), &params)?;
+				let pt = Plaintext::try_encode(&v as &[u64], Encoding::SimdLeveled(0), &params)?;
 				let ct = sk.try_encrypt(&pt)?;
 
 				for i in 1..2 * params.degree() {
@@ -157,7 +157,10 @@ mod tests {
 							expected[row_size..2 * row_size - 1]
 								.copy_from_slice(&v[row_size + 1..]);
 							expected[2 * row_size - 1] = v[row_size];
-							assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, &expected)
+							assert_eq!(
+								&Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
+								&expected
+							)
 						} else if i == params.degree() * 2 - 1 {
 							let pt = sk.try_decrypt(&ct2)?;
 
@@ -165,7 +168,10 @@ mod tests {
 							let mut expected = vec![0u64; params.degree()];
 							expected[..row_size].copy_from_slice(&v[row_size..]);
 							expected[row_size..].copy_from_slice(&v[..row_size]);
-							assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::Simd(0))?, &expected)
+							assert_eq!(
+								&Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
+								&expected
+							)
 						}
 					}
 				}

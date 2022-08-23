@@ -2,8 +2,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	dot_product_scalar, mul, mul2, BfvParameters, BfvParametersBuilder, Encoding,
-	LeveledEvaluationKeyBuilder, Plaintext, SecretKey,
+	advanced::{dot_product_scalar, mul, mul2, LeveledEvaluationKeyBuilder},
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::{izip, Itertools};
@@ -33,8 +33,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 
 	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
-		let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)
-			.unwrap()
+		let ek = EvaluationKeyBuilder::new(&sk)
 			.enable_inner_sum()
 			.unwrap()
 			.enable_relinearization()
@@ -46,12 +45,18 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.build()
 			.unwrap();
 
-		let pt1 =
-			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
-				.unwrap();
-		let pt2 =
-			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
-				.unwrap();
+		let pt1 = Plaintext::try_encode(
+			&(1..16u64).collect_vec() as &[u64],
+			Encoding::PolyLeveled(0),
+			&par,
+		)
+		.unwrap();
+		let pt2 = Plaintext::try_encode(
+			&(3..39u64).collect_vec() as &[u64],
+			Encoding::PolyLeveled(0),
+			&par,
+		)
+		.unwrap();
 		let mut c1 = sk.try_encrypt(&pt1).unwrap();
 		let c2 = sk.try_encrypt(&pt2).unwrap();
 
@@ -59,7 +64,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.map(|i| {
 				let pt = Plaintext::try_encode(
 					&(i..16u64).collect_vec() as &[u64],
-					Encoding::Poly(0),
+					Encoding::PolyLeveled(0),
 					&par,
 				)
 				.unwrap();
@@ -68,8 +73,12 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.collect_vec();
 		let pt_vec = (0..128)
 			.map(|i| {
-				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::Poly(0), &par)
-					.unwrap()
+				Plaintext::try_encode(
+					&(i..39u64).collect_vec() as &[u64],
+					Encoding::PolyLeveled(0),
+					&par,
+				)
+				.unwrap()
 			})
 			.collect_vec();
 
@@ -247,6 +256,19 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			},
 		);
 
+		let leveled_ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)
+			.unwrap()
+			.enable_inner_sum()
+			.unwrap()
+			.enable_relinearization()
+			.unwrap()
+			.enable_column_rotation(1)
+			.unwrap()
+			.enable_expansion(par.degree().ilog2() as usize)
+			.unwrap()
+			.build()
+			.unwrap();
+
 		group.bench_function(
 			BenchmarkId::new(
 				"mul_relinearize",
@@ -257,7 +279,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| mul(&c1, &c2, &ek));
+				b.iter(|| mul(&c1, &c2, &leveled_ek));
 			},
 		);
 
@@ -271,7 +293,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| mul2(&c1, &c2, &ek));
+				b.iter(|| mul2(&c1, &c2, &leveled_ek));
 			},
 		);
 	}

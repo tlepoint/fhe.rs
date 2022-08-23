@@ -167,9 +167,8 @@ mod tests {
 				// Print the noise and decrypt
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
 				let pt = sk.try_decrypt(&ct_relinearized)?;
-				assert!(
-					Vec::<u64>::try_decode(&pt, Encoding::Poly(0)).is_ok_and(|v| v == &[0u64; 8])
-				)
+				assert!(Vec::<u64>::try_decode(&pt, Encoding::PolyLeveled(0))
+					.is_ok_and(|v| v == &[0u64; 8]))
 			}
 		}
 		Ok(())
