@@ -246,13 +246,13 @@ mod tests {
 					.plaintext
 					.reduce_u128(v.iter().map(|vi| *vi as u128).sum());
 
-				let pt = Plaintext::try_encode(&v as &[u64], Encoding::SimdLeveled(0), &params)?;
+				let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
 				let ct = sk.try_encrypt(&pt)?;
 
 				let ct2 = ek.computes_inner_sum(&ct)?;
 				let pt = sk.try_decrypt(&ct2)?;
 				assert_eq!(
-					Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
+					Vec::<u64>::try_decode(&pt, Encoding::simd())?,
 					vec![expected; params.degree()]
 				)
 			}
@@ -278,15 +278,12 @@ mod tests {
 				expected[..row_size].copy_from_slice(&v[row_size..]);
 				expected[row_size..].copy_from_slice(&v[..row_size]);
 
-				let pt = Plaintext::try_encode(&v as &[u64], Encoding::SimdLeveled(0), &params)?;
+				let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
 				let ct = sk.try_encrypt(&pt)?;
 
 				let ct2 = ek.rotates_row(&ct)?;
 				let pt = sk.try_decrypt(&ct2)?;
-				assert_eq!(
-					Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
-					expected
-				)
+				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected)
 			}
 		}
 		Ok(())
@@ -314,16 +311,12 @@ mod tests {
 					expected[row_size..2 * row_size - i].copy_from_slice(&v[row_size + i..]);
 					expected[2 * row_size - i..].copy_from_slice(&v[row_size..row_size + i]);
 
-					let pt =
-						Plaintext::try_encode(&v as &[u64], Encoding::SimdLeveled(0), &params)?;
+					let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
 					let ct = sk.try_encrypt(&pt)?;
 
 					let ct2 = ek.rotates_column_by(&ct, i)?;
 					let pt = sk.try_decrypt(&ct2)?;
-					assert_eq!(
-						Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(0))?,
-						expected
-					)
+					assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected)
 				}
 			}
 		}
@@ -347,8 +340,7 @@ mod tests {
 					assert!(ek.supports_expansion(i));
 					assert!(!ek.supports_expansion(i + 1));
 					let v = params.plaintext.random_vec(1 << i);
-					let pt =
-						Plaintext::try_encode(&v as &[u64], Encoding::PolyLeveled(0), &params)?;
+					let pt = Plaintext::try_encode(&v as &[u64], Encoding::poly(), &params)?;
 					let ct = sk.try_encrypt(&pt)?;
 
 					let ct2 = ek.expands(&ct, i)?;
@@ -357,10 +349,7 @@ mod tests {
 						let mut expected = vec![0u64; params.degree()];
 						expected[0] = params.plaintext.mul(*vi, (1 << i) as u64);
 						let pt = sk.try_decrypt(ct2i)?;
-						assert_eq!(
-							expected,
-							Vec::<u64>::try_decode(&pt, Encoding::PolyLeveled(0))?
-						);
+						assert_eq!(expected, Vec::<u64>::try_decode(&pt, Encoding::poly())?);
 						println!("Noise: {:?}", unsafe { sk.measure_noise(ct2i) })
 					}
 				}

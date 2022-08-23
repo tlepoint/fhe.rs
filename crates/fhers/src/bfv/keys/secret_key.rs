@@ -256,7 +256,7 @@ mod tests {
 
 				let pt = Plaintext::try_encode(
 					&params.plaintext.random_vec(params.degree()) as &[u64],
-					Encoding::PolyLeveled(0),
+					Encoding::poly(),
 					&params,
 				)?;
 				let ct = sk.try_encrypt(&pt)?;
