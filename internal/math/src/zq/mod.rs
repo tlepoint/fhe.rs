@@ -194,6 +194,43 @@ impl Modulus {
 
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
 	}
+	// pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
+	// 	let n = a.len();
+	// 	debug_assert_eq!(n, b.len());
+
+	// 	let p = self.p;
+	// 	macro_rules! add_at {
+	// 		($idx:expr) => {
+	// 			*a.get_unchecked_mut($idx) =
+	// 				Self::reduce1(*a.get_unchecked_mut($idx) + *b.get_unchecked($idx), p);
+	// 		};
+	// 	}
+
+	// 	if n % 16 == 0 {
+	// 		for i in 0..n / 16 {
+	// 			unsafe {
+	// 				add_at!(16 * i);
+	// 				add_at!(16 * i + 1);
+	// 				add_at!(16 * i + 2);
+	// 				add_at!(16 * i + 3);
+	// 				add_at!(16 * i + 4);
+	// 				add_at!(16 * i + 5);
+	// 				add_at!(16 * i + 6);
+	// 				add_at!(16 * i + 7);
+	// 				add_at!(16 * i + 8);
+	// 				add_at!(16 * i + 9);
+	// 				add_at!(16 * i + 10);
+	// 				add_at!(16 * i + 11);
+	// 				add_at!(16 * i + 12);
+	// 				add_at!(16 * i + 13);
+	// 				add_at!(16 * i + 14);
+	// 				add_at!(16 * i + 15);
+	// 			}
+	// 		}
+	// 	} else {
+	// 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
+	// 	}
+	// }
 
 	/// # Safety
 	///
@@ -202,9 +239,39 @@ impl Modulus {
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
 	pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-		debug_assert_eq!(a.len(), b.len());
+		let n = a.len();
+		debug_assert_eq!(n, b.len());
 
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi));
+		let p = self.p;
+		macro_rules! add_at {
+			($idx:expr) => {
+				*a.get_unchecked_mut($idx) =
+					Self::reduce1_vt(*a.get_unchecked_mut($idx) + *b.get_unchecked($idx), p);
+			};
+		}
+
+		if n % 16 == 0 {
+			for i in 0..n / 16 {
+				add_at!(16 * i);
+				add_at!(16 * i + 1);
+				add_at!(16 * i + 2);
+				add_at!(16 * i + 3);
+				add_at!(16 * i + 4);
+				add_at!(16 * i + 5);
+				add_at!(16 * i + 6);
+				add_at!(16 * i + 7);
+				add_at!(16 * i + 8);
+				add_at!(16 * i + 9);
+				add_at!(16 * i + 10);
+				add_at!(16 * i + 11);
+				add_at!(16 * i + 12);
+				add_at!(16 * i + 13);
+				add_at!(16 * i + 14);
+				add_at!(16 * i + 15);
+			}
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi));
+		}
 	}
 
 	/// Modular subtraction of vectors in place in constant time.
@@ -224,9 +291,39 @@ impl Modulus {
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
 	pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-		debug_assert_eq!(a.len(), b.len());
+		let n = a.len();
+		debug_assert_eq!(n, b.len());
 
-		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi));
+		let p = self.p;
+		macro_rules! sub_at {
+			($idx:expr) => {
+				*a.get_unchecked_mut($idx) =
+					Self::reduce1_vt(p + *a.get_unchecked_mut($idx) - *b.get_unchecked($idx), p);
+			};
+		}
+
+		if n % 16 == 0 {
+			for i in 0..n / 16 {
+				sub_at!(16 * i);
+				sub_at!(16 * i + 1);
+				sub_at!(16 * i + 2);
+				sub_at!(16 * i + 3);
+				sub_at!(16 * i + 4);
+				sub_at!(16 * i + 5);
+				sub_at!(16 * i + 6);
+				sub_at!(16 * i + 7);
+				sub_at!(16 * i + 8);
+				sub_at!(16 * i + 9);
+				sub_at!(16 * i + 10);
+				sub_at!(16 * i + 11);
+				sub_at!(16 * i + 12);
+				sub_at!(16 * i + 13);
+				sub_at!(16 * i + 14);
+				sub_at!(16 * i + 15);
+			}
+		} else {
+			izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi));
+		}
 	}
 
 	/// Modular multiplication of vectors in place in constant time.
