@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let dim = preprocessed_database.shape();
 		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
 		println!("expansion_level = {}", level);
-		let ek_expansion = bfv::advanced::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
+		let ek_expansion = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
 			.build()?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server setup
 	let ek_expansion = timeit!(
 		"Server setup",
-		bfv::advanced::LeveledEvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
+		bfv::LeveledEvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
 	);
 
 	// Client query
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[query_index / dim[1]] = inv;
 		pt[dim[0] + (query_index % dim[1])] = inv;
 		let query_pt =
-			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::PolyLeveled(1), &params)?;
+			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
 		let query = sk.try_encrypt(&query_pt)?;
 		query.to_bytes()
 	});
@@ -108,19 +108,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 			.axis_iter(Axis(1))
 			.map(|column| {
 				// println!("column: {:?}", column);
-				let mut c = bfv::advanced::dot_product_scalar(
-					expanded_query[..dim[0]].iter(),
-					column.iter(),
-				)
-				.unwrap();
+				let mut c = bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter())
+					.unwrap();
 				c.mod_switch_to_last_level();
 				let c_serialized = c.to_bytes();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
 				let r = unsafe {
-					bfv::advanced::PlaintextVec::try_encode_vt(
+					bfv::PlaintextVec::try_encode_vt(
 						&pt_values as &[u64],
-						bfv::Encoding::PolyLeveled(1),
+						bfv::Encoding::poly_at_level(1),
 						&params,
 					)
 					.unwrap()
@@ -131,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 			.collect_vec();
 		(0..fold[0].len())
 			.map(|i| {
-				let mut outi = bfv::advanced::dot_product_scalar(
+				let mut outi = bfv::dot_product_scalar(
 					expanded_query[dim[0]..].iter(),
 					fold.iter().map(|pts| pts.get(i).unwrap()).into_iter(),
 				)
@@ -159,7 +156,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 			.collect_vec();
 		let decrypted_vec = decrypted_pt
 			.iter()
-			.map(|pt| Vec::<u64>::try_decode(&pt, bfv::Encoding::PolyLeveled(2)).unwrap())
+			.map(|pt| Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap())
 			.collect_vec();
 		let mut decrypted_ct = vec![];
 		for v in &decrypted_vec {
@@ -176,7 +173,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				bfv::Ciphertext::from_bytes(&decrypted_ct[..decrypted_ct.len() - i], &params)
 			{
 				let pt = sk.try_decrypt(&ct).unwrap();
-				let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::PolyLeveled(1)).unwrap();
+				let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
 				let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
 				let offset = index % number_elements_per_plaintext(params.clone(), elements_size);
 

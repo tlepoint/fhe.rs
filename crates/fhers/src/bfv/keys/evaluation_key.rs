@@ -4,7 +4,7 @@ use fhers_traits::{DeserializeParametrized, FheParametrized, Serialize};
 
 use crate::{
 	bfv::{
-		advanced::{LeveledEvaluationKey, LeveledEvaluationKeyBuilder},
+		leveled::{LeveledEvaluationKey, LeveledEvaluationKeyBuilder},
 		BfvParameters, Ciphertext,
 	},
 	Error, Result,

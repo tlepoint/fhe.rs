@@ -10,7 +10,7 @@ repository = "https://github.com/tlepoint/fhe.rs"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-fhers = { version = "0.0.1", path = "../../" }
+fhers = { version = "0.0.1", path = "../../", features=["leveled_bfv"] }
 fhers-traits = { version = "0.0.1", path = "../../../fhers-traits" }
 ndarray = "0.15.6"
 indicatif = "0.17.0"
