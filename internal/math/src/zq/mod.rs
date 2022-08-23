@@ -114,11 +114,12 @@ impl Modulus {
 		self.reduce_opt_u128((a as u128) * (b as u128))
 	}
 
-	/// # Safety
-	///
 	/// Optimized modular multiplication of a and b in variable time.
-	///
 	/// Aborts if a >= p or b >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being multiplied.
 	const unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
 		debug_assert!(self.supports_opt);
 		debug_assert!(a < self.p && b < self.p);
@@ -134,11 +135,12 @@ impl Modulus {
 		Self::reduce1(self.p - a, self.p)
 	}
 
-	/// # Safety
-	///
 	/// Modular negation in variable time.
-	///
 	/// Aborts if a >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being negated.
 	const unsafe fn neg_vt(&self, a: u64) -> u64 {
 		debug_assert!(a < self.p);
 		Self::reduce1_vt(self.p - a, self.p)
@@ -160,11 +162,12 @@ impl Modulus {
 		Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
 
-	/// # Safety
-	///
 	/// Shoup multiplication of a and b in variable time.
-	///
 	/// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being multiplied.
 	const unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_mul_shoup(a, b, b_shoup), self.p)
 	}
@@ -194,50 +197,14 @@ impl Modulus {
 
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
 	}
-	// pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
-	// 	let n = a.len();
-	// 	debug_assert_eq!(n, b.len());
 
-	// 	let p = self.p;
-	// 	macro_rules! add_at {
-	// 		($idx:expr) => {
-	// 			*a.get_unchecked_mut($idx) =
-	// 				Self::reduce1(*a.get_unchecked_mut($idx) + *b.get_unchecked($idx), p);
-	// 		};
-	// 	}
-
-	// 	if n % 16 == 0 {
-	// 		for i in 0..n / 16 {
-	// 			unsafe {
-	// 				add_at!(16 * i);
-	// 				add_at!(16 * i + 1);
-	// 				add_at!(16 * i + 2);
-	// 				add_at!(16 * i + 3);
-	// 				add_at!(16 * i + 4);
-	// 				add_at!(16 * i + 5);
-	// 				add_at!(16 * i + 6);
-	// 				add_at!(16 * i + 7);
-	// 				add_at!(16 * i + 8);
-	// 				add_at!(16 * i + 9);
-	// 				add_at!(16 * i + 10);
-	// 				add_at!(16 * i + 11);
-	// 				add_at!(16 * i + 12);
-	// 				add_at!(16 * i + 13);
-	// 				add_at!(16 * i + 14);
-	// 				add_at!(16 * i + 15);
-	// 			}
-	// 		}
-	// 	} else {
-	// 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
-	// 	}
-	// }
-
-	/// # Safety
-	///
 	/// Modular addition of vectors in place in variable time.
-	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being added.
 	pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		let n = a.len();
 		debug_assert_eq!(n, b.len());
@@ -284,12 +251,13 @@ impl Modulus {
 		izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
 	}
 
-	/// # Safety
-	///
 	/// Modular subtraction of vectors in place in variable time.
-	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being subtracted.
 	pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		let n = a.len();
 		debug_assert_eq!(n, b.len());
@@ -349,23 +317,25 @@ impl Modulus {
 			.for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup));
 	}
 
-	/// # Safety
-	///
 	/// Modular scalar multiplication of vectors in place in variable time.
-	///
 	/// Aborts if any of the values in a is >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being multiplied.
 	pub unsafe fn scalar_mul_vec_vt(&self, a: &mut [u64], b: u64) {
 		let b_shoup = self.shoup(b);
 		a.iter_mut()
 			.for_each(|ai| *ai = self.mul_shoup_vt(*ai, b, b_shoup));
 	}
 
-	/// # Safety
-	///
 	/// Modular multiplication of vectors in place in variable time.
-	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being subtracted.
 	pub unsafe fn mul_vec_vt(&self, a: &mut [u64], b: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 
@@ -396,12 +366,13 @@ impl Modulus {
 			.for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
 	}
 
-	/// # Safety
-	///
 	/// Shoup modular multiplication of vectors in place in variable time.
-	///
 	/// Aborts if a and b differ in size, and if any of their values is >= p in
 	/// debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being multiplied.
 	pub unsafe fn mul_shoup_vec_vt(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
 		debug_assert_eq!(a.len(), b.len());
 		debug_assert_eq!(a.len(), b_shoup.len());
@@ -416,10 +387,12 @@ impl Modulus {
 		a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
 	}
 
-	/// # Safety
-	///
 	/// Center a value modulo p as i64 in variable time.
 	/// TODO: To test and to make constant time?
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being centered.
 	const unsafe fn center_vt(&self, a: u64) -> i64 {
 		debug_assert!(a < self.p);
 
@@ -430,16 +403,20 @@ impl Modulus {
 		}
 	}
 
-	/// # Safety
+	/// Center a vector in variable time.
 	///
-	/// Center a vector.
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being centered.
 	pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
 		a.iter().map(|ai| self.center_vt(*ai)).collect_vec()
 	}
 
-	/// # Safety
-	///
 	/// Reduce a vector in place in variable time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being reduced.
 	pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
 		a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai));
 	}
@@ -449,9 +426,11 @@ impl Modulus {
 		self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
 	}
 
-	/// # Safety
-	///
 	/// Modular reduction of a i64 in variable time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being reduced.
 	const unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
 		self.reduce_u128_vt((((self.p as i128) << 64) + (a as i128)) as u128)
 	}
@@ -461,9 +440,11 @@ impl Modulus {
 		a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec()
 	}
 
-	/// # Safety
-	///
 	/// Reduce a vector in place in variable time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being reduced.
 	pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
 		a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect_vec()
 	}
@@ -473,9 +454,11 @@ impl Modulus {
 		a.iter().map(|ai| self.reduce(*ai)).collect_vec()
 	}
 
-	/// # Safety
-	///
 	/// Reduce a vector in variable time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being reduced.
 	pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
 		a.iter().map(|bi| self.reduce_vt(*bi)).collect_vec()
 	}
@@ -487,11 +470,12 @@ impl Modulus {
 		izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
 	}
 
-	/// # Safety
-	///
 	/// Modular negation of a vector in place in variable time.
-	///
 	/// Aborts if any of the values in the vector is >= p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the values being negated.
 	pub unsafe fn neg_vec_vt(&self, a: &mut [u64]) {
 		izip!(a.iter_mut()).for_each(|ai| *ai = self.neg_vt(*ai));
 	}
@@ -539,9 +523,11 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_u128(a), self.p)
 	}
 
-	/// # Safety
-	///
 	/// Modular reduction of a u128 in variable time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub const unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce_u128(a), self.p)
 	}
@@ -551,9 +537,11 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce(a), self.p)
 	}
 
-	/// # Safety
+	/// Modular reduction of a u64 in variable time.
 	///
-	/// Modular reduction of a u64 in constant time.
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub const unsafe fn reduce_vt(&self, a: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce(a), self.p)
 	}
@@ -565,9 +553,11 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
 	}
 
-	/// # Safety
-	///
 	/// Optimized modular reduction of a u128 in constant time.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p)
@@ -578,15 +568,16 @@ impl Modulus {
 		Self::reduce1(self.lazy_reduce_opt(a), self.p)
 	}
 
-	/// # Safety
+	/// Optimized modular reduction of a u64 in variable time.
 	///
-	/// Optimized modular reduction of a u64 in constant time.
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub const unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
 		Self::reduce1_vt(self.lazy_reduce_opt(a), self.p)
 	}
 
 	/// Return x mod p in constant time.
-	///
 	/// Aborts if x >= 2 * p in debug mode.
 	const fn reduce1(x: u64, p: u64) -> u64 {
 		debug_assert!(p >> 63 == 0);
@@ -606,11 +597,12 @@ impl Modulus {
 		r
 	}
 
-	/// # Safety
-	///
 	/// Return x mod p in variable time.
-	///
 	/// Aborts if x >= 2 * p in debug mode.
+	///
+	/// # Safety
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
 		debug_assert!(p >> 63 == 0);
 		debug_assert!(x < 2 * p);
