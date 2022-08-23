@@ -297,6 +297,45 @@ impl Neg for &Poly {
 	}
 }
 
+/// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
+unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
+	let n = out.len();
+	assert_eq!(x.len(), n);
+	assert_eq!(y.len(), n);
+
+	macro_rules! fma_at {
+		($idx:expr) => {
+			*out.get_unchecked_mut($idx) +=
+				(*x.get_unchecked($idx) as u128) * (*y.get_unchecked($idx) as u128);
+		};
+	}
+
+	if n % 16 == 0 {
+		for i in 0..n / 16 {
+			fma_at!(16 * i);
+			fma_at!(16 * i + 1);
+			fma_at!(16 * i + 2);
+			fma_at!(16 * i + 3);
+			fma_at!(16 * i + 4);
+			fma_at!(16 * i + 5);
+			fma_at!(16 * i + 6);
+			fma_at!(16 * i + 7);
+			fma_at!(16 * i + 8);
+			fma_at!(16 * i + 9);
+			fma_at!(16 * i + 10);
+			fma_at!(16 * i + 11);
+			fma_at!(16 * i + 12);
+			fma_at!(16 * i + 13);
+			fma_at!(16 * i + 14);
+			fma_at!(16 * i + 15);
+		}
+	} else {
+		for (outj, xj, yj) in izip!(out, x, y) {
+			*outj += *xj as u128 * *yj as u128;
+		}
+	}
+}
+
 /// Compute the dot product between two iterators of polynomials.
 /// Returna an error if the iterator counts are 0, or if any of the polynomial
 /// is not in Ntt or NttShoup representation.
@@ -320,7 +359,6 @@ where
 	let p_first = p.clone().next().unwrap();
 
 	// Initialize the accumulator
-	let size = (p_first.ctx.degree * p_first.ctx.q.len()) as isize;
 	let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
 	let acc_ptr = acc.as_mut_ptr();
 
@@ -341,14 +379,17 @@ where
 	let degree = p_first.ctx.degree as isize;
 
 	let min_of_max = max_acc.iter().min().unwrap();
+
+	let out_slice = acc.as_slice_mut().unwrap();
 	if count as u128 > *min_of_max {
 		for (pi, qi) in izip!(p, q) {
-			let pi_ptr = pi.coefficients().as_ptr();
-			let qi_ptr = qi.coefficients().as_ptr();
+			let pij = pi.coefficients();
+			let qij = qi.coefficients();
+			let pi_slice = pij.as_slice().unwrap();
+			let qi_slice = qij.as_slice().unwrap();
 			unsafe {
-				for i in 0..size {
-					*acc_ptr.offset(i) += (*pi_ptr.offset(i) as u128) * (*qi_ptr.offset(i) as u128);
-				}
+				fma(out_slice, pi_slice, qi_slice);
+
 				for j in 0..p_first.ctx.q.len() as isize {
 					*num_acc_ptr.offset(j) += 1;
 					if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
@@ -372,13 +413,11 @@ where
 		// We don't need to check the condition on the max, it should shave off a few
 		// cycles.
 		for (pi, qi) in izip!(p, q) {
-			let pi_ptr = pi.coefficients().as_ptr();
-			let qi_ptr = qi.coefficients().as_ptr();
-			unsafe {
-				for i in 0..size {
-					*acc_ptr.offset(i) += (*pi_ptr.offset(i) as u128) * (*qi_ptr.offset(i) as u128);
-				}
-			}
+			let pij = pi.coefficients();
+			let qij = qi.coefficients();
+			let pi_slice = pij.as_slice().unwrap();
+			let qi_slice = qij.as_slice().unwrap();
+			unsafe { fma(out_slice, pi_slice, qi_slice) }
 		}
 	}
 

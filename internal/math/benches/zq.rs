@@ -18,6 +18,10 @@ pub fn zq_benchmark(c: &mut Criterion) {
 			b.iter(|| q.add_vec(&mut a, &c));
 		});
 
+		group.bench_function(BenchmarkId::new("add_vec_vt", vector_size), |b| unsafe {
+			b.iter(|| q.add_vec_vt(&mut a, &c));
+		});
+
 		group.bench_function(BenchmarkId::new("sub_vec", vector_size), |b| {
 			b.iter(|| q.sub_vec(&mut a, &c));
 		});
@@ -30,16 +34,16 @@ pub fn zq_benchmark(c: &mut Criterion) {
 			b.iter(|| q.mul_vec(&mut a, &c));
 		});
 
+		group.bench_function(BenchmarkId::new("mul_vec_vt", vector_size), |b| unsafe {
+			b.iter(|| q.mul_vec_vt(&mut a, &c));
+		});
+
 		group.bench_function(BenchmarkId::new("mul_shoup_vec", vector_size), |b| {
 			b.iter(|| q.mul_shoup_vec(&mut a, &c, &c_shoup));
 		});
 
 		group.bench_function(BenchmarkId::new("scalar_mul_vec", vector_size), |b| {
 			b.iter(|| q.scalar_mul_vec(&mut a, scalar));
-		});
-
-		group.bench_function(BenchmarkId::new("vt_mul_vec", vector_size), |b| unsafe {
-			b.iter(|| q.mul_vec_vt(&mut a, &c));
 		});
 	}
 

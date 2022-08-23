@@ -104,13 +104,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 		expanded_query.truncate(dim[0] + dim[1]);
 		println!("Expand: {:?}", start.elapsed());
 		// println!("expanded_query = {:?}", expanded_query);
+		// let now = std::time::Instant::now();
 		let fold = preprocessed_database
 			.axis_iter(Axis(1))
 			.map(|column| {
-				// println!("column: {:?}", column);
+				// let now = std::time::Instant::now();
 				let mut c = bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter())
 					.unwrap();
+				// println!("dot_product_scalar: {:?}", now.elapsed());
+				// let now = std::time::Instant::now();
 				c.mod_switch_to_last_level();
+				// println!("mod_switch_to_last_level: {:?}", now.elapsed());
 				let c_serialized = c.to_bytes();
 				let pt_values =
 					transcode_backward(&c_serialized, plaintext_modulus.ilog2() as usize);
@@ -126,7 +130,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 				r
 			})
 			.collect_vec();
-		(0..fold[0].len())
+		// println!("pir_dot_product: {:?}", now.elapsed());
+		// let now = std::time::Instant::now();
+		let v = (0..fold[0].len())
 			.map(|i| {
 				let mut outi = bfv::dot_product_scalar(
 					expanded_query[dim[0]..].iter(),
@@ -136,7 +142,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 				outi.mod_switch_to_last_level();
 				outi.to_bytes()
 			})
-			.collect_vec()
+			.collect_vec();
+		// println!("last_step: {:?}", now.elapsed());
+		v
 	});
 
 	println!(
