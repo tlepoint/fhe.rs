@@ -419,35 +419,60 @@ impl Poly {
 		let q_last_div_2 = q_last.modulus() / 2;
 
 		// Add (q_last - 1) / 2 to change from flooring to rounding
-		let mut q_last_poly = self.coefficients.slice_mut(s![q_len - 1.., ..]);
-		q_last_poly
-			.iter_mut()
-			.for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
-
 		let (mut q_new_polys, mut q_last_poly) =
 			self.coefficients.view_mut().split_at(Axis(0), q_len - 1);
 
-		izip!(
-			q_new_polys.outer_iter_mut(),
-			&self.ctx.q,
-			&self.ctx.inv_last_qi_mod_qj,
-			&self.ctx.inv_last_qi_mod_qj_shoup
-		)
-		.for_each(|(coeffs, qi, inv, inv_shoup)| {
-			let q_last_div_2_mod_qi = qi.reduce(q_last_div_2);
-			for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
-				// (x mod q_last - q_L/2) mod q_i
-				let mut tmp = qi.reduce(*q_last_coeff);
-				tmp = qi.sub(tmp, q_last_div_2_mod_qi);
+		if self.allow_variable_time_computations {
+			unsafe {
+				q_last_poly
+					.iter_mut()
+					.for_each(|coeff| *coeff = q_last.add_vt(*coeff, q_last_div_2));
+				izip!(
+					q_new_polys.outer_iter_mut(),
+					&self.ctx.q,
+					&self.ctx.inv_last_qi_mod_qj,
+					&self.ctx.inv_last_qi_mod_qj_shoup
+				)
+				.for_each(|(coeffs, qi, inv, inv_shoup)| {
+					let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2);
+					for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
+						// (x mod q_last - q_L/2) mod q_i
+						let tmp = qi.reduce_vt(*q_last_coeff) + q_last_div_2_mod_qi;
 
-				// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
-				// = (x - x mod q_last + q_L/2) mod q_i
-				*coeff = qi.sub(*coeff, tmp);
+						// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
+						// = (x - x mod q_last + q_L/2) mod q_i
+						*coeff += 2 * qi.modulus() - tmp;
 
-				// q_last^{-1} * (x - x mod q_last) mod q_i
-				*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
+						// q_last^{-1} * (x - x mod q_last) mod q_i
+						*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
+					}
+				});
 			}
-		});
+		} else {
+			q_last_poly
+				.iter_mut()
+				.for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
+			izip!(
+				q_new_polys.outer_iter_mut(),
+				&self.ctx.q,
+				&self.ctx.inv_last_qi_mod_qj,
+				&self.ctx.inv_last_qi_mod_qj_shoup
+			)
+			.for_each(|(coeffs, qi, inv, inv_shoup)| {
+				let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2);
+				for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
+					// (x mod q_last - q_L/2) mod q_i
+					let tmp = qi.reduce(*q_last_coeff) + q_last_div_2_mod_qi;
+
+					// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
+					// = (x - x mod q_last + q_L/2) mod q_i
+					*coeff = *coeff + 2 * qi.modulus() - tmp;
+
+					// q_last^{-1} * (x - x mod q_last) mod q_i
+					*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
+				}
+			});
+		}
 
 		// Remove the last row, and update the context.
 		if !self.allow_variable_time_computations {

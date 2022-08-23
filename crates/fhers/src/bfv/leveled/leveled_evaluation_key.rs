@@ -220,10 +220,6 @@ impl LeveledEvaluationKey {
 			let mut out = vec![Ciphertext::zero(&ct.par); 1 << level];
 			out[0] = ct.clone();
 
-			// Compute the inverse NTT of the polynomials in c
-			// out[0].c.iter_mut().for_each(|ci|
-			// ci.change_representation(Representation::PowerBasis) );
-
 			// We use the Oblivious expansion algorithm of
 			// https://eprint.iacr.org/2019/1483.pdf
 			for l in 0..level {
