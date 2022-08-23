@@ -538,7 +538,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for LeveledEvaluationKey {
 					"Galois key has incorrect evaluation key level".to_string(),
 				));
 			}
-			gk.insert(key.exponent, key);
+			gk.insert(key.element.exponent, key);
 		}
 
 		let ciphertext_ctx = par.ctx_at_level(value.ciphertext_level as usize)?;

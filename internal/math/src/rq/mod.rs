@@ -38,6 +38,44 @@ pub enum Representation {
 	NttShoup,
 }
 
+/// An exponent for a substitution.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SubstitutionExponent {
+	/// The value of the exponent.
+	pub exponent: usize,
+
+	ctx: Arc<Context>,
+	power_bitrev: Vec<usize>,
+}
+
+impl SubstitutionExponent {
+	/// Creates a substitution element from an exponent.
+	/// Returns an error if the exponent is even modulo 2 * degree.
+	pub fn new(ctx: &Arc<Context>, exponent: usize) -> Result<Self> {
+		let exponent = exponent % (2 * ctx.degree);
+		if exponent & 1 == 0 {
+			return Err(Error::Default(
+				"The exponent should be odd modulo 2 * degree".to_string(),
+			));
+		}
+		let mut power = (exponent - 1) / 2;
+		let mask = ctx.degree - 1;
+		let power_bitrev = (0..ctx.degree)
+			.map(|_| {
+				let r =
+					((power & mask).reverse_bits() >> (ctx.degree.leading_zeros() + 1)) as usize;
+				power += exponent;
+				r
+			})
+			.collect_vec();
+		Ok(Self {
+			ctx: ctx.clone(),
+			exponent,
+			power_bitrev,
+		})
+	}
+}
+
 /// Struct that holds a polynomial for a specific context.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Poly {
@@ -266,91 +304,60 @@ impl Poly {
 	/// In PowerBasis representation, i can be any integer that is not a
 	/// multiple of 2 * degree. In Ntt and NttShoup representation, i can be any
 	/// odd integer that is not a multiple of 2 * degree.
-	pub fn substitute(&self, i: usize) -> Result<Poly> {
-		let degree = self.ctx.degree as u32;
-		let exponent = (i as u32) % (2 * degree);
-		if exponent == 0 {
-			return Err(Error::Default(
-				"The exponent is a multiple of 2 * degree".to_string(),
-			));
-		}
-
+	pub fn substitute(&self, i: &SubstitutionExponent) -> Result<Poly> {
 		let mut q = Poly::zero(&self.ctx, self.representation.clone());
 		if self.allow_variable_time_computations {
 			unsafe { q.allow_variable_time_computations() }
 		}
-		let mask = (self.ctx.degree - 1) as u32;
 		match self.representation {
 			Representation::Ntt => {
-				if exponent & 1 == 0 {
-					return Err(Error::Default(
-						"The exponent should be odd modulo 2 * degree".to_string(),
-					));
-				}
-				let mut power = (exponent - 1) / 2;
-				let power_bitrev = (0..degree)
-					.map(|_| {
-						let r = ((power & mask).reverse_bits() >> (degree.leading_zeros() + 1))
-							as usize;
-						power += exponent;
-						r
-					})
-					.collect_vec();
 				izip!(
 					q.coefficients.outer_iter_mut(),
 					self.coefficients.outer_iter()
 				)
 				.for_each(|(mut q_row, p_row)| {
-					for (j, k) in izip!(&self.ctx.bitrev, &power_bitrev) {
+					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
 						q_row[*j] = p_row[*k]
 					}
 				});
 			}
 			Representation::NttShoup => {
-				if exponent & 1 == 0 {
-					return Err(Error::Default(
-						"The exponent should be odd modulo 2 * degree".to_string(),
-					));
-				}
-
-				let mut power = (exponent - 1) / 2;
-				for j in 0..degree {
-					let j_bitrev = (j.reverse_bits() >> (degree.leading_zeros() + 1)) as usize;
-					let power_bitrev =
-						(power.reverse_bits() >> (degree.leading_zeros() + 1)) as usize;
-					q.coefficients
-						.slice_mut(s![.., j_bitrev])
-						.assign(&self.coefficients.slice(s![.., power_bitrev]));
-					q.coefficients_shoup
-						.as_mut()
-						.unwrap()
-						.slice_mut(s![.., j_bitrev])
-						.assign(
-							&self
-								.coefficients_shoup
-								.as_ref()
-								.unwrap()
-								.slice(s![.., power_bitrev]),
-						);
-					power += exponent;
-				}
+				izip!(
+					q.coefficients.outer_iter_mut(),
+					self.coefficients.outer_iter()
+				)
+				.for_each(|(mut q_row, p_row)| {
+					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
+						q_row[*j] = p_row[*k]
+					}
+				});
+				izip!(
+					q.coefficients_shoup.as_mut().unwrap().outer_iter_mut(),
+					self.coefficients_shoup.as_ref().unwrap().outer_iter()
+				)
+				.for_each(|(mut q_row, p_row)| {
+					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
+						q_row[*j] = p_row[*k]
+					}
+				});
 			}
 			Representation::PowerBasis => {
-				let mut power = 0u32;
-				for j in 0..degree {
+				let mut power = 0usize;
+				let mask = self.ctx.degree - 1;
+				for j in 0..self.ctx.degree {
 					izip!(
 						&self.ctx.q,
 						q.coefficients.slice_mut(s![.., (power & mask) as usize]),
 						self.coefficients.slice(s![.., j as usize])
 					)
 					.for_each(|(qi, qij, pij)| {
-						if power & degree != 0 {
+						if power & self.ctx.degree != 0 {
 							*qij = qi.sub(*qij, *pij)
 						} else {
 							*qij = qi.add(*qij, *pij)
 						}
 					});
-					power += exponent
+					power += i.exponent
 				}
 			}
 		}
@@ -527,7 +534,7 @@ impl Zeroize for Poly {
 mod tests {
 	extern crate test;
 	use super::{switcher::Switcher, Context, Poly, Representation};
-	use crate::zq::Modulus;
+	use crate::{rq::SubstitutionExponent, zq::Modulus};
 	use itertools::Itertools;
 	use num_bigint::BigUint;
 	use num_traits::{One, Zero};
@@ -820,38 +827,24 @@ mod tests {
 			p_ntt_shoup.change_representation(Representation::NttShoup);
 			let p_coeffs = Vec::<u64>::from(&p);
 
-			// Substitution by a multiple of 2 * degree should fail
-			assert!(
-				p.substitute(0).is_err()
-					&& p_ntt.substitute(0).is_err()
-					&& p_ntt_shoup.substitute(0).is_err()
-			);
-			assert!(
-				p.substitute(16).is_err()
-					&& p_ntt.substitute(16).is_err()
-					&& p_ntt_shoup.substitute(16).is_err()
-			);
+			// Substitution by a multiple of 2 * degree, or even numbers, should fail
+			assert!(SubstitutionExponent::new(&ctx, 0).is_err());
+			assert!(SubstitutionExponent::new(&ctx, 2).is_err());
+			assert!(SubstitutionExponent::new(&ctx, 16).is_err());
 
 			// Substitution by 1 leaves the polynomials unchanged
-			assert_eq!(p, p.substitute(1)?);
-			assert_eq!(p_ntt, p_ntt.substitute(1)?);
-			assert_eq!(p_ntt_shoup, p_ntt_shoup.substitute(1)?);
+			assert_eq!(p, p.substitute(&SubstitutionExponent::new(&ctx, 1)?)?);
+			assert_eq!(
+				p_ntt,
+				p_ntt.substitute(&SubstitutionExponent::new(&ctx, 1)?)?
+			);
+			assert_eq!(
+				p_ntt_shoup,
+				p_ntt_shoup.substitute(&SubstitutionExponent::new(&ctx, 1)?)?
+			);
 
-			// Substitution by an even number is only possible in PowerBasis representation.
-			assert!(p_ntt.substitute(2).is_err() && p_ntt_shoup.substitute(2).is_err());
-			let mut v = vec![0u64; 8];
-			for i in 0..8 {
-				let vi = if 2 * i >= 8 && p_coeffs[i] > 0 {
-					*modulus - p_coeffs[i]
-				} else {
-					p_coeffs[i]
-				};
-				v[(2 * i) % 8] = (v[(2 * i) % 8] + vi) % *modulus
-			}
-			assert_eq!(&Vec::<u64>::from(&p.substitute(2)?), &v);
-
-			// In Ntt and NttShoup representations, the exponent must be odd
-			let mut q = p.substitute(3)?;
+			// Substitution by 3
+			let mut q = p.substitute(&SubstitutionExponent::new(&ctx, 3)?)?;
 			let mut v = vec![0u64; 8];
 			for i in 0..8 {
 				v[(3 * i) % 8] = if ((3 * i) / 8) & 1 == 1 && p_coeffs[i] > 0 {
@@ -862,18 +855,32 @@ mod tests {
 			}
 			assert_eq!(&Vec::<u64>::from(&q), &v);
 
-			let q_ntt = p_ntt.substitute(3)?;
+			let q_ntt = p_ntt.substitute(&SubstitutionExponent::new(&ctx, 3)?)?;
 			q.change_representation(Representation::Ntt);
 			assert_eq!(q, q_ntt);
 
-			let q_ntt_shoup = p_ntt_shoup.substitute(3)?;
+			let q_ntt_shoup = p_ntt_shoup.substitute(&SubstitutionExponent::new(&ctx, 3)?)?;
 			q.change_representation(Representation::NttShoup);
 			assert_eq!(q, q_ntt_shoup);
 
 			// 11 = 3^(-1) % 16
-			assert_eq!(p, p.substitute(3)?.substitute(11)?);
-			assert_eq!(p_ntt, p_ntt.substitute(3)?.substitute(11)?);
-			assert_eq!(p_ntt_shoup, p_ntt_shoup.substitute(3)?.substitute(11)?);
+			assert_eq!(
+				p,
+				p.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+					.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+			);
+			assert_eq!(
+				p_ntt,
+				p_ntt
+					.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+					.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+			);
+			assert_eq!(
+				p_ntt_shoup,
+				p_ntt_shoup
+					.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+					.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+			);
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
@@ -883,9 +890,23 @@ mod tests {
 		let mut p_ntt_shoup = p.clone();
 		p_ntt_shoup.change_representation(Representation::NttShoup);
 
-		assert_eq!(p, p.substitute(3)?.substitute(11)?);
-		assert_eq!(p_ntt, p_ntt.substitute(3)?.substitute(11)?);
-		assert_eq!(p_ntt_shoup, p_ntt_shoup.substitute(3)?.substitute(11)?);
+		assert_eq!(
+			p,
+			p.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+				.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+		);
+		assert_eq!(
+			p_ntt,
+			p_ntt
+				.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+				.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+		);
+		assert_eq!(
+			p_ntt_shoup,
+			p_ntt_shoup
+				.substitute(&SubstitutionExponent::new(&ctx, 3)?)?
+				.substitute(&SubstitutionExponent::new(&ctx, 11)?)?
+		);
 
 		Ok(())
 	}
