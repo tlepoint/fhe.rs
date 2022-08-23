@@ -180,7 +180,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 					),
 				),
 				|b| {
-					b.iter(|| ek.expands(&c1, i as usize).unwrap());
+					b.iter(|| ek.expands(&c1, 1 << i).unwrap());
 				},
 			);
 		}

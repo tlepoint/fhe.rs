@@ -207,9 +207,11 @@ impl LeveledEvaluationKey {
 	}
 
 	/// Obliviously expands the ciphertext. Returns an error if this evaluation
-	/// does not support expansion to this level, or if the ciphertext does not
-	/// have size 2. The output is a vector of 2^level ciphertexts.
-	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>> {
+	/// does not support expansion to level = ceil(log2(size)), or if the
+	/// ciphertext does not have size 2. The output is a vector of `size`
+	/// ciphertexts.
+	pub fn expands(&self, ct: &Ciphertext, size: usize) -> Result<Vec<Ciphertext>> {
+		let level = size.next_power_of_two().ilog2() as usize;
 		if ct.c.len() != 2 {
 			Err(Error::DefaultError(
 				"The ciphertext is not of size 2".to_string(),
@@ -227,12 +229,15 @@ impl LeveledEvaluationKey {
 				let gk = self.gk.get(&((self.par.degree() >> l) + 1)).unwrap();
 				for i in 0..(1 << l) {
 					let sub = gk.relinearize(&out[i])?;
-					out[(1 << l) | i] = &out[i] - &sub;
-					out[(1 << l) | i].c[0] *= monomial;
-					out[(1 << l) | i].c[1] *= monomial;
+					if (1 << l) | i < size {
+						out[(1 << l) | i] = &out[i] - &sub;
+						out[(1 << l) | i].c[0] *= monomial;
+						out[(1 << l) | i].c[1] *= monomial;
+					}
 					out[i] += &sub;
 				}
 			}
+			out.truncate(size);
 			Ok(out)
 		} else {
 			Err(Error::DefaultError(
@@ -826,7 +831,7 @@ mod tests {
 							)?;
 							let ct = sk.try_encrypt(&pt)?;
 
-							let ct2 = ek.expands(&ct, i)?;
+							let ct2 = ek.expands(&ct, 1 << i)?;
 							assert_eq!(ct2.len(), 1 << i);
 							for (vi, ct2i) in izip!(&v, &ct2) {
 								let mut expected = vec![0u64; params.degree()];

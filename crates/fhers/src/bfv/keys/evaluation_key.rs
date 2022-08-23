@@ -79,10 +79,11 @@ impl EvaluationKey {
 	}
 
 	/// Obliviously expands the ciphertext. Returns an error if this evaluation
-	/// does not support expansion to this level, or if the ciphertext does not
-	/// have size 2. The output is a vector of 2^level ciphertexts.
-	pub fn expands(&self, ct: &Ciphertext, level: usize) -> Result<Vec<Ciphertext>> {
-		self.leveled_ek.expands(ct, level)
+	/// does not support expansion to level = ceil(log2(size)), or if the
+	/// ciphertext does not have size 2. The output is a vector of `size`
+	/// ciphertexts.
+	pub fn expands(&self, ct: &Ciphertext, size: usize) -> Result<Vec<Ciphertext>> {
+		self.leveled_ek.expands(ct, size)
 	}
 }
 
@@ -343,7 +344,7 @@ mod tests {
 					let pt = Plaintext::try_encode(&v as &[u64], Encoding::poly(), &params)?;
 					let ct = sk.try_encrypt(&pt)?;
 
-					let ct2 = ek.expands(&ct, i)?;
+					let ct2 = ek.expands(&ct, 1 << i)?;
 					assert_eq!(ct2.len(), 1 << i);
 					for (vi, ct2i) in izip!(&v, &ct2) {
 						let mut expected = vec![0u64; params.degree()];

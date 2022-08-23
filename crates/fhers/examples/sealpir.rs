@@ -99,9 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let query = bfv::Ciphertext::from_bytes(&query, &params);
 		let query = query.unwrap();
 		let dim = preprocessed_database.shape();
-		let level = (dim[0] * dim[1]).next_power_of_two().ilog2().div_ceil(2) + 1;
-		let mut expanded_query = ek_expansion.expands(&query, level as usize)?;
-		expanded_query.truncate(dim[0] + dim[1]);
+		let expanded_query = ek_expansion.expands(&query, dim[0] + dim[1])?;
 		println!("Expand: {:?}", start.elapsed());
 		// println!("expanded_query = {:?}", expanded_query);
 		// let now = std::time::Instant::now();
