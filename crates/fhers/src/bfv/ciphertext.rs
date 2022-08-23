@@ -32,6 +32,7 @@ pub struct Ciphertext {
 impl Ciphertext {
 	/// Modulo switch the ciphertext to the last level.
 	/// TODO: To  test
+	#[cfg(feature = "leveled_bfv")]
 	pub fn mod_switch_to_last_level(&mut self) {
 		self.level = self.par.max_level();
 		let last_ctx = self.par.ctx_at_level(self.level).unwrap();
@@ -111,6 +112,13 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 		if value.level as usize > par.max_level() {
 			return Err(Error::DefaultError("Invalid level".to_string()));
+		}
+
+		#[cfg(not(feature = "leveled_bfv"))]
+		if value.level != 0 {
+			return Err(Error::DefaultError(
+				"Invalid level: did you enable the leveled_bfv feature?",
+			));
 		}
 
 		let ctx = par.ctx_at_level(value.level as usize)?;
