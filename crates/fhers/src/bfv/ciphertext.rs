@@ -35,9 +35,11 @@ pub struct Ciphertext {
 }
 
 impl Ciphertext {
-	/// Modulo switch the ciphertext to the next level.
+	/// Modulo switch the ciphertext to the last level.
+	/// TODO: To  test
 	pub fn mod_switch_to_last_level(&mut self) {
-		let last_ctx = self.par.ctx_at_level(self.par.max_level()).unwrap();
+		self.level = self.par.max_level();
+		let last_ctx = self.par.ctx_at_level(self.level).unwrap();
 		self.seed = None;
 		self.c.iter_mut().for_each(|ci| {
 			if ci.ctx() != &last_ctx {
@@ -45,7 +47,7 @@ impl Ciphertext {
 				assert!(ci.mod_switch_down_to(&last_ctx).is_ok());
 				ci.change_representation(Representation::Ntt);
 			}
-		})
+		});
 	}
 }
 
