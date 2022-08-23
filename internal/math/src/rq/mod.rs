@@ -434,14 +434,14 @@ impl Poly {
 					&self.ctx.inv_last_qi_mod_qj_shoup
 				)
 				.for_each(|(coeffs, qi, inv, inv_shoup)| {
-					let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2);
+					let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2); // Up to qi.modulus()
 					for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
 						// (x mod q_last - q_L/2) mod q_i
-						let tmp = qi.reduce_vt(*q_last_coeff) + q_last_div_2_mod_qi;
+						let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
 
 						// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
 						// = (x - x mod q_last + q_L/2) mod q_i
-						*coeff += 2 * qi.modulus() - tmp;
+						*coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
 
 						// q_last^{-1} * (x - x mod q_last) mod q_i
 						*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
@@ -459,14 +459,14 @@ impl Poly {
 				&self.ctx.inv_last_qi_mod_qj_shoup
 			)
 			.for_each(|(coeffs, qi, inv, inv_shoup)| {
-				let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2);
+				let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2); // Up to qi.modulus()
 				for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
 					// (x mod q_last - q_L/2) mod q_i
-					let tmp = qi.reduce(*q_last_coeff) + q_last_div_2_mod_qi;
+					let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
 
 					// ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
 					// = (x - x mod q_last + q_L/2) mod q_i
-					*coeff = *coeff + 2 * qi.modulus() - tmp;
+					*coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
 
 					// q_last^{-1} * (x - x mod q_last) mod q_i
 					*coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
