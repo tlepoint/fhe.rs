@@ -2,21 +2,16 @@
 
 use crate::bfv::{
 	parameters::BfvParameters, proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom,
-	Plaintext,
 };
 use crate::{Error, Result};
 use fhers_traits::{
 	DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
 };
-use itertools::{izip, Itertools};
 use math::rq::{Poly, Representation};
 use protobuf::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::{
-	ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-	sync::Arc,
-};
+use std::sync::Arc;
 
 /// A ciphertext encrypting a plaintext.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,165 +86,6 @@ impl Ciphertext {
 	}
 }
 
-impl Add<&Ciphertext> for &Ciphertext {
-	type Output = Ciphertext;
-
-	fn add(self, rhs: &Ciphertext) -> Ciphertext {
-		let mut self_clone = self.clone();
-		self_clone += rhs;
-		self_clone
-	}
-}
-
-impl AddAssign<&Ciphertext> for Ciphertext {
-	fn add_assign(&mut self, rhs: &Ciphertext) {
-		assert_eq!(self.par, rhs.par);
-
-		if self.c.is_empty() {
-			*self = rhs.clone()
-		} else {
-			assert_eq!(self.level, rhs.level);
-			assert_eq!(self.c.len(), rhs.c.len());
-			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
-			self.seed = None
-		}
-	}
-}
-
-impl AddAssign<Ciphertext> for Ciphertext {
-	fn add_assign(&mut self, rhs: Ciphertext) {
-		assert_eq!(self.par, rhs.par);
-
-		if self.c.is_empty() {
-			*self = rhs
-		} else {
-			assert_eq!(self.level, rhs.level);
-			assert_eq!(self.c.len(), rhs.c.len());
-			izip!(&mut self.c, rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
-			self.seed = None
-		}
-	}
-}
-
-impl Sub<&Ciphertext> for &Ciphertext {
-	type Output = Ciphertext;
-
-	fn sub(self, rhs: &Ciphertext) -> Ciphertext {
-		let mut self_clone = self.clone();
-		self_clone -= rhs;
-		self_clone
-	}
-}
-
-impl SubAssign<&Ciphertext> for Ciphertext {
-	fn sub_assign(&mut self, rhs: &Ciphertext) {
-		assert_eq!(self.par, rhs.par);
-
-		if self.c.is_empty() {
-			*self = -rhs
-		} else {
-			assert_eq!(self.level, rhs.level);
-			assert_eq!(self.c.len(), rhs.c.len());
-			izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
-			self.seed = None
-		}
-	}
-}
-
-impl Neg for &Ciphertext {
-	type Output = Ciphertext;
-
-	fn neg(self) -> Ciphertext {
-		let c = self.c.iter().map(|c1i| -c1i).collect_vec();
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-			level: self.level,
-		}
-	}
-}
-
-impl MulAssign<&Plaintext> for Ciphertext {
-	fn mul_assign(&mut self, rhs: &Plaintext) {
-		assert_eq!(self.par, rhs.par);
-		if !self.c.is_empty() {
-			assert_eq!(self.level, rhs.level);
-			self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
-		}
-		self.seed = None
-	}
-}
-
-impl Mul<&Plaintext> for &Ciphertext {
-	type Output = Ciphertext;
-
-	fn mul(self, rhs: &Plaintext) -> Self::Output {
-		let mut self_clone = self.clone();
-		self_clone *= rhs;
-		self_clone
-	}
-}
-
-impl Mul<&Ciphertext> for &Ciphertext {
-	type Output = Ciphertext;
-
-	fn mul(self, rhs: &Ciphertext) -> Self::Output {
-		assert_eq!(self.par, rhs.par);
-
-		if self.c.is_empty() {
-			return self.clone();
-		}
-		assert_eq!(self.level, rhs.level);
-
-		let mp = &self.par.mul_1_params[self.level];
-
-		// Scale all ciphertexts
-		// let mut now = std::time::SystemTime::now();
-		let self_c = self
-			.c
-			.iter()
-			.map(|ci| ci.scale(&mp.extender_self).unwrap())
-			.collect_vec();
-		let other_c = rhs
-			.c
-			.iter()
-			.map(|ci| ci.scale(&mp.extender_self).unwrap())
-			.collect_vec();
-		// println!("Extend: {:?}", now.elapsed().unwrap());
-
-		// Multiply
-		// now = std::time::SystemTime::now();
-		let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
-		for i in 0..self_c.len() {
-			for j in 0..other_c.len() {
-				c[i + j] += &(&self_c[i] * &other_c[j])
-			}
-		}
-		// println!("Multiply: {:?}", now.elapsed().unwrap());
-
-		// Scale
-		// now = std::time::SystemTime::now();
-		let c = c
-			.iter_mut()
-			.map(|ci| {
-				ci.change_representation(Representation::PowerBasis);
-				let mut ci = ci.scale(&mp.down_scaler).unwrap();
-				ci.change_representation(Representation::Ntt);
-				ci
-			})
-			.collect_vec();
-		// println!("Scale: {:?}", now.elapsed().unwrap());
-
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-			level: rhs.level,
-		}
-	}
-}
-
 /// Conversions from and to protobuf.
 impl From<&Ciphertext> for CiphertextProto {
 	fn from(ct: &Ciphertext) -> Self {
@@ -309,8 +145,8 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 #[cfg(test)]
 mod tests {
 	use crate::bfv::{
-		proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom, BfvParameters,
-		Ciphertext, Encoding, Plaintext, SecretKey,
+		encoding::EncodingEnum, proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom,
+		BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
 	};
 	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use std::{error::Error, sync::Arc};
@@ -426,8 +262,8 @@ mod tests {
 				let sk = SecretKey::random(&params);
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let mut c = vec![0u64; params.degree()];
-					match encoding {
-						Encoding::PolyLeveled(_) => {
+					match encoding.encoding {
+						EncodingEnum::Poly => {
 							for i in 0..params.degree() {
 								for j in 0..params.degree() {
 									if i + j >= params.degree() {
@@ -443,7 +279,7 @@ mod tests {
 								}
 							}
 						}
-						Encoding::SimdLeveled(_) => {
+						EncodingEnum::Simd => {
 							c = a.clone();
 							params.plaintext.mul_vec(&mut c, &b);
 						}

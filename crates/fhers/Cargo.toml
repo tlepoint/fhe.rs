@@ -9,6 +9,10 @@ repository = "https://github.com/tlepoint/fhe.rs"
 [lib]
 bench = false  # Disable default bench (we use criterion)
 
+[features]
+leveled_bfv = []
+optimized_ops = ["leveled_bfv"]
+
 [dependencies]
 math = { version = "0.0.1", path = "../../internal/math" }
 fhers-traits = { version = "0.0.1", path = "../fhers-traits" }
@@ -25,7 +29,6 @@ ndarray = "0.15.6"
 protobuf = "3.1.0"
 thiserror = "1.0.32"
 
-
 [dev-dependencies]
 utilities = { version = "0.0.1", path = "examples/utilities" }
 
@@ -38,3 +41,16 @@ rand = "0.8.5"
 [[bench]]
 name = "bfv"
 harness = false
+
+[[bench]]
+name = "bfv_optimized_ops"
+harness = false
+required-features = ["optimized_ops"]
+
+[[example]]
+name = "mulpir"
+required-features = ["optimized_ops"]
+
+[[example]]
+name = "sealpir"
+required-features = ["optimized_ops"]

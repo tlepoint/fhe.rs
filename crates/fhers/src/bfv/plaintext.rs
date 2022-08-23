@@ -1,6 +1,6 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::{
-	bfv::{advanced::PlaintextVec, BfvParameters, Encoding},
+	bfv::{leveled::PlaintextVec, BfvParameters, Encoding},
 	Error, Result,
 };
 use fhers_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
@@ -8,6 +8,8 @@ use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+use super::encoding::EncodingEnum;
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
 #[derive(Debug, Clone, Eq)]
@@ -58,10 +60,7 @@ impl Plaintext {
 
 	/// Generate a zero plaintext.
 	pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-		let level = match encoding {
-			Encoding::PolyLeveled(l) => l,
-			Encoding::SimdLeveled(l) => l,
-		};
+		let level = encoding.level;
 		let ctx = par.ctx_at_level(level)?;
 		let value = vec![0u64; par.degree()];
 		let poly_ntt = Poly::zero(&ctx, Representation::Ntt);
@@ -156,25 +155,21 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 			let slice = &value[i * par.degree()..min((i + 1) * par.degree(), value.len())];
 			let mut v = vec![0u64; par.degree()];
 
-			let level = match *encoding {
-				Encoding::PolyLeveled(l) => {
-					v[..slice.len()].copy_from_slice(slice);
-					l
-				}
-				Encoding::SimdLeveled(l) => {
+			match encoding.encoding {
+				EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
+				EncodingEnum::Simd => {
 					if let Some(op) = &par.op {
 						for i in 0..slice.len() {
 							v[par.matrix_reps_index_map[i]] = slice[i];
 						}
 						op.backward_vt(v.as_mut_ptr());
-						l
 					} else {
 						return Err(Error::SimdUnsupported);
 					}
 				}
 			};
 
-			let ctx = par.ctx_at_level(level)?;
+			let ctx = par.ctx_at_level(encoding.level)?;
 			let w = par.plaintext.center_vec_vt(&v);
 			let mut poly =
 				Poly::try_convert_from(&w as &[i64], &ctx, true, Representation::PowerBasis)?;
@@ -185,7 +180,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 				value: v,
 				encoding: Some(encoding.clone()),
 				poly_ntt: poly,
-				level,
+				level: encoding.level,
 			})
 		}
 		Ok(PlaintextVec(out))
@@ -206,25 +201,23 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 			let slice = &value[i * par.degree()..min((i + 1) * par.degree(), value.len())];
 			let mut v = vec![0u64; par.degree()];
 
-			let level = match *encoding {
-				Encoding::PolyLeveled(l) => {
+			match encoding.encoding {
+				EncodingEnum::Poly => {
 					v[..slice.len()].copy_from_slice(slice);
-					l
 				}
-				Encoding::SimdLeveled(l) => {
+				EncodingEnum::Simd => {
 					if let Some(op) = &par.op {
 						for i in 0..slice.len() {
 							v[par.matrix_reps_index_map[i]] = slice[i];
 						}
 						op.backward(&mut v);
-						l
 					} else {
 						return Err(Error::SimdUnsupported);
 					}
 				}
-			};
+			}
 
-			let ctx = par.ctx_at_level(level)?;
+			let ctx = par.ctx_at_level(encoding.level)?;
 
 			let mut w = unsafe { par.plaintext.center_vec_vt(&v) };
 			let mut poly =
@@ -237,7 +230,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 				value: v,
 				encoding: Some(encoding.clone()),
 				poly_ntt: poly,
-				level,
+				level: encoding.level,
 			})
 		}
 		Ok(PlaintextVec(out))
@@ -277,9 +270,9 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 
 		let mut w = pt.value.clone();
 
-		match enc {
-			Encoding::PolyLeveled(_) => Ok(w),
-			Encoding::SimdLeveled(_) => {
+		match enc.encoding {
+			EncodingEnum::Poly => Ok(w),
+			EncodingEnum::Simd => {
 				if let Some(op) = &pt.par.op {
 					op.forward(&mut w);
 					let mut w_reordered = w.clone();

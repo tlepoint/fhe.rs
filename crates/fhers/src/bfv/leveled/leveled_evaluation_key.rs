@@ -153,13 +153,12 @@ impl LeveledEvaluationKey {
 				"This key does not support relinearization".to_string(),
 			))
 		} else {
-			// TODO: Should this switch parameters too?
 			self.rk.as_ref().unwrap().relinearizes(ct)
 		}
 	}
 
 	/// Relinearize a 3-part ciphertext in place.
-	// TODO: Should this switch parameters too?
+
 	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
 		if !self.supports_relinearization() {
 			Err(Error::DefaultError(
@@ -180,8 +179,8 @@ impl LeveledEvaluationKey {
 		}
 	}
 
+	#[cfg(feature = "optimized_ops")]
 	/// Relinearize using polynomials.
-	// TODO: Should this switch parameters too?
 	pub(crate) fn relinearizes_with_poly(&self, c2: &Poly) -> Result<(Poly, Poly)> {
 		if !self.supports_relinearization() {
 			Err(Error::DefaultError(
@@ -681,7 +680,7 @@ mod tests {
 
 						let pt = Plaintext::try_encode(
 							&v as &[u64],
-							Encoding::SimdLeveled(ciphertext_level),
+							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
 						let ct = sk.try_encrypt(&pt)?;
@@ -689,7 +688,7 @@ mod tests {
 						let ct2 = ek.computes_inner_sum(&ct)?;
 						let pt = sk.try_decrypt(&ct2)?;
 						assert_eq!(
-							Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(ciphertext_level))?,
+							Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(ciphertext_level))?,
 							vec![expected; params.degree()]
 						)
 					}
@@ -725,7 +724,7 @@ mod tests {
 
 						let pt = Plaintext::try_encode(
 							&v as &[u64],
-							Encoding::SimdLeveled(ciphertext_level),
+							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
 						let ct = sk.try_encrypt(&pt)?;
@@ -733,7 +732,7 @@ mod tests {
 						let ct2 = ek.rotates_row(&ct)?;
 						let pt = sk.try_decrypt(&ct2)?;
 						assert_eq!(
-							Vec::<u64>::try_decode(&pt, Encoding::SimdLeveled(ciphertext_level))?,
+							Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(ciphertext_level))?,
 							expected
 						)
 					}
@@ -777,7 +776,7 @@ mod tests {
 
 							let pt = Plaintext::try_encode(
 								&v as &[u64],
-								Encoding::SimdLeveled(ciphertext_level),
+								Encoding::simd_at_level(ciphertext_level),
 								&params,
 							)?;
 							let ct = sk.try_encrypt(&pt)?;
@@ -787,7 +786,7 @@ mod tests {
 							assert_eq!(
 								Vec::<u64>::try_decode(
 									&pt,
-									Encoding::SimdLeveled(ciphertext_level)
+									Encoding::simd_at_level(ciphertext_level)
 								)?,
 								expected
 							)
@@ -826,7 +825,7 @@ mod tests {
 							let v = params.plaintext.random_vec(1 << i);
 							let pt = Plaintext::try_encode(
 								&v as &[u64],
-								Encoding::PolyLeveled(ciphertext_level),
+								Encoding::poly_at_level(ciphertext_level),
 								&params,
 							)?;
 							let ct = sk.try_encrypt(&pt)?;
@@ -841,7 +840,7 @@ mod tests {
 									expected,
 									Vec::<u64>::try_decode(
 										&pt,
-										Encoding::PolyLeveled(ciphertext_level)
+										Encoding::poly_at_level(ciphertext_level)
 									)?
 								);
 								println!("Noise: {:?}", unsafe { sk.measure_noise(ct2i) })

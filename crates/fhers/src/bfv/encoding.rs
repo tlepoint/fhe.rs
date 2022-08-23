@@ -2,20 +2,27 @@
 
 use fhers_traits::FhePlaintextEncoding;
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum EncodingEnum {
+	Poly,
+	Simd,
+}
+
 /// An encoding for the plaintext.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Encoding {
-	/// \[Advanced\] A Poly encoding embedding the level information.
-	PolyLeveled(usize),
-	/// \[Advanced\] A Simd encoding embedding the level information.
-	SimdLeveled(usize),
+pub struct Encoding {
+	pub(crate) encoding: EncodingEnum,
+	pub(crate) level: usize,
 }
 
 impl Encoding {
 	/// A Poly encoding encodes a vector as coefficients of a polynomial;
 	/// homomorphic operations are therefore polynomial operations.
 	pub fn poly() -> Self {
-		Self::PolyLeveled(0)
+		Self {
+			encoding: EncodingEnum::Poly,
+			level: 0,
+		}
 	}
 
 	/// A Simd encoding encodes a vector so that homomorphic operations are
@@ -23,7 +30,28 @@ impl Encoding {
 	/// The Simd encoding require that the plaintext modulus is congruent to 1
 	/// modulo the degree of the underlying polynomial.
 	pub fn simd() -> Self {
-		Self::SimdLeveled(0)
+		Self {
+			encoding: EncodingEnum::Simd,
+			level: 0,
+		}
+	}
+
+	#[cfg(feature = "leveled_bfv")]
+	/// A poly encoding at a given level.
+	pub fn poly_at_level(level: usize) -> Self {
+		Self {
+			encoding: EncodingEnum::Poly,
+			level,
+		}
+	}
+
+	#[cfg(feature = "leveled_bfv")]
+	/// A simd encoding at a given level.
+	pub fn simd_at_level(level: usize) -> Self {
+		Self {
+			encoding: EncodingEnum::Simd,
+			level,
+		}
 	}
 }
 

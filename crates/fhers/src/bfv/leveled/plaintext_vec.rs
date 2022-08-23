@@ -29,7 +29,7 @@ mod tests {
 
 	use fhers_traits::{FheDecoder, FheEncoder};
 
-	use crate::bfv::{advanced::PlaintextVec, BfvParameters, Encoding};
+	use crate::bfv::{leveled::PlaintextVec, BfvParameters, Encoding};
 
 	#[test]
 	fn test_encode_decode() {
@@ -39,12 +39,12 @@ mod tests {
 				let a = params.plaintext.random_vec(params.degree() * i);
 
 				let plaintexts =
-					PlaintextVec::try_encode(&a as &[u64], Encoding::PolyLeveled(0), &params);
+					PlaintextVec::try_encode(&a as &[u64], Encoding::poly_at_level(0), &params);
 				assert!(plaintexts.is_ok());
 				let plaintexts = plaintexts.unwrap();
 				assert_eq!(plaintexts.0.len(), i);
 				for j in 0..i {
-					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::PolyLeveled(0));
+					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0));
 					assert!(
 						b.is_ok_and(|b| b == &a[j * params.degree()..(j + 1) * params.degree()])
 					);

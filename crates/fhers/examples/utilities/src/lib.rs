@@ -81,7 +81,7 @@ pub fn encode_database(
 	println!("dimensions = {} {}", dimension_1, dimension_2);
 	println!("dimension = {}", dimension_1 * dimension_2);
 	let mut preprocessed_database = vec![
-		Plaintext::zero(Encoding::PolyLeveled(level), &par)
+		Plaintext::zero(Encoding::poly_at_level(level), &par)
 			.unwrap();
 		dimension_1 * dimension_2
 	];
@@ -94,7 +94,7 @@ pub fn encode_database(
 		}
 		let pt_values = transcode_backward(&serialized_plaintext, par.plaintext().ilog2() as usize);
 		preprocessed_database[i] =
-			Plaintext::try_encode(&pt_values as &[u64], Encoding::PolyLeveled(level), &par)
+			Plaintext::try_encode(&pt_values as &[u64], Encoding::poly_at_level(level), &par)
 				.unwrap();
 	});
 	Array2::from_shape_vec((dimension_1, dimension_2), preprocessed_database).unwrap()
