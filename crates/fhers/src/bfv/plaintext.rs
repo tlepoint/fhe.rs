@@ -1,6 +1,8 @@
 //! Plaintext type in the BFV encryption scheme.
-use crate::bfv::{BfvParameters, Encoding};
-use crate::{Error, Result};
+use crate::{
+	bfv::{advanced::PlaintextVec, BfvParameters, Encoding},
+	Error, Result,
+};
 use fhers_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::cmp::min;
@@ -40,26 +42,6 @@ impl Zeroize for Plaintext {
 	}
 }
 
-/// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
-/// trait, and therefore can be encoded to / decoded from.
-pub struct PlaintextVec(pub Vec<Plaintext>);
-
-impl FhePlaintext for PlaintextVec {
-	type Encoding = Encoding;
-}
-
-impl FheParametrized for PlaintextVec {
-	type Parameters = BfvParameters;
-}
-
-impl Zeroize for PlaintextVec {
-	fn zeroize(&mut self) {
-		self.0.zeroize()
-	}
-}
-
-impl ZeroizeOnDrop for PlaintextVec {}
-
 impl Plaintext {
 	pub(crate) fn to_poly(&self) -> Result<Poly> {
 		let mut m_v = self.value.clone();
@@ -77,8 +59,8 @@ impl Plaintext {
 	/// Generate a zero plaintext.
 	pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
 		let level = match encoding {
-			Encoding::Poly(l) => l,
-			Encoding::Simd(l) => l,
+			Encoding::PolyLeveled(l) => l,
+			Encoding::SimdLeveled(l) => l,
 		};
 		let ctx = par.ctx_at_level(level)?;
 		let value = vec![0u64; par.degree()];
@@ -175,11 +157,11 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 			let mut v = vec![0u64; par.degree()];
 
 			let level = match *encoding {
-				Encoding::Poly(l) => {
+				Encoding::PolyLeveled(l) => {
 					v[..slice.len()].copy_from_slice(slice);
 					l
 				}
-				Encoding::Simd(l) => {
+				Encoding::SimdLeveled(l) => {
 					if let Some(op) = &par.op {
 						for i in 0..slice.len() {
 							v[par.matrix_reps_index_map[i]] = slice[i];
@@ -225,11 +207,11 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 			let mut v = vec![0u64; par.degree()];
 
 			let level = match *encoding {
-				Encoding::Poly(l) => {
+				Encoding::PolyLeveled(l) => {
 					v[..slice.len()].copy_from_slice(slice);
 					l
 				}
-				Encoding::Simd(l) => {
+				Encoding::SimdLeveled(l) => {
 					if let Some(op) = &par.op {
 						for i in 0..slice.len() {
 							v[par.matrix_reps_index_map[i]] = slice[i];
@@ -296,8 +278,8 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 		let mut w = pt.value.clone();
 
 		match enc {
-			Encoding::Poly(_) => Ok(w),
-			Encoding::Simd(_) => {
+			Encoding::PolyLeveled(_) => Ok(w),
+			Encoding::SimdLeveled(_) => {
 				if let Some(op) = &pt.par.op {
 					op.forward(&mut w);
 					let mut w_reordered = w.clone();
@@ -331,10 +313,7 @@ impl FheDecoder<Plaintext> for Vec<i64> {
 #[cfg(test)]
 mod tests {
 	use super::{Encoding, Plaintext};
-	use crate::bfv::{
-		parameters::{BfvParameters, BfvParametersBuilder},
-		PlaintextVec,
-	};
+	use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
 	use fhers_traits::{FheDecoder, FheEncoder};
 	use std::{error::Error, sync::Arc};
 
@@ -344,16 +323,17 @@ mod tests {
 		let params = Arc::new(BfvParameters::default(1));
 		let a = params.plaintext.random_vec(params.degree());
 
-		let plaintext = Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::Poly(0), &params);
+		let plaintext =
+			Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::PolyLeveled(0), &params);
 		assert!(plaintext.is_err());
 
-		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly(0), &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::PolyLeveled(0), &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd(0), &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::SimdLeveled(0), &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&[1u64] as &[u64], Encoding::Poly(0), &params);
+		let plaintext = Plaintext::try_encode(&[1u64] as &[u64], Encoding::PolyLeveled(0), &params);
 		assert!(plaintext.is_ok());
 
 		// The following parameters do not allow for Simd encoding
@@ -367,10 +347,10 @@ mod tests {
 
 		let a = params.plaintext.random_vec(params.degree());
 
-		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly(0), &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::PolyLeveled(0), &params);
 		assert!(plaintext.is_ok());
 
-		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd(0), &params);
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::SimdLeveled(0), &params);
 		assert!(plaintext.is_err());
 
 		Ok(())
@@ -379,39 +359,24 @@ mod tests {
 	#[test]
 	fn test_encode_decode() {
 		(0..40).for_each(|_| {
-			for i in 1..5 {
-				let params = Arc::new(BfvParameters::default(1));
-				let a = params.plaintext.random_vec(params.degree() * i);
+			let params = Arc::new(BfvParameters::default(1));
+			let a = params.plaintext.random_vec(params.degree());
 
-				let plaintexts = PlaintextVec::try_encode(&a as &[u64], Encoding::Poly(0), &params);
-				assert!(plaintexts.is_ok());
-				let plaintexts = plaintexts.unwrap();
-				assert_eq!(plaintexts.0.len(), i);
-				for j in 0..i {
-					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::Poly(0));
-					assert!(
-						b.is_ok_and(|b| b == &a[j * params.degree()..(j + 1) * params.degree()])
-					);
-				}
+			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::SimdLeveled(0), &params);
+			assert!(plaintext.is_ok());
+			let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::SimdLeveled(0));
+			assert!(b.is_ok_and(|b| b == &a));
 
-				let a = a[..params.degree()].to_vec();
+			let a = unsafe { params.plaintext.center_vec_vt(&a) };
+			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::PolyLeveled(0), &params);
+			assert!(plaintext.is_ok());
+			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::PolyLeveled(0));
+			assert!(b.is_ok_and(|b| b == &a));
 
-				let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Simd(0), &params);
-				assert!(plaintext.is_ok());
-				let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::Simd(0));
-				assert!(b.is_ok_and(|b| b == &a));
-
-				let a = unsafe { params.plaintext.center_vec_vt(&a) };
-				let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::Poly(0), &params);
-				assert!(plaintext.is_ok());
-				let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::Poly(0));
-				assert!(b.is_ok_and(|b| b == &a));
-
-				let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::Simd(0), &params);
-				assert!(plaintext.is_ok());
-				let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::Simd(0));
-				assert!(b.is_ok_and(|b| b == &a));
-			}
+			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::SimdLeveled(0), &params);
+			assert!(plaintext.is_ok());
+			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::SimdLeveled(0));
+			assert!(b.is_ok_and(|b| b == &a));
 		})
 	}
 
@@ -420,8 +385,9 @@ mod tests {
 		let params = Arc::new(BfvParameters::default(1));
 		let a = params.plaintext.random_vec(params.degree());
 
-		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly(0), &params)?;
-		let mut same_plaintext = Plaintext::try_encode(&a as &[u64], Encoding::Poly(0), &params)?;
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::PolyLeveled(0), &params)?;
+		let mut same_plaintext =
+			Plaintext::try_encode(&a as &[u64], Encoding::PolyLeveled(0), &params)?;
 		assert_eq!(plaintext, same_plaintext);
 
 		// Equality also holds when there is no encoding specified. In this test, we use

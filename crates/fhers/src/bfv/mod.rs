@@ -9,9 +9,10 @@ mod parameters;
 mod plaintext;
 mod proto;
 
+pub mod advanced;
 pub mod traits;
-pub use ciphertext::{dot_product_scalar, mul, mul2, Ciphertext};
+pub use ciphertext::Ciphertext;
 pub use encoding::Encoding;
-pub use keys::{LeveledEvaluationKey, LeveledEvaluationKeyBuilder, SecretKey};
+pub use keys::{EvaluationKey, EvaluationKeyBuilder, SecretKey};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
-pub use plaintext::{Plaintext, PlaintextVec};
+pub use plaintext::Plaintext;
