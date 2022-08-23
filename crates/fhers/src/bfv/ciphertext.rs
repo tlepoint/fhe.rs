@@ -117,7 +117,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		#[cfg(not(feature = "leveled_bfv"))]
 		if value.level != 0 {
 			return Err(Error::DefaultError(
-				"Invalid level: did you enable the leveled_bfv feature?",
+				"Invalid level: did you enable the leveled_bfv feature?".to_string(),
 			));
 		}
 
