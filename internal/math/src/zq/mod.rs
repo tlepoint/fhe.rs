@@ -20,7 +20,7 @@ pub struct Modulus {
 	barrett_hi: u64,
 	barrett_lo: u64,
 	leading_zeros: u32,
-	supports_opt: bool,
+	pub(crate) supports_opt: bool,
 	distribution: Uniform<u64>,
 }
 
@@ -558,7 +558,7 @@ impl Modulus {
 	/// # Safety
 	/// This function is not constant time and its timing may reveal information
 	/// about the value being reduced.
-	const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
+	pub(crate) const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
 		debug_assert!(self.supports_opt);
 		Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p)
 	}
@@ -650,7 +650,7 @@ impl Modulus {
 	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
 	///
-	/// Aborts if the input is >= 2 * p in debug mode.
+	/// Aborts if the input is >= p ^ 2 in debug mode.
 	pub const fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
 		debug_assert!(a < (self.p as u128) * (self.p as u128));
 
@@ -665,8 +665,6 @@ impl Modulus {
 
 	/// Lazy optimized modular reduction of a in constant time.
 	/// The output is in the interval [0, 2 * p).
-	///
-	/// Aborts if the input is >= 2 * p in debug mode.
 	const fn lazy_reduce_opt(&self, a: u64) -> u64 {
 		let q = a >> (64 - self.leading_zeros);
 		let r = ((a as u128) - (q as u128) * (self.p as u128)) as u64;
@@ -675,6 +673,16 @@ impl Modulus {
 		debug_assert!(r % self.p == a % self.p);
 
 		r
+	}
+
+	/// Lazy modular reduction of a vector in constant time.
+	/// The output coefficients are in the interval [0, 2 * p).
+	pub fn lazy_reduce_vec(&self, a: &mut [u64]) {
+		if self.supports_opt {
+			a.iter_mut().for_each(|ai| *ai = self.lazy_reduce_opt(*ai))
+		} else {
+			a.iter_mut().for_each(|ai| *ai = self.lazy_reduce(*ai))
+		}
 	}
 
 	/// Returns a random vector and a seed that generated that random element.

@@ -391,17 +391,16 @@ where
 				fma(out_slice, pi_slice, qi_slice);
 
 				for j in 0..p_first.ctx.q.len() as isize {
+					let qj = &*q_ptr.offset(j);
 					*num_acc_ptr.offset(j) += 1;
 					if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
 						if p_first.allow_variable_time_computations {
 							for i in j * degree..(j + 1) * degree {
-								*acc_ptr.offset(i) =
-									(*q_ptr.offset(j)).reduce_u128(*acc_ptr.offset(i)) as u128;
+								*acc_ptr.offset(i) = qj.reduce_u128_vt(*acc_ptr.offset(i)) as u128;
 							}
 						} else {
 							for i in j * degree..(j + 1) * degree {
-								*acc_ptr.offset(i) =
-									(*q_ptr.offset(j)).reduce_u128_vt(*acc_ptr.offset(i)) as u128;
+								*acc_ptr.offset(i) = qj.reduce_u128(*acc_ptr.offset(i)) as u128;
 							}
 						}
 						*num_acc_ptr.offset(j) = 1;
