@@ -5,9 +5,9 @@ use fhers_traits::FhePlaintextEncoding;
 /// An encoding for the plaintext.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Encoding {
-	/// [Advanced] A Poly encoding embedding the level information.
+	/// \[Advanced\] A Poly encoding embedding the level information.
 	PolyLeveled(usize),
-	/// [Advanced] A Simd encoding embedding the level information.
+	/// \[Advanced\] A Simd encoding embedding the level information.
 	SimdLeveled(usize),
 }
 
