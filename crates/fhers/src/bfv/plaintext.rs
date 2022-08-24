@@ -17,7 +17,7 @@ pub struct Plaintext {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Arc<BfvParameters>,
 	/// The value after encoding.
-	pub(crate) value: Vec<u64>,
+	pub(crate) value: Box<[u64]>,
 	/// The encoding of the plaintext, if known
 	pub(crate) encoding: Option<Encoding>,
 	/// The plaintext as a polynomial.
@@ -51,7 +51,7 @@ impl Plaintext {
 			.plaintext
 			.scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
 		let ctx = self.par.ctx_at_level(self.level)?;
-		let mut m = Poly::try_convert_from(&m_v, ctx, false, Representation::PowerBasis)?;
+		let mut m = Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
 		m *= &self.par.delta[self.level];
 		m_v.zeroize();
@@ -66,7 +66,7 @@ impl Plaintext {
 		let poly_ntt = Poly::zero(ctx, Representation::Ntt);
 		Ok(Self {
 			par: par.clone(),
-			value,
+			value: value.into_boxed_slice(),
 			encoding: Some(encoding),
 			poly_ntt,
 			level,
@@ -178,7 +178,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 
 					Ok(Plaintext {
 						par: par.clone(),
-						value: v,
+						value: v.into_boxed_slice(),
 						encoding: Some(encoding.clone()),
 						poly_ntt: poly,
 						level: encoding.level,
@@ -226,7 +226,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
 					Ok(Plaintext {
 						par: par.clone(),
-						value: v,
+						value: v.into_boxed_slice(),
 						encoding: Some(encoding.clone()),
 						poly_ntt: poly,
 						level: encoding.level,
@@ -268,7 +268,7 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 			}
 		}
 
-		let mut w = pt.value.clone();
+		let mut w = pt.value.to_vec();
 
 		match enc.encoding {
 			EncodingEnum::Poly => Ok(w),

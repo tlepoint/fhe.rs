@@ -19,7 +19,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
 	pub(crate) par: Arc<BfvParameters>,
-	pub(crate) s_coefficients: Vec<i64>,
+	pub(crate) s_coefficients: Box<[i64]>,
 }
 
 impl Zeroize for SecretKey {
@@ -41,7 +41,7 @@ impl SecretKey {
 	pub(crate) fn new(s_coefficients: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
 		Self {
 			par: par.clone(),
-			s_coefficients,
+			s_coefficients: s_coefficients.into_boxed_slice(),
 		}
 	}
 
@@ -210,7 +210,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 
 			let pt = Plaintext {
 				par: self.par.clone(),
-				value: w,
+				value: w.into_boxed_slice(),
 				encoding: None,
 				poly_ntt: poly,
 				level: ct.level,

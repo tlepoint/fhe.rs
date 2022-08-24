@@ -11,14 +11,14 @@ use crate::{
 /// Struct that holds the context associated with elements in rq.
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct Context {
-	pub(crate) moduli: Vec<u64>,
-	pub(crate) q: Vec<Modulus>,
+	pub(crate) moduli: Box<[u64]>,
+	pub(crate) q: Box<[Modulus]>,
 	pub(crate) rns: Arc<RnsContext>,
-	pub(crate) ops: Vec<NttOperator>,
+	pub(crate) ops: Box<[NttOperator]>,
 	pub(crate) degree: usize,
-	pub(crate) bitrev: Vec<usize>,
-	pub(crate) inv_last_qi_mod_qj: Vec<u64>,
-	pub(crate) inv_last_qi_mod_qj_shoup: Vec<u64>,
+	pub(crate) bitrev: Box<[usize]>,
+	pub(crate) inv_last_qi_mod_qj: Box<[u64]>,
+	pub(crate) inv_last_qi_mod_qj_shoup: Box<[u64]>,
 	pub(crate) next_context: Option<Arc<Context>>,
 }
 
@@ -83,14 +83,14 @@ impl Context {
 			};
 
 			Ok(Self {
-				moduli: moduli.to_owned(),
-				q,
+				moduli: moduli.to_owned().into_boxed_slice(),
+				q: q.into_boxed_slice(),
 				rns,
-				ops,
+				ops: ops.into_boxed_slice(),
 				degree,
-				bitrev,
-				inv_last_qi_mod_qj,
-				inv_last_qi_mod_qj_shoup,
+				bitrev: bitrev.into_boxed_slice(),
+				inv_last_qi_mod_qj: inv_last_qi_mod_qj.into_boxed_slice(),
+				inv_last_qi_mod_qj_shoup: inv_last_qi_mod_qj_shoup.into_boxed_slice(),
 				next_context,
 			})
 		}

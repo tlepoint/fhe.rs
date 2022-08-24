@@ -29,7 +29,7 @@ impl AddAssign<&Poly> for Poly {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
-				&self.ctx.q
+				self.ctx.q.iter()
 			)
 			.for_each(|(mut v1, v2, qi)| unsafe {
 				qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -38,7 +38,7 @@ impl AddAssign<&Poly> for Poly {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
-				&self.ctx.q
+				self.ctx.q.iter()
 			)
 			.for_each(|(mut v1, v2, qi)| {
 				qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -88,7 +88,7 @@ impl SubAssign<&Poly> for Poly {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
-				&self.ctx.q
+				self.ctx.q.iter()
 			)
 			.for_each(|(mut v1, v2, qi)| unsafe {
 				qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -97,7 +97,7 @@ impl SubAssign<&Poly> for Poly {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				p.coefficients.outer_iter(),
-				&self.ctx.q
+				self.ctx.q.iter()
 			)
 			.for_each(|(mut v1, v2, qi)| {
 				qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -145,7 +145,7 @@ impl MulAssign<&Poly> for Poly {
 						izip!(
 							self.coefficients.outer_iter_mut(),
 							p.coefficients.outer_iter(),
-							&self.ctx.q
+							self.ctx.q.iter()
 						)
 						.for_each(|(mut v1, v2, qi)| {
 							qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap());
@@ -155,7 +155,7 @@ impl MulAssign<&Poly> for Poly {
 					izip!(
 						self.coefficients.outer_iter_mut(),
 						p.coefficients.outer_iter(),
-						&self.ctx.q
+						self.ctx.q.iter()
 					)
 					.for_each(|(mut v1, v2, qi)| {
 						qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -168,7 +168,7 @@ impl MulAssign<&Poly> for Poly {
 						self.coefficients.outer_iter_mut(),
 						p.coefficients.outer_iter(),
 						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-						&self.ctx.q
+						self.ctx.q.iter()
 					)
 					.for_each(|(mut v1, v2, v2_shoup, qi)| unsafe {
 						qi.mul_shoup_vec_vt(
@@ -182,7 +182,7 @@ impl MulAssign<&Poly> for Poly {
 						self.coefficients.outer_iter_mut(),
 						p.coefficients.outer_iter(),
 						p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-						&self.ctx.q
+						self.ctx.q.iter()
 					)
 					.for_each(|(mut v1, v2, v2_shoup, qi)| {
 						qi.mul_shoup_vec(
@@ -217,7 +217,7 @@ impl MulAssign<&BigUint> for Poly {
 				izip!(
 					self.coefficients.outer_iter_mut(),
 					q.coefficients.outer_iter(),
-					&self.ctx.q
+					self.ctx.q.iter()
 				)
 				.for_each(|(mut v1, v2, qi)| {
 					qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -227,7 +227,7 @@ impl MulAssign<&BigUint> for Poly {
 			izip!(
 				self.coefficients.outer_iter_mut(),
 				q.coefficients.outer_iter(),
-				&self.ctx.q
+				self.ctx.q.iter()
 			)
 			.for_each(|(mut v1, v2, qi)| {
 				qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
@@ -287,10 +287,10 @@ impl Neg for &Poly {
 		assert!(!self.has_lazy_coefficients);
 		let mut out = self.clone();
 		if self.allow_variable_time_computations {
-			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+			izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
 				.for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
 		} else {
-			izip!(out.coefficients.outer_iter_mut(), &out.ctx.q)
+			izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
 				.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
 		}
 		out
@@ -423,17 +423,20 @@ where
 	}
 	// Last reduction to create the coefficients
 	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
-		|(mut coeffsj, accj, m)| {
-			if p_first.allow_variable_time_computations {
-				izip!(coeffsj.iter_mut(), accj.iter())
-					.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
-			} else {
-				izip!(coeffsj.iter_mut(), accj.iter())
-					.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
-			}
-		},
-	);
+	izip!(
+		coeffs.outer_iter_mut(),
+		acc.outer_iter(),
+		p_first.ctx.q.iter()
+	)
+	.for_each(|(mut coeffsj, accj, m)| {
+		if p_first.allow_variable_time_computations {
+			izip!(coeffsj.iter_mut(), accj.iter())
+				.for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
+		} else {
+			izip!(coeffsj.iter_mut(), accj.iter())
+				.for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
+		}
+	});
 
 	Ok(Poly {
 		ctx: p_first.ctx.clone(),

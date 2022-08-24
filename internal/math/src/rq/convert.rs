@@ -57,11 +57,13 @@ impl From<&Poly> for Rq {
 			}
 		}
 		let mut serialization_length = 0;
-		izip!(&p.ctx.q)
+		p.ctx
+			.q
+			.iter()
 			.for_each(|qi| serialization_length += qi.serialization_length(p.ctx.degree));
 		let mut serialization = Vec::with_capacity(serialization_length);
 
-		izip!(p.coefficients.outer_iter(), &p.ctx.q)
+		izip!(p.coefficients.outer_iter(), p.ctx.q.iter())
 			.for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
 		proto.coefficients = serialization;
 		proto.degree = p.ctx.degree as u32;
@@ -133,7 +135,7 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 					let mut out = Self::zero(ctx, repr.unwrap());
 					if variable_time {
 						unsafe {
-							izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(
+							izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
 								|(mut w, qi)| {
 									let wi = w.as_slice_mut().unwrap();
 									wi[..v.len()].copy_from_slice(&v);
@@ -143,11 +145,13 @@ impl TryConvertFrom<Vec<u64>> for Poly {
 							out.allow_variable_time_computations();
 						}
 					} else {
-						izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
-							let wi = w.as_slice_mut().unwrap();
-							wi[..v.len()].copy_from_slice(&v);
-							qi.reduce_vec(wi);
-						});
+						izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
+							|(mut w, qi)| {
+								let wi = w.as_slice_mut().unwrap();
+								wi[..v.len()].copy_from_slice(&v);
+								qi.reduce_vec(wi);
+							},
+						);
 						v.zeroize();
 					}
 					Ok(out)
@@ -195,7 +199,9 @@ impl TryConvertFrom<&Rq> for Poly {
 		}
 
 		let mut expected_nbytes = 0;
-		izip!(&ctx.q).for_each(|qi| expected_nbytes += qi.serialization_length(degree));
+		ctx.q
+			.iter()
+			.for_each(|qi| expected_nbytes += qi.serialization_length(degree));
 		if value.coefficients.len() != expected_nbytes {
 			return Err(Error::Default("Invalid coefficients".to_string()));
 		}
@@ -282,7 +288,7 @@ impl TryConvertFrom<&[i64]> for Poly {
 			if variable_time {
 				unsafe { out.allow_variable_time_computations() }
 			}
-			izip!(out.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut w, qi)| {
+			izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut w, qi)| {
 				let wi = w.as_slice_mut().unwrap();
 				if variable_time {
 					unsafe { wi[..v.len()].copy_from_slice(&qi.reduce_vec_i64_vt(v)) }

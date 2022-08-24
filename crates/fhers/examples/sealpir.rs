@@ -19,7 +19,7 @@ use utilities::{
 
 fn main() -> Result<(), Box<dyn Error>> {
 	let database_size = 1 << 21;
-	let elements_size = 300;
+	let elements_size = 288;
 
 	let degree = 4096;
 	let plaintext_modulus: u64 = (1 << 22) + 1;

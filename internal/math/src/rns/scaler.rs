@@ -47,20 +47,20 @@ pub struct RnsScaler {
 	to: Arc<RnsContext>,
 	scaling_factor: ScalingFactor,
 
-	gamma: Vec<u64>,
-	gamma_shoup: Vec<u64>,
+	gamma: Box<[u64]>,
+	gamma_shoup: Box<[u64]>,
 	theta_gamma_lo: u64,
 	theta_gamma_hi: u64,
 	theta_gamma_sign: bool,
 
-	omega: Vec<Vec<u64>>,
-	omega_shoup: Vec<Vec<u64>>,
-	theta_omega_lo: Vec<u64>,
-	theta_omega_hi: Vec<u64>,
-	theta_omega_sign: Vec<bool>,
+	omega: Box<[Box<[u64]>]>,
+	omega_shoup: Box<[Box<[u64]>]>,
+	theta_omega_lo: Box<[u64]>,
+	theta_omega_hi: Box<[u64]>,
+	theta_omega_sign: Box<[bool]>,
 
-	theta_garner_lo: Vec<u64>,
-	theta_garner_hi: Vec<u64>,
+	theta_garner_lo: Box<[u64]>,
+	theta_garner_hi: Box<[u64]>,
 	theta_garner_shift: usize,
 }
 
@@ -90,8 +90,8 @@ impl RnsScaler {
 		let mut omega = Vec::with_capacity(to.moduli.len());
 		let mut omega_shoup = Vec::with_capacity(to.moduli.len());
 		for _ in &to.moduli {
-			omega.push(vec![0u64; from.moduli.len()]);
-			omega_shoup.push(vec![0u64; from.moduli.len()]);
+			omega.push(vec![0u64; from.moduli.len()].into_boxed_slice());
+			omega_shoup.push(vec![0u64; from.moduli.len()].into_boxed_slice());
 		}
 		let mut theta_omega_lo = Vec::with_capacity(from.garner.len());
 		let mut theta_omega_hi = Vec::with_capacity(from.garner.len());
@@ -148,18 +148,18 @@ impl RnsScaler {
 			from: from.clone(),
 			to: to.clone(),
 			scaling_factor,
-			gamma,
-			gamma_shoup,
+			gamma: gamma.into_boxed_slice(),
+			gamma_shoup: gamma_shoup.into_boxed_slice(),
 			theta_gamma_lo,
 			theta_gamma_hi,
 			theta_gamma_sign,
-			omega,
-			omega_shoup,
-			theta_omega_lo,
-			theta_omega_hi,
-			theta_omega_sign,
-			theta_garner_lo,
-			theta_garner_hi,
+			omega: omega.into_boxed_slice(),
+			omega_shoup: omega_shoup.into_boxed_slice(),
+			theta_omega_lo: theta_omega_lo.into_boxed_slice(),
+			theta_omega_hi: theta_omega_hi.into_boxed_slice(),
+			theta_omega_sign: theta_omega_sign.into_boxed_slice(),
+			theta_garner_lo: theta_garner_lo.into_boxed_slice(),
+			theta_garner_hi: theta_garner_hi.into_boxed_slice(),
 			theta_garner_shift,
 		}
 	}
@@ -247,8 +247,11 @@ impl RnsScaler {
 
 		// First, let's compute the inner product of the rests with theta_omega.
 		let mut sum_theta_garner = U192::ZERO;
-		for (thetag_lo, thetag_hi, ri) in izip!(&self.theta_garner_lo, &self.theta_garner_hi, rests)
-		{
+		for (thetag_lo, thetag_hi, ri) in izip!(
+			self.theta_garner_lo.iter(),
+			self.theta_garner_hi.iter(),
+			rests
+		) {
 			let lo = (*ri as u128) * (*thetag_lo as u128);
 			let hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
 			sum_theta_garner = sum_theta_garner.wrapping_add(&U192::from_words([
@@ -268,9 +271,9 @@ impl RnsScaler {
 		if !self.scaling_factor.is_one {
 			let mut sum_theta_omega = U256::zero();
 			for (thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
-				&self.theta_omega_lo,
-				&self.theta_omega_hi,
-				&self.theta_omega_sign,
+				self.theta_omega_lo.iter(),
+				self.theta_omega_hi.iter(),
+				self.theta_omega_sign.iter(),
 				rests
 			) {
 				let lo = (*ri as u128) * (*thetao_lo as u128);
