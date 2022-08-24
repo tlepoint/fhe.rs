@@ -37,6 +37,7 @@ indicatif = "0.17.0"
 itertools = "0.10.3"
 ndarray = "0.15.6"
 rand = "0.8.5"
+console = "0.15.1"
 
 [[bench]]
 name = "bfv"

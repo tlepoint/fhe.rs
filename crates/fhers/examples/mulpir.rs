@@ -2,31 +2,100 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
+use console::style;
 use fhers::bfv::{self, Ciphertext, Plaintext};
 use fhers_traits::{
 	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
 use indicatif::HumanBytes;
 use rand::{thread_rng, RngCore};
-use std::{error::Error, sync::Arc};
+use std::{env, error::Error, process::exit, sync::Arc};
 use util::transcode_to_bytes;
 use utilities::{
 	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
 };
 
-fn main() -> Result<(), Box<dyn Error>> {
-	let database_size = 1 << 21;
-	let elements_size = 288;
+fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
+	println!(
+		"{} MulPIR with fhe.rs",
+		style("  overview:").magenta().bold()
+	);
+	println!(
+		"{} mulpir- [-h] [--help] [--database_size=<value>] [--element_size=<value>]",
+		style("     usage:").magenta().bold()
+	);
+	println!(
+		"{} {} must be at least 1, and {} must be between 1 and {}",
+		style("constaints:").magenta().bold(),
+		style("database_size").blue(),
+		style("element_size").blue(),
+		max_element_size
+	);
+	if let Some(error) = error {
+		println!("{} {}", style("     error:").red().bold(), error);
+	}
+	exit(0);
+}
 
+fn main() -> Result<(), Box<dyn Error>> {
 	// We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
 	let degree = 8192;
 	let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
 	let moduli_sizes = [50, 55, 55];
+	let max_element_size = ((plaintext_modulus.ilog2() * degree as u32) / 8) as usize;
+
+	let args: Vec<String> = env::args().skip(1).collect();
+
+	if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+		print_notice_and_exit(max_element_size, None)
+	}
+
+	let mut database_size = 1 << 21;
+	let mut elements_size = 288;
+	for arg in &args {
+		if arg.starts_with("--database_size") {
+			let a: Vec<&str> = arg.rsplit("=").collect();
+			if a.len() != 2 || a[0].parse::<usize>().is_err() {
+				print_notice_and_exit(
+					max_element_size,
+					Some("Invalid `--database_size` command".to_string()),
+				)
+			} else {
+				database_size = a[0].parse::<usize>().unwrap()
+			}
+		} else if arg.starts_with("--element_size") {
+			let a: Vec<&str> = arg.rsplit("=").collect();
+			if a.len() != 2 || a[0].parse::<usize>().is_err() {
+				print_notice_and_exit(
+					max_element_size,
+					Some("Invalid `--element_size` command".to_string()),
+				)
+			} else {
+				elements_size = a[0].parse::<usize>().unwrap()
+			}
+		} else {
+			print_notice_and_exit(
+				max_element_size,
+				Some(format!("Unrecognized command: {}", arg)),
+			)
+		}
+	}
+
+	if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
+		print_notice_and_exit(
+			max_element_size,
+			Some("Element or database sizes out of bound".to_string()),
+		)
+	}
 
 	println!("# MulPIR with fhe.rs");
 
-	println!("database_size = {}", database_size);
-	println!("elements_size = {}", elements_size);
+	println!(
+		"database of {}",
+		HumanBytes((database_size * elements_size) as u64)
+	);
+	println!("\tdatabase_size = {}", database_size);
+	println!("\telements_size = {}", elements_size);
 
 	// Generation of a random database
 	let database = timeit!("Database generation", {
