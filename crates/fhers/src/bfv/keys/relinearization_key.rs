@@ -12,7 +12,9 @@ use crate::bfv::{
 };
 use crate::{Error, Result};
 use fhers_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
+use math::rq::{
+	switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
+};
 use protobuf::{Message, MessageField};
 use zeroize::Zeroize;
 
@@ -27,13 +29,14 @@ pub struct RelinearizationKey {
 impl RelinearizationKey {
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new(sk: &SecretKey) -> Result<Self> {
-		Self::new_leveled(sk, 0)
+		Self::new_leveled(sk, 0, 0)
 	}
 
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	#[cfg(feature = "leveled_bfv")]
-	pub fn new_leveled(sk: &SecretKey, level: usize) -> Result<Self> {
-		let ctx_relin_key = sk.par.ctx_at_level(level)?;
+	pub fn new_leveled(sk: &SecretKey, ciphertext_level: usize, key_level: usize) -> Result<Self> {
+		let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
+		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
 
 		if ctx_relin_key.moduli().len() == 1 {
 			return Err(Error::DefaultError(
@@ -43,16 +46,19 @@ impl RelinearizationKey {
 
 		let mut s = Poly::try_convert_from(
 			&sk.s_coefficients as &[i64],
-			ctx_relin_key,
+			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
 		)?;
 		s.change_representation(Representation::Ntt);
 		let mut s2 = &s * &s;
 		s2.change_representation(Representation::PowerBasis);
-		let ksk = KeySwitchingKey::new(sk, &s2, level, level)?;
+		let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
+		let mut s2_switched_up = s2.mod_switch_to(&switcher_up)?;
+		let ksk = KeySwitchingKey::new(sk, &s2_switched_up, ciphertext_level, key_level)?;
 		s2.zeroize();
 		s.zeroize();
+		s2_switched_up.zeroize();
 		Ok(Self { ksk })
 	}
 
@@ -69,7 +75,17 @@ impl RelinearizationKey {
 		} else {
 			let mut c2 = ct.c[2].clone();
 			c2.change_representation(Representation::PowerBasis);
-			let (mut c0, mut c1) = self.relinearizes_with_poly(&c2)?;
+			let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
+
+			if c0.ctx() != ct.c[0].ctx() {
+				c0.change_representation(Representation::PowerBasis);
+				c1.change_representation(Representation::PowerBasis);
+				c0.mod_switch_down_to(ct.c[0].ctx())?;
+				c1.mod_switch_down_to(ct.c[1].ctx())?;
+				c0.change_representation(Representation::Ntt);
+				c1.change_representation(Representation::Ntt);
+			}
+
 			c0 += &ct.c[0];
 			c1 += &ct.c[1];
 			Ok(Ciphertext {
@@ -82,7 +98,7 @@ impl RelinearizationKey {
 	}
 
 	/// Relinearize using polynomials.
-	pub(crate) fn relinearizes_with_poly(&self, c2: &Poly) -> Result<(Poly, Poly)> {
+	pub(crate) fn relinearizes_poly(&self, c2: &Poly) -> Result<(Poly, Poly)> {
 		self.ksk.key_switch(c2)
 	}
 }
@@ -180,7 +196,13 @@ mod tests {
 
 				// Check that the relinearization by polynomials works the same way
 				c2.change_representation(Representation::PowerBasis);
-				let (c0r, c1r) = rk.relinearizes_with_poly(&c2)?;
+				let (mut c0r, mut c1r) = rk.relinearizes_poly(&c2)?;
+				c0r.change_representation(Representation::PowerBasis);
+				c0r.mod_switch_down_to(c0.ctx())?;
+				c1r.change_representation(Representation::PowerBasis);
+				c1r.mod_switch_down_to(c1.ctx())?;
+				c0r.change_representation(Representation::Ntt);
+				c1r.change_representation(Representation::Ntt);
 				assert_eq!(
 					ct_relinearized,
 					Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
@@ -198,48 +220,57 @@ mod tests {
 	#[test]
 	fn test_relinearization_leveled() -> Result<(), Box<dyn Error>> {
 		for params in [Arc::new(BfvParameters::default(5))] {
-			for level in 0..3 {
-				for _ in 0..30 {
-					let sk = SecretKey::random(&params);
-					let rk = RelinearizationKey::new_leveled(&sk, level)?;
+			for ciphertext_level in 0..3 {
+				for key_level in 0..ciphertext_level {
+					for _ in 0..10 {
+						let sk = SecretKey::random(&params);
+						let rk = RelinearizationKey::new_leveled(&sk, ciphertext_level, key_level)?;
 
-					let ctx = params.ctx_at_level(level)?;
-					let mut s = Poly::try_convert_from(
-						&sk.s_coefficients as &[i64],
-						ctx,
-						false,
-						Representation::PowerBasis,
-					)
-					.map_err(crate::Error::MathError)?;
-					s.change_representation(Representation::Ntt);
-					let s2 = &s * &s;
-					// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2,
-					// c1, c2) encrypting 0.
-					let mut c2 = Poly::random(ctx, Representation::Ntt);
-					let c1 = Poly::random(ctx, Representation::Ntt);
-					let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16)?;
-					c0.change_representation(Representation::Ntt);
-					c0 -= &(&c1 * &s);
-					c0 -= &(&c2 * &s2);
-					let ct = Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
+						let ctx = params.ctx_at_level(ciphertext_level)?;
+						let mut s = Poly::try_convert_from(
+							&sk.s_coefficients as &[i64],
+							ctx,
+							false,
+							Representation::PowerBasis,
+						)
+						.map_err(crate::Error::MathError)?;
+						s.change_representation(Representation::Ntt);
+						let s2 = &s * &s;
+						// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 *
+						// s^2, c1, c2) encrypting 0.
+						let mut c2 = Poly::random(ctx, Representation::Ntt);
+						let c1 = Poly::random(ctx, Representation::Ntt);
+						let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16)?;
+						c0.change_representation(Representation::Ntt);
+						c0 -= &(&c1 * &s);
+						c0 -= &(&c2 * &s2);
+						let ct =
+							Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
 
-					// Relinearize the extended ciphertext!
-					let ct_relinearized = rk.relinearizes(&ct)?;
-					assert_eq!(ct_relinearized.c.len(), 2);
+						// Relinearize the extended ciphertext!
+						let ct_relinearized = rk.relinearizes(&ct)?;
+						assert_eq!(ct_relinearized.c.len(), 2);
 
-					// Check that the relinearization by polynomials works the same way
-					c2.change_representation(Representation::PowerBasis);
-					let (c0r, c1r) = rk.relinearizes_with_poly(&c2)?;
-					assert_eq!(
-						ct_relinearized,
-						Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
-					);
+						// Check that the relinearization by polynomials works the same way
+						c2.change_representation(Representation::PowerBasis);
+						let (mut c0r, mut c1r) = rk.relinearizes_poly(&c2)?;
+						c0r.change_representation(Representation::PowerBasis);
+						c0r.mod_switch_down_to(c0.ctx())?;
+						c1r.change_representation(Representation::PowerBasis);
+						c1r.mod_switch_down_to(c1.ctx())?;
+						c0r.change_representation(Representation::Ntt);
+						c1r.change_representation(Representation::Ntt);
+						assert_eq!(
+							ct_relinearized,
+							Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
+						);
 
-					// Print the noise and decrypt
-					println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
-					let pt = sk.try_decrypt(&ct_relinearized)?;
-					assert!(Vec::<u64>::try_decode(&pt, Encoding::poly())
-						.is_ok_and(|v| v == &[0u64; 8]))
+						// Print the noise and decrypt
+						println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
+						let pt = sk.try_decrypt(&ct_relinearized)?;
+						assert!(Vec::<u64>::try_decode(&pt, Encoding::poly())
+							.is_ok_and(|v| v == &[0u64; 8]))
+					}
 				}
 			}
 		}

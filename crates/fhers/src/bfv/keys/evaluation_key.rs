@@ -16,7 +16,6 @@ use super::SecretKey;
 /// An evaluation key enables one or several of the following operations:
 /// - column rotation
 /// - row rotation
-/// - relinearization
 /// - oblivious expansion
 /// - inner sum
 #[derive(Debug, PartialEq, Eq)]

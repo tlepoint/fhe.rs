@@ -16,9 +16,9 @@ use std::{error::Error, sync::Arc};
 
 fn params() -> Result<Vec<Arc<BfvParameters>>, Box<dyn Error>> {
 	let par_small = BfvParametersBuilder::new()
-		.set_degree(4096)
+		.set_degree(8192)
 		.set_plaintext_modulus(1153)
-		.set_ciphertext_moduli_sizes(&[36, 37, 37])
+		.set_ciphertext_moduli_sizes(&[50, 50, 30])
 		.build()?;
 	let par_large = BfvParametersBuilder::new()
 		.set_degree(16384)

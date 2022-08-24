@@ -198,9 +198,16 @@ impl Multiplicator {
 		// Relinearize
 		if let Some(rk) = self.rk.as_ref() {
 			now = std::time::SystemTime::now();
-			c[0].change_representation(Representation::Ntt);
-			c[1].change_representation(Representation::Ntt);
-			let (c0r, c1r) = rk.relinearizes_with_poly(&c[2])?;
+			let (mut c0r, mut c1r) = rk.relinearizes_poly(&c[2])?;
+			if c0r.ctx() != c[0].ctx() {
+				c0r.change_representation(Representation::PowerBasis);
+				c1r.change_representation(Representation::PowerBasis);
+				c0r.mod_switch_down_to(c[0].ctx())?;
+				c1r.mod_switch_down_to(c[1].ctx())?;
+			} else {
+				c[0].change_representation(Representation::Ntt);
+				c[1].change_representation(Representation::Ntt);
+			}
 			c[0] += &c0r;
 			c[1] += &c1r;
 			c.truncate(2);
@@ -220,9 +227,8 @@ impl Multiplicator {
 			now = std::time::SystemTime::now();
 			c.mod_switch_to_next_level();
 			println!("Modulo switch: {:?}", now.elapsed().unwrap());
-		} else if self.rk.is_none() {
+		} else {
 			now = std::time::SystemTime::now();
-			// We need to fix the polynomials representation in case we did not relinearize.
 			c.c.iter_mut()
 				.for_each(|p| p.change_representation(Representation::Ntt));
 			println!("Convert to NTT: {:?}", now.elapsed().unwrap());
@@ -287,7 +293,7 @@ mod tests {
 				par.plaintext.mul_vec(&mut expected, &values);
 
 				let sk = SecretKey::random(&par);
-				let rk = RelinearizationKey::new_leveled(&sk, level)?;
+				let rk = RelinearizationKey::new_leveled(&sk, level, level)?;
 				let pt =
 					Plaintext::try_encode(&values as &[u64], Encoding::simd_at_level(level), &par)?;
 				let ct1 = sk.try_encrypt(&pt)?;

@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let ek_expansion = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
 			.build()?;
-		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1)?;
+		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1)?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
 		let rk_serialized = rk.to_bytes();
 		(sk, ek_expansion_serialized, rk_serialized)
