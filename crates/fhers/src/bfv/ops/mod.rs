@@ -3,14 +3,12 @@
 #[cfg(feature = "optimized_ops")]
 mod dot_product;
 
-#[cfg(feature = "optimized_ops")]
 mod mul;
 
 #[cfg(feature = "optimized_ops")]
 pub use dot_product::dot_product_scalar;
 
-#[cfg(feature = "optimized_ops")]
-pub use mul::{mul_relin, mul_relin_2};
+pub use mul::Multiplicator;
 
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -130,7 +128,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 		}
 		assert_eq!(self.level, rhs.level);
 
-		let mp = &self.par.mul_1_params[self.level];
+		let mp = &self.par.mul_params[self.level];
 
 		// Scale all ciphertexts
 		// let mut now = std::time::SystemTime::now();

@@ -5,7 +5,7 @@
 
 use fhers::bfv::{BfvParameters, Encoding, Plaintext};
 use fhers_traits::FheEncoder;
-use std::{fmt, sync::Arc, time::Duration};
+use std::{cmp::min, fmt, sync::Arc, time::Duration};
 use util::transcode_from_bytes;
 
 // Utility for displaying duration
@@ -53,7 +53,8 @@ pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<
 	assert!(elements_size >= 4);
 	let mut database = vec![vec![0u8; elements_size]; database_size];
 	for (i, element) in database.iter_mut().enumerate() {
-		element[..4].copy_from_slice(&(i as u32).to_le_bytes());
+		element[..min(4, elements_size)]
+			.copy_from_slice(&(i as u32).to_le_bytes()[..min(4, elements_size)]);
 	}
 	database
 }
@@ -97,7 +98,5 @@ pub fn encode_database(
 			Plaintext::try_encode(&pt_values as &[u64], Encoding::poly_at_level(level), &par)
 				.unwrap();
 	});
-	// Array2::from_shape_vec((dimension_1, dimension_2),
-	// preprocessed_database).unwrap()
 	(preprocessed_database, (dimension_1, dimension_2))
 }

@@ -512,7 +512,6 @@ impl Poly {
 	}
 
 	/// Returns the context of the underlying polynomial
-	/// TODO: To test?
 	pub fn ctx(&self) -> &Arc<Context> {
 		&self.ctx
 	}
@@ -608,6 +607,21 @@ mod tests {
 		assert_eq!(Vec::<u64>::from(&q), [0; 8 * MODULI.len()]);
 		assert_eq!(Vec::<BigUint>::from(&p), reference);
 		assert_eq!(Vec::<BigUint>::from(&q), reference);
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_ctx() -> Result<(), Box<dyn Error>> {
+		for modulus in MODULI {
+			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+			let p = Poly::zero(&ctx, Representation::PowerBasis);
+			assert_eq!(p.ctx(), &ctx);
+		}
+
+		let ctx = Arc::new(Context::new(MODULI, 8)?);
+		let p = Poly::zero(&ctx, Representation::PowerBasis);
+		assert_eq!(p.ctx(), &ctx);
 
 		Ok(())
 	}

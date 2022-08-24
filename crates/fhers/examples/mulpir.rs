@@ -121,34 +121,32 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 
 	// Client setup
-	let (sk, ek_expansion_serialized, ek_relin_serialized) = timeit!("Client setup", {
+	let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
 		let sk = bfv::SecretKey::random(&params);
 		let level = (dim1 + dim2).next_power_of_two().ilog2();
 		println!("level = {}", level);
 		let ek_expansion = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
 			.build()?;
-		let ek_relin = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 1)?
-			.enable_relinearization()?
-			.build()?;
+		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1)?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
-		let ek_relin_serialized = ek_relin.to_bytes();
-		(sk, ek_expansion_serialized, ek_relin_serialized)
+		let rk_serialized = rk.to_bytes();
+		(sk, ek_expansion_serialized, rk_serialized)
 	});
 	println!(
 		"📄 Evaluation key (expansion): {}",
 		HumanBytes(ek_expansion_serialized.len() as u64)
 	);
 	println!(
-		"📄 Evaluation key (relin): {}",
-		HumanBytes(ek_relin_serialized.len() as u64)
+		"📄 Relinearization key: {}",
+		HumanBytes(rk_serialized.len() as u64)
 	);
 
 	// Server setup
-	let (ek_expansion, ek_relin) = timeit!("Server setup", {
+	let (ek_expansion, rk) = timeit!("Server setup", {
 		(
 			bfv::LeveledEvaluationKey::from_bytes(&ek_expansion_serialized, &params)?,
-			bfv::LeveledEvaluationKey::from_bytes(&ek_relin_serialized, &params)?,
+			bfv::RelinearizationKey::from_bytes(&rk_serialized, &params)?,
 		)
 	});
 
@@ -186,7 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		for (i, ci) in expanded_query[dim1..].iter().enumerate() {
 			out += &dot_product_mod_switch(i, &preprocessed_database)? * ci
 		}
-		ek_relin.relinearizes(&mut out)?;
+		rk.relinearizes(&mut out)?;
 		out.mod_switch_to_last_level();
 		out.to_bytes()
 	});

@@ -260,12 +260,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 		poly1.truncate(params.degree());
 
 		let ctx = Arc::new(Context::new(&params.moduli()[..1], params.degree())?);
-		let ct = Ciphertext::new_leveled(
+		let ct = Ciphertext::new(
 			vec![
 				Poly::try_convert_from(poly0, &ctx, true, Representation::Ntt)?,
 				Poly::try_convert_from(poly1, &ctx, true, Representation::Ntt)?,
 			],
-			2,
 			&params,
 		)?;
 

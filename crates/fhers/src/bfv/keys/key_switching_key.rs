@@ -19,7 +19,7 @@ use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// Key switching key for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeySwitchingKey {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Arc<BfvParameters>,

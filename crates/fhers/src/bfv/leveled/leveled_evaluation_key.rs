@@ -1,11 +1,8 @@
 //! Leveled evaluation keys for the BFV encryption scheme.
 
 use crate::bfv::{
-	keys::{GaloisKey, RelinearizationKey},
-	proto::bfv::{
-		EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto,
-		RelinearizationKey as RelinearizationKeyProto,
-	},
+	keys::GaloisKey,
+	proto::bfv::{EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto},
 	traits::TryConvertFrom,
 	BfvParameters, Ciphertext, SecretKey,
 };
@@ -13,7 +10,7 @@ use crate::{Error, Result};
 use fhers_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use math::zq::Modulus;
-use protobuf::{Message, MessageField};
+use protobuf::Message;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -24,7 +21,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// An evaluation key enables one or several of the following operations:
 /// - column rotation
 /// - row rotation
-/// - relinearization
 /// - oblivious expansion
 /// - inner sum
 #[derive(Debug, PartialEq, Eq)]
@@ -33,9 +29,6 @@ pub struct LeveledEvaluationKey {
 
 	ciphertext_level: usize,
 	evaluation_key_level: usize,
-
-	/// Relinearization key
-	rk: Option<RelinearizationKey>,
 
 	/// Map from Galois keys exponents to Galois keys
 	gk: HashMap<usize, GaloisKey>,
@@ -141,56 +134,6 @@ impl LeveledEvaluationKey {
 		}
 	}
 
-	/// Reports whether the evaluation key enable to perform relinearizations
-	pub fn supports_relinearization(&self) -> bool {
-		self.rk.is_some()
-	}
-
-	/// Relinearizes the expanded ciphertext
-	pub fn relinearizes_new(&self, ct: &Ciphertext) -> Result<Ciphertext> {
-		if !self.supports_relinearization() {
-			Err(Error::DefaultError(
-				"This key does not support relinearization".to_string(),
-			))
-		} else {
-			self.rk.as_ref().unwrap().relinearizes(ct)
-		}
-	}
-
-	/// Relinearize a 3-part ciphertext in place.
-
-	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
-		if !self.supports_relinearization() {
-			Err(Error::DefaultError(
-				"This key does not support relinearization".to_string(),
-			))
-		} else if ct.c.len() != 3 {
-			Err(Error::DefaultError(
-				"The ciphertext does not have 3 parts".to_string(),
-			))
-		} else {
-			let mut c2 = ct.c[2].clone();
-			c2.change_representation(Representation::PowerBasis);
-			let (c0, c1) = self.rk.as_ref().unwrap().relinearizes_with_poly(&c2)?;
-			ct.c[0] += c0;
-			ct.c[1] += c1;
-			ct.c.truncate(2);
-			Ok(())
-		}
-	}
-
-	#[cfg(feature = "optimized_ops")]
-	/// Relinearize using polynomials.
-	pub(crate) fn relinearizes_with_poly(&self, c2: &Poly) -> Result<(Poly, Poly)> {
-		if !self.supports_relinearization() {
-			Err(Error::DefaultError(
-				"This key does not support relinearization".to_string(),
-			))
-		} else {
-			self.rk.as_ref().unwrap().relinearizes_with_poly(c2)
-		}
-	}
-
 	/// Reports whether the evaluation key supports oblivious expansion.
 	pub fn supports_expansion(&self, level: usize) -> bool {
 		if level == 0 {
@@ -263,7 +206,6 @@ impl FheParametrized for LeveledEvaluationKey {
 
 impl Serialize for LeveledEvaluationKey {
 	fn to_bytes(&self) -> Vec<u8> {
-		// TODO: Consume
 		let ekp = EvaluationKeyProto::from(self);
 		ekp.write_to_bytes().unwrap()
 	}
@@ -287,7 +229,6 @@ pub struct LeveledEvaluationKeyBuilder {
 	sk: SecretKey,
 	ciphertext_level: usize,
 	evaluation_key_level: usize,
-	relin: bool,
 	inner_sum: bool,
 	row_rotation: bool,
 	expansion_level: usize,
@@ -322,32 +263,12 @@ impl LeveledEvaluationKeyBuilder {
 			sk: sk.clone(),
 			ciphertext_level,
 			evaluation_key_level,
-			relin: false,
 			inner_sum: false,
 			row_rotation: false,
 			expansion_level: 0,
 			column_rotation: HashSet::new(),
 			rot_to_gk_exponent: LeveledEvaluationKey::construct_rot_to_gk_exponent(&sk.par),
 		})
-	}
-
-	/// Allow relinearizations by this evaluation key.
-	#[allow(unused_must_use)]
-	pub fn enable_relinearization(&mut self) -> Result<&mut Self> {
-		if self
-			.sk
-			.par
-			.ctx_at_level(self.evaluation_key_level)?
-			.moduli()
-			.len() == 1
-		{
-			Err(Error::DefaultError(
-				"Not enough moduli to enable relinearization".to_string(),
-			))
-		} else {
-			self.relin = true;
-			Ok(self)
-		}
 	}
 
 	/// Allow expansion by this evaluation key.
@@ -424,7 +345,6 @@ impl LeveledEvaluationKeyBuilder {
 	/// Build a[`LeveledEvaluationKey`] with the specified attributes.
 	pub fn build(&mut self) -> Result<LeveledEvaluationKey> {
 		let mut ek = LeveledEvaluationKey {
-			rk: None,
 			gk: HashMap::default(),
 			par: self.sk.par.clone(),
 			rot_to_gk_exponent: self.rot_to_gk_exponent.clone(),
@@ -434,14 +354,6 @@ impl LeveledEvaluationKeyBuilder {
 		};
 
 		let mut indices = self.column_rotation.clone();
-
-		if self.relin {
-			ek.rk = Some(RelinearizationKey::new(
-				&self.sk,
-				self.ciphertext_level,
-				self.evaluation_key_level,
-			)?)
-		}
 
 		if self.row_rotation {
 			indices.insert(self.sk.par.degree() * 2 - 1);
@@ -498,9 +410,6 @@ impl From<&LeveledEvaluationKey> for EvaluationKeyProto {
 		for (_, gk) in ek.gk.iter() {
 			proto.gk.push(GaloisKeyProto::from(gk))
 		}
-		if let Some(rk) = &ek.rk {
-			proto.rk = MessageField::some(RelinearizationKeyProto::from(rk))
-		}
 		proto.ciphertext_level = ek.ciphertext_level as u32;
 		proto.evaluation_key_level = ek.evaluation_key_level as u32;
 		proto
@@ -509,23 +418,6 @@ impl From<&LeveledEvaluationKey> for EvaluationKeyProto {
 
 impl TryConvertFrom<&EvaluationKeyProto> for LeveledEvaluationKey {
 	fn try_convert_from(value: &EvaluationKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-		let mut rk = None;
-
-		if value.rk.is_some() {
-			let relin_key = RelinearizationKey::try_convert_from(value.rk.as_ref().unwrap(), par)?;
-			if relin_key.ksk.ciphertext_level != value.ciphertext_level as usize {
-				return Err(Error::DefaultError(
-					"Relinearization key has incorrect ciphertext level".to_string(),
-				));
-			}
-			if relin_key.ksk.ksk_level != value.evaluation_key_level as usize {
-				return Err(Error::DefaultError(
-					"Relinearization key has incorrect evaluation key level".to_string(),
-				));
-			}
-			rk = Some(relin_key);
-		}
-
 		let mut gk = HashMap::new();
 		for gkp in &value.gk {
 			let key = GaloisKey::try_convert_from(gkp, par)?;
@@ -559,7 +451,6 @@ impl TryConvertFrom<&EvaluationKeyProto> for LeveledEvaluationKey {
 		}
 
 		Ok(LeveledEvaluationKey {
-			rk,
 			gk,
 			par: par.clone(),
 			rot_to_gk_exponent: LeveledEvaluationKey::construct_rot_to_gk_exponent(par),
@@ -876,7 +767,6 @@ mod tests {
 
 				let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_relinearization()?
 					.build()?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, LeveledEvaluationKey::try_convert_from(&proto, &params)?);
@@ -889,7 +779,6 @@ mod tests {
 
 				let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_relinearization()?
 					.enable_expansion(params.degree().ilog2() as usize)?
 					.build()?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
@@ -920,7 +809,6 @@ mod tests {
 
 				let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_relinearization()?
 					.build()?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, LeveledEvaluationKey::from_bytes(&bytes, &params)?);
@@ -933,7 +821,6 @@ mod tests {
 
 				let ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_relinearization()?
 					.enable_expansion(params.degree().ilog2() as usize)?
 					.build()?;
 				let bytes = ek.to_bytes();
