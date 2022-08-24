@@ -31,7 +31,6 @@ pub struct Ciphertext {
 
 impl Ciphertext {
 	/// Modulo switch the ciphertext to the last level.
-	/// TODO: To  test
 	#[cfg(feature = "leveled_bfv")]
 	pub fn mod_switch_to_last_level(&mut self) {
 		self.level = self.par.max_level();
@@ -46,10 +45,29 @@ impl Ciphertext {
 		});
 	}
 
-	/// Create a ciphertext at a specific level from a vector of polynomials.
+	/// Modulo switch the ciphertext to the next level.
 	#[cfg(feature = "leveled_bfv")]
-	pub fn new_leveled(c: Vec<Poly>, level: usize, par: &Arc<BfvParameters>) -> Result<Self> {
-		let ctx = par.ctx_at_level(level)?;
+	pub fn mod_switch_to_next_level(&mut self) {
+		if self.level < self.par.max_level() {
+			self.seed = None;
+			self.c.iter_mut().for_each(|ci| {
+				ci.change_representation(Representation::PowerBasis);
+				assert!(ci.mod_switch_down_next().is_ok());
+				ci.change_representation(Representation::Ntt);
+			});
+			self.level += 1
+		}
+	}
+
+	/// Create a ciphertext from a vector of polynomials.
+	pub fn new(c: Vec<Poly>, par: &Arc<BfvParameters>) -> Result<Self> {
+		if c.len() < 2 {
+			return Err(Error::DefaultError(
+				"Too few polynomials provided".to_string(),
+			));
+		}
+		let ctx = c[0].ctx();
+		let level = par.level_of_ctx(ctx)?;
 		if c.iter()
 			.any(|ci| ci.representation() != &Representation::Ntt)
 		{
@@ -80,14 +98,12 @@ impl FheParametrized for Ciphertext {
 }
 
 impl Serialize for Ciphertext {
-	// TODO: To test
 	fn to_bytes(&self) -> Vec<u8> {
 		CiphertextProto::from(self).write_to_bytes().unwrap()
 	}
 }
 
 impl DeserializeParametrized for Ciphertext {
-	// TODO: To test
 	fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
 		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
 			Ciphertext::try_convert_from(&ctp, par)
@@ -182,7 +198,9 @@ mod tests {
 		encoding::EncodingEnum, proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom,
 		BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
 	};
-	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+	use fhers_traits::{
+		DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+	};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
@@ -385,6 +403,81 @@ mod tests {
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
 		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_serialize() -> Result<(), Box<dyn Error>> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let v = params.plaintext.random_vec(params.degree());
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let ct = sk.try_encrypt(&pt)?;
+			let ct_bytes = ct.to_bytes();
+			assert_eq!(ct, Ciphertext::from_bytes(&ct_bytes, &params)?);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn test_new() -> Result<(), Box<dyn Error>> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let v = params.plaintext.random_vec(params.degree());
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let ct = sk.try_encrypt(&pt)?;
+			let mut ct3 = &ct * &ct;
+
+			let c0 = ct3.get(0).unwrap();
+			let c1 = ct3.get(1).unwrap();
+			let c2 = ct3.get(2).unwrap();
+
+			assert_eq!(
+				ct3,
+				Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
+			);
+			assert_eq!(ct3.level, 0);
+
+			ct3.mod_switch_to_last_level();
+
+			let c0 = ct3.get(0).unwrap();
+			let c1 = ct3.get(1).unwrap();
+			let c2 = ct3.get(2).unwrap();
+			assert_eq!(
+				ct3,
+				Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
+			);
+			assert_eq!(ct3.level, params.max_level());
+		}
+
+		Ok(())
+	}
+
+	#[test]
+	fn test_mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
+		for params in [
+			Arc::new(BfvParameters::default(1)),
+			Arc::new(BfvParameters::default(2)),
+		] {
+			let sk = SecretKey::random(&params);
+			let v = params.plaintext.random_vec(params.degree());
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let mut ct = sk.try_encrypt(&pt)?;
+
+			assert_eq!(ct.level, 0);
+			ct.mod_switch_to_last_level();
+			assert_eq!(ct.level, params.max_level());
+
+			let decrypted = sk.try_decrypt(&ct)?;
+			assert_eq!(decrypted.value, pt.value);
+		}
+
 		Ok(())
 	}
 }

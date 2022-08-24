@@ -25,7 +25,6 @@ message GaloisKey {
 }
 
 message EvaluationKey {
-    RelinearizationKey rk = 1;
     repeated GaloisKey gk = 2;
     uint32 ciphertext_level = 3;
     uint32 evaluation_key_level = 4;

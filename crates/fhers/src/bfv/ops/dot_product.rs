@@ -140,7 +140,7 @@ where
 			}
 			c.push(Poly::try_convert_from(
 				coeffs,
-				&ctx,
+				ctx,
 				true,
 				Representation::Ntt,
 			)?)

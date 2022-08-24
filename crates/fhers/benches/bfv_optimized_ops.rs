@@ -2,8 +2,7 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	dot_product_scalar, mul_relin, mul_relin_2, BfvParameters, BfvParametersBuilder, Encoding,
-	EvaluationKeyBuilder, LeveledEvaluationKeyBuilder, Plaintext, SecretKey,
+	dot_product_scalar, BfvParameters, BfvParametersBuilder, Encoding, Plaintext, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::{izip, Itertools};
@@ -85,70 +84,6 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| dot_product_scalar(ct_vec.iter(), pt_vec.iter()));
-			},
-		);
-
-		let leveled_ek = LeveledEvaluationKeyBuilder::new(&sk, 0, 0)
-			.unwrap()
-			.enable_inner_sum()
-			.unwrap()
-			.enable_relinearization()
-			.unwrap()
-			.enable_column_rotation(1)
-			.unwrap()
-			.enable_expansion(par.degree().ilog2() as usize)
-			.unwrap()
-			.build()
-			.unwrap();
-
-		let ek = EvaluationKeyBuilder::new(&sk)
-			.enable_relinearization()
-			.unwrap()
-			.build()
-			.unwrap();
-
-		group.bench_function(
-			BenchmarkId::new(
-				"mul_then_relinearize",
-				format!(
-					"{}/{}",
-					par.degree(),
-					par.moduli_sizes().iter().sum::<usize>()
-				),
-			),
-			|b| {
-				b.iter(|| {
-					c1 = &c1 * &c2;
-					assert!(ek.relinearizes(&mut c1).is_ok());
-				});
-			},
-		);
-
-		group.bench_function(
-			BenchmarkId::new(
-				"mul_relin",
-				format!(
-					"{}/{}",
-					par.degree(),
-					par.moduli_sizes().iter().sum::<usize>()
-				),
-			),
-			|b| {
-				b.iter(|| mul_relin(&c1, &c2, &leveled_ek));
-			},
-		);
-
-		group.bench_function(
-			BenchmarkId::new(
-				"mul_relin_2",
-				format!(
-					"{}/{}",
-					par.degree(),
-					par.moduli_sizes().iter().sum::<usize>()
-				),
-			),
-			|b| {
-				b.iter(|| mul_relin_2(&c1, &c2, &leveled_ek));
 			},
 		);
 	}

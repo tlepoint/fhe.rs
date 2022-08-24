@@ -2,7 +2,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Plaintext, SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext,
+	RelinearizationKey, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
@@ -35,14 +36,13 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		let ek = EvaluationKeyBuilder::new(&sk)
 			.enable_inner_sum()
 			.unwrap()
-			.enable_relinearization()
-			.unwrap()
 			.enable_column_rotation(1)
 			.unwrap()
 			.enable_expansion(par.degree().ilog2() as usize)
 			.unwrap()
 			.build()
 			.unwrap();
+		let rk = RelinearizationKey::new(&sk).unwrap();
 
 		let pt1 =
 			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), &par)
@@ -123,7 +123,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			},
 		);
 
-		let c3 = &c1 * &c1;
+		let mut c3 = &c1 * &c1;
 		group.bench_function(
 			BenchmarkId::new(
 				"relinearize",
@@ -134,7 +134,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				),
 			),
 			|b| {
-				b.iter(|| ek.relinearizes_new(&c3));
+				b.iter(|| rk.relinearizes(&c3));
 			},
 		);
 
@@ -196,6 +196,39 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			),
 			|b| {
 				b.iter(|| &c1 * &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul_then_relinearize",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| {
+					c3 = &c1 * &c2;
+					assert!(rk.relinearizes(&c3).is_ok());
+				});
+			},
+		);
+
+		let multiplicator = Multiplicator::default(&rk).unwrap();
+
+		group.bench_function(
+			BenchmarkId::new(
+				"mul_and_relin",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| multiplicator.multiply(&c1, &c2));
 			},
 		);
 	}

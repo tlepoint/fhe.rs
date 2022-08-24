@@ -58,21 +58,6 @@ impl EvaluationKey {
 		self.leveled_ek.rotates_column_by(ct, i)
 	}
 
-	/// Reports whether the evaluation key enable to perform relinearizations
-	pub fn supports_relinearization(&self) -> bool {
-		self.leveled_ek.supports_relinearization()
-	}
-
-	/// Relinearizes the expanded ciphertext
-	pub fn relinearizes_new(&self, ct: &Ciphertext) -> Result<Ciphertext> {
-		self.leveled_ek.relinearizes_new(ct)
-	}
-
-	/// Relinearize a 3-part ciphertext in place.
-	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
-		self.leveled_ek.relinearizes(ct)
-	}
-
 	/// Reports whether the evaluation key supports oblivious expansion.
 	pub fn supports_expansion(&self, level: usize) -> bool {
 		self.leveled_ek.supports_expansion(level)
@@ -99,13 +84,6 @@ impl EvaluationKeyBuilder {
 		Self {
 			builder: LeveledEvaluationKeyBuilder::new(sk, 0, 0).unwrap(),
 		}
-	}
-
-	/// Allow relinearizations by this evaluation key.
-	#[allow(unused_must_use)]
-	pub fn enable_relinearization(&mut self) -> Result<&mut Self> {
-		self.builder.enable_relinearization()?;
-		Ok(self)
 	}
 
 	/// Allow expansion by this evaluation key.
@@ -378,10 +356,7 @@ mod tests {
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
-				let ek = EvaluationKeyBuilder::new(&sk)
-					.enable_inner_sum()?
-					.enable_relinearization()?
-					.build()?;
+				let ek = EvaluationKeyBuilder::new(&sk).enable_inner_sum()?.build()?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
@@ -393,7 +368,6 @@ mod tests {
 
 				let ek = EvaluationKeyBuilder::new(&sk)
 					.enable_inner_sum()?
-					.enable_relinearization()?
 					.enable_expansion(params.degree().ilog2() as usize)?
 					.build()?;
 				let bytes = ek.to_bytes();

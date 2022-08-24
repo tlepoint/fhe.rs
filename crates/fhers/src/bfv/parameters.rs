@@ -56,8 +56,7 @@ pub struct BfvParameters {
 	pub(crate) plaintext: Modulus,
 
 	// Parameters for the multiplications
-	pub(crate) mul_1_params: Box<[MultiplicationParameters]>, // type 1
-	pub(crate) mul_2_params: Box<[MultiplicationParameters]>, // type 2
+	pub(crate) mul_params: Box<[MultiplicationParameters]>,
 
 	pub(crate) matrix_reps_index_map: Box<[usize]>,
 }
@@ -76,8 +75,7 @@ impl Debug for BfvParameters {
 			// .field("q_mod_t", &self.q_mod_t)
 			// .field("scaler", &self.scaler)
 			// .field("plaintext", &self.plaintext)
-			// .field("mul_1_params", &self.mul_1_params)
-			// .field("mul_2_params", &self.mul_2_params)
+			// .field("mul_params", &self.mul_params)
 			// .field("matrix_reps_index_map", &self.matrix_reps_index_map)
 			.finish()
 	}
@@ -109,6 +107,7 @@ impl BfvParameters {
 	}
 
 	/// Returns the maximum level allowed by these parameters.
+	#[cfg(feature = "leveled_bfv")]
 	pub fn max_level(&self) -> usize {
 		self.moduli.len() - 1
 	}
@@ -291,8 +290,7 @@ impl BfvParametersBuilder {
 		let mut delta = Vec::with_capacity(moduli.len());
 		let mut q_mod_t = Vec::with_capacity(moduli.len());
 		let mut scalers = Vec::with_capacity(moduli.len());
-		let mut mul_1_params = Vec::with_capacity(moduli.len());
-		let mut mul_2_params = Vec::with_capacity(moduli.len());
+		let mut mul_params = Vec::with_capacity(moduli.len());
 		for i in 0..moduli.len() {
 			let rns = RnsContext::new(&moduli[..moduli.len() - i]).unwrap();
 			let ctx_i = Arc::new(Context::new(&moduli[..moduli.len() - i], self.degree).unwrap());
@@ -325,7 +323,7 @@ impl BfvParametersBuilder {
 			mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
 			mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
 			let mul_1_ctx = Arc::new(Context::new(&mul_1_moduli, self.degree)?);
-			mul_1_params.push(MultiplicationParameters::new(
+			mul_params.push(MultiplicationParameters::new(
 				&ctx_i,
 				&mul_1_ctx,
 				ScalingFactor::one(),
@@ -333,22 +331,7 @@ impl BfvParametersBuilder {
 				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx_i.modulus()),
 			)?);
 
-			// For the second multiplication, we use two moduli of roughly the same size
-			let n_moduli = moduli.len() - i;
-			let mut mul_2_moduli = vec![];
-			mul_2_moduli.append(&mut moduli[..n_moduli].to_vec());
-			mul_2_moduli.append(&mut extended_basis[..n_moduli].to_vec());
-			let rns_2 = RnsContext::new(&extended_basis[..n_moduli])?;
-			let mul_2_ctx = Arc::new(Context::new(&mul_2_moduli, self.degree)?);
-			mul_2_params.push(MultiplicationParameters::new(
-				&ctx_i,
-				&mul_2_ctx,
-				ScalingFactor::one(),
-				ScalingFactor::new(rns_2.modulus(), ctx_i.modulus()),
-				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
-			)?);
-
-			ctx.push(ctx_i)
+			ctx.push(ctx_i);
 		}
 
 		// We use the same code as SEAL
@@ -380,8 +363,7 @@ impl BfvParametersBuilder {
 			q_mod_t: q_mod_t.into_boxed_slice(),
 			scalers: scalers.into_boxed_slice(),
 			plaintext: plaintext_modulus,
-			mul_1_params: mul_1_params.into_boxed_slice(),
-			mul_2_params: mul_2_params.into_boxed_slice(),
+			mul_params: mul_params.into_boxed_slice(),
 			matrix_reps_index_map: matrix_reps_index_map.into_boxed_slice(),
 		})
 	}
