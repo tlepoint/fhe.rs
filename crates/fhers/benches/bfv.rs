@@ -1,4 +1,5 @@
 #![feature(int_log)]
+#![feature(int_roundings)]
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
@@ -7,6 +8,9 @@ use fhers::bfv::{
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
+use math::rns::{RnsContext, ScalingFactor};
+use math::zq::nfl::generate_prime;
+use num_bigint::BigUint;
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
 
@@ -216,11 +220,47 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			},
 		);
 
+		// Default multiplication method
 		let multiplicator = Multiplicator::default(&rk).unwrap();
 
 		group.bench_function(
 			BenchmarkId::new(
 				"mul_and_relin",
+				format!(
+					"{}/{}",
+					par.degree(),
+					par.moduli_sizes().iter().sum::<usize>()
+				),
+			),
+			|b| {
+				b.iter(|| multiplicator.multiply(&c1, &c2));
+			},
+		);
+
+		// Second multiplication option.
+		let nmoduli = (par.moduli_sizes().iter().sum::<usize>()).div_ceil(62);
+		let mut extended_basis = par.moduli().to_vec();
+		let mut upper_bound = u64::MAX >> 2;
+		while extended_basis.len() != nmoduli + par.moduli().len() {
+			upper_bound = generate_prime(62, 2 * par.degree() as u64, upper_bound).unwrap();
+			if !extended_basis.contains(&upper_bound) {
+				extended_basis.push(upper_bound)
+			}
+		}
+		let rns_q = RnsContext::new(&extended_basis[..par.moduli().len()]).unwrap();
+		let rns_p = RnsContext::new(&extended_basis[par.moduli().len()..]).unwrap();
+		let mut multiplicator = Multiplicator::new(
+			ScalingFactor::one(),
+			ScalingFactor::new(rns_p.modulus(), rns_q.modulus()),
+			&extended_basis,
+			ScalingFactor::new(&BigUint::from(par.plaintext()), rns_p.modulus()),
+			&par,
+		)
+		.unwrap();
+		assert!(multiplicator.enable_relinearization(&rk).is_ok());
+		group.bench_function(
+			BenchmarkId::new(
+				"mul_and_relin_2",
 				format!(
 					"{}/{}",
 					par.degree(),
