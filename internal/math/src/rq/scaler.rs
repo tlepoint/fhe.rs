@@ -29,7 +29,7 @@ impl Scaler {
 
 		let mut number_common_moduli = 0;
 		if factor.is_one {
-			for (qi, pi) in izip!(&from.q, &to.q) {
+			for (qi, pi) in izip!(from.q.iter(), to.q.iter()) {
 				if qi == pi {
 					number_common_moduli += 1
 				} else {
@@ -84,10 +84,10 @@ impl Scaler {
 					let mut p_coefficients_powerbasis = p.coefficients.clone();
 					// Backward NTT
 					if p.allow_variable_time_computations {
-						izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+						izip!(p_coefficients_powerbasis.outer_iter_mut(), p.ctx.ops.iter())
 							.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
 					} else {
-						izip!(p_coefficients_powerbasis.outer_iter_mut(), &p.ctx.ops)
+						izip!(p_coefficients_powerbasis.outer_iter_mut(), p.ctx.ops.iter())
 							.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
 					}
 					// Conversion

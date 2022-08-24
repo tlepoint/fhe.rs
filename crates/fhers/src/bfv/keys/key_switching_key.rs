@@ -28,10 +28,10 @@ pub struct KeySwitchingKey {
 	pub(crate) seed: <ChaCha8Rng as SeedableRng>::Seed,
 
 	/// The key switching elements c0.
-	pub(crate) c0: Vec<Poly>,
+	pub(crate) c0: Box<[Poly]>,
 
 	/// The key switching elements c1.
-	pub(crate) c1: Vec<Poly>,
+	pub(crate) c1: Box<[Poly]>,
 
 	/// The context of the polynomials that will be key switched.
 	pub(crate) ciphertext_level: usize,
@@ -74,8 +74,8 @@ impl KeySwitchingKey {
 		Ok(Self {
 			par: sk.par.clone(),
 			seed,
-			c0,
-			c1,
+			c0: c0.into_boxed_slice(),
+			c1: c1.into_boxed_slice(),
 			ciphertext_level,
 			ctx_ciphertext: ctx_ciphertext.clone(),
 			ksk_level,
@@ -168,9 +168,11 @@ impl KeySwitchingKey {
 
 		let mut c0 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
 		let mut c1 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
-		for (c2_i_coefficients, c0_i, c1_i) in
-			izip!(p.coefficients().outer_iter(), &self.c0, &self.c1)
-		{
+		for (c2_i_coefficients, c0_i, c1_i) in izip!(
+			p.coefficients().outer_iter(),
+			self.c0.iter(),
+			self.c1.iter()
+		) {
 			let mut c2_i = unsafe {
 				Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
 					c2_i_coefficients.as_slice().unwrap(),
@@ -189,7 +191,8 @@ impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
 	fn from(value: &KeySwitchingKey) -> Self {
 		let mut ksk = KeySwitchingKeyProto::new();
 		ksk.seed = value.seed.to_vec();
-		for c0 in &value.c0 {
+		ksk.c0.reserve_exact(value.c0.len());
+		for c0 in value.c0.iter() {
 			ksk.c0.push(c0.to_bytes())
 		}
 		ksk.ciphertext_level = value.ciphertext_level as u32;
@@ -226,8 +229,8 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 		Ok(Self {
 			par: par.clone(),
 			seed,
-			c0,
-			c1,
+			c0: c0.into_boxed_slice(),
+			c1: c1.into_boxed_slice(),
 			ciphertext_level,
 			ctx_ciphertext: ctx_ciphertext.clone(),
 			ksk_level,

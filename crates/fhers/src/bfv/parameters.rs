@@ -27,12 +27,12 @@ pub struct BfvParameters {
 	/// Vector of coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
 	/// must be specified.
-	pub(crate) moduli: Vec<u64>,
+	pub(crate) moduli: Box<[u64]>,
 
 	/// Vector of the sized of the coprime moduli q_i for the ciphertext.
 	/// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
 	/// must be specified.
-	moduli_sizes: Vec<usize>,
+	moduli_sizes: Box<[usize]>,
 
 	/// Error variance
 	pub(crate) variance: usize,
@@ -44,22 +44,22 @@ pub struct BfvParameters {
 	pub(crate) op: Option<Arc<NttOperator>>,
 
 	/// Scaling polynomial for the plaintext
-	pub(crate) delta: Vec<Poly>,
+	pub(crate) delta: Box<[Poly]>,
 
 	/// Q modulo the plaintext modulus
-	pub(crate) q_mod_t: Vec<u64>,
+	pub(crate) q_mod_t: Box<[u64]>,
 
 	/// Down scaler for the plaintext
-	pub(crate) scalers: Vec<Scaler>,
+	pub(crate) scalers: Box<[Scaler]>,
 
 	/// Plaintext Modulus
 	pub(crate) plaintext: Modulus,
 
 	// Parameters for the multiplications
-	pub(crate) mul_1_params: Vec<MultiplicationParameters>, // type 1
-	pub(crate) mul_2_params: Vec<MultiplicationParameters>, // type 2
+	pub(crate) mul_1_params: Box<[MultiplicationParameters]>, // type 1
+	pub(crate) mul_2_params: Box<[MultiplicationParameters]>, // type 2
 
-	pub(crate) matrix_reps_index_map: Vec<usize>,
+	pub(crate) matrix_reps_index_map: Box<[usize]>,
 }
 
 impl Debug for BfvParameters {
@@ -371,18 +371,18 @@ impl BfvParametersBuilder {
 		Ok(BfvParameters {
 			polynomial_degree: self.degree,
 			plaintext_modulus: self.plaintext,
-			moduli,
-			moduli_sizes,
+			moduli: moduli.into_boxed_slice(),
+			moduli_sizes: moduli_sizes.into_boxed_slice(),
 			variance: self.variance,
 			ctx,
 			op: op.map(Arc::new),
-			delta,
-			q_mod_t,
-			scalers,
+			delta: delta.into_boxed_slice(),
+			q_mod_t: q_mod_t.into_boxed_slice(),
+			scalers: scalers.into_boxed_slice(),
 			plaintext: plaintext_modulus,
-			mul_1_params,
-			mul_2_params,
-			matrix_reps_index_map,
+			mul_1_params: mul_1_params.into_boxed_slice(),
+			mul_2_params: mul_2_params.into_boxed_slice(),
+			matrix_reps_index_map: matrix_reps_index_map.into_boxed_slice(),
 		})
 	}
 }
@@ -392,7 +392,7 @@ impl Serialize for BfvParameters {
 		let mut params = Parameters::new();
 		params.degree = self.polynomial_degree as u32;
 		params.plaintext = self.plaintext_modulus;
-		params.moduli = self.moduli.clone();
+		params.moduli = self.moduli.to_vec();
 		params.variance = self.variance as u32;
 		params.write_to_bytes().unwrap()
 	}
@@ -551,7 +551,7 @@ mod tests {
 			.set_plaintext_modulus(2)
 			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.build();
-		assert!(params.is_ok_and(|p| p.moduli
+		assert!(params.is_ok_and(|p| p.moduli.to_vec()
 			== &[
 				4611686018427387761,
 				4611686018427387617,
@@ -573,7 +573,7 @@ mod tests {
 				2017,
 			])
 			.build();
-		assert!(params.is_ok_and(|p| p.moduli_sizes == &[62, 62, 62, 61, 60, 11]));
+		assert!(params.is_ok_and(|p| p.moduli_sizes.to_vec() == &[62, 62, 62, 61, 60, 11]));
 
 		Ok(())
 	}

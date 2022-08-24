@@ -173,7 +173,7 @@ impl Poly {
 		izip!(
 			coefficients_shoup.outer_iter_mut(),
 			self.coefficients.outer_iter(),
-			&self.ctx.q
+			self.ctx.q.iter()
 		)
 		.for_each(|(mut v_shoup, v, qi)| {
 			v_shoup
@@ -211,7 +211,7 @@ impl Poly {
 	/// Generate a random polynomial.
 	pub fn random(ctx: &Arc<Context>, representation: Representation) -> Self {
 		let mut p = Poly::zero(ctx, representation);
-		izip!(p.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut v, qi)| {
+		izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
 			v.as_slice_mut()
 				.unwrap()
 				.copy_from_slice(&qi.random_vec(ctx.degree))
@@ -230,7 +230,7 @@ impl Poly {
 	) -> Self {
 		let mut rng = ChaCha8Rng::from_seed(seed);
 		let mut p = Poly::zero(ctx, representation);
-		izip!(p.coefficients.outer_iter_mut(), &ctx.q).for_each(|(mut v, qi)| {
+		izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
 			let mut seed_for_vec = <ChaCha8Rng as SeedableRng>::Seed::default();
 			rng.fill(&mut seed_for_vec);
 			v.as_slice_mut()
@@ -281,10 +281,10 @@ impl Poly {
 	/// Computes the forward Ntt on the coefficients
 	fn ntt_forward(&mut self) {
 		if self.allow_variable_time_computations {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
 				.for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_mut_ptr()) });
 		} else {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
 				.for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
 		}
 	}
@@ -292,10 +292,10 @@ impl Poly {
 	/// Computes the backward Ntt on the coefficients
 	fn ntt_backward(&mut self) {
 		if self.allow_variable_time_computations {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
 				.for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
 		} else {
-			izip!(self.coefficients.outer_iter_mut(), &self.ctx.ops)
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
 				.for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
 		}
 	}
@@ -316,7 +316,7 @@ impl Poly {
 					self.coefficients.outer_iter()
 				)
 				.for_each(|(mut q_row, p_row)| {
-					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
+					for (j, k) in izip!(self.ctx.bitrev.iter(), i.power_bitrev.iter()) {
 						q_row[*j] = p_row[*k]
 					}
 				});
@@ -327,7 +327,7 @@ impl Poly {
 					self.coefficients.outer_iter()
 				)
 				.for_each(|(mut q_row, p_row)| {
-					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
+					for (j, k) in izip!(self.ctx.bitrev.iter(), i.power_bitrev.iter()) {
 						q_row[*j] = p_row[*k]
 					}
 				});
@@ -336,7 +336,7 @@ impl Poly {
 					self.coefficients_shoup.as_ref().unwrap().outer_iter()
 				)
 				.for_each(|(mut q_row, p_row)| {
-					for (j, k) in izip!(&self.ctx.bitrev, &i.power_bitrev) {
+					for (j, k) in izip!(self.ctx.bitrev.iter(), i.power_bitrev.iter()) {
 						q_row[*j] = p_row[*k]
 					}
 				});
@@ -346,7 +346,7 @@ impl Poly {
 				let mask = self.ctx.degree - 1;
 				for j in 0..self.ctx.degree {
 					izip!(
-						&self.ctx.q,
+						self.ctx.q.iter(),
 						q.coefficients.slice_mut(s![.., (power & mask) as usize]),
 						self.coefficients.slice(s![.., j as usize])
 					)
@@ -376,13 +376,15 @@ impl Poly {
 		ctx: &Arc<Context>,
 	) -> Self {
 		let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
-		izip!(coefficients.outer_iter_mut(), &ctx.q, &ctx.ops).for_each(|(mut p, qi, op)| {
-			p.as_slice_mut()
-				.unwrap()
-				.clone_from_slice(power_basis_coefficients);
-			qi.lazy_reduce_vec(p.as_slice_mut().unwrap());
-			op.forward_vt_lazy(p.as_mut_ptr());
-		});
+		izip!(coefficients.outer_iter_mut(), ctx.q.iter(), ctx.ops.iter()).for_each(
+			|(mut p, qi, op)| {
+				p.as_slice_mut()
+					.unwrap()
+					.clone_from_slice(power_basis_coefficients);
+				qi.lazy_reduce_vec(p.as_slice_mut().unwrap());
+				op.forward_vt_lazy(p.as_mut_ptr());
+			},
+		);
 		Self {
 			ctx: ctx.clone(),
 			representation: Representation::Ntt,
@@ -429,9 +431,9 @@ impl Poly {
 					.for_each(|coeff| *coeff = q_last.add_vt(*coeff, q_last_div_2));
 				izip!(
 					q_new_polys.outer_iter_mut(),
-					&self.ctx.q,
-					&self.ctx.inv_last_qi_mod_qj,
-					&self.ctx.inv_last_qi_mod_qj_shoup
+					self.ctx.q.iter(),
+					self.ctx.inv_last_qi_mod_qj.iter(),
+					self.ctx.inv_last_qi_mod_qj_shoup.iter(),
 				)
 				.for_each(|(coeffs, qi, inv, inv_shoup)| {
 					let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2); // Up to qi.modulus()
@@ -454,9 +456,9 @@ impl Poly {
 				.for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
 			izip!(
 				q_new_polys.outer_iter_mut(),
-				&self.ctx.q,
-				&self.ctx.inv_last_qi_mod_qj,
-				&self.ctx.inv_last_qi_mod_qj_shoup
+				self.ctx.q.iter(),
+				self.ctx.inv_last_qi_mod_qj.iter(),
+				self.ctx.inv_last_qi_mod_qj_shoup.iter(),
 			)
 			.for_each(|(coeffs, qi, inv, inv_shoup)| {
 				let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2); // Up to qi.modulus()
@@ -530,7 +532,7 @@ impl Poly {
 		izip!(
 			self.coefficients.outer_iter_mut(),
 			original_coefficients.outer_iter(),
-			&self.ctx.q
+			self.ctx.q.iter()
 		)
 		.for_each(|(mut coeffs, orig_coeffs, qi)| {
 			for k in 0..self.ctx.degree {

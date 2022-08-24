@@ -428,7 +428,7 @@ impl LeveledEvaluationKeyBuilder {
 			gk: HashMap::default(),
 			par: self.sk.par.clone(),
 			rot_to_gk_exponent: self.rot_to_gk_exponent.clone(),
-			monomials: vec![],
+			monomials: Vec::with_capacity(self.sk.par.degree().ilog2() as usize),
 			ciphertext_level: self.ciphertext_level,
 			evaluation_key_level: self.evaluation_key_level,
 		};
