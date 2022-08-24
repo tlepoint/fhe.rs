@@ -38,12 +38,38 @@ impl Ciphertext {
 		let last_ctx = self.par.ctx_at_level(self.level).unwrap();
 		self.seed = None;
 		self.c.iter_mut().for_each(|ci| {
-			if ci.ctx() != &last_ctx {
+			if ci.ctx() != last_ctx {
 				ci.change_representation(Representation::PowerBasis);
-				assert!(ci.mod_switch_down_to(&last_ctx).is_ok());
+				assert!(ci.mod_switch_down_to(last_ctx).is_ok());
 				ci.change_representation(Representation::Ntt);
 			}
 		});
+	}
+
+	/// Create a ciphertext at a specific level from a vector of polynomials.
+	#[cfg(feature = "leveled_bfv")]
+	pub fn new_leveled(c: Vec<Poly>, level: usize, par: &Arc<BfvParameters>) -> Result<Self> {
+		let ctx = par.ctx_at_level(level)?;
+		if c.iter()
+			.any(|ci| ci.representation() != &Representation::Ntt)
+		{
+			return Err(Error::DefaultError("Invalid representation".to_string()));
+		}
+		if c.iter().any(|ci| ci.ctx() != ctx) {
+			return Err(Error::DefaultError("Invalid context".to_string()));
+		}
+
+		Ok(Self {
+			par: par.clone(),
+			seed: None,
+			c,
+			level,
+		})
+	}
+
+	/// Get the i-th polynomial of the ciphertext.
+	pub fn get(&self, i: usize) -> Option<&Poly> {
+		self.c.get(i)
 	}
 }
 
@@ -127,7 +153,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 		let mut c = Vec::with_capacity(value.c.len() + 1);
 		for cip in &value.c {
-			c.push(Poly::from_bytes(cip, &ctx)?)
+			c.push(Poly::from_bytes(cip, ctx)?)
 		}
 
 		if !value.seed.is_empty() {
@@ -136,7 +162,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 				return Err(Error::DefaultError("Invalid seed".to_string()));
 			}
 			seed = try_seed.ok();
-			let mut c1 = Poly::random_from_seed(&ctx, Representation::Ntt, seed.unwrap());
+			let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, seed.unwrap());
 			unsafe { c1.allow_variable_time_computations() }
 			c.push(c1)
 		}

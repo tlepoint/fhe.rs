@@ -106,6 +106,11 @@ impl Context {
 		&self.moduli
 	}
 
+	/// Returns a reference to the moduli as Modulus in this context.
+	pub fn moduli_operators(&self) -> &[Modulus] {
+		&self.q
+	}
+
 	/// Returns the number of iterations to switch to a children context.
 	/// Returns an error if the context provided is not a child context.
 	pub fn niterations_to(&self, context: &Arc<Context>) -> Result<usize> {

@@ -2,16 +2,14 @@
 #![feature(int_roundings)]
 #![feature(generators, proc_macro_hygiene, stmt_expr_attributes)]
 
-use fhers::bfv;
+use fhers::bfv::{self, Ciphertext, Plaintext};
 use fhers_traits::{
 	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
 use indicatif::HumanBytes;
-use itertools::izip;
-use ndarray::Axis;
 use rand::{thread_rng, RngCore};
 use std::{error::Error, sync::Arc};
-use util::transcode_forward;
+use util::transcode_to_bytes;
 use utilities::{
 	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
 };
@@ -49,15 +47,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 	);
 
 	// Database preprocessing on the server side
-	let preprocessed_database = timeit!("Database preprocessing", {
+	let (preprocessed_database, (dim1, dim2)) = timeit!("Database preprocessing", {
 		encode_database(&database, params.clone(), 1)
 	});
 
 	// Client setup
 	let (sk, ek_expansion_serialized, ek_relin_serialized) = timeit!("Client setup", {
 		let sk = bfv::SecretKey::random(&params);
-		let dim = preprocessed_database.shape();
-		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
+		let level = (dim1 + dim2).next_power_of_two().ilog2();
 		println!("level = {}", level);
 		let ek_expansion = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
@@ -89,13 +86,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Client query
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
-		let dim = preprocessed_database.shape();
-		let level = (dim[0] + dim[1]).next_power_of_two().ilog2();
+		let level = (dim1 + dim2).next_power_of_two().ilog2();
 		let query_index = index / number_elements_per_plaintext(params.clone(), elements_size);
-		let mut pt = vec![0u64; dim[0] + dim[1]];
+		let mut pt = vec![0u64; dim1 + dim2];
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
-		pt[query_index / dim[1]] = inv;
-		pt[dim[0] + (query_index % dim[1])] = inv;
+		pt[query_index / dim2] = inv;
+		pt[dim1 + (query_index % dim2)] = inv;
 		let query_pt =
 			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
 		let query = sk.try_encrypt(&query_pt)?;
@@ -107,19 +103,20 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let response = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
 		let query = bfv::Ciphertext::from_bytes(&query, &params)?;
-		let dim = preprocessed_database.shape();
-		let expanded_query = ek_expansion.expands(&query, dim[0] + dim[1])?;
+		let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
 		println!("Expand: {:?}", start.elapsed());
+
+		let query_vec = &expanded_query[..dim1];
+		let dot_product_mod_switch =
+			move |i, database: &[Plaintext]| -> fhers::Result<Ciphertext> {
+				let column = database.iter().skip(i).step_by(dim2);
+				bfv::dot_product_scalar(query_vec.iter(), column)
+			};
+
 		let mut out = bfv::Ciphertext::zero(&params);
-		izip!(
-			&expanded_query[dim[0]..],
-			preprocessed_database.axis_iter(Axis(1))
-		)
-		.for_each(|(cj, column)| {
-			let c =
-				bfv::dot_product_scalar(expanded_query[..dim[0]].iter(), column.iter()).unwrap();
-			out += &c * cj;
-		});
+		for (i, ci) in expanded_query[dim1..].iter().enumerate() {
+			out += &dot_product_mod_switch(i, &preprocessed_database)? * ci
+		}
 		ek_relin.relinearizes(&mut out)?;
 		out.mod_switch_to_last_level();
 		out.to_bytes()
@@ -132,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 		let pt = sk.try_decrypt(&response).unwrap();
 		let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
-		let plaintext = transcode_forward(&pt, plaintext_modulus.ilog2() as usize);
+		let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
 		let offset = index % number_elements_per_plaintext(params.clone(), elements_size);
 
 		println!("Noise in response: {:?}", unsafe {

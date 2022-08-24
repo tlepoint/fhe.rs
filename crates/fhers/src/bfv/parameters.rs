@@ -38,7 +38,7 @@ pub struct BfvParameters {
 	pub(crate) variance: usize,
 
 	/// Context for the underlying polynomials
-	ctx: Arc<Context>,
+	pub(crate) ctx: Vec<Arc<Context>>,
 
 	/// Ntt operator for the SIMD plaintext, if possible.
 	pub(crate) op: Option<Arc<NttOperator>>,
@@ -114,13 +114,15 @@ impl BfvParameters {
 	}
 
 	/// Returns the context corresponding to the level.
-	pub(crate) fn ctx_at_level(&self, level: usize) -> Result<Arc<Context>> {
-		self.ctx.context_at_level(level).map_err(Error::MathError)
+	pub(crate) fn ctx_at_level(&self, level: usize) -> Result<&Arc<Context>> {
+		self.ctx
+			.get(level)
+			.ok_or_else(|| Error::DefaultError("No context".to_string()))
 	}
 
 	/// Returns the level of a given context
 	pub(crate) fn level_of_ctx(&self, ctx: &Arc<Context>) -> Result<usize> {
-		self.ctx.niterations_to(ctx).map_err(Error::MathError)
+		self.ctx[0].niterations_to(ctx).map_err(Error::MathError)
 	}
 
 	#[cfg(test)]
@@ -277,7 +279,6 @@ impl BfvParametersBuilder {
 
 		let op = NttOperator::new(&plaintext_modulus, self.degree);
 
-		let ctx = Arc::new(Context::new(&moduli, self.degree)?);
 		let plaintext_ctx = Arc::new(Context::new(&moduli[..1], self.degree)?);
 
 		let mut delta_rests = vec![];
@@ -286,6 +287,7 @@ impl BfvParametersBuilder {
 			delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
 		}
 
+		let mut ctx = Vec::with_capacity(moduli.len());
 		let mut delta = Vec::with_capacity(moduli.len());
 		let mut q_mod_t = Vec::with_capacity(moduli.len());
 		let mut scalers = Vec::with_capacity(moduli.len());
@@ -345,6 +347,8 @@ impl BfvParametersBuilder {
 				ScalingFactor::new(rns_2.modulus(), ctx_i.modulus()),
 				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns_2.modulus()),
 			)?);
+
+			ctx.push(ctx_i)
 		}
 
 		// We use the same code as SEAL

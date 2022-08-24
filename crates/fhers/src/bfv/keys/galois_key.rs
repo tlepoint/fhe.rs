@@ -36,12 +36,12 @@ impl GaloisKey {
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
 
 		let ciphertext_exponent =
-			SubstitutionExponent::new(&ctx_ciphertext, exponent).map_err(Error::MathError)?;
+			SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
 
-		let switcher_up = Switcher::new(&ctx_ciphertext, &ctx_galois_key)?;
+		let switcher_up = Switcher::new(ctx_ciphertext, ctx_galois_key)?;
 		let mut s = Poly::try_convert_from(
 			&sk.s_coefficients as &[i64],
-			&ctx_ciphertext,
+			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
 		)?;
@@ -108,7 +108,7 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 			let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
 
 			let ctx = par.ctx_at_level(ksk.ciphertext_level)?;
-			let element = SubstitutionExponent::new(&ctx, value.exponent as usize)
+			let element = SubstitutionExponent::new(ctx, value.exponent as usize)
 				.map_err(Error::MathError)?;
 
 			Ok(GaloisKey { element, ksk })

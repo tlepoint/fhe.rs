@@ -63,10 +63,12 @@ pub fn sample_vec_cbd(vector_size: usize, variance: usize) -> Result<Vec<i64>, &
 	Ok(out)
 }
 
-/// Transcodes a vector of u64 of nbits numbers into a vector of bytes
+/// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
 /// TODO: To test
-pub fn transcode_forward(a: &[u64], nbits: usize) -> Vec<u8> {
+pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
 	assert!(nbits <= 64);
+	assert!(nbits > 0);
+
 	let mask = (u64::MAX >> (64 - nbits)) as u128;
 	let nbytes = (a.len() * nbits).div_ceil(8);
 	let mut out = Vec::with_capacity(nbytes);
@@ -98,10 +100,11 @@ pub fn transcode_forward(a: &[u64], nbits: usize) -> Vec<u8> {
 	out
 }
 
-/// Transcodes a vector of u8 into a vector of u64 of nbits numbers
+/// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
 /// TODO: To test
-pub fn transcode_backward(b: &[u8], nbits: usize) -> Vec<u64> {
+pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
 	assert!(nbits <= 64);
+	assert!(nbits > 0);
 	let mask = (u64::MAX >> (64 - nbits)) as u128;
 
 	let nelements = (b.len() * 8).div_ceil(nbits);
@@ -127,6 +130,46 @@ pub fn transcode_backward(b: &[u8], nbits: usize) -> Vec<u64> {
 		out.push(current_value as u64);
 	} else {
 		assert_eq!(out.len(), nelements);
+		assert_eq!(current_value, 0);
+	}
+	out
+}
+
+/// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
+/// of `output_nbits`-bit numbers.
+/// TODO: To test
+pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
+	assert!(input_nbits <= 64);
+	assert!(output_nbits <= 64);
+	assert!(input_nbits > 0);
+	assert!(output_nbits > 0);
+	let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
+	let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
+	let output_size = (a.len() * input_nbits).div_ceil(output_nbits);
+	let mut out = Vec::with_capacity(output_size);
+
+	let mut current_index = 0;
+	let mut current_value = 0u128;
+	let mut current_value_nbits = 0;
+	while current_index < a.len() {
+		if current_value_nbits < output_nbits {
+			debug_assert!(64 - a[current_index].leading_zeros() <= input_nbits as u32);
+			current_value |= ((a[current_index] as u128) & input_mask) << current_value_nbits;
+			current_value_nbits += input_nbits;
+			current_index += 1;
+		}
+		while current_value_nbits >= output_nbits {
+			out.push((current_value & output_mask) as u64);
+			current_value >>= output_nbits;
+			current_value_nbits -= output_nbits;
+		}
+	}
+	if current_value_nbits > 0 {
+		assert!(current_value_nbits < output_nbits);
+		assert_eq!(out.len(), output_size - 1);
+		out.push(current_value as u64)
+	} else {
+		assert_eq!(out.len(), output_size);
 		assert_eq!(current_value, 0);
 	}
 	out

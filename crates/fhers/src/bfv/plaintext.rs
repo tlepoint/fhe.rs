@@ -51,7 +51,7 @@ impl Plaintext {
 			.plaintext
 			.scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
 		let ctx = self.par.ctx_at_level(self.level)?;
-		let mut m = Poly::try_convert_from(&m_v, &ctx, false, Representation::PowerBasis)?;
+		let mut m = Poly::try_convert_from(&m_v, ctx, false, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
 		m *= &self.par.delta[self.level];
 		m_v.zeroize();
@@ -63,7 +63,7 @@ impl Plaintext {
 		let level = encoding.level;
 		let ctx = par.ctx_at_level(level)?;
 		let value = vec![0u64; par.degree()];
-		let poly_ntt = Poly::zero(&ctx, Representation::Ntt);
+		let poly_ntt = Poly::zero(ctx, Representation::Ntt);
 		Ok(Self {
 			par: par.clone(),
 			value,
@@ -106,7 +106,7 @@ impl TryConvertFrom<&Plaintext> for Poly {
 		R: Into<Option<Representation>>,
 	{
 		if ctx
-			!= &pt
+			!= pt
 				.par
 				.ctx_at_level(pt.level())
 				.map_err(|e| math::Error::Default(e.to_string()))?
@@ -147,43 +147,45 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 		if value.is_empty() {
 			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
 		}
-		let encoding = &encoding;
-
-		let num_plaintexts = value.len().div_ceil(par.degree());
-		let mut out = Vec::with_capacity(num_plaintexts);
-		for i in 0..num_plaintexts {
-			let slice = &value[i * par.degree()..min((i + 1) * par.degree(), value.len())];
-			let mut v = vec![0u64; par.degree()];
-
-			match encoding.encoding {
-				EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
-				EncodingEnum::Simd => {
-					if let Some(op) = &par.op {
-						for i in 0..slice.len() {
-							v[par.matrix_reps_index_map[i]] = slice[i];
-						}
-						op.backward_vt(v.as_mut_ptr());
-					} else {
-						return Err(Error::SimdUnsupported);
-					}
-				}
-			};
-
-			let ctx = par.ctx_at_level(encoding.level)?;
-			let w = par.plaintext.center_vec_vt(&v);
-			let mut poly =
-				Poly::try_convert_from(&w as &[i64], &ctx, true, Representation::PowerBasis)?;
-			poly.change_representation(Representation::Ntt);
-
-			out.push(Plaintext {
-				par: par.clone(),
-				value: v,
-				encoding: Some(encoding.clone()),
-				poly_ntt: poly,
-				level: encoding.level,
-			})
+		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
+			return Err(Error::SimdUnsupported);
 		}
-		Ok(PlaintextVec(out))
+		let ctx = par.ctx_at_level(encoding.level)?;
+		let num_plaintexts = value.len().div_ceil(par.degree());
+
+		Ok(PlaintextVec(
+			(0..num_plaintexts)
+				.map(|i| {
+					let slice = &value[i * par.degree()..min(value.len(), (i + 1) * par.degree())];
+					let mut v = vec![0u64; par.degree()];
+					match encoding.encoding {
+						EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
+						EncodingEnum::Simd => {
+							for i in 0..slice.len() {
+								v[par.matrix_reps_index_map[i]] = slice[i];
+							}
+							par.op.as_ref().unwrap().backward_vt(v.as_mut_ptr());
+						}
+					};
+
+					let mut poly = Poly::try_convert_from(
+						&v as &[u64],
+						ctx,
+						true,
+						Representation::PowerBasis,
+					)?;
+					poly.change_representation(Representation::Ntt);
+
+					Ok(Plaintext {
+						par: par.clone(),
+						value: v,
+						encoding: Some(encoding.clone()),
+						poly_ntt: poly,
+						level: encoding.level,
+					})
+				})
+				.collect::<Result<Vec<Plaintext>>>()?,
+		))
 	}
 }
 
@@ -193,47 +195,45 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 		if value.is_empty() {
 			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
 		}
-		let encoding = &encoding;
-
-		let num_plaintexts = value.len().div_ceil(par.degree());
-		let mut out = Vec::with_capacity(num_plaintexts);
-		for i in 0..num_plaintexts {
-			let slice = &value[i * par.degree()..min((i + 1) * par.degree(), value.len())];
-			let mut v = vec![0u64; par.degree()];
-
-			match encoding.encoding {
-				EncodingEnum::Poly => {
-					v[..slice.len()].copy_from_slice(slice);
-				}
-				EncodingEnum::Simd => {
-					if let Some(op) = &par.op {
-						for i in 0..slice.len() {
-							v[par.matrix_reps_index_map[i]] = slice[i];
-						}
-						op.backward(&mut v);
-					} else {
-						return Err(Error::SimdUnsupported);
-					}
-				}
-			}
-
-			let ctx = par.ctx_at_level(encoding.level)?;
-
-			let mut w = unsafe { par.plaintext.center_vec_vt(&v) };
-			let mut poly =
-				Poly::try_convert_from(&w as &[i64], &ctx, false, Representation::PowerBasis)?;
-			poly.change_representation(Representation::Ntt);
-			w.zeroize();
-
-			out.push(Plaintext {
-				par: par.clone(),
-				value: v,
-				encoding: Some(encoding.clone()),
-				poly_ntt: poly,
-				level: encoding.level,
-			})
+		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
+			return Err(Error::SimdUnsupported);
 		}
-		Ok(PlaintextVec(out))
+		let ctx = par.ctx_at_level(encoding.level)?;
+		let num_plaintexts = value.len().div_ceil(par.degree());
+
+		Ok(PlaintextVec(
+			(0..num_plaintexts)
+				.map(|i| {
+					let slice = &value[i * par.degree()..min(value.len(), (i + 1) * par.degree())];
+					let mut v = vec![0u64; par.degree()];
+					match encoding.encoding {
+						EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
+						EncodingEnum::Simd => {
+							for i in 0..slice.len() {
+								v[par.matrix_reps_index_map[i]] = slice[i];
+							}
+							par.op.as_ref().unwrap().backward(&mut v);
+						}
+					};
+
+					let mut poly = Poly::try_convert_from(
+						&v as &[u64],
+						ctx,
+						false,
+						Representation::PowerBasis,
+					)?;
+					poly.change_representation(Representation::Ntt);
+
+					Ok(Plaintext {
+						par: par.clone(),
+						value: v,
+						encoding: Some(encoding.clone()),
+						poly_ntt: poly,
+						level: encoding.level,
+					})
+				})
+				.collect::<Result<Vec<Plaintext>>>()?,
+		))
 	}
 }
 

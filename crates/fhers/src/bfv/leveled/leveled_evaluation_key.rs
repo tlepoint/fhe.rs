@@ -467,7 +467,7 @@ impl LeveledEvaluationKeyBuilder {
 			monomial[self.sk.par.degree() - (1 << l)] = -1;
 			let mut monomial = Poly::try_convert_from(
 				&monomial as &[i64],
-				&ciphertext_ctx,
+				ciphertext_ctx,
 				true,
 				Representation::PowerBasis,
 			)?;
@@ -549,7 +549,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for LeveledEvaluationKey {
 			monomial[par.degree() - (1 << l)] = -1;
 			let mut monomial = Poly::try_convert_from(
 				&monomial as &[i64],
-				&ciphertext_ctx,
+				ciphertext_ctx,
 				true,
 				Representation::PowerBasis,
 			)?;

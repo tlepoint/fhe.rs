@@ -721,13 +721,13 @@ impl Modulus {
 	/// Panics if the length of the vector is not a multiple of 8.
 	pub fn serialize_vec(&self, a: &[u64]) -> Vec<u8> {
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		util::transcode_forward(a, p_nbits)
+		util::transcode_to_bytes(a, p_nbits)
 	}
 
 	/// Deserialize a vector of bytes into a vector of elements mod p.
 	pub fn deserialize_vec(&self, b: &[u8]) -> Vec<u64> {
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		util::transcode_backward(b, p_nbits)
+		util::transcode_from_bytes(b, p_nbits)
 	}
 }
 

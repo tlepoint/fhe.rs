@@ -1,12 +1,52 @@
 use std::cmp::min;
 
 use itertools::{izip, Itertools};
-use math::rq::dot_product as poly_dot_product;
+use math::rq::{dot_product as poly_dot_product, traits::TryConvertFrom, Poly, Representation};
+use ndarray::{Array, Array2};
 
 use crate::{
 	bfv::{Ciphertext, Plaintext},
 	Error, Result,
 };
+
+/// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
+unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
+	let n = out.len();
+	assert_eq!(x.len(), n);
+	assert_eq!(y.len(), n);
+
+	macro_rules! fma_at {
+		($idx:expr) => {
+			*out.get_unchecked_mut($idx) +=
+				(*x.get_unchecked($idx) as u128) * (*y.get_unchecked($idx) as u128);
+		};
+	}
+
+	if n % 16 == 0 {
+		for i in 0..n / 16 {
+			fma_at!(16 * i);
+			fma_at!(16 * i + 1);
+			fma_at!(16 * i + 2);
+			fma_at!(16 * i + 3);
+			fma_at!(16 * i + 4);
+			fma_at!(16 * i + 5);
+			fma_at!(16 * i + 6);
+			fma_at!(16 * i + 7);
+			fma_at!(16 * i + 8);
+			fma_at!(16 * i + 9);
+			fma_at!(16 * i + 10);
+			fma_at!(16 * i + 11);
+			fma_at!(16 * i + 12);
+			fma_at!(16 * i + 13);
+			fma_at!(16 * i + 14);
+			fma_at!(16 * i + 15);
+		}
+	} else {
+		for (outj, xj, yj) in izip!(out, x, y) {
+			*outj += *xj as u128 * *yj as u128;
+		}
+	}
+}
 
 /// Compute the dot product between an iterator of [`Ciphertext`] and an
 /// iterator of [`Plaintext`]. Returns an error if the iterator counts are 0, if
@@ -23,8 +63,9 @@ where
 			"At least one iterator is empty".to_string(),
 		));
 	}
-
 	let ct_first = ct.clone().next().unwrap();
+	let ctx = ct_first.c[0].ctx();
+
 	if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
 		cti.par != ct_first.par || pti.par != ct_first.par || cti.c.len() != ct_first.c.len()
 	}) {
@@ -36,22 +77,83 @@ where
 		));
 	}
 
-	let c = (0..ct_first.c.len())
-		.map(|i| {
-			poly_dot_product(
-				ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
-				pt.clone().map(|pti| &pti.poly_ntt),
-			)
-			.unwrap()
-		})
+	let max_acc = ctx
+		.moduli()
+		.iter()
+		.map(|qi| 1u128 << (2 * qi.leading_zeros()))
 		.collect_vec();
+	let min_of_max = max_acc.iter().min().unwrap();
 
-	Ok(Ciphertext {
-		par: ct_first.par.clone(),
-		seed: None,
-		c,
-		level: ct_first.level,
-	})
+	if count as u128 > *min_of_max {
+		// Too many ciphertexts for the optimized method, instead, we call
+		// `poly_dot_product`.
+		let c = (0..ct_first.c.len())
+			.map(|i| {
+				poly_dot_product(
+					ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
+					pt.clone().map(|pti| &pti.poly_ntt),
+				)
+				.unwrap()
+			})
+			.collect_vec();
+
+		Ok(Ciphertext {
+			par: ct_first.par.clone(),
+			seed: None,
+			c,
+			level: ct_first.level,
+		})
+	} else {
+		// let now = std::time::Instant::now();
+		let mut acc = Array::zeros((ct_first.c.len(), ctx.moduli().len(), ct_first.par.degree()));
+		for (ciphertext, plaintext) in izip!(ct, pt) {
+			let pt_coefficients = plaintext.poly_ntt.coefficients();
+			for (mut acci, ci) in izip!(acc.outer_iter_mut(), ciphertext.c.iter()) {
+				let ci_coefficients = ci.coefficients();
+				for (mut accij, cij, pij) in izip!(
+					acci.outer_iter_mut(),
+					ci_coefficients.outer_iter(),
+					pt_coefficients.outer_iter()
+				) {
+					let out_slice = accij.as_slice_mut().unwrap();
+					let ct_slice = cij.as_slice().unwrap();
+					let pt_slice = pij.as_slice().unwrap();
+					unsafe { fma(out_slice, ct_slice, pt_slice) }
+				}
+			}
+		}
+		// println!("mul_acc: {:?}", now.elapsed());
+		// let now = std::time::Instant::now();
+
+		// Reduce
+		let mut c = Vec::with_capacity(ct_first.c.len());
+		for acci in acc.outer_iter() {
+			let mut coeffs = Array2::zeros((ctx.moduli().len(), ct_first.par.degree()));
+			for (mut outij, accij, q) in izip!(
+				coeffs.outer_iter_mut(),
+				acci.outer_iter(),
+				ctx.moduli_operators()
+			) {
+				for (outij_coeff, accij_coeff) in izip!(outij.iter_mut(), accij.iter()) {
+					unsafe { *outij_coeff = q.reduce_u128_vt(*accij_coeff) }
+				}
+			}
+			c.push(Poly::try_convert_from(
+				coeffs,
+				&ctx,
+				true,
+				Representation::Ntt,
+			)?)
+		}
+		// println!("reduce: {:?}", now.elapsed());
+
+		Ok(Ciphertext {
+			par: ct_first.par.clone(),
+			seed: None,
+			c,
+			level: ct_first.level,
+		})
+	}
 }
 
 #[cfg(test)]
