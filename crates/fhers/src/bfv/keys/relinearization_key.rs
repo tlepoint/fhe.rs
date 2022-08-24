@@ -36,7 +36,7 @@ impl RelinearizationKey {
 
 		let mut s = Poly::try_convert_from(
 			&sk.s_coefficients as &[i64],
-			&ctx_relin_key,
+			ctx_relin_key,
 			false,
 			Representation::PowerBasis,
 		)?;
@@ -125,7 +125,7 @@ mod tests {
 				let ctx = params.ctx_at_level(0)?;
 				let mut s = Poly::try_convert_from(
 					&sk.s_coefficients as &[i64],
-					&ctx,
+					ctx,
 					false,
 					Representation::PowerBasis,
 				)
@@ -134,9 +134,9 @@ mod tests {
 				let s2 = &s * &s;
 				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2,
 				// c1, c2) encrypting 0.
-				let mut c2 = Poly::random(&ctx, Representation::Ntt);
-				let c1 = Poly::random(&ctx, Representation::Ntt);
-				let mut c0 = Poly::small(&ctx, Representation::PowerBasis, 16)?;
+				let mut c2 = Poly::random(ctx, Representation::Ntt);
+				let c1 = Poly::random(ctx, Representation::Ntt);
+				let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16)?;
 				c0.change_representation(Representation::Ntt);
 				c0 -= &(&c1 * &s);
 				c0 -= &(&c2 * &s2);

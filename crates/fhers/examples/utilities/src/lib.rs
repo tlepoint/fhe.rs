@@ -5,9 +5,8 @@
 
 use fhers::bfv::{BfvParameters, Encoding, Plaintext};
 use fhers_traits::FheEncoder;
-use ndarray::Array2;
 use std::{fmt, sync::Arc, time::Duration};
-use util::transcode_backward;
+use util::transcode_from_bytes;
 
 // Utility for displaying duration
 pub struct DisplayDuration(pub Duration);
@@ -67,7 +66,7 @@ pub fn encode_database(
 	database: &Vec<Vec<u8>>,
 	par: Arc<BfvParameters>,
 	level: usize,
-) -> Array2<Plaintext> {
+) -> (Vec<Plaintext>, (usize, usize)) {
 	let elements_size = database[0].len();
 	let number_elements_per_plaintext = number_elements_per_plaintext(par.clone(), elements_size);
 	let number_rows = database.len().div_ceil(number_elements_per_plaintext);
@@ -76,7 +75,7 @@ pub fn encode_database(
 		"number_elements_per_plaintext = {}",
 		number_elements_per_plaintext
 	);
-	let dimension_1 = 1 << ((63 - (number_rows as u64).leading_zeros()).div_ceil(2));
+	let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
 	let dimension_2 = number_rows.div_ceil(dimension_1);
 	println!("dimensions = {} {}", dimension_1, dimension_2);
 	println!("dimension = {}", dimension_1 * dimension_2);
@@ -92,10 +91,13 @@ pub fn encode_database(
 				serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
 			}
 		}
-		let pt_values = transcode_backward(&serialized_plaintext, par.plaintext().ilog2() as usize);
+		let pt_values =
+			transcode_from_bytes(&serialized_plaintext, par.plaintext().ilog2() as usize);
 		preprocessed_database[i] =
 			Plaintext::try_encode(&pt_values as &[u64], Encoding::poly_at_level(level), &par)
 				.unwrap();
 	});
-	Array2::from_shape_vec((dimension_1, dimension_2), preprocessed_database).unwrap()
+	// Array2::from_shape_vec((dimension_1, dimension_2),
+	// preprocessed_database).unwrap()
+	(preprocessed_database, (dimension_1, dimension_2))
 }

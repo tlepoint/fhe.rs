@@ -60,7 +60,7 @@ impl KeySwitchingKey {
 			));
 		}
 
-		if from.ctx() != &ctx_ksk {
+		if from.ctx() != ctx_ksk {
 			return Err(Error::DefaultError(
 				"Incorrect context for polynomial from".to_string(),
 			));
@@ -68,7 +68,7 @@ impl KeySwitchingKey {
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
-		let c1 = Self::generate_c1(&ctx_ksk, seed, ctx_ciphertext.moduli().len());
+		let c1 = Self::generate_c1(ctx_ksk, seed, ctx_ciphertext.moduli().len());
 		let c0 = Self::generate_c0(sk, from, &c1)?;
 
 		Ok(Self {
@@ -77,9 +77,9 @@ impl KeySwitchingKey {
 			c0,
 			c1,
 			ciphertext_level,
-			ctx_ciphertext,
+			ctx_ciphertext: ctx_ciphertext.clone(),
 			ksk_level,
-			ctx_ksk,
+			ctx_ksk: ctx_ksk.clone(),
 		})
 	}
 
@@ -217,10 +217,10 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 		}
 		let seed = seed.unwrap();
 
-		let c1 = Self::generate_c1(&ctx_ksk, seed, value.c0.len());
+		let c1 = Self::generate_c1(ctx_ksk, seed, value.c0.len());
 		let mut c0 = Vec::with_capacity(par.moduli.len());
 		for c0i in &value.c0 {
-			c0.push(Poly::from_bytes(c0i, &ctx_ksk)?)
+			c0.push(Poly::from_bytes(c0i, ctx_ksk)?)
 		}
 
 		Ok(Self {
@@ -229,9 +229,9 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 			c0,
 			c1,
 			ciphertext_level,
-			ctx_ciphertext,
+			ctx_ciphertext: ctx_ciphertext.clone(),
 			ksk_level,
-			ctx_ksk,
+			ctx_ksk: ctx_ksk.clone(),
 		})
 	}
 }
@@ -255,7 +255,7 @@ mod tests {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
-			let p = Poly::small(&ctx, Representation::PowerBasis, 10)?;
+			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
 			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0);
 			assert!(ksk.is_ok());
 		}
@@ -268,7 +268,7 @@ mod tests {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let ctx = params.ctx_at_level(0)?;
-				let mut p = Poly::small(&ctx, Representation::PowerBasis, 10)?;
+				let mut p = Poly::small(ctx, Representation::PowerBasis, 10)?;
 				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
 				let mut s = Poly::try_convert_from(
 					&sk.s_coefficients as &[i64],
@@ -304,7 +304,7 @@ mod tests {
 		for params in [Arc::new(BfvParameters::default(2))] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
-			let p = Poly::small(&ctx, Representation::PowerBasis, 10)?;
+			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
 			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
 			let ksk_proto = KeySwitchingKeyProto::from(&ksk);
 			assert_eq!(ksk, KeySwitchingKey::try_convert_from(&ksk_proto, &params)?);

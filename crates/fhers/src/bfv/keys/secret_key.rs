@@ -118,17 +118,17 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 		// Let's create a secret key with the ciphertext context
 		let mut s = Poly::try_convert_from(
 			&self.s_coefficients as &[i64],
-			&ctx,
+			ctx,
 			false,
 			Representation::PowerBasis,
 		)?;
 		s.change_representation(Representation::Ntt);
 
-		let mut a = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
+		let mut a = Poly::random_from_seed(ctx, Representation::Ntt, seed);
 		let mut a_s = &a * &s;
 		s.zeroize();
 
-		let mut b = Poly::small(&ctx, Representation::Ntt, self.par.variance).unwrap();
+		let mut b = Poly::small(ctx, Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
 
 		let mut m = pt.to_poly()?;

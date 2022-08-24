@@ -409,6 +409,7 @@ where
 			}
 		}
 	} else {
+		let now = std::time::Instant::now();
 		// We don't need to check the condition on the max, it should shave off a few
 		// cycles.
 		for (pi, qi) in izip!(p, q) {
@@ -418,8 +419,8 @@ where
 			let qi_slice = qij.as_slice().unwrap();
 			unsafe { fma(out_slice, pi_slice, qi_slice) }
 		}
+		println!("Inner prod: {:?}", now.elapsed());
 	}
-
 	// Last reduction to create the coefficients
 	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
 	izip!(coeffs.outer_iter_mut(), acc.outer_iter(), &p_first.ctx.q,).for_each(
