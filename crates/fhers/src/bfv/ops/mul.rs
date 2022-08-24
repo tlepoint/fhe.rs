@@ -107,7 +107,7 @@ impl Multiplicator {
 			}
 		}
 
-		let mut multiplicator = Multiplicator::new(
+		let mut multiplicator = Multiplicator::new_leveled(
 			ScalingFactor::one(),
 			ScalingFactor::one(),
 			&extended_basis,
@@ -115,6 +115,7 @@ impl Multiplicator {
 				&BigUint::from(rk.ksk.par.plaintext.modulus()),
 				ctx.modulus(),
 			),
+			level,
 			&rk.ksk.par,
 		)?;
 
@@ -228,13 +229,18 @@ impl Multiplicator {
 mod tests {
 	use crate::bfv::{BfvParameters, Encoding, Plaintext, RelinearizationKey, SecretKey};
 	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+	use math::{
+		rns::{RnsContext, ScalingFactor},
+		zq::nfl::generate_prime,
+	};
+	use num_bigint::BigUint;
 	use std::{error::Error, sync::Arc};
 
 	use super::Multiplicator;
 
 	#[test]
-	fn test_mul() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2));
+	fn mul() -> Result<(), Box<dyn Error>> {
+		let par = Arc::new(BfvParameters::default(3));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
@@ -261,6 +267,125 @@ mod tests {
 			let pt = sk.try_decrypt(&ct3)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 		}
+		Ok(())
+	}
+
+	#[test]
+	fn mul_at_level() -> Result<(), Box<dyn Error>> {
+		let par = Arc::new(BfvParameters::default(3));
+		for _ in 0..15 {
+			for level in 0..2 {
+				let values = par.plaintext.random_vec(par.degree());
+				let mut expected = values.clone();
+				par.plaintext.mul_vec(&mut expected, &values);
+
+				let sk = SecretKey::random(&par);
+				let rk = RelinearizationKey::new_leveled(&sk, level)?;
+				let pt =
+					Plaintext::try_encode(&values as &[u64], Encoding::simd_at_level(level), &par)?;
+				let ct1 = sk.try_encrypt(&pt)?;
+				let ct2 = sk.try_encrypt(&pt)?;
+				assert_eq!(ct1.level, level);
+				assert_eq!(ct2.level, level);
+
+				let mut multiplicator = Multiplicator::default_at_level(level, &rk).unwrap();
+				let ct3 = multiplicator.multiply(&ct1, &ct2).unwrap();
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+				let pt = sk.try_decrypt(&ct3)?;
+				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+
+				multiplicator.enable_mod_switching()?;
+				let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+				assert_eq!(ct3.level, level + 1);
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+				let pt = sk.try_decrypt(&ct3)?;
+				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+			}
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn mul_no_relin() -> Result<(), Box<dyn Error>> {
+		let par = Arc::new(BfvParameters::default(2));
+		for _ in 0..30 {
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
+			let values = par.plaintext.random_vec(par.degree());
+			let mut expected = values.clone();
+			par.plaintext.mul_vec(&mut expected, &values);
+
+			let sk = SecretKey::random(&par);
+			let rk = RelinearizationKey::new(&sk)?;
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = sk.try_encrypt(&pt)?;
+
+			let mut multiplicator = Multiplicator::default(&rk)?;
+			// Remove the relinearization key.
+			multiplicator.rk = None;
+			let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.try_decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+
+			multiplicator.enable_mod_switching()?;
+			let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+			assert_eq!(ct3.level, 1);
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.try_decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn different_mul_strategy() -> Result<(), Box<dyn Error>> {
+		// Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
+
+		let par = Arc::new(BfvParameters::default(3));
+		let mut extended_basis = par.moduli().to_vec();
+		extended_basis
+			.push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());
+		extended_basis
+			.push(generate_prime(62, 2 * par.degree() as u64, extended_basis[3]).unwrap());
+		extended_basis
+			.push(generate_prime(62, 2 * par.degree() as u64, extended_basis[4]).unwrap());
+		let rns = RnsContext::new(&extended_basis[3..])?;
+
+		for _ in 0..30 {
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
+			let values = par.plaintext.random_vec(par.degree());
+			let mut expected = values.clone();
+			par.plaintext.mul_vec(&mut expected, &values);
+
+			let sk = SecretKey::random(&par);
+			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = sk.try_encrypt(&pt)?;
+
+			let mut multiplicator = Multiplicator::new(
+				ScalingFactor::one(),
+				ScalingFactor::new(rns.modulus(), &par.ctx[0].modulus()),
+				&extended_basis,
+				ScalingFactor::new(&BigUint::from(par.plaintext()), rns.modulus()),
+				&par,
+			)?;
+
+			let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.try_decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+
+			multiplicator.enable_mod_switching()?;
+			let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+			assert_eq!(ct3.level, 1);
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+			let pt = sk.try_decrypt(&ct3)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+		}
+
 		Ok(())
 	}
 }

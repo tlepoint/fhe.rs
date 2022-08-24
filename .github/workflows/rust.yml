@@ -19,7 +19,21 @@ jobs:
           command: check
 
   test:
-    name: Test Suite
+    name: Test Suite (w/o features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+  
+  test_features:
+    name: Test Suite (w/ features)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
