@@ -1,6 +1,6 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::{
-	bfv::{leveled::PlaintextVec, BfvParameters, Encoding},
+	bfv::{BfvParameters, Encoding, PlaintextVec},
 	Error, Result,
 };
 use fhers_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
@@ -333,7 +333,7 @@ mod tests {
 			BfvParametersBuilder::new()
 				.set_degree(8)
 				.set_plaintext_modulus(2)
-				.set_ciphertext_moduli(&[4611686018326724609])
+				.set_moduli(&[4611686018326724609])
 				.build()?,
 		);
 

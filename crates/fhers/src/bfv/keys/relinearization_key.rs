@@ -63,7 +63,7 @@ impl RelinearizationKey {
 	}
 
 	/// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
-	pub fn relinearizes(&self, ct: &Ciphertext) -> Result<Ciphertext> {
+	pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
 		if ct.c.len() != 3 {
 			Err(Error::DefaultError(
 				"Only supports relinearization of ciphertext with 3 parts".to_string(),
@@ -86,14 +86,10 @@ impl RelinearizationKey {
 				c1.change_representation(Representation::Ntt);
 			}
 
-			c0 += &ct.c[0];
-			c1 += &ct.c[1];
-			Ok(Ciphertext {
-				par: ct.par.clone(),
-				seed: None,
-				c: vec![c0, c1],
-				level: self.ksk.ciphertext_level,
-			})
+			ct.c[0] += &c0;
+			ct.c[1] += &c1;
+			ct.c.truncate(2);
+			Ok(())
 		}
 	}
 
@@ -188,11 +184,11 @@ mod tests {
 				c0.change_representation(Representation::Ntt);
 				c0 -= &(&c1 * &s);
 				c0 -= &(&c2 * &s2);
-				let ct = Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
+				let mut ct = Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
 
 				// Relinearize the extended ciphertext!
-				let ct_relinearized = rk.relinearizes(&ct)?;
-				assert_eq!(ct_relinearized.c.len(), 2);
+				rk.relinearizes(&mut ct)?;
+				assert_eq!(ct.c.len(), 2);
 
 				// Check that the relinearization by polynomials works the same way
 				c2.change_representation(Representation::PowerBasis);
@@ -203,14 +199,11 @@ mod tests {
 				c1r.mod_switch_down_to(c1.ctx())?;
 				c0r.change_representation(Representation::Ntt);
 				c1r.change_representation(Representation::Ntt);
-				assert_eq!(
-					ct_relinearized,
-					Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
-				);
+				assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);
 
 				// Print the noise and decrypt
-				println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
-				let pt = sk.try_decrypt(&ct_relinearized)?;
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+				let pt = sk.try_decrypt(&ct)?;
 				assert!(Vec::<u64>::try_decode(&pt, Encoding::poly()).is_ok_and(|v| v == &[0u64; 8]))
 			}
 		}
@@ -244,12 +237,12 @@ mod tests {
 						c0.change_representation(Representation::Ntt);
 						c0 -= &(&c1 * &s);
 						c0 -= &(&c2 * &s2);
-						let ct =
+						let mut ct =
 							Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
 
 						// Relinearize the extended ciphertext!
-						let ct_relinearized = rk.relinearizes(&ct)?;
-						assert_eq!(ct_relinearized.c.len(), 2);
+						rk.relinearizes(&mut ct)?;
+						assert_eq!(ct.c.len(), 2);
 
 						// Check that the relinearization by polynomials works the same way
 						c2.change_representation(Representation::PowerBasis);
@@ -261,13 +254,13 @@ mod tests {
 						c0r.change_representation(Representation::Ntt);
 						c1r.change_representation(Representation::Ntt);
 						assert_eq!(
-							ct_relinearized,
+							ct,
 							Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
 						);
 
 						// Print the noise and decrypt
-						println!("Noise: {}", unsafe { sk.measure_noise(&ct_relinearized)? });
-						let pt = sk.try_decrypt(&ct_relinearized)?;
+						println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+						let pt = sk.try_decrypt(&ct)?;
 						assert!(Vec::<u64>::try_decode(&pt, Encoding::poly())
 							.is_ok_and(|v| v == &[0u64; 8]))
 					}

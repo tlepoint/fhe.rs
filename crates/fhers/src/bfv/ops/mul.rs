@@ -5,6 +5,7 @@ use math::{
 	rq::{scaler::Scaler, Context, Representation},
 	zq::nfl::generate_prime,
 };
+use num_bigint::BigUint;
 
 use crate::{
 	bfv::{keys::RelinearizationKey, BfvParameters, Ciphertext},
@@ -82,15 +83,7 @@ impl Multiplicator {
 
 	/// Default multiplication strategy using relinearization.
 	pub fn default(rk: &RelinearizationKey) -> Result<Self> {
-		Self::default_at_level(0, rk)
-	}
-
-	/// Default multiplication strategy using relinearization at a given level.
-	#[cfg(feature = "leveled_bfv")]
-	pub fn default_at_level(level: usize, rk: &RelinearizationKey) -> Result<Self> {
-		use num_bigint::BigUint;
-
-		let ctx = rk.ksk.par.ctx_at_level(level)?;
+		let ctx = rk.ksk.par.ctx_at_level(rk.ksk.ciphertext_level)?;
 
 		let modulus_size = rk.ksk.par.moduli_sizes()[..ctx.moduli().len()]
 			.iter()
@@ -115,7 +108,7 @@ impl Multiplicator {
 				&BigUint::from(rk.ksk.par.plaintext.modulus()),
 				ctx.modulus(),
 			),
-			level,
+			rk.ksk.ciphertext_level,
 			&rk.ksk.par,
 		)?;
 
@@ -125,7 +118,7 @@ impl Multiplicator {
 
 	/// Enable relinearization after multiplication.
 	pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
-		let rk_ctx = self.par.ctx_at_level(rk.ksk.ksk_level)?;
+		let rk_ctx = self.par.ctx_at_level(rk.ksk.ciphertext_level)?;
 		if rk_ctx != &self.base_ctx {
 			return Err(Error::DefaultError(
 				"Invalid relinearization key context".to_string(),
@@ -166,6 +159,7 @@ impl Multiplicator {
 				"Multiplication can only be performed on ciphertexts of size 2".to_string(),
 			));
 		}
+        println!("here");
 
 		// Extend
 		let mut now = std::time::SystemTime::now();
@@ -301,7 +295,7 @@ mod tests {
 				assert_eq!(ct1.level, level);
 				assert_eq!(ct2.level, level);
 
-				let mut multiplicator = Multiplicator::default_at_level(level, &rk).unwrap();
+				let mut multiplicator = Multiplicator::default(&rk).unwrap();
 				let ct3 = multiplicator.multiply(&ct1, &ct2).unwrap();
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
 				let pt = sk.try_decrypt(&ct3)?;
