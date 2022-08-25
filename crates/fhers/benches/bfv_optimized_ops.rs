@@ -13,12 +13,12 @@ fn params() -> Result<Vec<Arc<BfvParameters>>, Box<dyn Error>> {
 	let par_small = BfvParametersBuilder::new()
 		.set_degree(4096)
 		.set_plaintext_modulus(1153)
-		.set_ciphertext_moduli_sizes(&[36, 37, 37])
+		.set_moduli_sizes(&[36, 37, 37])
 		.build()?;
 	let par_large = BfvParametersBuilder::new()
 		.set_degree(16384)
 		.set_plaintext_modulus(1153)
-		.set_ciphertext_moduli_sizes(&[62; 7])
+		.set_moduli_sizes(&[62; 7])
 		.build()
 		.unwrap();
 	Ok(vec![Arc::new(par_small), Arc::new(par_large)])
@@ -39,7 +39,6 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
 				.unwrap();
 		let mut c1 = sk.try_encrypt(&pt1).unwrap();
-		let c2 = sk.try_encrypt(&pt2).unwrap();
 
 		let ct_vec = (0..128)
 			.map(|i| {

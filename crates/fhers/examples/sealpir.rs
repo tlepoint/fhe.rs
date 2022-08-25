@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 			bfv::BfvParametersBuilder::new()
 				.set_degree(degree)
 				.set_plaintext_modulus(plaintext_modulus)
-				.set_ciphertext_moduli_sizes(&moduli_sizes)
+				.set_moduli_sizes(&moduli_sizes)
 				.build()
 				.unwrap()
 		)
@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let sk = bfv::SecretKey::random(&params);
 		let level = (dim1 * dim2).next_power_of_two().ilog2().div_ceil(2) + 1;
 		println!("expansion_level = {}", level);
-		let ek_expansion = bfv::LeveledEvaluationKeyBuilder::new(&sk, 1, 0)?
+		let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
 			.build()?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Server setup
 	let ek_expansion = timeit!(
 		"Server setup",
-		bfv::LeveledEvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
+		bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
 	);
 
 	// Client query

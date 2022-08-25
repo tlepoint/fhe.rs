@@ -129,7 +129,7 @@ impl BfvParameters {
 		BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(1153)
-			.set_ciphertext_moduli_sizes(&vec![62usize; num_moduli])
+			.set_moduli_sizes(&vec![62usize; num_moduli])
 			.build()
 			.unwrap()
 	}
@@ -173,17 +173,17 @@ impl BfvParametersBuilder {
 	}
 
 	/// Sets the sizes of the ciphertext moduli.
-	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli`
+	/// Only one of `set_moduli_sizes` and `set_moduli`
 	/// can be specified.
-	pub fn set_ciphertext_moduli_sizes(&mut self, sizes: &[usize]) -> &mut Self {
+	pub fn set_moduli_sizes(&mut self, sizes: &[usize]) -> &mut Self {
 		self.ciphertext_moduli_sizes = sizes.to_owned();
 		self
 	}
 
 	/// Sets the ciphertext moduli to use.
-	/// Only one of `set_ciphertext_moduli_sizes` and `set_ciphertext_moduli`
+	/// Only one of `set_moduli_sizes` and `set_moduli`
 	/// can be specified.
-	pub fn set_ciphertext_moduli(&mut self, moduli: &[u64]) -> &mut Self {
+	pub fn set_moduli(&mut self, moduli: &[u64]) -> &mut Self {
 		self.ciphertext_moduli = moduli.to_owned();
 		self
 	}
@@ -386,7 +386,7 @@ impl Deserialize for BfvParameters {
 			BfvParametersBuilder::new()
 				.set_degree(params.degree as usize)
 				.set_plaintext_modulus(params.plaintext)
-				.set_ciphertext_moduli(&params.moduli)
+				.set_moduli(&params.moduli)
 				.set_variance(params.variance as usize)
 				.build()
 		} else {
@@ -470,15 +470,15 @@ mod tests {
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(1024)
 	// 		.set_plaintext_modulus(2)
-	// 		.set_ciphertext_moduli(&[])
+	// 		.set_moduli(&[])
 	// 		.build()
 	// 		.is_err_and(|e| e.to_string() == "Unspecified ciphertext moduli"));
 
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(1024)
 	// 		.set_plaintext_modulus(2)
-	// 		.set_ciphertext_moduli(&[1153])
-	// 		.set_ciphertext_moduli_sizes(&[62])
+	// 		.set_moduli(&[1153])
+	// 		.set_moduli_sizes(&[62])
 	// 		.build()
 	// 		.is_err_and(|e| e.to_string() == "The set of ciphertext moduli is already
 	// specified"));
@@ -486,14 +486,14 @@ mod tests {
 	// 	assert!(BfvParametersBuilder::new()
 	// 		.set_degree(8)
 	// 		.set_plaintext_modulus(2)
-	// 		.set_ciphertext_moduli(&[1])
+	// 		.set_moduli(&[1])
 	// 		.build()
 	// 		.is_err_and(|e| e.to_string() == "modulus should be between 2 and 2^62-1"));
 
 	// 	let params = BfvParametersBuilder::new()
 	// 		.set_degree(8)
 	// 		.set_plaintext_modulus(2)
-	// 		.set_ciphertext_moduli(&[2])
+	// 		.set_moduli(&[2])
 	// 		.build();
 	// 	assert!(params.is_err_and(|e| e.to_string() == "Impossible to construct a Ntt
 	// operator"));
@@ -501,7 +501,7 @@ mod tests {
 	// 	let params = BfvParametersBuilder::new()
 	// 		.set_degree(8)
 	// 		.set_plaintext_modulus(2)
-	// 		.set_ciphertext_moduli(&[1153])
+	// 		.set_moduli(&[1153])
 	// 		.build();
 	// 	assert!(params.is_ok());
 
@@ -531,7 +531,7 @@ mod tests {
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(2)
-			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])
+			.set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.build();
 		assert!(params.is_ok_and(|p| p.moduli.to_vec()
 			== &[
@@ -546,7 +546,7 @@ mod tests {
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(2)
-			.set_ciphertext_moduli(&[
+			.set_moduli(&[
 				4611686018427387761,
 				4611686018427387617,
 				4611686018427387409,
@@ -565,7 +565,7 @@ mod tests {
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(2)
-			.set_ciphertext_moduli_sizes(&[62, 62, 62, 61, 60, 11])
+			.set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.set_variance(4)
 			.build()?;
 		let bytes = params.to_bytes();

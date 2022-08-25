@@ -29,7 +29,7 @@ mod tests {
 
 	use fhers_traits::{FheDecoder, FheEncoder};
 
-	use crate::bfv::{leveled::PlaintextVec, BfvParameters, Encoding};
+	use crate::bfv::{BfvParameters, Encoding, PlaintextVec};
 
 	#[test]
 	fn test_encode_decode() {
