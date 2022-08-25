@@ -253,10 +253,7 @@ mod tests {
 						c1r.mod_switch_down_to(c1.ctx())?;
 						c0r.change_representation(Representation::Ntt);
 						c1r.change_representation(Representation::Ntt);
-						assert_eq!(
-							ct,
-							Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?
-						);
+						assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);
 
 						// Print the noise and decrypt
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });

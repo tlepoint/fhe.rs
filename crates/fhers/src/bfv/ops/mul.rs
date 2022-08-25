@@ -159,7 +159,7 @@ impl Multiplicator {
 				"Multiplication can only be performed on ciphertexts of size 2".to_string(),
 			));
 		}
-        println!("here");
+		println!("here");
 
 		// Extend
 		let mut now = std::time::SystemTime::now();

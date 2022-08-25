@@ -3,8 +3,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Multiplicator,
-	Plaintext, RelinearizationKey, SecretKey,
+	BfvParameters, BfvParametersBuilder, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext,
+	RelinearizationKey, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
