@@ -89,15 +89,20 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: actions-rs/tarpaulin@v0.1
-        name: Run cargo-tarpaulin
+      - uses: actions-rs/cargo@v1
         with:
-          version: '0.15.0'
-          args: '--all-features'
+          command: test
+          args: --all-features --no-fail-fast
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
+      - uses: actions-rs/grcov@v0.1
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1.0.2
+        uses: codecov/codecov-action@v3
         with:
-          token: ${{secrets.CODECOV_TOKEN}}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.coverage.outputs.report }}
       - name: Archive code coverage results
         uses: actions/upload-artifact@v1
         with:
