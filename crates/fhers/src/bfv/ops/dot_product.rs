@@ -163,7 +163,7 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn dot_product_scalar() -> Result<(), Box<dyn Error>> {
+	fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(2, 16)),
