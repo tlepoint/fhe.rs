@@ -356,7 +356,7 @@ impl EvaluationKeyBuilder {
 		}
 	}
 
-	/// Build a[`LeveledEvaluationKey`] with the specified attributes.
+	/// Build an [`EvaluationKey`] with the specified attributes.
 	pub fn build(&mut self) -> Result<EvaluationKey> {
 		let mut ek = EvaluationKey {
 			gk: HashMap::default(),
@@ -489,8 +489,8 @@ mod tests {
 	use std::{cmp::min, error::Error, sync::Arc};
 
 	#[test]
-	fn test_builder() -> Result<(), Box<dyn Error>> {
-		let params = Arc::new(BfvParameters::default(2));
+	fn builder() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(2, 8));
 		let sk = SecretKey::random(&params);
 		for ciphertext_level in 0..=params.max_level() {
 			for evaluation_key_level in 0..=min(params.max_level() - 1, ciphertext_level) {
@@ -562,10 +562,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_inner_sum() -> Result<(), Box<dyn Error>> {
+	fn inner_sum() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(5)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			for _ in 0..25 {
 				for ciphertext_level in 0..=params.max_level() {
@@ -605,10 +605,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_row_rotation() -> Result<(), Box<dyn Error>> {
+	fn row_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(5)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			for _ in 0..50 {
 				for ciphertext_level in 0..=params.max_level() {
@@ -649,10 +649,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_column_rotation() -> Result<(), Box<dyn Error>> {
+	fn column_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(5)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let row_size = params.degree() >> 1;
 			for _ in 0..50 {
@@ -705,10 +705,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_expansion() -> Result<(), Box<dyn Error>> {
+	fn expansion() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(5)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let log_degree = 64 - 1 - params.degree().leading_zeros();
 			for _ in 0..15 {
@@ -760,11 +760,11 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
+	fn proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(5)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 
@@ -803,10 +803,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize() -> Result<(), Box<dyn Error>> {
+	fn serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 

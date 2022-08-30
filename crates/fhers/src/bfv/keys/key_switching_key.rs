@@ -254,8 +254,8 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_constructor() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn constructor() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
 			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
@@ -266,8 +266,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_key_switch() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn key_switch() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let ctx = params.ctx_at_level(0)?;
@@ -303,8 +303,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
 			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;

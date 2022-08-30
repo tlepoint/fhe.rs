@@ -234,8 +234,8 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_keygen() {
-		let params = Arc::new(BfvParameters::default(1));
+	fn keygen() {
+		let params = Arc::new(BfvParameters::default(1, 8));
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
@@ -246,10 +246,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_encrypt_decrypt() -> Result<(), Box<dyn Error>> {
+	fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			for _ in 0..1 {
 				let sk = SecretKey::random(&params);

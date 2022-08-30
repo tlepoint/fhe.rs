@@ -32,10 +32,10 @@ mod tests {
 	use crate::bfv::{BfvParameters, Encoding, PlaintextVec};
 
 	#[test]
-	fn test_encode_decode() {
+	fn encode_decode() {
 		(0..40).for_each(|_| {
 			for i in 1..5 {
-				let params = Arc::new(BfvParameters::default(1));
+				let params = Arc::new(BfvParameters::default(1, 8));
 				let a = params.plaintext.random_vec(params.degree() * i);
 
 				let plaintexts =

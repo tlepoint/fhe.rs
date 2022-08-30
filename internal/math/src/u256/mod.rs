@@ -2,7 +2,7 @@
 
 use std::ops::{Not, Shr, ShrAssign};
 
-/// Struct holding a unsigned 256-bit integer.
+/// Unsigned 256-bit integer represented as four u64.
 #[repr(C)]
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub struct U256(u64, u64, u64, u64);
@@ -13,7 +13,7 @@ impl U256 {
 		Self(0, 0, 0, 0)
 	}
 
-	/// Add an U256 to self, allowing to overflow mod 2^256.
+	/// Add an U256 to self, wrapping modulo 2^256.
 	pub fn wrapping_add_assign(&mut self, other: Self) {
 		let mut _carry = false;
 		(self.0, _carry) = self.0.carrying_add(other.0, _carry);
@@ -22,7 +22,7 @@ impl U256 {
 		(self.3, _carry) = self.3.carrying_add(other.3, _carry);
 	}
 
-	/// Subtract an U256 to self, allowing to overflow mod 2^256.
+	/// Subtract an U256 to self, wrapping modulo 2^256.
 	pub fn wrapping_sub_assign(&mut self, other: Self) {
 		let mut _borrow = false;
 		(self.0, _borrow) = self.0.borrowing_sub(other.0, _borrow);
@@ -134,33 +134,32 @@ impl ShrAssign<usize> for U256 {
 
 #[cfg(test)]
 mod tests {
-
 	use super::U256;
 
 	#[test]
-	fn test_zero() {
+	fn zero() {
 		assert_eq!(u128::from(&U256::zero()), 0u128);
 	}
 
 	proptest! {
 
 		#[test]
-		fn test_u128(a: u128) {
+		fn u128(a: u128) {
 			prop_assert_eq!(a, u128::from(&U256::from([a, 0])));
 		}
 
 		#[test]
-		fn test_from_into_u64(a: u64, b: u64, c: u64, d:u64) {
+		fn from_into_u64(a: u64, b: u64, c: u64, d:u64) {
 			prop_assert_eq!(<[u64; 4]>::from(U256::from([a, b, c, d])), [a, b, c, d]);
 		}
 
 		#[test]
-		fn test_from_into_u128(a: u128, b: u128) {
+		fn from_into_u128(a: u128, b: u128) {
 			prop_assert_eq!(<[u128; 2]>::from(U256::from([a, b])), [a, b]);
 		}
 
 		#[test]
-		fn test_shift(a: u64, b: u64, c: u64, d:u64, shift in 0..256usize) {
+		fn shift(a: u64, b: u64, c: u64, d:u64, shift in 0..256usize) {
 			prop_assert_eq!(<[u64; 4]>::from(U256::from([a, b, c, d]) >> 0), [a, b, c, d]);
 			prop_assert_eq!(<[u64; 4]>::from(U256::from([a, b, c, d]) >> 64), [b, c, d, 0]);
 			prop_assert_eq!(<[u64; 4]>::from(U256::from([a, b, c, d]) >> 128), [c, d, 0, 0]);
@@ -179,7 +178,7 @@ mod tests {
 		}
 
 		#[test]
-		fn test_shift_assign(a: u64, b: u64, c: u64, d:u64, shift in 0..256usize) {
+		fn shift_assign(a: u64, b: u64, c: u64, d:u64, shift in 0..256usize) {
 			let mut u = U256::from([a, b, c, d]);
 
 			u >>= 0;

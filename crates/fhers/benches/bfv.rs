@@ -9,7 +9,7 @@ use fhers::bfv::{
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
 use math::rns::{RnsContext, ScalingFactor};
-use math::zq::nfl::generate_prime;
+use math::zq::primes::generate_prime;
 use num_bigint::BigUint;
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
@@ -37,7 +37,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 
 	for par in params().unwrap() {
 		let sk = SecretKey::random(&par);
-		let ek = EvaluationKeyBuilder::new_leveled(&sk, 1, 0)
+		let ek = EvaluationKeyBuilder::new(&sk)
 			.unwrap()
 			.enable_inner_sum()
 			.unwrap()
@@ -47,20 +47,14 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.unwrap()
 			.build()
 			.unwrap();
-		let rk = RelinearizationKey::new_leveled(&sk, 1, 0).unwrap();
+		let rk = RelinearizationKey::new(&sk).unwrap();
 
-		let pt1 = Plaintext::try_encode(
-			&(1..16u64).collect_vec() as &[u64],
-			Encoding::poly_at_level(1),
-			&par,
-		)
-		.unwrap();
-		let pt2 = Plaintext::try_encode(
-			&(3..39u64).collect_vec() as &[u64],
-			Encoding::poly_at_level(1),
-			&par,
-		)
-		.unwrap();
+		let pt1 =
+			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), &par)
+				.unwrap();
+		let pt2 =
+			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
+				.unwrap();
 		let mut c1 = sk.try_encrypt(&pt1).unwrap();
 		let c2 = sk.try_encrypt(&pt2).unwrap();
 
@@ -69,35 +63,35 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			.sum::<usize>();
 
 		group.bench_function(
-			BenchmarkId::new("add", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("add", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = &c1 + &c2);
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("add_assign", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("add_assign", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 += &c2);
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("sub", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("sub", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = &c1 - &c2);
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("sub_assign", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("sub_assign", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 -= &c2);
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("neg", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("neg", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = -&c2);
 			},
@@ -106,7 +100,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		let mut c3 = &c1 * &c1;
 		let c3_clone = c3.clone();
 		group.bench_function(
-			BenchmarkId::new("relinearize", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("relinearize", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| {
 					assert!(rk.relinearizes(&mut c3).is_ok());
@@ -116,14 +110,14 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		);
 
 		group.bench_function(
-			BenchmarkId::new("rotate", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("rotate", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = ek.rotates_column_by(&c1, 1).unwrap());
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("inner_sum", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("inner_sum", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = ek.computes_inner_sum(&c1).unwrap());
 			},
@@ -134,7 +128,10 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				continue; // Skip slow benchmarks
 			}
 			group.bench_function(
-				BenchmarkId::new(format!("expand_{}", i), format!("{}/{}", par.degree(), q)),
+				BenchmarkId::new(
+					format!("expand_{}", i),
+					format!("degree={}/logq={}", par.degree(), q),
+				),
 				|b| {
 					b.iter(|| ek.expands(&c1, 1 << i).unwrap());
 				},
@@ -142,14 +139,17 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		}
 
 		group.bench_function(
-			BenchmarkId::new("mul", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new("mul", format!("degree={}/logq={}", par.degree(), q)),
 			|b| {
 				b.iter(|| &c1 * &c2);
 			},
 		);
 
 		group.bench_function(
-			BenchmarkId::new("mul_then_relinearize", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new(
+				"mul_then_relinearize",
+				format!("degree={}/logq={}", par.degree(), q),
+			),
 			|b| {
 				b.iter(|| {
 					c3 = &c1 * &c2;
@@ -162,7 +162,10 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		let multiplicator = Multiplicator::default(&rk).unwrap();
 
 		group.bench_function(
-			BenchmarkId::new("mul_and_relin", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new(
+				"mul_and_relin",
+				format!("degree={}/logq={}", par.degree(), q),
+			),
 			|b| {
 				b.iter(|| assert!(multiplicator.multiply(&c1, &c2).is_ok()));
 			},
@@ -180,18 +183,20 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		}
 		let rns_q = RnsContext::new(&extended_basis[..par.moduli().len()]).unwrap();
 		let rns_p = RnsContext::new(&extended_basis[par.moduli().len()..]).unwrap();
-		let mut multiplicator = Multiplicator::new_leveled(
+		let mut multiplicator = Multiplicator::new(
 			ScalingFactor::one(),
 			ScalingFactor::new(rns_p.modulus(), rns_q.modulus()),
 			&extended_basis,
 			ScalingFactor::new(&BigUint::from(par.plaintext()), rns_p.modulus()),
-			1,
 			&par,
 		)
 		.unwrap();
 		assert!(multiplicator.enable_relinearization(&rk).is_ok());
 		group.bench_function(
-			BenchmarkId::new("mul_and_relin_2", format!("{}/{}", par.degree(), q)),
+			BenchmarkId::new(
+				"mul_and_relin_2",
+				format!("degree={}/logq={}", par.degree(), q),
+			),
 			|b| {
 				b.iter(|| assert!(multiplicator.multiply(&c1, &c2).is_ok()));
 			},

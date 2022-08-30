@@ -157,7 +157,7 @@ mod tests {
 	];
 
 	#[test]
-	fn test_scaler() -> Result<(), Box<dyn Error>> {
+	fn scaler() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let from = Arc::new(Context::new(Q, 8)?);
 		let to = Arc::new(Context::new(P, 8)?);

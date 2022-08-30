@@ -64,7 +64,7 @@ mod tests {
 	// Verifies that the same moduli as in the NFLlib library are generated.
 	// <https://github.com/quarkslab/NFLlib/blob/master/include/nfl/params.hpp>
 	#[test]
-	fn test_nfl_62bit_primes() {
+	fn nfl_62bit_primes() {
 		let mut generated = vec![];
 		let mut upper_bound = u64::MAX >> 2;
 		while generated.len() != 20 {
@@ -101,17 +101,17 @@ mod tests {
 	}
 
 	#[test]
-	fn test_upper_bound() {
+	fn upper_bound() {
 		debug_assert!(catch_unwind(|| generate_prime(62, 2 * 1048576, (1 << 62) + 1)).is_err());
 	}
 
 	#[test]
-	fn test_modulo_too_large() {
+	fn modulo_too_large() {
 		assert!(generate_prime(10, 2048, 1 << 10).is_none());
 	}
 
 	#[test]
-	fn test_not_found() {
+	fn not_found() {
 		// 1033 is the smallest 11-bit prime congruent to 1 modulo 16, so looking for a
 		// smaller one should fail.
 		assert!(generate_prime(11, 16, 1033).is_none());

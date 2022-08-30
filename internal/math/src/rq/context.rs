@@ -167,7 +167,7 @@ mod tests {
 	];
 
 	#[test]
-	fn test_context_constructor() {
+	fn context_constructor() {
 		for modulus in MODULI {
 			// modulus is = 1 modulo 2 * 8
 			assert!(Context::new(&[*modulus], 8).is_ok());
@@ -187,7 +187,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_next_context() -> Result<(), Box<dyn Error>> {
+	fn next_context() -> Result<(), Box<dyn Error>> {
 		// A context should have a children pointing to a context with one less modulus.
 		let context = Arc::new(Context::new(MODULI, 8)?);
 		assert_eq!(
@@ -208,7 +208,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_niterations_to() -> Result<(), Box<dyn Error>> {
+	fn niterations_to() -> Result<(), Box<dyn Error>> {
 		// A context should have a children pointing to a context with one less modulus.
 		let context = Arc::new(Context::new(MODULI, 8)?);
 

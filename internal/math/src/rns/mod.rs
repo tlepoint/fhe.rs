@@ -148,7 +148,7 @@ mod tests {
 	use rand::RngCore;
 
 	#[test]
-	fn test_constructor() {
+	fn constructor() {
 		assert!(RnsContext::new(&[2]).is_ok());
 		assert!(RnsContext::new(&[2, 3]).is_ok());
 		assert!(RnsContext::new(&[4, 15, 1153]).is_ok());
@@ -162,7 +162,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_garner() -> Result<(), Box<dyn Error>> {
+	fn garner() -> Result<(), Box<dyn Error>> {
 		let rns = RnsContext::new(&[4, 15, 1153])?;
 
 		for i in 0..3 {
@@ -174,7 +174,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_modulus() -> Result<(), Box<dyn Error>> {
+	fn modulus() -> Result<(), Box<dyn Error>> {
 		let mut rns = RnsContext::new(&[2])?;
 		debug_assert_eq!(rns.modulus(), &BigUint::from(2u64));
 
@@ -188,7 +188,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_project_lift() -> Result<(), Box<dyn Error>> {
+	fn project_lift() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let rns = RnsContext::new(&[4, 15, 1153])?;
 		let product = 4u64 * 15 * 1153;

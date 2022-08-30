@@ -19,6 +19,10 @@ pub enum Error {
 	#[error("Too many values provided: {0} exceeds limit {1}")]
 	TooManyValues(usize, usize),
 
+	/// Indicates that too few values were provided.
+	#[error("Too few values provided: {0} is below limit {1}")]
+	TooFewValues(usize, usize),
+
 	/// Indicates that an input is invalid.
 	#[error("{0}")]
 	UnspecifiedInput(String),

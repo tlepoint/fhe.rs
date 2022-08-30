@@ -129,10 +129,10 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_relinearization() -> Result<(), Box<dyn Error>> {
+	fn relinearization() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2)),
-			Arc::new(BfvParameters::default(3)),
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(3, 8)),
 		] {
 			for _ in 0..30 {
 				let sk = SecretKey::random(&params);
@@ -178,8 +178,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9, 0, 0)?;
 			let proto = GaloisKeyProto::from(&gk);

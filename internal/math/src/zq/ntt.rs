@@ -85,10 +85,9 @@ impl NttOperator {
 	}
 
 	/// Compute the forward NTT in place.
-	///
 	/// Aborts if a is not of the size handled by the operator.
 	pub fn forward(&self, a: &mut [u64]) {
-		debug_assert!(a.len() == self.size);
+		debug_assert_eq!(a.len(), self.size);
 
 		let n = self.size;
 		let a_ptr = a.as_mut_ptr();
@@ -132,10 +131,9 @@ impl NttOperator {
 	}
 
 	/// Compute the backward NTT in place.
-	///
 	/// Aborts if a is not of the size handled by the operator.
 	pub fn backward(&self, a: &mut [u64]) {
-		debug_assert!(a.len() == self.size);
+		debug_assert_eq!(a.len(), self.size);
 
 		let a_ptr = a.as_mut_ptr();
 
@@ -184,8 +182,9 @@ impl NttOperator {
 	/// modulus.
 	///
 	/// # Safety
-	/// This function runs in variable time and may leak information about the
-	/// values of the input.
+	/// This function assumes that a_ptr points to at least `size` elements.
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
 		let mut l = self.size >> 1;
 		let mut m = 1;
@@ -226,8 +225,9 @@ impl NttOperator {
 	/// Compute the forward NTT in place in variable time.
 	///
 	/// # Safety
-	/// This function runs in variable time and may leak information about the
-	/// values of the input.
+	/// This function assumes that a_ptr points to at least `size` elements.
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
 		self.forward_vt_lazy(a_ptr);
 		for i in 0..self.size {
@@ -238,7 +238,9 @@ impl NttOperator {
 	/// Compute the backward NTT in place in variable time.
 	///
 	/// # Safety
-	/// Aborts if a is not of the size handled by the operator.
+	/// This function assumes that a_ptr points to at least `size` elements.
+	/// This function is not constant time and its timing may reveal information
+	/// about the value being reduced.
 	pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
 		let mut k = 0;
 		let mut m = self.size >> 1;
@@ -403,7 +405,7 @@ mod tests {
 	use crate::zq::Modulus;
 
 	#[test]
-	fn test_constructor() {
+	fn constructor() {
 		for size in [8, 1024] {
 			for p in [1153, 4611686018326724609] {
 				let q = Modulus::new(p).unwrap();
@@ -421,7 +423,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_bijection() {
+	fn bijection() {
 		let ntests = 100;
 
 		for size in [8, 1024] {
@@ -454,7 +456,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_forward_lazy() {
+	fn forward_lazy() {
 		let ntests = 100;
 
 		for size in [8, 1024] {

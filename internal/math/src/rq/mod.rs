@@ -578,7 +578,7 @@ mod tests {
 	];
 
 	#[test]
-	fn test_poly_zero() -> Result<(), Box<dyn Error>> {
+	fn poly_zero() -> Result<(), Box<dyn Error>> {
 		let reference = &[
 			BigUint::zero(),
 			BigUint::zero(),
@@ -612,7 +612,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_ctx() -> Result<(), Box<dyn Error>> {
+	fn ctx() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::zero(&ctx, Representation::PowerBasis);
@@ -627,7 +627,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_random() -> Result<(), Box<dyn Error>> {
+	fn random() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 			thread_rng().fill(&mut seed);
@@ -656,7 +656,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_coefficients() -> Result<(), Box<dyn Error>> {
+	fn coefficients() -> Result<(), Box<dyn Error>> {
 		for _ in 0..50 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -674,7 +674,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_modulus() -> Result<(), Box<dyn Error>> {
+	fn modulus() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let modulus_biguint = BigUint::from(*modulus);
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -690,7 +690,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
+	fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let mut p = Poly::random(&ctx, Representation::default());
@@ -740,7 +740,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_change_representation() -> Result<(), Box<dyn Error>> {
+	fn change_representation() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::default());
@@ -783,7 +783,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_override_representation() -> Result<(), Box<dyn Error>> {
+	fn override_representation() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		let mut p = Poly::random(&ctx, Representation::PowerBasis);
@@ -815,7 +815,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_small() -> Result<(), Box<dyn Error>> {
+	fn small() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let q = Modulus::new(*modulus).unwrap();
@@ -858,7 +858,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_substitute() -> Result<(), Box<dyn Error>> {
+	fn substitute() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);
@@ -953,7 +953,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mod_switch_down_next() -> Result<(), Box<dyn Error>> {
+	fn mod_switch_down_next() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
@@ -996,7 +996,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mod_switch_down_to() -> Result<(), Box<dyn Error>> {
+	fn mod_switch_down_to() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let ctx1 = Arc::new(Context::new(MODULI, 8)?);
 		let ctx2 = Arc::new(Context::new(&MODULI[..2], 8)?);
@@ -1021,7 +1021,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mod_switch_to() -> Result<(), Box<dyn Error>> {
+	fn mod_switch_to() -> Result<(), Box<dyn Error>> {
 		let ntests = 100;
 		let ctx1 = Arc::new(Context::new(&MODULI[..2], 8)?);
 		let ctx2 = Arc::new(Context::new(&MODULI[3..], 8)?);
@@ -1045,7 +1045,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul_x_power() -> Result<(), Box<dyn Error>> {
+	fn mul_x_power() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		assert!(Poly::random(&ctx, Representation::Ntt)

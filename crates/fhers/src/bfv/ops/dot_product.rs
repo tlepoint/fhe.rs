@@ -22,29 +22,28 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 		};
 	}
 
-	if n % 16 == 0 {
-		for i in 0..n / 16 {
-			fma_at!(16 * i);
-			fma_at!(16 * i + 1);
-			fma_at!(16 * i + 2);
-			fma_at!(16 * i + 3);
-			fma_at!(16 * i + 4);
-			fma_at!(16 * i + 5);
-			fma_at!(16 * i + 6);
-			fma_at!(16 * i + 7);
-			fma_at!(16 * i + 8);
-			fma_at!(16 * i + 9);
-			fma_at!(16 * i + 10);
-			fma_at!(16 * i + 11);
-			fma_at!(16 * i + 12);
-			fma_at!(16 * i + 13);
-			fma_at!(16 * i + 14);
-			fma_at!(16 * i + 15);
-		}
-	} else {
-		for (outj, xj, yj) in izip!(out, x, y) {
-			*outj += *xj as u128 * *yj as u128;
-		}
+	let r = n / 16;
+	for i in 0..r {
+		fma_at!(16 * i);
+		fma_at!(16 * i + 1);
+		fma_at!(16 * i + 2);
+		fma_at!(16 * i + 3);
+		fma_at!(16 * i + 4);
+		fma_at!(16 * i + 5);
+		fma_at!(16 * i + 6);
+		fma_at!(16 * i + 7);
+		fma_at!(16 * i + 8);
+		fma_at!(16 * i + 9);
+		fma_at!(16 * i + 10);
+		fma_at!(16 * i + 11);
+		fma_at!(16 * i + 12);
+		fma_at!(16 * i + 13);
+		fma_at!(16 * i + 14);
+		fma_at!(16 * i + 15);
+	}
+
+	for i in 0..n % 16 {
+		fma_at!(16 * r + i);
 	}
 }
 
@@ -104,7 +103,6 @@ where
 			level: ct_first.level,
 		})
 	} else {
-		// let now = std::time::Instant::now();
 		let mut acc = Array::zeros((ct_first.c.len(), ctx.moduli().len(), ct_first.par.degree()));
 		for (ciphertext, plaintext) in izip!(ct, pt) {
 			let pt_coefficients = plaintext.poly_ntt.coefficients();
@@ -115,15 +113,16 @@ where
 					ci_coefficients.outer_iter(),
 					pt_coefficients.outer_iter()
 				) {
-					let out_slice = accij.as_slice_mut().unwrap();
-					let ct_slice = cij.as_slice().unwrap();
-					let pt_slice = pij.as_slice().unwrap();
-					unsafe { fma(out_slice, ct_slice, pt_slice) }
+					unsafe {
+						fma(
+							accij.as_slice_mut().unwrap(),
+							cij.as_slice().unwrap(),
+							pij.as_slice().unwrap(),
+						)
+					}
 				}
 			}
 		}
-		// println!("mul_acc: {:?}", now.elapsed());
-		// let now = std::time::Instant::now();
 
 		// Reduce
 		let mut c = Vec::with_capacity(ct_first.c.len());
@@ -145,7 +144,6 @@ where
 				Representation::Ntt,
 			)?)
 		}
-		// println!("reduce: {:?}", now.elapsed());
 
 		Ok(Ciphertext {
 			par: ct_first.par.clone(),
@@ -167,8 +165,8 @@ mod tests {
 	#[test]
 	fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 16)),
 		] {
 			let sk = SecretKey::random(&params);
 			for size in 1..128 {

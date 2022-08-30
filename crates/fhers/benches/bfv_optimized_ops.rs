@@ -31,60 +31,65 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 	group.measurement_time(Duration::from_secs(1));
 
 	for par in params().unwrap() {
-		let sk = SecretKey::random(&par);
-		let pt1 =
-			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), &par)
-				.unwrap();
-		let pt2 =
-			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
-				.unwrap();
-		let mut c1 = sk.try_encrypt(&pt1).unwrap();
+		for size in [10, 128, 1000] {
+			let sk = SecretKey::random(&par);
+			let pt1 =
+				Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), &par)
+					.unwrap();
+			let mut c1 = sk.try_encrypt(&pt1).unwrap();
 
-		let ct_vec = (0..128)
-			.map(|i| {
-				let pt = Plaintext::try_encode(
-					&(i..16u64).collect_vec() as &[u64],
-					Encoding::poly(),
-					&par,
-				)
-				.unwrap();
-				sk.try_encrypt(&pt).unwrap()
-			})
-			.collect_vec();
-		let pt_vec = (0..128)
-			.map(|i| {
-				Plaintext::try_encode(&(i..39u64).collect_vec() as &[u64], Encoding::poly(), &par)
+			let ct_vec = (0..size)
+				.map(|i| {
+					let pt = Plaintext::try_encode(
+						&(i..16u64).collect_vec() as &[u64],
+						Encoding::poly(),
+						&par,
+					)
+					.unwrap();
+					sk.try_encrypt(&pt).unwrap()
+				})
+				.collect_vec();
+			let pt_vec = (0..size)
+				.map(|i| {
+					Plaintext::try_encode(
+						&(i..39u64).collect_vec() as &[u64],
+						Encoding::poly(),
+						&par,
+					)
 					.unwrap()
-			})
-			.collect_vec();
+				})
+				.collect_vec();
 
-		group.bench_function(
-			BenchmarkId::new(
-				"dot_product/128/naive",
-				format!(
-					"{}/{}",
-					par.degree(),
-					par.moduli_sizes().iter().sum::<usize>()
+			group.bench_function(
+				BenchmarkId::new(
+					"dot_product/naive",
+					format!(
+						"size={}/degree={}/logq={}",
+						size,
+						par.degree(),
+						par.moduli_sizes().iter().sum::<usize>()
+					),
 				),
-			),
-			|b| {
-				b.iter(|| izip!(&ct_vec, &pt_vec).for_each(|(cti, pti)| c1 += cti * pti));
-			},
-		);
+				|b| {
+					b.iter(|| izip!(&ct_vec, &pt_vec).for_each(|(cti, pti)| c1 += cti * pti));
+				},
+			);
 
-		group.bench_function(
-			BenchmarkId::new(
-				"dot_product/128/opt",
-				format!(
-					"{}/{}",
-					par.degree(),
-					par.moduli_sizes().iter().sum::<usize>()
+			group.bench_function(
+				BenchmarkId::new(
+					"dot_product/opt",
+					format!(
+						"size={}/degree={}/logq={}",
+						size,
+						par.degree(),
+						par.moduli_sizes().iter().sum::<usize>()
+					),
 				),
-			),
-			|b| {
-				b.iter(|| dot_product_scalar(ct_vec.iter(), pt_vec.iter()));
-			},
-		);
+				|b| {
+					b.iter(|| dot_product_scalar(ct_vec.iter(), pt_vec.iter()));
+				},
+			);
+		}
 	}
 
 	group.finish();
