@@ -60,21 +60,27 @@ impl Ciphertext {
 	}
 
 	/// Create a ciphertext from a vector of polynomials.
+	/// A ciphertext must contain at least two polynomials, and all polynomials
+	/// must be in Ntt representation and with the same context.
 	pub fn new(c: Vec<Poly>, par: &Arc<BfvParameters>) -> Result<Self> {
 		if c.len() < 2 {
-			return Err(Error::DefaultError(
-				"Too few polynomials provided".to_string(),
-			));
+			return Err(Error::TooFewValues(c.len(), 2));
 		}
+
 		let ctx = c[0].ctx();
 		let level = par.level_of_ctx(ctx)?;
-		if c.iter()
-			.any(|ci| ci.representation() != &Representation::Ntt)
-		{
-			return Err(Error::DefaultError("Invalid representation".to_string()));
-		}
-		if c.iter().any(|ci| ci.ctx() != ctx) {
-			return Err(Error::DefaultError("Invalid context".to_string()));
+
+		// Check that all polynomials have the expected representation and context.
+		for ci in c.iter() {
+			if ci.representation() != &Representation::Ntt {
+				return Err(Error::MathError(math::Error::IncorrectRepresentation(
+					ci.representation().clone(),
+					Representation::Ntt,
+				)));
+			}
+			if ci.ctx() != ctx {
+				return Err(Error::MathError(math::Error::InvalidContext));
+			}
 		}
 
 		Ok(Self {
@@ -108,9 +114,7 @@ impl DeserializeParametrized for Ciphertext {
 		if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
 			Ciphertext::try_convert_from(&ctp, par)
 		} else {
-			Err(Error::DefaultError(
-				"This serialization is incorrect".to_string(),
-			))
+			Err(Error::SerializationError)
 		}
 	}
 
@@ -175,7 +179,10 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		if !value.seed.is_empty() {
 			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 			if try_seed.is_err() {
-				return Err(Error::DefaultError("Invalid seed".to_string()));
+				return Err(Error::MathError(math::Error::InvalidSeedSize(
+					value.seed.len(),
+					<ChaCha8Rng as SeedableRng>::Seed::default().len(),
+				)));
 			}
 			seed = try_seed.ok();
 			let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, seed.unwrap());
@@ -204,11 +211,11 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_add() {
+	fn add() {
 		let ntests = 100;
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			for _ in 0..ntests {
 				let a = params.plaintext.random_vec(params.degree());
@@ -239,10 +246,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_sub() {
+	fn sub() {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -274,10 +281,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_neg() {
+	fn neg() {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -301,10 +308,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_scalar_mul() {
+	fn scalar_mul() {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let ntests = 100;
 			for _ in 0..ntests {
@@ -356,8 +363,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2));
+	fn mul() -> Result<(), Box<dyn Error>> {
+		let par = Arc::new(BfvParameters::default(2, 8));
 		for _ in 0..50 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
@@ -387,10 +394,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
+	fn proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -407,10 +414,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize() -> Result<(), Box<dyn Error>> {
+	fn serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -423,10 +430,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_new() -> Result<(), Box<dyn Error>> {
+	fn new() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -460,10 +467,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
+	fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(1)),
-			Arc::new(BfvParameters::default(2)),
+			Arc::new(BfvParameters::default(1, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());

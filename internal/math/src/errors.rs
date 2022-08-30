@@ -28,6 +28,10 @@ pub enum Error {
 	#[error("Incorrect representation: got {0:?}, expected {1:?}.")]
 	IncorrectRepresentation(Representation, Representation),
 
+	/// Indicates that the seed size is incorrect.
+	#[error("Invalid seed: got {0} bytes, expected {1} bytes.")]
+	InvalidSeedSize(usize, usize),
+
 	/// Indicates a default error
 	/// TODO: To delete when transition is over
 	#[error("{0}")]

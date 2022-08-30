@@ -313,7 +313,7 @@ mod tests {
 	#[test]
 	fn try_encode() -> Result<(), Box<dyn Error>> {
 		// The default test parameters support both Poly and Simd encodings
-		let params = Arc::new(BfvParameters::default(1));
+		let params = Arc::new(BfvParameters::default(1, 8));
 		let a = params.plaintext.random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&[0u64; 9] as &[u64], Encoding::poly(), &params);
@@ -349,9 +349,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_encode_decode() {
+	fn encode_decode() {
 		(0..40).for_each(|_| {
-			let params = Arc::new(BfvParameters::default(1));
+			let params = Arc::new(BfvParameters::default(1, 8));
 			let a = params.plaintext.random_vec(params.degree());
 
 			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::simd(), &params);
@@ -373,8 +373,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_partial_eq() -> Result<(), Box<dyn Error>> {
-		let params = Arc::new(BfvParameters::default(1));
+	fn partial_eq() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(1, 8));
 		let a = params.plaintext.random_vec(params.degree());
 
 		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::poly(), &params)?;

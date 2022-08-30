@@ -7,7 +7,7 @@ use itertools::Itertools;
 use math::{
 	rns::{RnsContext, ScalingFactor},
 	rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
-	zq::{nfl::generate_prime, ntt::NttOperator, Modulus},
+	zq::{ntt::NttOperator, primes::generate_prime, Modulus},
 };
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -125,9 +125,12 @@ impl BfvParameters {
 	}
 
 	#[cfg(test)]
-	pub fn default(num_moduli: usize) -> Self {
+	pub fn default(num_moduli: usize, degree: usize) -> Self {
+		if !degree.is_power_of_two() || degree < 8 {
+			panic!("Invalid degree");
+		}
 		BfvParametersBuilder::new()
-			.set_degree(8)
+			.set_degree(degree)
 			.set_plaintext_modulus(1153)
 			.set_moduli_sizes(&vec![62usize; num_moduli])
 			.build()
@@ -432,7 +435,7 @@ mod tests {
 
 	// TODO: To fix when errors handling is fixed.
 	// #[test]
-	// fn test_builder()  -> Result<(), Box<dyn Error>> {
+	// fn builder()  -> Result<(), Box<dyn Error>> {
 	// 	let params = BfvParametersBuilder::new().build();
 	// 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified degree"));
 
@@ -518,16 +521,18 @@ mod tests {
 	// }
 
 	#[test]
-	fn test_default() {
-		let params = BfvParameters::default(1);
+	fn default() {
+		let params = BfvParameters::default(1, 8);
 		assert_eq!(params.moduli.len(), 1);
+		assert_eq!(params.degree(), 8);
 
-		let params = BfvParameters::default(2);
+		let params = BfvParameters::default(2, 16);
 		assert_eq!(params.moduli.len(), 2);
+		assert_eq!(params.degree(), 16);
 	}
 
 	#[test]
-	fn test_ciphertext_moduli() -> Result<(), Box<dyn Error>> {
+	fn ciphertext_moduli() -> Result<(), Box<dyn Error>> {
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(2)
@@ -561,7 +566,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_serialize() -> Result<(), Box<dyn Error>> {
+	fn serialize() -> Result<(), Box<dyn Error>> {
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
 			.set_plaintext_modulus(2)

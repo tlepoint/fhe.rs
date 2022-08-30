@@ -39,7 +39,7 @@ mod tests {
 	];
 
 	#[test]
-	fn test_serialize() -> Result<(), Box<dyn Error>> {
+	fn serialize() -> Result<(), Box<dyn Error>> {
 		for qi in Q {
 			let ctx = Arc::new(Context::new(&[*qi], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);

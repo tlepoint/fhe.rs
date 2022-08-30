@@ -310,29 +310,28 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 		};
 	}
 
-	if n % 16 == 0 {
-		for i in 0..n / 16 {
-			fma_at!(16 * i);
-			fma_at!(16 * i + 1);
-			fma_at!(16 * i + 2);
-			fma_at!(16 * i + 3);
-			fma_at!(16 * i + 4);
-			fma_at!(16 * i + 5);
-			fma_at!(16 * i + 6);
-			fma_at!(16 * i + 7);
-			fma_at!(16 * i + 8);
-			fma_at!(16 * i + 9);
-			fma_at!(16 * i + 10);
-			fma_at!(16 * i + 11);
-			fma_at!(16 * i + 12);
-			fma_at!(16 * i + 13);
-			fma_at!(16 * i + 14);
-			fma_at!(16 * i + 15);
-		}
-	} else {
-		for (outj, xj, yj) in izip!(out, x, y) {
-			*outj += *xj as u128 * *yj as u128;
-		}
+	let r = n / 16;
+	for i in 0..r {
+		fma_at!(16 * i);
+		fma_at!(16 * i + 1);
+		fma_at!(16 * i + 2);
+		fma_at!(16 * i + 3);
+		fma_at!(16 * i + 4);
+		fma_at!(16 * i + 5);
+		fma_at!(16 * i + 6);
+		fma_at!(16 * i + 7);
+		fma_at!(16 * i + 8);
+		fma_at!(16 * i + 9);
+		fma_at!(16 * i + 10);
+		fma_at!(16 * i + 11);
+		fma_at!(16 * i + 12);
+		fma_at!(16 * i + 13);
+		fma_at!(16 * i + 14);
+		fma_at!(16 * i + 15);
+	}
+
+	for i in 0..n % 16 {
+		fma_at!(16 * r + i);
 	}
 }
 
@@ -409,7 +408,6 @@ where
 			}
 		}
 	} else {
-		let now = std::time::Instant::now();
 		// We don't need to check the condition on the max, it should shave off a few
 		// cycles.
 		for (pi, qi) in izip!(p, q) {
@@ -419,7 +417,6 @@ where
 			let qi_slice = qij.as_slice().unwrap();
 			unsafe { fma(out_slice, pi_slice, qi_slice) }
 		}
-		println!("Inner prod: {:?}", now.elapsed());
 	}
 	// Last reduction to create the coefficients
 	let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
@@ -462,7 +459,7 @@ mod tests {
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
 
 	#[test]
-	fn test_add() -> Result<(), Box<dyn Error>> {
+	fn add() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -502,7 +499,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_sub() -> Result<(), Box<dyn Error>> {
+	fn sub() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -542,7 +539,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul() -> Result<(), Box<dyn Error>> {
+	fn mul() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -574,7 +571,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_mul_shoup() -> Result<(), Box<dyn Error>> {
+	fn mul_shoup() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
@@ -606,7 +603,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_neg() -> Result<(), Box<dyn Error>> {
+	fn neg() -> Result<(), Box<dyn Error>> {
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);

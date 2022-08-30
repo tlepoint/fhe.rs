@@ -160,8 +160,8 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	#[test]
-	fn test_relinearization() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn relinearization() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;
@@ -211,8 +211,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_relinearization_leveled() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(5))] {
+	fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(5, 8))] {
 			for ciphertext_level in 0..3 {
 				for key_level in 0..ciphertext_level {
 					for _ in 0..10 {
@@ -268,8 +268,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_proto_conversion() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2))] {
+	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		for params in [Arc::new(BfvParameters::default(2, 8))] {
 			let sk = SecretKey::random(&params);
 			let rk = RelinearizationKey::new(&sk)?;
 			let proto = RelinearizationKeyProto::from(&rk);

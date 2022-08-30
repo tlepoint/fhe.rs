@@ -193,7 +193,7 @@ mod tests {
 	};
 
 	#[test]
-	fn test_prime() {
+	fn prime() {
 		assert!(is_prime(2));
 		assert!(is_prime(3));
 		assert!(is_prime(5));
@@ -210,7 +210,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_sample_cbd() {
+	fn sample_cbd() {
 		assert!(sample_vec_cbd(10, 0).is_err());
 		assert!(sample_vec_cbd(10, 17).is_err());
 

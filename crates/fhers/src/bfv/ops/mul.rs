@@ -3,7 +3,7 @@ use std::sync::Arc;
 use math::{
 	rns::ScalingFactor,
 	rq::{scaler::Scaler, Context, Representation},
-	zq::nfl::generate_prime,
+	zq::primes::generate_prime,
 };
 use num_bigint::BigUint;
 
@@ -238,7 +238,7 @@ mod tests {
 	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use math::{
 		rns::{RnsContext, ScalingFactor},
-		zq::nfl::generate_prime,
+		zq::primes::generate_prime,
 	};
 	use num_bigint::BigUint;
 	use std::{error::Error, sync::Arc};
@@ -247,7 +247,7 @@ mod tests {
 
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(3));
+		let par = Arc::new(BfvParameters::default(3, 8));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
@@ -279,7 +279,7 @@ mod tests {
 
 	#[test]
 	fn mul_at_level() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(3));
+		let par = Arc::new(BfvParameters::default(3, 8));
 		for _ in 0..15 {
 			for level in 0..2 {
 				let values = par.plaintext.random_vec(par.degree());
@@ -314,7 +314,7 @@ mod tests {
 
 	#[test]
 	fn mul_no_relin() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2));
+		let par = Arc::new(BfvParameters::default(2, 8));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
@@ -350,7 +350,7 @@ mod tests {
 	fn different_mul_strategy() -> Result<(), Box<dyn Error>> {
 		// Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
-		let par = Arc::new(BfvParameters::default(3));
+		let par = Arc::new(BfvParameters::default(3, 8));
 		let mut extended_basis = par.moduli().to_vec();
 		extended_basis
 			.push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());
