@@ -148,7 +148,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
 		}
 		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
-			return Err(Error::SimdUnsupported);
+			return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
 		}
 		let ctx = par.ctx_at_level(encoding.level)?;
 		let num_plaintexts = value.len().div_ceil(par.degree());
@@ -196,7 +196,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
 		}
 		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
-			return Err(Error::SimdUnsupported);
+			return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
 		}
 		let ctx = par.ctx_at_level(encoding.level)?;
 		let num_plaintexts = value.len().div_ceil(par.degree());
@@ -282,7 +282,7 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 					w.zeroize();
 					Ok(w_reordered)
 				} else {
-					Err(Error::SimdUnsupported)
+					Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()))
 				}
 			}
 		}
@@ -387,6 +387,37 @@ mod tests {
 		// time.
 		same_plaintext.encoding = None;
 		assert_eq!(plaintext, same_plaintext);
+
+		Ok(())
+	}
+
+	#[test]
+	fn try_decode_errors() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(1, 8));
+		let a = params.plaintext.random_vec(params.degree());
+
+		let mut plaintext = Plaintext::try_encode(&a as &[u64], Encoding::poly(), &params)?;
+
+		assert!(Vec::<u64>::try_decode(&plaintext, None).is_ok());
+		assert!(
+			Vec::<u64>::try_decode(&plaintext, Encoding::simd()).is_err_and(|err| err
+				== &crate::Error::EncodingMismatch(
+					Encoding::simd().into(),
+					Encoding::poly().into()
+				))
+		);
+		assert!(
+			Vec::<u64>::try_decode(&plaintext, Encoding::poly_at_level(1)).is_err_and(|err| err
+				== &crate::Error::EncodingMismatch(
+					Encoding::poly_at_level(1).into(),
+					Encoding::poly().into()
+				))
+		);
+
+		plaintext.encoding = None;
+		assert!(Vec::<u64>::try_decode(&plaintext, None).is_err_and(
+			|err| err == &crate::Error::UnspecifiedInput("No encoding specified".to_string())
+		));
 
 		Ok(())
 	}

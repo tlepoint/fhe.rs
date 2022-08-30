@@ -31,9 +31,9 @@ pub enum Error {
 	#[error("Encoding mismatch: found {0}, expected {1}")]
 	EncodingMismatch(String, String),
 
-	/// Indicates that the Simd encoding is not supported.
-	#[error("Does not support Simd encoding")]
-	SimdUnsupported,
+	/// Indicates that the encoding is not supported.
+	#[error("Does not support {0} encoding")]
+	EncodingNotSupported(String),
 
 	/// Indicates a parameter error.
 	#[error("{0}")]
@@ -77,4 +77,34 @@ pub enum ParametersError {
 	/// Indicates that too few parameters were specified.
 	#[error("{0}")]
 	NotEnoughSpecified(String),
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::Error;
+
+	#[test]
+	fn error_strings() {
+		assert_eq!(Error::SerializationError.to_string(), "Serialization error");
+		assert_eq!(
+			Error::TooManyValues(20, 17).to_string(),
+			"Too many values provided: 20 exceeds limit 17"
+		);
+		assert_eq!(
+			Error::TooFewValues(10, 17).to_string(),
+			"Too few values provided: 10 is below limit 17"
+		);
+		assert_eq!(
+			Error::UnspecifiedInput("test string".to_string()).to_string(),
+			"test string"
+		);
+		assert_eq!(
+			Error::MathError(math::Error::InvalidContext).to_string(),
+			math::Error::InvalidContext.to_string()
+		);
+		assert_eq!(
+			Error::EncodingNotSupported("test".to_string()).to_string(),
+			"Does not support test encoding"
+		)
+	}
 }

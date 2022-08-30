@@ -1,11 +1,19 @@
 //! The encoding type for BFV.
 
+use std::fmt::Display;
+
 use fhers_traits::FhePlaintextEncoding;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EncodingEnum {
 	Poly,
 	Simd,
+}
+
+impl Display for EncodingEnum {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{:?}", self)
+	}
 }
 
 /// An encoding for the plaintext.
