@@ -1,5 +1,6 @@
 output-type: cobertura
 output-path: ./cobertura.xml
 ignore:
+  - "internal/math/src/proto/*"
   - "crates/fhers/src/bfv/proto/*"
   - "crates/fhers/examples/utilities/src/*"
