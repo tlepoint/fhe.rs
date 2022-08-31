@@ -76,15 +76,19 @@ pub enum ParametersError {
 
 	/// Indicates that too few parameters were specified.
 	#[error("{0}")]
-	NotEnoughSpecified(String),
+	TooFewSpecified(String),
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::Error;
+	use crate::{Error, ParametersError};
 
 	#[test]
 	fn error_strings() {
+		assert_eq!(
+			Error::MathError(math::Error::InvalidContext).to_string(),
+			math::Error::InvalidContext.to_string()
+		);
 		assert_eq!(Error::SerializationError.to_string(), "Serialization error");
 		assert_eq!(
 			Error::TooManyValues(20, 17).to_string(),
@@ -99,12 +103,44 @@ mod tests {
 			"test string"
 		);
 		assert_eq!(
-			Error::MathError(math::Error::InvalidContext).to_string(),
-			math::Error::InvalidContext.to_string()
+			Error::EncodingMismatch("enc1".to_string(), "enc2".to_string()).to_string(),
+			"Encoding mismatch: found enc1, expected enc2"
 		);
 		assert_eq!(
 			Error::EncodingNotSupported("test".to_string()).to_string(),
 			"Does not support test encoding"
-		)
+		);
+		assert_eq!(
+			Error::ParametersError(ParametersError::InvalidDegree(10)).to_string(),
+			ParametersError::InvalidDegree(10).to_string()
+		);
+	}
+
+	#[test]
+	fn parameters_error_strings() {
+		assert_eq!(
+			ParametersError::InvalidDegree(10).to_string(),
+			"Invalid degree: 10 is not a power of 2 larger than 8"
+		);
+		assert_eq!(
+			ParametersError::InvalidModulusSize(1, 2, 3).to_string(),
+			"Invalid modulus size: 1, expected an integer between 2 and 3"
+		);
+		assert_eq!(
+			ParametersError::NotEnoughPrimes(1, 2).to_string(),
+			"Not enough primes of size 1 for polynomials of degree 2"
+		);
+		assert_eq!(
+			ParametersError::InvalidPlaintext("test".to_string()).to_string(),
+			"test"
+		);
+		assert_eq!(
+			ParametersError::TooManySpecified("test".to_string()).to_string(),
+			"test"
+		);
+		assert_eq!(
+			ParametersError::TooFewSpecified("test".to_string()).to_string(),
+			"test"
+		);
 	}
 }

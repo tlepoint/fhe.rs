@@ -38,16 +38,33 @@ pub enum Error {
 	Default(String),
 }
 
-// While switching to an Error enum, we provide a mapping to String.
-// TODO: Remove when the transition is complete.
-impl From<Error> for String {
-	fn from(e: Error) -> Self {
-		e.to_string()
-	}
-}
+#[cfg(test)]
+mod tests {
+	use crate::{rq::Representation, Error};
 
-impl From<String> for Error {
-	fn from(s: String) -> Self {
-		Error::Default(s)
+	#[test]
+	fn error_strings() {
+		assert_eq!(
+			Error::InvalidModulus(0).to_string(),
+			"Invalid modulus: modulus 0 should be between 2 and (1 << 62) - 1."
+		);
+		assert_eq!(Error::Serialization("test".to_string()).to_string(), "test");
+		assert_eq!(
+			Error::NoMoreContext.to_string(),
+			"This is the last context."
+		);
+		assert_eq!(
+			Error::InvalidContext.to_string(),
+			"Invalid context provided."
+		);
+		assert_eq!(
+			Error::IncorrectRepresentation(Representation::Ntt, Representation::NttShoup)
+				.to_string(),
+			"Incorrect representation: got Ntt, expected NttShoup."
+		);
+		assert_eq!(
+			Error::InvalidSeedSize(0, 1).to_string(),
+			"Invalid seed: got 0 bytes, expected 1 bytes."
+		);
 	}
 }

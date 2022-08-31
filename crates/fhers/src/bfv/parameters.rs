@@ -251,7 +251,7 @@ impl BfvParametersBuilder {
 					.to_string(),
 			)));
 		} else if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
-			return Err(Error::ParametersError(ParametersError::NotEnoughSpecified(
+			return Err(Error::ParametersError(ParametersError::TooFewSpecified(
 				"One of `ciphertext_moduli` and `ciphertext_moduli_sizes` must be specified"
 					.to_string(),
 			)));

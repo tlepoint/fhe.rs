@@ -3,9 +3,8 @@ use crate::{
 	bfv::{BfvParameters, Encoding, PlaintextVec},
 	Error, Result,
 };
-use fhers_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
+use fhers_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
-use std::cmp::min;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -136,107 +135,6 @@ impl FheEncoder<&[u64]> for Plaintext {
 	}
 }
 
-impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
-	type Error = Error;
-
-	unsafe fn try_encode_vt(
-		value: &[u64],
-		encoding: Encoding,
-		par: &Arc<BfvParameters>,
-	) -> Result<Self> {
-		if value.is_empty() {
-			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
-		}
-		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
-			return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
-		}
-		let ctx = par.ctx_at_level(encoding.level)?;
-		let num_plaintexts = value.len().div_ceil(par.degree());
-
-		Ok(PlaintextVec(
-			(0..num_plaintexts)
-				.map(|i| {
-					let slice = &value[i * par.degree()..min(value.len(), (i + 1) * par.degree())];
-					let mut v = vec![0u64; par.degree()];
-					match encoding.encoding {
-						EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
-						EncodingEnum::Simd => {
-							for i in 0..slice.len() {
-								v[par.matrix_reps_index_map[i]] = slice[i];
-							}
-							par.op.as_ref().unwrap().backward_vt(v.as_mut_ptr());
-						}
-					};
-
-					let mut poly = Poly::try_convert_from(
-						&v as &[u64],
-						ctx,
-						true,
-						Representation::PowerBasis,
-					)?;
-					poly.change_representation(Representation::Ntt);
-
-					Ok(Plaintext {
-						par: par.clone(),
-						value: v.into_boxed_slice(),
-						encoding: Some(encoding.clone()),
-						poly_ntt: poly,
-						level: encoding.level,
-					})
-				})
-				.collect::<Result<Vec<Plaintext>>>()?,
-		))
-	}
-}
-
-impl FheEncoder<&[u64]> for PlaintextVec {
-	type Error = Error;
-	fn try_encode(value: &[u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-		if value.is_empty() {
-			return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
-		}
-		if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
-			return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
-		}
-		let ctx = par.ctx_at_level(encoding.level)?;
-		let num_plaintexts = value.len().div_ceil(par.degree());
-
-		Ok(PlaintextVec(
-			(0..num_plaintexts)
-				.map(|i| {
-					let slice = &value[i * par.degree()..min(value.len(), (i + 1) * par.degree())];
-					let mut v = vec![0u64; par.degree()];
-					match encoding.encoding {
-						EncodingEnum::Poly => v[..slice.len()].copy_from_slice(slice),
-						EncodingEnum::Simd => {
-							for i in 0..slice.len() {
-								v[par.matrix_reps_index_map[i]] = slice[i];
-							}
-							par.op.as_ref().unwrap().backward(&mut v);
-						}
-					};
-
-					let mut poly = Poly::try_convert_from(
-						&v as &[u64],
-						ctx,
-						false,
-						Representation::PowerBasis,
-					)?;
-					poly.change_representation(Representation::Ntt);
-
-					Ok(Plaintext {
-						par: par.clone(),
-						value: v.into_boxed_slice(),
-						encoding: Some(encoding.clone()),
-						poly_ntt: poly,
-						level: encoding.level,
-					})
-				})
-				.collect::<Result<Vec<Plaintext>>>()?,
-		))
-	}
-}
-
 impl FheEncoder<&[i64]> for Plaintext {
 	type Error = Error;
 	fn try_encode(value: &[i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
@@ -308,7 +206,9 @@ mod tests {
 	use super::{Encoding, Plaintext};
 	use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
 	use fhers_traits::{FheDecoder, FheEncoder};
+	use math::rq::{Poly, Representation};
 	use std::{error::Error, sync::Arc};
+	use zeroize::Zeroize;
 
 	#[test]
 	fn try_encode() -> Result<(), Box<dyn Error>> {
@@ -418,6 +318,51 @@ mod tests {
 		assert!(Vec::<u64>::try_decode(&plaintext, None).is_err_and(
 			|err| err == &crate::Error::UnspecifiedInput("No encoding specified".to_string())
 		));
+
+		Ok(())
+	}
+
+	#[test]
+	fn zero() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(1, 8));
+		let plaintext = Plaintext::zero(Encoding::poly(), &params)?;
+
+		assert_eq!(plaintext.value, Box::<[u64]>::from([0u64; 8]));
+		assert_eq!(
+			plaintext.poly_ntt,
+			Poly::zero(&params.ctx[0], Representation::Ntt)
+		);
+
+		Ok(())
+	}
+
+	#[test]
+	fn zeroize() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(1, 8));
+		let a = params.plaintext.random_vec(params.degree());
+		let mut plaintext = Plaintext::try_encode(&a as &[u64], Encoding::poly(), &params)?;
+
+		plaintext.zeroize();
+
+		assert_eq!(plaintext, Plaintext::zero(Encoding::poly(), &params)?);
+
+		Ok(())
+	}
+
+	#[test]
+	fn try_encode_level() -> Result<(), Box<dyn Error>> {
+		// The default test parameters support both Poly and Simd encodings
+		let params = Arc::new(BfvParameters::default(10, 8));
+		let a = params.plaintext.random_vec(params.degree());
+
+		for level in 0..10 {
+			let plaintext =
+				Plaintext::try_encode(&a as &[u64], Encoding::poly_at_level(level), &params)?;
+			assert_eq!(plaintext.level(), level);
+			let plaintext =
+				Plaintext::try_encode(&a as &[u64], Encoding::simd_at_level(level), &params)?;
+			assert_eq!(plaintext.level(), level);
+		}
 
 		Ok(())
 	}
