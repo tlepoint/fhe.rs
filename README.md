@@ -9,3 +9,6 @@ This repository contains the `fhe.rs` library, a cryptographic library in Rust f
 
 > **Note**
 > This library is not related to the `concrete` ecosystems (Zama's fully homomorphic encryption in Rust), available at [concrete.rs](https://concrete.rs).
+
+> **Warning**
+> `fhe.rs` is a beta library, and **should be considered unstable with potential breaking API changes until version 0.1.0 is released!**
