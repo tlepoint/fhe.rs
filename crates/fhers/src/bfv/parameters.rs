@@ -12,6 +12,7 @@ use math::{
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use protobuf::Message;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -124,6 +125,84 @@ impl BfvParameters {
 		self.ctx[0].niterations_to(ctx).map_err(Error::MathError)
 	}
 
+	/// Vector of default parameters providing about 128 bits of security
+	/// according to the <https://homomorphicencryption.org> standard.
+	pub fn default_parameters_128(plaintext_nbits: usize) -> Vec<Arc<BfvParameters>> {
+		debug_assert!(plaintext_nbits < 64);
+
+		let mut n_and_qs = HashMap::new();
+		n_and_qs.insert(1024, vec![0x7e00001]);
+		n_and_qs.insert(2048, vec![0x3fffffff000001]);
+		n_and_qs.insert(4096, vec![0xffffee001, 0xffffc4001, 0x1ffffe0001]);
+		n_and_qs.insert(
+			8192,
+			vec![
+				0x7fffffd8001,
+				0x7fffffc8001,
+				0xfffffffc001,
+				0xffffff6c001,
+				0xfffffebc001,
+			],
+		);
+		n_and_qs.insert(
+			16384,
+			vec![
+				0xfffffffd8001,
+				0xfffffffa0001,
+				0xfffffff00001,
+				0x1fffffff68001,
+				0x1fffffff50001,
+				0x1ffffffee8001,
+				0x1ffffffea0001,
+				0x1ffffffe88001,
+				0x1ffffffe48001,
+			],
+		);
+		n_and_qs.insert(
+			32768,
+			vec![
+				0x7fffffffe90001,
+				0x7fffffffbf0001,
+				0x7fffffffbd0001,
+				0x7fffffffba0001,
+				0x7fffffffaa0001,
+				0x7fffffffa50001,
+				0x7fffffff9f0001,
+				0x7fffffff7e0001,
+				0x7fffffff770001,
+				0x7fffffff380001,
+				0x7fffffff330001,
+				0x7fffffff2d0001,
+				0x7fffffff170001,
+				0x7fffffff150001,
+				0x7ffffffef00001,
+				0xfffffffff70001,
+			],
+		);
+
+		let mut params = vec![];
+
+		for n in n_and_qs.keys().sorted() {
+			let moduli = n_and_qs.get(n).unwrap();
+			if let Some(plaintext_modulus) = generate_prime(
+				plaintext_nbits,
+				2 * *n as u64,
+				u64::MAX >> (64 - plaintext_nbits),
+			) {
+				params.push(Arc::new(
+					BfvParametersBuilder::new()
+						.set_degree(*n as usize)
+						.set_plaintext_modulus(plaintext_modulus)
+						.set_moduli(moduli)
+						.build()
+						.unwrap(),
+				))
+			}
+		}
+
+		params
+	}
+
 	#[cfg(test)]
 	pub fn default(num_moduli: usize, degree: usize) -> Self {
 		if !degree.is_power_of_two() || degree < 8 {
@@ -155,7 +234,7 @@ impl BfvParametersBuilder {
 		Self {
 			degree: Default::default(),
 			plaintext: Default::default(),
-			variance: 1,
+			variance: 3,
 			ciphertext_moduli: Default::default(),
 			ciphertext_moduli_sizes: Default::default(),
 		}

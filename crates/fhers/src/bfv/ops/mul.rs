@@ -159,18 +159,17 @@ impl Multiplicator {
 				"Multiplication can only be performed on ciphertexts of size 2".to_string(),
 			));
 		}
-		println!("here");
 
 		// Extend
-		let mut now = std::time::SystemTime::now();
+		// let mut now = std::time::SystemTime::now();
 		let c00 = lhs.c[0].scale(&self.extender_lhs)?;
 		let c01 = lhs.c[1].scale(&self.extender_lhs)?;
 		let c10 = rhs.c[0].scale(&self.extender_rhs)?;
 		let c11 = rhs.c[1].scale(&self.extender_rhs)?;
-		println!("Extend: {:?}", now.elapsed().unwrap());
+		// println!("Extend: {:?}", now.elapsed().unwrap());
 
 		// Multiply
-		now = std::time::SystemTime::now();
+		// now = std::time::SystemTime::now();
 		let mut c0 = &c00 * &c10;
 		let mut c1 = &c00 * &c11;
 		c1 += &(&c01 * &c10);
@@ -178,20 +177,20 @@ impl Multiplicator {
 		c0.change_representation(Representation::PowerBasis);
 		c1.change_representation(Representation::PowerBasis);
 		c2.change_representation(Representation::PowerBasis);
-		println!("Multiply: {:?}", now.elapsed().unwrap());
+		// println!("Multiply: {:?}", now.elapsed().unwrap());
 
 		// Scale
-		now = std::time::SystemTime::now();
+		// now = std::time::SystemTime::now();
 		let c0 = c0.scale(&self.down_scaler)?;
 		let c1 = c1.scale(&self.down_scaler)?;
 		let c2 = c2.scale(&self.down_scaler)?;
-		println!("Scale: {:?}", now.elapsed().unwrap());
+		// println!("Scale: {:?}", now.elapsed().unwrap());
 
 		let mut c = vec![c0, c1, c2];
 
 		// Relinearize
 		if let Some(rk) = self.rk.as_ref() {
-			now = std::time::SystemTime::now();
+			// now = std::time::SystemTime::now();
 			let (mut c0r, mut c1r) = rk.relinearizes_poly(&c[2])?;
 			if c0r.ctx() != c[0].ctx() {
 				c0r.change_representation(Representation::PowerBasis);
@@ -205,7 +204,7 @@ impl Multiplicator {
 			c[0] += &c0r;
 			c[1] += &c1r;
 			c.truncate(2);
-			println!("Relinearize: {:?}", now.elapsed().unwrap());
+			// println!("Relinearize: {:?}", now.elapsed().unwrap());
 		}
 
 		// We construct a ciphertext, but it may not have the right representation for
@@ -218,14 +217,14 @@ impl Multiplicator {
 		};
 
 		if self.mod_switch {
-			now = std::time::SystemTime::now();
+			// now = std::time::SystemTime::now();
 			c.mod_switch_to_next_level();
-			println!("Modulo switch: {:?}", now.elapsed().unwrap());
+		// println!("Modulo switch: {:?}", now.elapsed().unwrap());
 		} else {
-			now = std::time::SystemTime::now();
+			// now = std::time::SystemTime::now();
 			c.c.iter_mut()
 				.for_each(|p| p.change_representation(Representation::Ntt));
-			println!("Convert to NTT: {:?}", now.elapsed().unwrap());
+			// println!("Convert to NTT: {:?}", now.elapsed().unwrap());
 		}
 
 		Ok(c)

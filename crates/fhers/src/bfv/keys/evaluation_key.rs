@@ -95,7 +95,7 @@ impl EvaluationKey {
 	}
 
 	/// Homomorphically rotate the rows of the plaintext
-	pub fn rotates_row(&self, ct: &Ciphertext) -> Result<Ciphertext> {
+	pub fn rotates_rows(&self, ct: &Ciphertext) -> Result<Ciphertext> {
 		if !self.supports_row_rotation() {
 			Err(Error::DefaultError(
 				"This key does not support the row rotation functionality".to_string(),
@@ -119,7 +119,7 @@ impl EvaluationKey {
 	}
 
 	/// Homomorphically rotate the columns of the plaintext
-	pub fn rotates_column_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext> {
+	pub fn rotates_columns_by(&self, ct: &Ciphertext, i: usize) -> Result<Ciphertext> {
 		if !self.supports_column_rotation_by(i) {
 			Err(Error::DefaultError(
 				"This key does not support rotating the columns by this index".to_string(),
@@ -635,7 +635,7 @@ mod tests {
 						)?;
 						let ct = sk.try_encrypt(&pt)?;
 
-						let ct2 = ek.rotates_row(&ct)?;
+						let ct2 = ek.rotates_rows(&ct)?;
 						let pt = sk.try_decrypt(&ct2)?;
 						assert_eq!(
 							Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(ciphertext_level))?,
@@ -687,7 +687,7 @@ mod tests {
 							)?;
 							let ct = sk.try_encrypt(&pt)?;
 
-							let ct2 = ek.rotates_column_by(&ct, i)?;
+							let ct2 = ek.rotates_columns_by(&ct, i)?;
 							let pt = sk.try_decrypt(&ct2)?;
 							assert_eq!(
 								Vec::<u64>::try_decode(
