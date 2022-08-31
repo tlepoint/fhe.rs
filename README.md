@@ -1,5 +1,4 @@
-<h1 align="center">fhe.rs</h1>
-<h2 align="center">Fully Homomorphic Encryption in Rust</h2>
+<h2 align="center">fhe.rs: Fully Homomorphic Encryption in Rust</h2>
 <p align="center">
 <a href="https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml"><img src="https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml/badge.svg?branch=main"/></a>
 <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg"/></a>
