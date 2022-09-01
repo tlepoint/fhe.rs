@@ -1,0 +1,5 @@
+coverage:
+  notify:
+    patch:
+      default:
+        threshold: 1%

@@ -14,7 +14,7 @@ mod proto;
 pub mod traits;
 pub use ciphertext::Ciphertext;
 pub use encoding::Encoding;
-pub use keys::{EvaluationKey, EvaluationKeyBuilder, RelinearizationKey, SecretKey};
+pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::Multiplicator;
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;

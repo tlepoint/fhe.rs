@@ -36,3 +36,7 @@ message Parameters {
     uint64 plaintext = 3;
     uint32 variance = 4;
 }
+
+message PublicKey {
+    Ciphertext c = 1;
+}

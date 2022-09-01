@@ -3,8 +3,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhers::bfv::{
-	BfvParameters, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, RelinearizationKey,
-	SecretKey,
+	BfvParameters, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, PublicKey,
+	RelinearizationKey, SecretKey,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
@@ -60,6 +60,13 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			BenchmarkId::new("keygen_sk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
 				b.iter(|| SecretKey::random(&par));
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("keygen_pk", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| PublicKey::new(&sk));
 			},
 		);
 
