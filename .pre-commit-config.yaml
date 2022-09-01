@@ -27,3 +27,10 @@ repos:
         language: system
         types: [rust]
         args: ["--all", "--", "--check"]
+      - id: clippy
+        name: clippy
+        description: Run linter
+        entry: cargo +nightly clippy
+        language: system
+        types: [rust]
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
