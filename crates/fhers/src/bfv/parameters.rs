@@ -107,8 +107,9 @@ impl BfvParameters {
 		self.plaintext_modulus
 	}
 
-	/// Returns the maximum level allowed by these parameters.
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// Returns the maximum level allowed by these parameters.
 	pub fn max_level(&self) -> usize {
 		self.moduli.len() - 1
 	}
@@ -409,7 +410,6 @@ impl BfvParametersBuilder {
 				&ctx_i,
 				&mul_1_ctx,
 				ScalingFactor::one(),
-				ScalingFactor::one(),
 				ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx_i.modulus()),
 			)?);
 
@@ -481,8 +481,7 @@ impl Deserialize for BfvParameters {
 /// Multiplication parameters
 #[derive(Debug, PartialEq, Eq, Default)]
 pub(crate) struct MultiplicationParameters {
-	pub(crate) extender_self: Scaler,
-	pub(crate) extender_other: Scaler,
+	pub(crate) extender: Scaler,
 	pub(crate) down_scaler: Scaler,
 	pub(crate) from: Arc<Context>,
 	pub(crate) to: Arc<Context>,
@@ -493,12 +492,10 @@ impl MultiplicationParameters {
 		from: &Arc<Context>,
 		to: &Arc<Context>,
 		up_self_factor: ScalingFactor,
-		up_other_factor: ScalingFactor,
 		down_factor: ScalingFactor,
 	) -> Result<Self> {
 		Ok(Self {
-			extender_self: Scaler::new(from, to, up_self_factor)?,
-			extender_other: Scaler::new(from, to, up_other_factor)?,
+			extender: Scaler::new(from, to, up_self_factor)?,
 			down_scaler: Scaler::new(to, from, down_factor)?,
 			from: from.clone(),
 			to: to.clone(),

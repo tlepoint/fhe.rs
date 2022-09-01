@@ -258,12 +258,13 @@ impl EvaluationKeyBuilder {
 		})
 	}
 
+	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Creates a new builder from the [`SecretKey`], for operations on
 	/// ciphertexts at level `ciphertext_level` using keys at level
 	/// `evaluation_key_level`. This raises an error if the key level is larger
 	/// than the ciphertext level, or if the ciphertext level is larger than the
 	/// maximum level supported by these parameters.
-	#[cfg(feature = "leveled_bfv")]
 	pub fn new_leveled(
 		sk: &SecretKey,
 		ciphertext_level: usize,

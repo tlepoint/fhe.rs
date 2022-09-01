@@ -44,8 +44,9 @@ impl Encoding {
 		}
 	}
 
-	/// A poly encoding at a given level.
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// A poly encoding at a given level.
 	pub fn poly_at_level(level: usize) -> Self {
 		Self {
 			encoding: EncodingEnum::Poly,
@@ -53,8 +54,9 @@ impl Encoding {
 		}
 	}
 
-	/// A simd encoding at a given level.
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// A simd encoding at a given level.
 	pub fn simd_at_level(level: usize) -> Self {
 		Self {
 			encoding: EncodingEnum::Simd,

@@ -232,6 +232,13 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			},
 		);
 
+		group.bench_function(
+			BenchmarkId::new("square", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| &c1 * &c1);
+			},
+		);
+
 		if let Some(rk) = rk.as_ref() {
 			group.bench_function(
 				BenchmarkId::new(

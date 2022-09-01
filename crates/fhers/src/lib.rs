@@ -6,6 +6,7 @@
 #![feature(int_log)]
 #![feature(int_roundings)]
 #![feature(let_chains)]
+#![feature(doc_cfg)]
 
 //! fhers: Fully Homomorphic Encryption in Rust.
 
