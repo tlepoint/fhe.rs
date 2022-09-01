@@ -26,4 +26,4 @@ repos:
         entry: cargo +nightly fmt
         language: system
         types: [rust]
-        args: ["--all -- --check"]
+        args: ["--all", "--", "--check"]

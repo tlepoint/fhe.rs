@@ -26,7 +26,7 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 	);
 	println!(
 		"{} {} must be at least 1, and {} must be between 1 and {}",
-		style("constaints:").magenta().bold(),
+		style("constraints:").magenta().bold(),
 		style("database_size").blue(),
 		style("element_size").blue(),
 		max_element_size
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let mut elements_size = 288;
 	for arg in &args {
 		if arg.starts_with("--database_size") {
-			let a: Vec<&str> = arg.rsplit("=").collect();
+			let a: Vec<&str> = arg.rsplit('=').collect();
 			if a.len() != 2 || a[0].parse::<usize>().is_err() {
 				print_notice_and_exit(
 					max_element_size,
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				database_size = a[0].parse::<usize>().unwrap()
 			}
 		} else if arg.starts_with("--element_size") {
-			let a: Vec<&str> = arg.rsplit("=").collect();
+			let a: Vec<&str> = arg.rsplit('=').collect();
 			if a.len() != 2 || a[0].parse::<usize>().is_err() {
 				print_notice_and_exit(
 					max_element_size,
@@ -154,7 +154,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
 		let level = (dim1 + dim2).next_power_of_two().ilog2();
-		let query_index = index / number_elements_per_plaintext(params.clone(), elements_size);
+		let query_index = index
+			/ number_elements_per_plaintext(
+				params.degree(),
+				params.plaintext().ilog2() as usize,
+				elements_size,
+			);
 		let mut pt = vec![0u64; dim1 + dim2];
 		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim2] = inv;
@@ -197,7 +202,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let pt = sk.try_decrypt(&response).unwrap();
 		let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
 		let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
-		let offset = index % number_elements_per_plaintext(params.clone(), elements_size);
+		let offset = index
+			% number_elements_per_plaintext(
+				params.degree(),
+				params.plaintext().ilog2() as usize,
+				elements_size,
+			);
 
 		println!("Noise in response: {:?}", unsafe {
 			sk.measure_noise(&response)

@@ -179,7 +179,10 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2, 8))] {
+		for params in [
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(4, 8)),
+		] {
 			let sk = SecretKey::random(&params);
 			let gk = GaloisKey::new(&sk, 9, 0, 0)?;
 			let proto = GaloisKeyProto::from(&gk);

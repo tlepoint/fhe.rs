@@ -615,7 +615,7 @@ mod tests {
 			.set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
 			.build();
 		assert!(params.is_ok_and(|p| p.moduli.to_vec()
-			== &[
+			== [
 				4611686018427387761,
 				4611686018427387617,
 				4611686018427387409,
@@ -636,7 +636,7 @@ mod tests {
 				2017,
 			])
 			.build();
-		assert!(params.is_ok_and(|p| p.moduli_sizes.to_vec() == &[62, 62, 62, 61, 60, 11]));
+		assert!(params.is_ok_and(|p| p.moduli_sizes.to_vec() == [62, 62, 62, 61, 60, 11]));
 
 		Ok(())
 	}

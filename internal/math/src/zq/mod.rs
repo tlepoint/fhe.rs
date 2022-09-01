@@ -989,13 +989,13 @@ mod tests {
 
 			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 			thread_rng().fill(&mut seed);
-			let x = p.random_vec_from_seed(size, seed.clone());
-			let y = p.random_vec_from_seed(size, seed.clone());
+			let x = p.random_vec_from_seed(size, seed);
+			let y = p.random_vec_from_seed(size, seed);
 			prop_assert_eq!(x.len(), size);
 			prop_assert_eq!(&x, &y);
 
 			thread_rng().fill(&mut seed);
-			let y = p.random_vec_from_seed(size, seed.clone());
+			let y = p.random_vec_from_seed(size, seed);
 			prop_assert_eq!(y.len(), size);
 			if p.modulus().leading_zeros() <= 30 {
 				prop_assert_ne!(x, y); // This will hold with probability at least 2^(-30)
@@ -1020,6 +1020,7 @@ mod tests {
 		let ntests = 100;
 		let mut rng = rand::thread_rng();
 
+		#[allow(clippy::single_element_loop)]
 		for p in [4611686018326724609] {
 			let q = Modulus::new(p).unwrap();
 			assert!(primes::supports_opt(p));
