@@ -197,7 +197,7 @@ mod tests {
 
 		// We can go down the chain of the MODULI.len() - 1 context's.
 		let mut number_of_children = 0;
-		let mut current = context.clone();
+		let mut current = context;
 		while current.next_context.is_some() {
 			number_of_children += 1;
 			current = current.next_context.as_ref().unwrap().clone();

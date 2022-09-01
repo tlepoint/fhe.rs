@@ -125,7 +125,7 @@ pub trait FheDecrypter<
 
 /// Serialization.
 pub trait Serialize {
-	/// Serialize `Self` into a vector fo bytes.
+	/// Serialize `Self` into a vector of bytes.
 	fn to_bytes(&self) -> Vec<u8>;
 }
 

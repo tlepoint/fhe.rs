@@ -1,0 +1,36 @@
+# https://pre-commit.com
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: forbid-new-submodules
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.12.2
+    hooks:
+      - id: typos
+  - repo: local
+    hooks:
+      - id: fmt
+        name: fmt
+        description: Format files
+        entry: cargo +nightly fmt
+        language: system
+        types: [rust]
+        args: ["--all", "--", "--check"]
+      - id: clippy
+        name: clippy
+        description: Run linter
+        entry: cargo +nightly clippy
+        language: system
+        types: [rust]
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]

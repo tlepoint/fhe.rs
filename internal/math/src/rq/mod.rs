@@ -634,14 +634,14 @@ mod tests {
 
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-				let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
-				let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+				let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
+				let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
 				assert_eq!(p, q);
 			}
 
 			let ctx = Arc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
-			let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed.clone());
+			let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
+			let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
 			assert_eq!(p, q);
 
 			thread_rng().fill(&mut seed);

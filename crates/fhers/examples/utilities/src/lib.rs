@@ -35,6 +35,7 @@ macro_rules! timeit_n {
 	($name:expr, $loops:expr, $code:expr) => {{
 		use utilities::DisplayDuration;
 		let start = std::time::Instant::now();
+		#[allow(clippy::reversed_empty_ranges)]
 		for i in 1..$loops {
 			let r = $code;
 		}
@@ -59,8 +60,12 @@ pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<
 	database
 }
 
-pub fn number_elements_per_plaintext(par: Arc<BfvParameters>, elements_size: usize) -> usize {
-	(par.plaintext().ilog2() as usize * par.degree()) / (elements_size * 8)
+pub fn number_elements_per_plaintext(
+	degree: usize,
+	plaintext_nbits: usize,
+	elements_size: usize,
+) -> usize {
+	(plaintext_nbits * degree) / (elements_size * 8)
 }
 
 pub fn encode_database(
@@ -69,7 +74,11 @@ pub fn encode_database(
 	level: usize,
 ) -> (Vec<Plaintext>, (usize, usize)) {
 	let elements_size = database[0].len();
-	let number_elements_per_plaintext = number_elements_per_plaintext(par.clone(), elements_size);
+	let number_elements_per_plaintext = number_elements_per_plaintext(
+		par.degree(),
+		par.plaintext().ilog2() as usize,
+		elements_size,
+	);
 	let number_rows = database.len().div_ceil(number_elements_per_plaintext);
 	println!("number_rows = {}", number_rows);
 	println!(

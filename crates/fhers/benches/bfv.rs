@@ -254,7 +254,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			);
 
 			// Default multiplication method
-			let multiplicator = Multiplicator::default(&rk).unwrap();
+			let multiplicator = Multiplicator::default(rk).unwrap();
 
 			group.bench_function(
 				BenchmarkId::new("mul_and_relin", format!("n={}/log(q)={}", par.degree(), q)),
@@ -283,7 +283,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				&par,
 			)
 			.unwrap();
-			assert!(multiplicator.enable_relinearization(&rk).is_ok());
+			assert!(multiplicator.enable_relinearization(rk).is_ok());
 			group.bench_function(
 				BenchmarkId::new(
 					"mul_and_relin_2",

@@ -375,7 +375,7 @@ mod tests {
 
 			let mut multiplicator = Multiplicator::new(
 				ScalingFactor::one(),
-				ScalingFactor::new(rns.modulus(), &par.ctx[0].modulus()),
+				ScalingFactor::new(rns.modulus(), par.ctx[0].modulus()),
 				&extended_basis,
 				ScalingFactor::new(&BigUint::from(par.plaintext()), rns.modulus()),
 				&par,

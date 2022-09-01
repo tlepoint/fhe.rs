@@ -295,7 +295,7 @@ impl RnsScaler {
 				}
 			}
 
-			// Let's substract v * theta_gamma to sum_theta_omega.
+			// Let's subtract v * theta_gamma to sum_theta_omega.
 			let vt_lo_lo = (v as u128) * (self.theta_gamma_lo as u128);
 			let vt_lo_hi = (v as u128) * (self.theta_gamma_hi as u128);
 			let vt_mi = (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128);

@@ -255,7 +255,10 @@ mod tests {
 
 	#[test]
 	fn constructor() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2, 8))] {
+		for params in [
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(3, 8)),
+		] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
 			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
@@ -275,14 +278,14 @@ mod tests {
 				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
 				let mut s = Poly::try_convert_from(
 					&sk.s_coefficients as &[i64],
-					&ctx,
+					ctx,
 					false,
 					Representation::PowerBasis,
 				)
 				.map_err(crate::Error::MathError)?;
 				s.change_representation(Representation::Ntt);
 
-				let mut input = Poly::random(&ctx, Representation::PowerBasis);
+				let mut input = Poly::random(ctx, Representation::PowerBasis);
 				let (c0, c1) = ksk.key_switch(&input)?;
 
 				let mut c2 = &c0 + &(&c1 * &s);
@@ -304,7 +307,10 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2, 8))] {
+		for params in [
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(3, 8)),
+		] {
 			let sk = SecretKey::random(&params);
 			let ctx = params.ctx_at_level(0)?;
 			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
