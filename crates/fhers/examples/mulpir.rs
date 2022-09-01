@@ -182,7 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 		let mut out = bfv::Ciphertext::zero(&params);
 		for (i, ci) in expanded_query[dim1..].iter().enumerate() {
-			out += &dot_product_mod_switch(i, &preprocessed_database)? * ci
+			out += &(&dot_product_mod_switch(i, &preprocessed_database)? * ci)
 		}
 		rk.relinearizes(&mut out)?;
 		out.mod_switch_to_last_level();

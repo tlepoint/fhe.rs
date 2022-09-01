@@ -118,6 +118,20 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		);
 
 		group.bench_function(
+			BenchmarkId::new("add_pt", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| c1 = &c1 + &pt2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("add_assign_pt", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| c1 += &pt2);
+			},
+		);
+
+		group.bench_function(
 			BenchmarkId::new("sub_ct", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 = &c1 - &c2);
@@ -128,6 +142,20 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			BenchmarkId::new("sub_assign_ct", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
 				b.iter(|| c1 -= &c2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("sub_pt", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| c1 = &c1 - &pt2);
+			},
+		);
+
+		group.bench_function(
+			BenchmarkId::new("sub_assign_pt", format!("n={}/log(q)={}", par.degree(), q)),
+			|b| {
+				b.iter(|| c1 -= &pt2);
 			},
 		);
 
