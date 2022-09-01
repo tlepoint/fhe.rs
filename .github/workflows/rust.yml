@@ -88,6 +88,15 @@ jobs:
           command: clippy
           args: --all-features --all-targets -- -D warnings
 
+  typos:
+    name: Spell Check with typos
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Actions Repository
+      uses: actions/checkout@v2
+    - name: Check spelling
+      uses: crate-ci/typos@master
+
   codecov:
     name: Code coverage
     env:
