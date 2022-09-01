@@ -251,19 +251,21 @@ mod tests {
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(2, 8)),
 		] {
-			for _ in 0..1 {
-				let sk = SecretKey::random(&params);
+			for level in 0..params.max_level() {
+				for _ in 0..20 {
+					let sk = SecretKey::random(&params);
 
-				let pt = Plaintext::try_encode(
-					&params.plaintext.random_vec(params.degree()) as &[u64],
-					Encoding::poly(),
-					&params,
-				)?;
-				let ct = sk.try_encrypt(&pt)?;
-				let pt2 = sk.try_decrypt(&ct);
+					let pt = Plaintext::try_encode(
+						&params.plaintext.random_vec(params.degree()) as &[u64],
+						Encoding::poly_at_level(level),
+						&params,
+					)?;
+					let ct = sk.try_encrypt(&pt)?;
+					let pt2 = sk.try_decrypt(&ct);
 
-				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-				assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+					println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+					assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+				}
 			}
 		}
 
