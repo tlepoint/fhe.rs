@@ -52,9 +52,10 @@ impl Multiplicator {
 		)
 	}
 
+	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Construct a multiplicator using custom scaling factors and extended
 	/// basis at a given level.
-	#[cfg(feature = "leveled_bfv")]
 	pub fn new_leveled(
 		lhs_scaling_factor: ScalingFactor,
 		rhs_scaling_factor: ScalingFactor,
@@ -128,9 +129,10 @@ impl Multiplicator {
 		Ok(())
 	}
 
+	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Enable modulus switching after multiplication (and relinearization, if
 	/// applicable).
-	#[cfg(feature = "leveled_bfv")]
 	pub fn enable_mod_switching(&mut self) -> Result<()> {
 		if self.par.ctx_at_level(self.par.max_level())? == &self.base_ctx {
 			Err(Error::DefaultError(

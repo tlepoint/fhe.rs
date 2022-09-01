@@ -30,8 +30,9 @@ pub struct Ciphertext {
 }
 
 impl Ciphertext {
-	/// Modulo switch the ciphertext to the last level.
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// Modulo switch the ciphertext to the last level.
 	pub fn mod_switch_to_last_level(&mut self) {
 		self.level = self.par.max_level();
 		let last_ctx = self.par.ctx_at_level(self.level).unwrap();
@@ -45,8 +46,9 @@ impl Ciphertext {
 		});
 	}
 
-	/// Modulo switch the ciphertext to the next level.
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// Modulo switch the ciphertext to the next level.
 	pub fn mod_switch_to_next_level(&mut self) {
 		if self.level < self.par.max_level() {
 			self.seed = None;

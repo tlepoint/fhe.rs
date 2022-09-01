@@ -32,8 +32,9 @@ impl RelinearizationKey {
 		Self::new_leveled(sk, 0, 0)
 	}
 
-	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	#[cfg(feature = "leveled_bfv")]
+	#[doc(cfg(feature = "leveled_bfv"))]
+	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new_leveled(sk: &SecretKey, ciphertext_level: usize, key_level: usize) -> Result<Self> {
 		let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;

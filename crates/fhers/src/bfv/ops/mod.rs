@@ -176,57 +176,102 @@ impl Mul<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 
 	fn mul(self, rhs: &Ciphertext) -> Self::Output {
-		assert_eq!(self.par, rhs.par);
-
 		if self.c.is_empty() {
 			return self.clone();
 		}
-		assert_eq!(self.level, rhs.level);
 
-		let mp = &self.par.mul_params[self.level];
+		if rhs == self {
+			// Squaring operation
+			let mp = &self.par.mul_params[self.level];
 
-		// Scale all ciphertexts
-		// let mut now = std::time::SystemTime::now();
-		let self_c = self
-			.c
-			.iter()
-			.map(|ci| ci.scale(&mp.extender_self).unwrap())
-			.collect_vec();
-		let other_c = rhs
-			.c
-			.iter()
-			.map(|ci| ci.scale(&mp.extender_self).unwrap())
-			.collect_vec();
-		// println!("Extend: {:?}", now.elapsed().unwrap());
+			// Scale all ciphertexts
+			// let mut now = std::time::SystemTime::now();
+			let self_c = self
+				.c
+				.iter()
+				.map(|ci| ci.scale(&mp.extender).unwrap())
+				.collect_vec();
+			// println!("Extend: {:?}", now.elapsed().unwrap());
 
-		// Multiply
-		// now = std::time::SystemTime::now();
-		let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
-		for i in 0..self_c.len() {
-			for j in 0..other_c.len() {
-				c[i + j] += &(&self_c[i] * &other_c[j])
+			// Multiply
+			// now = std::time::SystemTime::now();
+			let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); 2 * self_c.len() - 1];
+			for i in 0..self_c.len() {
+				for j in 0..self_c.len() {
+					c[i + j] += &(&self_c[i] * &self_c[j])
+				}
 			}
-		}
-		// println!("Multiply: {:?}", now.elapsed().unwrap());
+			// println!("Multiply: {:?}", now.elapsed().unwrap());
 
-		// Scale
-		// now = std::time::SystemTime::now();
-		let c = c
-			.iter_mut()
-			.map(|ci| {
-				ci.change_representation(Representation::PowerBasis);
-				let mut ci = ci.scale(&mp.down_scaler).unwrap();
-				ci.change_representation(Representation::Ntt);
-				ci
-			})
-			.collect_vec();
-		// println!("Scale: {:?}", now.elapsed().unwrap());
+			// Scale
+			// now = std::time::SystemTime::now();
+			let c = c
+				.iter_mut()
+				.map(|ci| {
+					ci.change_representation(Representation::PowerBasis);
+					let mut ci = ci.scale(&mp.down_scaler).unwrap();
+					ci.change_representation(Representation::Ntt);
+					ci
+				})
+				.collect_vec();
+			// println!("Scale: {:?}", now.elapsed().unwrap());
 
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c,
-			level: rhs.level,
+			Ciphertext {
+				par: self.par.clone(),
+				seed: None,
+				c,
+				level: rhs.level,
+			}
+		} else {
+			assert_eq!(self.par, rhs.par);
+			assert_eq!(self.level, rhs.level);
+
+			let mp = &self.par.mul_params[self.level];
+
+			// Scale all ciphertexts
+			// let mut now = std::time::SystemTime::now();
+			let self_c = self
+				.c
+				.iter()
+				.map(|ci| ci.scale(&mp.extender).unwrap())
+				.collect_vec();
+			let other_c = rhs
+				.c
+				.iter()
+				.map(|ci| ci.scale(&mp.extender).unwrap())
+				.collect_vec();
+			// println!("Extend: {:?}", now.elapsed().unwrap());
+
+			// Multiply
+			// now = std::time::SystemTime::now();
+			let mut c =
+				vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
+			for i in 0..self_c.len() {
+				for j in 0..other_c.len() {
+					c[i + j] += &(&self_c[i] * &other_c[j])
+				}
+			}
+			// println!("Multiply: {:?}", now.elapsed().unwrap());
+
+			// Scale
+			// now = std::time::SystemTime::now();
+			let c = c
+				.iter_mut()
+				.map(|ci| {
+					ci.change_representation(Representation::PowerBasis);
+					let mut ci = ci.scale(&mp.down_scaler).unwrap();
+					ci.change_representation(Representation::Ntt);
+					ci
+				})
+				.collect_vec();
+			// println!("Scale: {:?}", now.elapsed().unwrap());
+
+			Ciphertext {
+				par: self.par.clone(),
+				seed: None,
+				c,
+				level: rhs.level,
+			}
 		}
 	}
 }
@@ -507,18 +552,20 @@ mod tests {
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
 		let par = Arc::new(BfvParameters::default(2, 8));
-		for _ in 0..50 {
+		for _ in 0..20 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
-			let values = par.plaintext.random_vec(par.degree());
-			let mut expected = values.clone();
-			par.plaintext.mul_vec(&mut expected, &values);
+			let v1 = par.plaintext.random_vec(par.degree());
+			let v2 = par.plaintext.random_vec(par.degree());
+			let mut expected = v1.clone();
+			par.plaintext.mul_vec(&mut expected, &v2);
 
 			let sk = SecretKey::random(&par);
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
+			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
 
-			let ct1 = sk.try_encrypt(&pt)?;
-			let ct2 = sk.try_encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt1)?;
+			let ct2 = sk.try_encrypt(&pt2)?;
 			let ct3 = &ct1 * &ct2;
 			let ct4 = &ct3 * &ct3;
 
@@ -530,6 +577,29 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &e);
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
 			let pt = sk.try_decrypt(&ct4)?;
+			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+		}
+		Ok(())
+	}
+
+	#[test]
+	fn square() -> Result<(), Box<dyn Error>> {
+		let par = Arc::new(BfvParameters::default(2, 8));
+		for _ in 0..20 {
+			// We will encode `values` in an Simd format, and check that the product is
+			// computed correctly.
+			let v = par.plaintext.random_vec(par.degree());
+			let mut expected = v.clone();
+			par.plaintext.mul_vec(&mut expected, &v);
+
+			let sk = SecretKey::random(&par);
+			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &par)?;
+
+			let ct1 = sk.try_encrypt(&pt)?;
+			let ct2 = &ct1 * &ct1;
+
+			println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
+			let pt = sk.try_decrypt(&ct2)?;
 			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 		}
 		Ok(())
