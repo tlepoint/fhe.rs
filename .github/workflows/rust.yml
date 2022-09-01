@@ -11,7 +11,7 @@ on:
     paths-ignore:
       - 'README.md'
 
-name: Continuous integration
+name: Test and coverage
 
 jobs:
   check:
@@ -47,55 +47,6 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-
-  fmt:
-    name: Rustfmt
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: always
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: rustfmt
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  clippy:
-    name: Clippy
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: always
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: clippy
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --all-targets -- -D warnings
-
-  typos:
-    name: Spell Check with typos
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout Actions Repository
-      uses: actions/checkout@v2
-    - name: Check spelling
-      uses: crate-ci/typos@master
 
   codecov:
     name: Code coverage
