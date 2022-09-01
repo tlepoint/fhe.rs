@@ -78,7 +78,7 @@ impl GaloisKey {
 			c1.change_representation(Representation::Ntt);
 		}
 
-		c0 += ct.c[0].substitute(&self.element)?;
+		c0 += &ct.c[0].substitute(&self.element)?;
 
 		Ok(Ciphertext {
 			par: ct.par.clone(),

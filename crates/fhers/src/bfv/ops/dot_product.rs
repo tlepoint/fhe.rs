@@ -188,7 +188,7 @@ mod tests {
 				let r = dot_product_scalar(ct.iter(), pt.iter())?;
 
 				let mut expected = Ciphertext::zero(&params);
-				izip!(&ct, &pt).for_each(|(cti, pti)| expected += cti * pti);
+				izip!(&ct, &pt).for_each(|(cti, pti)| expected += &(cti * pti));
 				assert_eq!(r, expected);
 			}
 		}

@@ -1,7 +1,7 @@
 [package]
 name = "fhers"
 description = "Fully homomorphic encryption in Rust"
-version = "0.0.1"
+version = "0.0.1-beta"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
@@ -14,9 +14,9 @@ leveled_bfv = []
 optimized_ops = ["leveled_bfv"]
 
 [dependencies]
-math = { version = "0.0.1", path = "../../internal/math" }
-fhers-traits = { version = "0.0.1", path = "../fhers-traits" }
-util = { version = "0.0.1", path = "../../internal/util" }
+math = { version = "0.0.1-beta", path = "../../internal/math" }
+fhers-traits = { version = "0.0.1-beta", path = "../fhers-traits" }
+util = { version = "0.0.1-beta", path = "../../internal/util" }
 
 itertools = "0.10.3"
 num-bigint = "0.4.3"
@@ -30,7 +30,7 @@ protobuf = "3.1.0"
 thiserror = "1.0.32"
 
 [dev-dependencies]
-utilities = { version = "0.0.1", path = "examples/utilities" }
+utilities = { version = "0.0.1-beta", path = "examples/utilities" }
 
 criterion = "0.3.6"
 indicatif = "0.17.0"

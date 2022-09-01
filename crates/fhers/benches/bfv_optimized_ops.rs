@@ -71,7 +71,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 					),
 				),
 				|b| {
-					b.iter(|| izip!(&ct_vec, &pt_vec).for_each(|(cti, pti)| c1 += cti * pti));
+					b.iter(|| izip!(&ct_vec, &pt_vec).for_each(|(cti, pti)| c1 += &(cti * pti)));
 				},
 			);
 

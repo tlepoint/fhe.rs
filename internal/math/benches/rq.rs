@@ -132,7 +132,7 @@ pub fn rq_dot_product(c: &mut Criterion) {
 				BenchmarkId::from_parameter(format!("naive/{}/{}", degree, ctx.modulus().bits())),
 				|b| {
 					b.iter(|| {
-						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi)
+						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += &(pi * qi))
 					});
 				},
 			);
@@ -148,7 +148,7 @@ pub fn rq_dot_product(c: &mut Criterion) {
 				)),
 				|b| {
 					b.iter(|| {
-						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += pi * qi)
+						izip!(p_vec.iter(), q_vec.iter()).for_each(|(pi, qi)| out += &(pi * qi))
 					});
 				},
 			);

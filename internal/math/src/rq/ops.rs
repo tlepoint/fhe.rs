@@ -47,12 +47,6 @@ impl AddAssign<&Poly> for Poly {
 	}
 }
 
-impl AddAssign<Poly> for Poly {
-	fn add_assign(&mut self, p: Poly) {
-		*self += &p
-	}
-}
-
 impl Add<&Poly> for &Poly {
 	type Output = Poly;
 	fn add(self, p: &Poly) -> Poly {
@@ -65,7 +59,7 @@ impl Add<&Poly> for &Poly {
 impl Add for Poly {
 	type Output = Poly;
 	fn add(self, mut p: Poly) -> Poly {
-		p += self;
+		p += &self;
 		p
 	}
 }
@@ -294,6 +288,22 @@ impl Neg for &Poly {
 				.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
 		}
 		out
+	}
+}
+
+impl Neg for Poly {
+	type Output = Poly;
+
+	fn neg(mut self) -> Poly {
+		assert!(!self.has_lazy_coefficients);
+		if self.allow_variable_time_computations {
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
+				.for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
+		} else {
+			izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
+				.for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+		}
+		self
 	}
 }
 
@@ -634,6 +644,10 @@ mod tests {
 			let r = -&p;
 			assert_eq!(r.representation, Representation::PowerBasis);
 			assert_eq!(Vec::<u64>::from(&r), a);
+
+			let r = -p;
+			assert_eq!(r.representation, Representation::PowerBasis);
+			assert_eq!(Vec::<u64>::from(&r), a);
 		}
 		Ok(())
 	}
@@ -654,7 +668,7 @@ mod tests {
 					let r = dot_product(p.iter(), q.iter())?;
 
 					let mut expected = Poly::zero(&ctx, Representation::Ntt);
-					izip!(&p, &q).for_each(|(pi, qi)| expected += pi * qi);
+					izip!(&p, &q).for_each(|(pi, qi)| expected += &(pi * qi));
 					assert_eq!(r, expected);
 				}
 			}
@@ -670,7 +684,7 @@ mod tests {
 				let r = dot_product(p.iter(), q.iter())?;
 
 				let mut expected = Poly::zero(&ctx, Representation::Ntt);
-				izip!(&p, &q).for_each(|(pi, qi)| expected += pi * qi);
+				izip!(&p, &q).for_each(|(pi, qi)| expected += &(pi * qi));
 				assert_eq!(r, expected);
 			}
 		}
