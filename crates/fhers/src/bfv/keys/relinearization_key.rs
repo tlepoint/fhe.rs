@@ -162,7 +162,7 @@ mod tests {
 
 	#[test]
 	fn relinearization() -> Result<(), Box<dyn Error>> {
-		for params in [Arc::new(BfvParameters::default(2, 8))] {
+		for params in [Arc::new(BfvParameters::default(6, 8))] {
 			for _ in 0..100 {
 				let sk = SecretKey::random(&params);
 				let rk = RelinearizationKey::new(&sk)?;
@@ -271,7 +271,7 @@ mod tests {
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(3, 8)),
 		] {
 			let sk = SecretKey::random(&params);

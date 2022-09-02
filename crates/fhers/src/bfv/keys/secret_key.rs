@@ -249,7 +249,7 @@ mod tests {
 	fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for level in 0..params.max_level() {
 				for _ in 0..20 {

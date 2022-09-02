@@ -491,7 +491,7 @@ mod tests {
 
 	#[test]
 	fn builder() -> Result<(), Box<dyn Error>> {
-		let params = Arc::new(BfvParameters::default(2, 8));
+		let params = Arc::new(BfvParameters::default(6, 8));
 		let sk = SecretKey::random(&params);
 		for ciphertext_level in 0..=params.max_level() {
 			for evaluation_key_level in 0..=min(params.max_level() - 1, ciphertext_level) {
@@ -549,12 +549,14 @@ mod tests {
 			}
 		}
 
-		assert!(EvaluationKeyBuilder::new_leveled(&sk, 1, 1)?
-			.enable_inner_sum()
-			.is_err_and(|e| e
-				== &crate::Error::DefaultError(
-					"Not enough moduli to enable relinearization".to_string()
-				)));
+		assert!(
+			EvaluationKeyBuilder::new_leveled(&sk, params.max_level(), params.max_level())?
+				.enable_inner_sum()
+				.is_err_and(|e| e
+					== &crate::Error::DefaultError(
+						"Not enough moduli to enable relinearization".to_string()
+					))
+		);
 
 		assert!(EvaluationKeyBuilder::new_leveled(&sk, 0, 1)
 			.is_err_and(|e| e == &crate::Error::DefaultError("Unexpected levels".to_string())));
@@ -565,7 +567,7 @@ mod tests {
 	#[test]
 	fn inner_sum() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			for _ in 0..25 {
@@ -608,7 +610,7 @@ mod tests {
 	#[test]
 	fn row_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			for _ in 0..50 {
@@ -652,7 +654,7 @@ mod tests {
 	#[test]
 	fn column_rotation() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let row_size = params.degree() >> 1;
@@ -708,7 +710,7 @@ mod tests {
 	#[test]
 	fn expansion() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let log_degree = 64 - 1 - params.degree().leading_zeros();
@@ -764,7 +766,7 @@ mod tests {
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let sk = SecretKey::random(&params);
@@ -807,7 +809,7 @@ mod tests {
 	fn serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 

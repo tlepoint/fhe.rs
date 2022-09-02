@@ -158,7 +158,7 @@ mod tests {
 	#[test]
 	fn external_product() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(8, 8)),
 		] {
 			let sk = SecretKey::random(&params);
@@ -189,7 +189,7 @@ mod tests {
 	#[test]
 	fn serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
 			let sk = SecretKey::random(&params);

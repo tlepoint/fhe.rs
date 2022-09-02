@@ -262,7 +262,8 @@ impl RnsScaler {
 		}
 		// Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
 		sum_theta_garner >>= self.theta_garner_shift - 1;
-		let v = <[u64; 3]>::from(sum_theta_garner)[0].div_ceil(2);
+		let v = <[u64; 3]>::from(sum_theta_garner);
+		let v = ((v[0] as u128) | ((v[1] as u128) << 64)).div_ceil(2);
 
 		// If the scaling factor is not 1, compute the inner product with the
 		// theta_omega
@@ -296,10 +297,13 @@ impl RnsScaler {
 			}
 
 			// Let's subtract v * theta_gamma to sum_theta_omega.
-			let vt_lo_lo = (v as u128) * (self.theta_gamma_lo as u128);
-			let vt_lo_hi = (v as u128) * (self.theta_gamma_hi as u128);
-			let vt_mi = (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128);
-			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64);
+			let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
+			let vt_lo_hi = ((v as u64) as u128) * (self.theta_gamma_hi as u128);
+			let vt_hi_lo = ((v >> 64) as u128) * (self.theta_gamma_lo as u128);
+			let vt_hi_hi = ((v >> 64) as u128) * (self.theta_gamma_hi as u128);
+			let vt_mi =
+				(vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
+			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
 			if self.theta_gamma_sign {
 				sum_theta_omega.wrapping_add_assign(U256::from([
 					vt_lo_lo as u64,
@@ -342,8 +346,9 @@ impl RnsScaler {
 				let gamma_i = self.gamma.get_unchecked(starting_index + i);
 				let gamma_shoup_i = self.gamma_shoup.get_unchecked(starting_index + i);
 
-				let mut yi =
-					(qi.modulus() * 2 - qi.lazy_mul_shoup(v, *gamma_i, *gamma_shoup_i)) as u128;
+				let mut yi = (qi.modulus() * 2
+					- qi.lazy_mul_shoup(qi.reduce_u128(v), *gamma_i, *gamma_shoup_i))
+					as u128;
 
 				if !self.scaling_factor.is_one {
 					let wi = qi.lazy_reduce_u128(w);
