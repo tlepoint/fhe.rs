@@ -25,7 +25,7 @@ impl PublicKey {
 	/// Generate a new [`PublicKey`] from a [`SecretKey`].
 	pub fn new(sk: &SecretKey) -> Result<Self> {
 		let zero = Plaintext::zero(Encoding::poly(), &sk.par)?;
-		let mut c = sk.try_encrypt(&zero)?;
+		let mut c: Ciphertext = sk.try_encrypt(&zero)?;
 		// The polynomials of a public key should not allow for variable time
 		// computation.
 		c.c.iter_mut()

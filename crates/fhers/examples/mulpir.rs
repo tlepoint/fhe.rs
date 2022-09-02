@@ -166,7 +166,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[dim1 + (query_index % dim2)] = inv;
 		let query_pt =
 			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
-		let query = sk.try_encrypt(&query_pt)?;
+		let query: Ciphertext = sk.try_encrypt(&query_pt)?;
 		query.to_bytes()
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
