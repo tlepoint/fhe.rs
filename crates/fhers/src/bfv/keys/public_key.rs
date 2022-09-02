@@ -58,10 +58,10 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?;
 
 		let mut m = pt.to_poly()?;
-		let mut c0 = &u * &self.c.c[0];
+		let mut c0 = &u * &ct.c[0];
 		c0 += &e1;
 		c0 += &m;
-		let mut c1 = &u * &self.c.c[1];
+		let mut c1 = &u * &ct.c[1];
 		c1 += &e2;
 
 		// Zeroize the temporary variables holding sensitive information.
@@ -151,7 +151,7 @@ mod tests {
 	fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for level in 0..params.max_level() {
 				for _ in 0..20 {
@@ -179,7 +179,7 @@ mod tests {
 	fn test_serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let pk = PublicKey::new(&sk)?;

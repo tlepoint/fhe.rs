@@ -216,7 +216,7 @@ mod tests {
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -236,7 +236,7 @@ mod tests {
 	fn serialize() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -252,7 +252,7 @@ mod tests {
 	fn new() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());
@@ -289,7 +289,7 @@ mod tests {
 	fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v = params.plaintext.random_vec(params.degree());

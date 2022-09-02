@@ -317,7 +317,7 @@ mod tests {
 
 	#[test]
 	fn mul_no_relin() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2, 8));
+		let par = Arc::new(BfvParameters::default(6, 8));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.

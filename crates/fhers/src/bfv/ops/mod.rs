@@ -288,7 +288,7 @@ mod tests {
 	fn add() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let zero = Ciphertext::zero(&params);
 			for _ in 0..50 {
@@ -325,7 +325,7 @@ mod tests {
 	fn add_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
 				let a = params.plaintext.random_vec(params.degree());
@@ -373,7 +373,7 @@ mod tests {
 	fn sub() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let zero = Ciphertext::zero(&params);
 			for _ in 0..50 {
@@ -418,7 +418,7 @@ mod tests {
 	fn sub_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
 				let a = params.plaintext.random_vec(params.degree());
@@ -468,7 +468,7 @@ mod tests {
 	fn neg() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
 				let a = params.plaintext.random_vec(params.degree());
@@ -499,7 +499,7 @@ mod tests {
 	fn mul_scalar() -> Result<(), Box<dyn Error>> {
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
-			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
 				let a = params.plaintext.random_vec(params.degree());
@@ -551,7 +551,7 @@ mod tests {
 
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2, 8));
+		let par = Arc::new(BfvParameters::default(8, 8));
 		for _ in 0..20 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
@@ -584,7 +584,7 @@ mod tests {
 
 	#[test]
 	fn square() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(2, 8));
+		let par = Arc::new(BfvParameters::default(6, 8));
 		for _ in 0..20 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
