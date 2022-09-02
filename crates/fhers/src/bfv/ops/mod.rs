@@ -551,33 +551,37 @@ mod tests {
 
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
-		let par = Arc::new(BfvParameters::default(8, 8));
-		for _ in 0..20 {
-			// We will encode `values` in an Simd format, and check that the product is
-			// computed correctly.
-			let v1 = par.plaintext.random_vec(par.degree());
-			let v2 = par.plaintext.random_vec(par.degree());
-			let mut expected = v1.clone();
-			par.plaintext.mul_vec(&mut expected, &v2);
+		for par in [
+			Arc::new(BfvParameters::default(2, 8)),
+			Arc::new(BfvParameters::default(8, 8)),
+		] {
+			for _ in 0..1 {
+				// We will encode `values` in an Simd format, and check that the product is
+				// computed correctly.
+				let v1 = par.plaintext.random_vec(par.degree());
+				let v2 = par.plaintext.random_vec(par.degree());
+				let mut expected = v1.clone();
+				par.plaintext.mul_vec(&mut expected, &v2);
 
-			let sk = SecretKey::random(&par);
-			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
-			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
+				let sk = SecretKey::random(&par);
+				let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
+				let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
 
-			let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
-			let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
-			let ct3 = &ct1 * &ct2;
-			let ct4 = &ct3 * &ct3;
+				let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
+				let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
+				let ct3 = &ct1 * &ct2;
+				let ct4 = &ct3 * &ct3;
 
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
-			let pt = sk.try_decrypt(&ct3)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+				let pt = sk.try_decrypt(&ct3)?;
+				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
-			let e = expected.clone();
-			par.plaintext.mul_vec(&mut expected, &e);
-			println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
-			let pt = sk.try_decrypt(&ct4)?;
-			assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+				let e = expected.clone();
+				par.plaintext.mul_vec(&mut expected, &e);
+				println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
+				let pt = sk.try_decrypt(&ct4)?;
+				assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+			}
 		}
 		Ok(())
 	}

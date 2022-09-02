@@ -147,41 +147,40 @@ impl Mul<&Ciphertext> for &RGSWCiphertext {
 mod tests {
 	use std::{error::Error, sync::Arc};
 
-	use fhers_traits::{
-		DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
-	};
-
 	use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
+	use fhers_traits::{
+		DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+	};
 
 	use super::RGSWCiphertext;
 
 	#[test]
 	fn external_product() -> Result<(), Box<dyn Error>> {
 		for params in [
-			Arc::new(BfvParameters::default(6, 8)),
+			Arc::new(BfvParameters::default(2, 8)),
 			Arc::new(BfvParameters::default(8, 8)),
 		] {
 			let sk = SecretKey::random(&params);
 			let v1 = params.plaintext.random_vec(params.degree());
 			let v2 = params.plaintext.random_vec(params.degree());
-			let mut expected = v1.clone();
-			params.plaintext.mul_vec(&mut expected, &v2);
 
 			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &params)?;
 			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &params)?;
 
-			let ct: Ciphertext = sk.try_encrypt(&pt1)?;
-			let ct2: RGSWCiphertext = sk.try_encrypt(&pt2)?;
+			let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
+			let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
+			let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2)?;
 
-			let ct3 = &ct * &ct2;
-			let ct4 = &ct2 * &ct;
-			let pt3 = sk.try_decrypt(&ct3)?;
-			let pt4 = sk.try_decrypt(&ct4)?;
+			let product = &ct1 * &ct2;
+			let expected = sk.try_decrypt(&product)?;
 
-			println!("Noise: {:?}", unsafe { sk.measure_noise(&ct3) });
-			println!("Noise: {:?}", unsafe { sk.measure_noise(&ct4) });
-			assert_eq!(expected, Vec::<u64>::try_decode(&pt3, Encoding::simd())?);
-			assert_eq!(expected, Vec::<u64>::try_decode(&pt4, Encoding::simd())?);
+			let ct3 = &ct1 * &ct2_rgsw;
+			let ct4 = &ct2_rgsw * &ct1;
+
+			println!("Noise 1: {:?}", unsafe { sk.measure_noise(&ct3) });
+			println!("Noise 2: {:?}", unsafe { sk.measure_noise(&ct4) });
+			assert_eq!(expected, sk.try_decrypt(&ct3)?);
+			assert_eq!(expected, sk.try_decrypt(&ct4)?);
 		}
 		Ok(())
 	}
