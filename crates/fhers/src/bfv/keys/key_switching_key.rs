@@ -25,7 +25,7 @@ pub struct KeySwitchingKey {
 	pub(crate) par: Arc<BfvParameters>,
 
 	/// The seed that generated the polynomials c1.
-	pub(crate) seed: <ChaCha8Rng as SeedableRng>::Seed,
+	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
 	/// The key switching elements c0.
 	pub(crate) c0: Box<[Poly]>,
@@ -35,11 +35,11 @@ pub struct KeySwitchingKey {
 
 	/// The context of the polynomials that will be key switched.
 	pub(crate) ciphertext_level: usize,
-	ctx_ciphertext: Arc<Context>,
+	pub(crate) ctx_ciphertext: Arc<Context>,
 
 	/// The context of the key switching key.
 	pub(crate) ksk_level: usize,
-	ctx_ksk: Arc<Context>,
+	pub(crate) ctx_ksk: Arc<Context>,
 }
 
 impl KeySwitchingKey {
@@ -73,7 +73,7 @@ impl KeySwitchingKey {
 
 		Ok(Self {
 			par: sk.par.clone(),
-			seed,
+			seed: Some(seed),
 			c0: c0.into_boxed_slice(),
 			c1: c1.into_boxed_slice(),
 			ciphertext_level,
@@ -190,7 +190,14 @@ impl KeySwitchingKey {
 impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
 	fn from(value: &KeySwitchingKey) -> Self {
 		let mut ksk = KeySwitchingKeyProto::new();
-		ksk.seed = value.seed.to_vec();
+		if let Some(seed) = value.seed.as_ref() {
+			ksk.seed = seed.to_vec();
+		} else {
+			ksk.c1.reserve_exact(value.c1.len());
+			for c1 in value.c1.iter() {
+				ksk.c1.push(c1.to_bytes())
+			}
+		}
 		ksk.c0.reserve_exact(value.c0.len());
 		for c0 in value.c0.iter() {
 			ksk.c0.push(c0.to_bytes())
@@ -210,21 +217,40 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 
 		if value.c0.len() != ctx_ciphertext.moduli().len() {
 			return Err(Error::DefaultError(
-				"Incorrect number of values".to_string(),
+				"Incorrect number of values in c0".to_string(),
 			));
 		}
 
-		let seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
-		if seed.is_err() {
-			return Err(Error::DefaultError("Invalid seed".to_string()));
-		}
-		let seed = seed.unwrap();
+		let seed = if value.seed.is_empty() {
+			if value.c1.len() != ctx_ciphertext.moduli().len() {
+				return Err(Error::DefaultError(
+					"Incorrect number of values in c1".to_string(),
+				));
+			}
+			None
+		} else {
+			let unwrapped = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
+			if unwrapped.is_err() {
+				return Err(Error::DefaultError("Invalid seed".to_string()));
+			}
+			Some(unwrapped.unwrap())
+		};
 
-		let c1 = Self::generate_c1(ctx_ksk, seed, value.c0.len());
-		let mut c0 = Vec::with_capacity(par.moduli.len());
-		for c0i in &value.c0 {
-			c0.push(Poly::from_bytes(c0i, ctx_ksk)?)
-		}
+		let c1 = if let Some(seed) = seed {
+			Self::generate_c1(ctx_ksk, seed, value.c0.len())
+		} else {
+			value
+				.c1
+				.iter()
+				.map(|c1i| Poly::from_bytes(c1i, ctx_ksk).map_err(Error::MathError))
+				.collect::<Result<Vec<Poly>>>()?
+		};
+
+		let c0 = value
+			.c0
+			.iter()
+			.map(|c0i| Poly::from_bytes(c0i, ctx_ksk).map_err(Error::MathError))
+			.collect::<Result<Vec<Poly>>>()?;
 
 		Ok(Self {
 			par: par.clone(),

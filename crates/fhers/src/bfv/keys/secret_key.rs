@@ -97,46 +97,39 @@ impl SecretKey {
 
 		Ok(noise)
 	}
-}
 
-impl FheParametrized for SecretKey {
-	type Parameters = BfvParameters;
-}
+	pub(crate) fn encrypt_poly(&self, p: &Poly) -> Result<Ciphertext> {
+		if p.representation() != &Representation::Ntt {
+			return Err(Error::MathError(math::Error::IncorrectRepresentation(
+				p.representation().clone(),
+				Representation::Ntt,
+			)));
+		}
 
-impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
-	type Error = Error;
-
-	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
-		assert_eq!(self.par, pt.par);
+		let level = self.par.level_of_ctx(p.ctx())?;
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 		thread_rng().fill(&mut seed);
 
-		let level = pt.level;
-		let ctx = self.par.ctx_at_level(level)?;
-
 		// Let's create a secret key with the ciphertext context
 		let mut s = Poly::try_convert_from(
 			&self.s_coefficients as &[i64],
-			ctx,
+			p.ctx(),
 			false,
 			Representation::PowerBasis,
 		)?;
 		s.change_representation(Representation::Ntt);
 
-		let mut a = Poly::random_from_seed(ctx, Representation::Ntt, seed);
+		let mut a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
 		let mut a_s = &a * &s;
 		s.zeroize();
 
-		let mut b = Poly::small(ctx, Representation::Ntt, self.par.variance).unwrap();
+		let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance).unwrap();
 		b -= &a_s;
-
-		let mut m = pt.to_poly()?;
-		b += &m;
+		b += p;
 
 		// Zeroize the temporary variables holding sensitive information.
 		a_s.zeroize();
-		m.zeroize();
 
 		// It is now safe to enable variable time computations.
 		unsafe {
@@ -150,6 +143,24 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 			c: vec![b, a],
 			level,
 		})
+	}
+}
+
+impl FheParametrized for SecretKey {
+	type Parameters = BfvParameters;
+}
+
+impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
+	type Error = Error;
+
+	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
+		assert_eq!(self.par, pt.par);
+
+		let mut m = pt.to_poly()?;
+		let ct = self.encrypt_poly(&m);
+		m.zeroize();
+
+		ct
 	}
 }
 
