@@ -235,7 +235,9 @@ impl Multiplicator {
 
 #[cfg(test)]
 mod tests {
-	use crate::bfv::{BfvParameters, Encoding, Plaintext, RelinearizationKey, SecretKey};
+	use crate::bfv::{
+		BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
+	};
 	use fhers_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use math::{
 		rns::{RnsContext, ScalingFactor},
@@ -291,8 +293,8 @@ mod tests {
 				let rk = RelinearizationKey::new_leveled(&sk, level, level)?;
 				let pt =
 					Plaintext::try_encode(&values as &[u64], Encoding::simd_at_level(level), &par)?;
-				let ct1 = sk.try_encrypt(&pt)?;
-				let ct2 = sk.try_encrypt(&pt)?;
+				let ct1: Ciphertext = sk.try_encrypt(&pt)?;
+				let ct2: Ciphertext = sk.try_encrypt(&pt)?;
 				assert_eq!(ct1.level, level);
 				assert_eq!(ct2.level, level);
 

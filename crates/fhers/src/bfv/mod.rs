@@ -10,6 +10,7 @@ mod parameters;
 mod plaintext;
 mod plaintext_vec;
 mod proto;
+mod rgsw_ciphertext;
 
 pub mod traits;
 pub use ciphertext::Ciphertext;
@@ -22,3 +23,6 @@ pub use plaintext_vec::PlaintextVec;
 
 #[cfg(feature = "optimized_ops")]
 pub use ops::dot_product_scalar;
+
+#[cfg(feature = "rgsw")]
+pub use rgsw_ciphertext::RGSWCiphertext;

@@ -10,3 +10,5 @@ pub use galois_key::GaloisKey;
 pub use public_key::PublicKey;
 pub use relinearization_key::RelinearizationKey;
 pub use secret_key::SecretKey;
+
+pub(crate) use key_switching_key::KeySwitchingKey;

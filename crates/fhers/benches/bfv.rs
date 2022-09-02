@@ -2,9 +2,12 @@
 #![feature(int_roundings)]
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use fhers::bfv::{
-	BfvParameters, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, PublicKey,
-	RelinearizationKey, SecretKey,
+use fhers::{
+	bfv::{
+		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext,
+		PublicKey, RelinearizationKey, SecretKey,
+	},
+	Result,
 };
 use fhers_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
@@ -51,8 +54,8 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		let pt2 =
 			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::simd(), &par)
 				.unwrap();
-		let mut c1 = sk.try_encrypt(&pt1).unwrap();
-		let c2 = sk.try_encrypt(&pt2).unwrap();
+		let mut c1: Ciphertext = sk.try_encrypt(&pt1).unwrap();
+		let c2: Ciphertext = sk.try_encrypt(&pt2).unwrap();
 
 		let q = par.moduli_sizes().iter().sum::<usize>();
 
@@ -106,7 +109,9 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new("encrypt_sk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| sk.try_encrypt(&pt1));
+				b.iter(|| {
+					let _: Result<Ciphertext> = sk.try_encrypt(&pt1);
+				});
 			},
 		);
 

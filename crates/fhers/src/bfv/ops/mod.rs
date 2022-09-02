@@ -165,7 +165,7 @@ impl MulAssign<&Plaintext> for Ciphertext {
 impl Mul<&Plaintext> for &Ciphertext {
 	type Output = Ciphertext;
 
-	fn mul(self, rhs: &Plaintext) -> Self::Output {
+	fn mul(self, rhs: &Plaintext) -> Ciphertext {
 		let mut self_clone = self.clone();
 		self_clone *= rhs;
 		self_clone
@@ -175,7 +175,7 @@ impl Mul<&Plaintext> for &Ciphertext {
 impl Mul<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
 
-	fn mul(self, rhs: &Ciphertext) -> Self::Output {
+	fn mul(self, rhs: &Ciphertext) -> Ciphertext {
 		if self.c.is_empty() {
 			return self.clone();
 		}
@@ -306,7 +306,7 @@ mod tests {
 					let mut ct_a = sk.try_encrypt(&pt_a)?;
 					assert_eq!(ct_a, &ct_a + &zero);
 					assert_eq!(ct_a, &zero + &ct_a);
-					let ct_b = sk.try_encrypt(&pt_b)?;
+					let ct_b: Ciphertext = sk.try_encrypt(&pt_b)?;
 					let ct_c = &ct_a + &ct_b;
 					ct_a += &ct_b;
 
@@ -399,7 +399,7 @@ mod tests {
 						)?,
 						a_neg
 					);
-					let ct_b = sk.try_encrypt(&pt_b)?;
+					let ct_b: Ciphertext = sk.try_encrypt(&pt_b)?;
 					let ct_c = &ct_a - &ct_b;
 					ct_a -= &ct_b;
 
@@ -479,7 +479,7 @@ mod tests {
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 
-					let ct_a = sk.try_encrypt(&pt_a)?;
+					let ct_a: Ciphertext = sk.try_encrypt(&pt_a)?;
 
 					let ct_c = -&ct_a;
 					let pt_c = sk.try_decrypt(&ct_c)?;
@@ -564,8 +564,8 @@ mod tests {
 			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
 			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
 
-			let ct1 = sk.try_encrypt(&pt1)?;
-			let ct2 = sk.try_encrypt(&pt2)?;
+			let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
+			let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
 			let ct3 = &ct1 * &ct2;
 			let ct4 = &ct3 * &ct3;
 
@@ -595,7 +595,7 @@ mod tests {
 			let sk = SecretKey::random(&par);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &par)?;
 
-			let ct1 = sk.try_encrypt(&pt)?;
+			let ct1: Ciphertext = sk.try_encrypt(&pt)?;
 			let ct2 = &ct1 * &ct1;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });

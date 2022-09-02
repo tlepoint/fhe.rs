@@ -11,7 +11,8 @@ bench = false  # Disable default bench (we use criterion)
 
 [features]
 leveled_bfv = []
-optimized_ops = ["leveled_bfv"]
+optimized_ops = []
+rgsw = []
 
 [dependencies]
 math = { version = "0.0.1-beta", path = "../../internal/math" }
@@ -48,10 +49,15 @@ name = "bfv_optimized_ops"
 harness = false
 required-features = ["optimized_ops"]
 
+[[bench]]
+name = "bfv_rgsw"
+harness = false
+required-features = ["rgsw"]
+
 [[example]]
 name = "mulpir"
-required-features = ["optimized_ops"]
+required-features = ["optimized_ops", "leveled_bfv"]
 
 [[example]]
 name = "sealpir"
-required-features = ["optimized_ops"]
+required-features = ["optimized_ops", "leveled_bfv"]

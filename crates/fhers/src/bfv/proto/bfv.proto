@@ -8,6 +8,11 @@ message Ciphertext {
     uint32 level = 3;
 }
 
+message RGSWCiphertext {
+    KeySwitchingKey ksk0 = 1;
+    KeySwitchingKey ksk1 = 2;
+}
+
 message KeySwitchingKey {
     repeated bytes c0 = 1;
     bytes seed = 2;
