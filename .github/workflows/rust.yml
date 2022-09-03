@@ -70,12 +70,11 @@ jobs:
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
       - uses: actions-rs/grcov@v0.1
       - name: Install rust-covfix
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: rust-covfix
+        run: |
+          curl -L https://github.com/Kogia-sima/rust-covfix/releases/download/v0.2.2/rust-covfix-linux-x86_64.tar.xz | tar jxf -
+          mv rust-covfix-linux-x86_64/rust-covfix ./
       - name: Fix coverage
-        run: rust-covfix -o lcov.info lcov.info
+        run: ./rust-covfix -o lcov.info lcov.info
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
