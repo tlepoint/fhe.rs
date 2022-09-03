@@ -56,6 +56,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Install rust-covfix
+        run: |
+          wget https://github.com/Kogia-sima/rust-covfix/releases/download/v0.2.2/rust-covfix-linux-x86_64.tar.xz
+          tar xvf rust-covfix-linux-x86_64.tar.xz
+          mv rust-covfix-linux-x86_64/rust-covfix ./
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -69,10 +74,6 @@ jobs:
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
       - uses: actions-rs/grcov@v0.1
-      - name: Install rust-covfix
-        run: |
-          curl -L https://github.com/Kogia-sima/rust-covfix/releases/download/v0.2.2/rust-covfix-linux-x86_64.tar.xz | tar jxf -
-          mv rust-covfix-linux-x86_64/rust-covfix ./
       - name: Fix coverage
         run: ./rust-covfix -o lcov.info lcov.info
       - name: Upload to codecov.io
