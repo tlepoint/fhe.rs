@@ -69,9 +69,15 @@ jobs:
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
       - uses: actions-rs/grcov@v0.1
+      - name: Install rust-covfix
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: rust-covfix
+      - name: Fix coverage
+        run: rust-covfix -o lcov.info lcov.info
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.coverage.outputs.report }}
           fail_ci_if_error: true

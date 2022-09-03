@@ -1,5 +1,5 @@
-output-type: cobertura
-output-path: ./cobertura.xml
+output-type: lcov
+output-path: ./lcov.info
 ignore:
   - "internal/math/src/proto/*"
   - "crates/fhers/src/bfv/proto/*"
