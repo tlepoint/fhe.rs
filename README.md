@@ -5,12 +5,15 @@
 <a href="https://codecov.io/gh/tlepoint/fhe.rs"><img src="https://codecov.io/gh/tlepoint/fhe.rs/branch/main/graph/badge.svg?token=LCBSDMB5NS"/></a>
 </p>
 
-This repository contains the `fhe.rs` library, a cryptographic library in Rust for homomorphic encryption developed by [Tancrède Lepoint](https://tancre.de). For more information about the library, see [fhe.rs](https://fhe.rs).
+This repository contains the `fhe.rs` library, a cryptographic library in Rust for Ring-LWE-based homomorphic encryption, developed by [Tancrède Lepoint](https://tancre.de). For more information about the library, see [fhe.rs](https://fhe.rs).
 
 > **Warning**
 > `fhe.rs` is a beta library, and **should be considered unstable with potential breaking API changes until version 0.1.0 is released!**
 
+The library features:
+
+* An implementation of a RNS-variant of the Brakerski-Fan-Vercauteren (BFV) homomorphic encryption scheme;
+* Performances comparable or better than state-of-the-art libraries in C++ and Go.
+
 > **Note**
 > This library is not related to the `concrete` ecosystems (Zama's fully homomorphic encryption in Rust), available at [concrete.rs](https://concrete.rs).
-
-## News
