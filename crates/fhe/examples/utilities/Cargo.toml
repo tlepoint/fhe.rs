@@ -1,0 +1,17 @@
+[package]
+name = "utilities"
+description = "Fully homomorphic encryption in Rust"
+version = "0.0.1-alpha"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tlepoint/fhe.rs"
+
+[lib]
+bench = false  # Disable default bench (we use criterion)
+
+[dependencies]
+fhe = { version = "0.0.1-alpha", path = "../../", features=["leveled_bfv"] }
+fhe-traits = { version = "0.0.1-alpha", path = "../../../fhe-traits" }
+ndarray = "0.15.6"
+indicatif = "0.17.0"
+util = { version = "0.0.1-alpha", path = "../../../../internal/util" }
