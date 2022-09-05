@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{traits::TryConvertFrom, Context, Poly};
 use crate::{proto::rq::Rq, Error};
-use fhers_traits::{DeserializeWithContext, Serialize};
+use fhe_traits::{DeserializeWithContext, Serialize};
 use protobuf::Message;
 
 impl Serialize for Poly {
@@ -28,7 +28,7 @@ impl DeserializeWithContext for Poly {
 mod tests {
 	use std::{error::Error, sync::Arc};
 
-	use fhers_traits::{DeserializeWithContext, Serialize};
+	use fhe_traits::{DeserializeWithContext, Serialize};
 
 	use crate::rq::{Context, Poly, Representation};
 

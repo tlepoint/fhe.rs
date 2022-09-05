@@ -236,12 +236,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhers"
-version = "0.0.1-beta"
+name = "fhe"
+version = "0.0.1-alpha"
 dependencies = [
  "console",
  "criterion",
- "fhers-traits",
+ "fhe-traits",
  "indicatif",
  "itertools",
  "math",
@@ -259,8 +259,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhers-traits"
-version = "0.0.1-beta"
+name = "fhe-traits"
+version = "0.0.1-alpha"
 
 [[package]]
 name = "fnv"
@@ -376,11 +376,11 @@ dependencies = [
 
 [[package]]
 name = "math"
-version = "0.0.1-beta"
+version = "0.0.1-alpha"
 dependencies = [
  "criterion",
  "crypto-bigint",
- "fhers-traits",
+ "fhe-traits",
  "itertools",
  "ndarray",
  "num-bigint",
@@ -934,7 +934,7 @@ checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
 name = "util"
-version = "0.0.1-beta"
+version = "0.0.1-alpha"
 dependencies = [
  "itertools",
  "num-bigint-dig",
@@ -944,10 +944,10 @@ dependencies = [
 
 [[package]]
 name = "utilities"
-version = "0.0.1-beta"
+version = "0.0.1-alpha"
 dependencies = [
- "fhers",
- "fhers-traits",
+ "fhe",
+ "fhe-traits",
  "indicatif",
  "ndarray",
  "util",

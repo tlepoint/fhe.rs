@@ -1,0 +1,63 @@
+[package]
+name = "fhe"
+description = "Fully Homomorphic Encryption in Rust"
+version = "0.0.1-alpha"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tlepoint/fhe.rs"
+
+[lib]
+bench = false  # Disable default bench (we use criterion)
+
+[features]
+leveled_bfv = []
+optimized_ops = []
+rgsw = []
+
+[dependencies]
+math = { version = "0.0.1-alpha", path = "../../internal/math" }
+fhe-traits = { version = "0.0.1-alpha", path = "../fhe-traits" }
+util = { version = "0.0.1-alpha", path = "../../internal/util" }
+
+itertools = "0.10.3"
+num-bigint = "0.4.3"
+num-traits = "0.2.15"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+zeroize = "1.5.7"
+zeroize_derive = "1.3.2"
+ndarray = "0.15.6"
+protobuf = "3.1.0"
+thiserror = "1.0.33"
+
+[dev-dependencies]
+utilities = { version = "0.0.1-alpha", path = "examples/utilities" }
+
+criterion = "0.3.6"
+indicatif = "0.17.0"
+itertools = "0.10.3"
+ndarray = "0.15.6"
+rand = "0.8.5"
+console = "0.15.1"
+
+[[bench]]
+name = "bfv"
+harness = false
+
+[[bench]]
+name = "bfv_optimized_ops"
+harness = false
+required-features = ["optimized_ops"]
+
+[[bench]]
+name = "bfv_rgsw"
+harness = false
+required-features = ["rgsw"]
+
+[[example]]
+name = "mulpir"
+required-features = ["optimized_ops", "leveled_bfv"]
+
+[[example]]
+name = "sealpir"
+required-features = ["optimized_ops", "leveled_bfv"]
