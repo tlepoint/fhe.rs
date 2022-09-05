@@ -28,7 +28,7 @@ zeroize = "1.5.7"
 zeroize_derive = "1.3.2"
 ndarray = "0.15.6"
 protobuf = "3.1.0"
-thiserror = "1.0.33"
+thiserror = "1.0.34"
 
 [dev-dependencies]
 utilities = { version = "0.0.1-alpha", path = "examples/utilities" }
