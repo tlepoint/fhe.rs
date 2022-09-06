@@ -158,6 +158,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			return Err(Error::DefaultError("Not enough polynomials".to_string()));
 		}
 
+		#[cfg(feature = "leveled_bfv")]
 		if value.level as usize > par.max_level() {
 			return Err(Error::DefaultError("Invalid level".to_string()));
 		}

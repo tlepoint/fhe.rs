@@ -29,13 +29,21 @@ pub struct RelinearizationKey {
 impl RelinearizationKey {
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new(sk: &SecretKey) -> Result<Self> {
-		Self::new_leveled(sk, 0, 0)
+		Self::new_leveled_internal(sk, 0, 0)
 	}
 
 	#[cfg(feature = "leveled_bfv")]
 	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new_leveled(sk: &SecretKey, ciphertext_level: usize, key_level: usize) -> Result<Self> {
+		Self::new_leveled_internal(sk, ciphertext_level, key_level)
+	}
+
+	fn new_leveled_internal(
+		sk: &SecretKey,
+		ciphertext_level: usize,
+		key_level: usize,
+	) -> Result<Self> {
 		let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
 
@@ -75,6 +83,7 @@ impl RelinearizationKey {
 			c2.change_representation(Representation::PowerBasis);
 			let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
 
+			#[cfg(feature = "leveled_bfv")]
 			if c0.ctx() != ct.c[0].ctx() {
 				c0.change_representation(Representation::PowerBasis);
 				c1.change_representation(Representation::PowerBasis);
