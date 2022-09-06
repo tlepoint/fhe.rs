@@ -6,7 +6,7 @@ use crate::{
 use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::sync::Arc;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::encoding::EncodingEnum;
 
@@ -45,7 +45,7 @@ impl Zeroize for Plaintext {
 
 impl Plaintext {
 	pub(crate) fn to_poly(&self) -> Result<Poly> {
-		let mut m_v = self.value.clone();
+		let mut m_v = Zeroizing::new(self.value.clone());
 		self.par
 			.plaintext
 			.scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
@@ -53,7 +53,6 @@ impl Plaintext {
 		let mut m = Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis)?;
 		m.change_representation(Representation::Ntt);
 		m *= &self.par.delta[self.level];
-		m_v.zeroize();
 		Ok(m)
 	}
 
@@ -138,10 +137,8 @@ impl FheEncoder<&[u64]> for Plaintext {
 impl FheEncoder<&[i64]> for Plaintext {
 	type Error = Error;
 	fn try_encode(value: &[i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-		let mut w = par.plaintext.reduce_vec_i64(value);
-		let r = Plaintext::try_encode(&w as &[u64], encoding, par);
-		w.zeroize();
-		r
+		let w = Zeroizing::new(par.plaintext.reduce_vec_i64(value));
+		Plaintext::try_encode(&w as &[u64], encoding, par)
 	}
 }
 

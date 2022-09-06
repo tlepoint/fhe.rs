@@ -1,11 +1,7 @@
 #![crate_name = "math"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
-#![feature(bigint_helper_methods)]
-#![feature(int_roundings)]
-#![feature(is_some_with)]
-#![feature(test)]
-#![feature(int_log)]
+#![feature(bigint_helper_methods, int_log, int_roundings, is_some_with, test)]
 
 //! Mathematical utilities for the fhe.rs library.
 

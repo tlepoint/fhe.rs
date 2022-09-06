@@ -22,7 +22,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use util::sample_vec_cbd;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Possible representations of the underlying polynomial.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -85,6 +85,18 @@ pub struct Poly {
 	allow_variable_time_computations: bool,
 	coefficients: Array2<u64>,
 	coefficients_shoup: Option<Array2<u64>>,
+}
+
+impl AsRef<Poly> for Poly {
+	fn as_ref(&self) -> &Poly {
+		self
+	}
+}
+
+impl AsMut<Poly> for Poly {
+	fn as_mut(&mut self) -> &mut Poly {
+		self
+	}
 }
 
 impl Poly {
@@ -257,8 +269,9 @@ impl Poly {
 				"The variance should be an integer between 1 and 16".to_string(),
 			))
 		} else {
-			let mut coeffs =
-				sample_vec_cbd(ctx.degree, variance).map_err(|e| Error::Default(e.to_string()))?;
+			let coeffs = Zeroizing::new(
+				sample_vec_cbd(ctx.degree, variance).map_err(|e| Error::Default(e.to_string()))?,
+			);
 			let mut p = Poly::try_convert_from(
 				coeffs.as_ref() as &[i64],
 				ctx,
@@ -268,7 +281,6 @@ impl Poly {
 			if representation != Representation::PowerBasis {
 				p.change_representation(representation);
 			}
-			coeffs.zeroize();
 			Ok(p)
 		}
 	}

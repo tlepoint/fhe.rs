@@ -94,9 +94,9 @@ where
 					ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
 					pt.clone().map(|pti| &pti.poly_ntt),
 				)
-				.unwrap()
+				.map_err(Error::MathError)
 			})
-			.collect_vec();
+			.collect::<Result<Vec<Poly>>>()?;
 
 		Ok(Ciphertext {
 			par: ct_first.par.clone(),

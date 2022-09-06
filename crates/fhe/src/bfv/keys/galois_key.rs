@@ -13,7 +13,7 @@ use math::rq::{
 };
 use protobuf::MessageField;
 use std::sync::Arc;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// Galois key for the BFV encryption scheme.
 /// A Galois key is a special type of key switching key,
@@ -39,20 +39,17 @@ impl GaloisKey {
 			SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
 
 		let switcher_up = Switcher::new(ctx_ciphertext, ctx_galois_key)?;
-		let mut s = Poly::try_convert_from(
-			&sk.s_coefficients as &[i64],
+		let s = Zeroizing::new(Poly::try_convert_from(
+			&sk.coeffs as &[i64],
 			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
-		)?;
-		let mut s_sub = s.substitute(&ciphertext_exponent)?;
-		let mut s_sub_switched_up = s_sub.mod_switch_to(&switcher_up)?;
+		)?);
+		let s_sub = Zeroizing::new(s.substitute(&ciphertext_exponent)?);
+		let mut s_sub_switched_up = Zeroizing::new(s_sub.mod_switch_to(&switcher_up)?);
 		s_sub_switched_up.change_representation(Representation::PowerBasis);
 
 		let ksk = KeySwitchingKey::new(sk, &s_sub_switched_up, ciphertext_level, galois_key_level)?;
-		s_sub.zeroize();
-		s_sub_switched_up.zeroize();
-		s.zeroize();
 
 		Ok(Self {
 			element: ciphertext_exponent,
