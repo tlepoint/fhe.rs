@@ -48,6 +48,8 @@ fhe-traits = "0.0.1-alpha"
 
 ## Getting started
 
+Below is a simple example of an homomorphic multiplication modulo `1024 (= 1 << 10)`, where one ciphertext is encrypted using the secret key, and one ciphertext encrypted using the public key. The `poly()` encoding means that the vector being encoded corresponds to the coefficients of a polynomial in `(ZZ / (1024))[x] / (x^2048+1)`.
+
 ```rust
 use fhe::bfv;
 use fhe_traits::*;
