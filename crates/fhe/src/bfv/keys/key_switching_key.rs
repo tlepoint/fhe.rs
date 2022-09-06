@@ -6,7 +6,7 @@ use crate::bfv::{
 };
 use crate::{Error, Result};
 use fhe_traits::{DeserializeWithContext, Serialize};
-use itertools::{izip, Itertools};
+use itertools::izip;
 use math::rq::traits::TryConvertFrom;
 use math::rq::Context;
 use math::{
@@ -16,7 +16,7 @@ use math::{
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// Key switching key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -24,7 +24,7 @@ pub struct KeySwitchingKey {
 	/// The parameters of the underlying BFV encryption scheme.
 	pub(crate) par: Arc<BfvParameters>,
 
-	/// The seed that generated the polynomials c1.
+	/// The (optional) seed that generated the polynomials c1.
 	pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
 	/// The key switching elements c0.
@@ -33,11 +33,11 @@ pub struct KeySwitchingKey {
 	/// The key switching elements c1.
 	pub(crate) c1: Box<[Poly]>,
 
-	/// The context of the polynomials that will be key switched.
+	/// The level and context of the polynomials that will be key switched.
 	pub(crate) ciphertext_level: usize,
 	pub(crate) ctx_ciphertext: Arc<Context>,
 
-	/// The context of the key switching key.
+	/// The level and context of the key switching key.
 	pub(crate) ksk_level: usize,
 	pub(crate) ctx_ksk: Arc<Context>,
 }
@@ -114,12 +114,12 @@ impl KeySwitchingKey {
 
 		let size = c1.len();
 
-		let mut s = Poly::try_convert_from(
-			&sk.s_coefficients as &[i64],
+		let mut s = Zeroizing::new(Poly::try_convert_from(
+			&sk.coeffs as &[i64],
 			c1[0].ctx(),
 			false,
 			Representation::PowerBasis,
-		)?;
+		)?);
 		s.change_representation(Representation::Ntt);
 
 		let rns = RnsContext::new(&sk.par.moduli[..size])?;
@@ -127,31 +127,26 @@ impl KeySwitchingKey {
 			.iter()
 			.enumerate()
 			.map(|(i, c1i)| {
-				let mut a = c1i.clone();
-				a.disallow_variable_time_computations();
-				let mut a_s = &a * &s;
+				let mut a_s = Zeroizing::new(c1i.clone());
+				a_s.disallow_variable_time_computations();
+				a_s.change_representation(Representation::Ntt);
+				*a_s.as_mut() *= s.as_ref();
 				a_s.change_representation(Representation::PowerBasis);
 
-				let mut b =
-					Poly::small(a.ctx(), Representation::PowerBasis, sk.par.variance).unwrap();
+				let mut b = Poly::small(a_s.ctx(), Representation::PowerBasis, sk.par.variance)?;
 				b -= &a_s;
 
 				let gi = rns.get_garner(i).unwrap();
-				let mut g_i_from = gi * from;
+				let g_i_from = Zeroizing::new(gi * from);
 				b += &g_i_from;
-
-				a.zeroize();
-				a_s.zeroize();
-				g_i_from.zeroize();
 
 				// It is now safe to enable variable time computations.
 				unsafe { b.allow_variable_time_computations() }
 				b.change_representation(Representation::NttShoup);
-				b
+				Ok(b)
 			})
-			.collect_vec();
+			.collect::<Result<Vec<Poly>>>()?;
 
-		s.zeroize();
 		Ok(c0)
 	}
 
@@ -303,7 +298,7 @@ mod tests {
 				let mut p = Poly::small(ctx, Representation::PowerBasis, 10)?;
 				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
 				let mut s = Poly::try_convert_from(
-					&sk.s_coefficients as &[i64],
+					&sk.coeffs as &[i64],
 					ctx,
 					false,
 					Representation::PowerBasis,

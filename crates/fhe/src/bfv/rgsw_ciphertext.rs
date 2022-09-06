@@ -5,6 +5,7 @@ use fhe_traits::{
 };
 use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use protobuf::{Message, MessageField};
+use zeroize::Zeroizing;
 
 use crate::{
 	bfv::proto::bfv::{
@@ -85,15 +86,15 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
 		let level = pt.level;
 		let ctx = self.par.ctx_at_level(level)?;
 
-		let mut m = pt.poly_ntt.clone();
-		let mut m_s = Poly::try_convert_from(
-			&self.s_coefficients as &[i64],
+		let mut m = Zeroizing::new(pt.poly_ntt.clone());
+		let mut m_s = Zeroizing::new(Poly::try_convert_from(
+			&self.coeffs as &[i64],
 			ctx,
 			false,
 			Representation::PowerBasis,
-		)?;
+		)?);
 		m_s.change_representation(Representation::Ntt);
-		m_s *= &m;
+		*m_s.as_mut() *= m.as_ref();
 		m_s.change_representation(Representation::PowerBasis);
 		m.change_representation(Representation::PowerBasis);
 

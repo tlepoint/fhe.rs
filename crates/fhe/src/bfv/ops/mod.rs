@@ -3,19 +3,17 @@
 #[cfg(feature = "optimized_ops")]
 mod dot_product;
 
-mod mul;
-
 #[cfg(feature = "optimized_ops")]
 pub use dot_product::dot_product_scalar;
 
+mod mul;
 pub use mul::Multiplicator;
 
-use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-
+use super::{Ciphertext, Plaintext};
+use crate::{Error, Result};
 use itertools::{izip, Itertools};
 use math::rq::{Poly, Representation};
-
-use super::{Ciphertext, Plaintext};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 impl Add<&Ciphertext> for &Ciphertext {
 	type Output = Ciphertext;
@@ -189,8 +187,9 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			let self_c = self
 				.c
 				.iter()
-				.map(|ci| ci.scale(&mp.extender).unwrap())
-				.collect_vec();
+				.map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
+				.collect::<Result<Vec<Poly>>>()
+				.unwrap();
 			// println!("Extend: {:?}", now.elapsed().unwrap());
 
 			// Multiply
@@ -209,11 +208,12 @@ impl Mul<&Ciphertext> for &Ciphertext {
 				.iter_mut()
 				.map(|ci| {
 					ci.change_representation(Representation::PowerBasis);
-					let mut ci = ci.scale(&mp.down_scaler).unwrap();
+					let mut ci = ci.scale(&mp.down_scaler).map_err(Error::MathError)?;
 					ci.change_representation(Representation::Ntt);
-					ci
+					Ok(ci)
 				})
-				.collect_vec();
+				.collect::<Result<Vec<Poly>>>()
+				.unwrap();
 			// println!("Scale: {:?}", now.elapsed().unwrap());
 
 			Ciphertext {
@@ -233,13 +233,15 @@ impl Mul<&Ciphertext> for &Ciphertext {
 			let self_c = self
 				.c
 				.iter()
-				.map(|ci| ci.scale(&mp.extender).unwrap())
-				.collect_vec();
+				.map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
+				.collect::<Result<Vec<Poly>>>()
+				.unwrap();
 			let other_c = rhs
 				.c
 				.iter()
-				.map(|ci| ci.scale(&mp.extender).unwrap())
-				.collect_vec();
+				.map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
+				.collect::<Result<Vec<Poly>>>()
+				.unwrap();
 			// println!("Extend: {:?}", now.elapsed().unwrap());
 
 			// Multiply
@@ -259,11 +261,12 @@ impl Mul<&Ciphertext> for &Ciphertext {
 				.iter_mut()
 				.map(|ci| {
 					ci.change_representation(Representation::PowerBasis);
-					let mut ci = ci.scale(&mp.down_scaler).unwrap();
+					let mut ci = ci.scale(&mp.down_scaler).map_err(Error::MathError)?;
 					ci.change_representation(Representation::Ntt);
-					ci
+					Ok(ci)
 				})
-				.collect_vec();
+				.collect::<Result<Vec<Poly>>>()
+				.unwrap();
 			// println!("Scale: {:?}", now.elapsed().unwrap());
 
 			Ciphertext {

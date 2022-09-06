@@ -10,7 +10,7 @@ use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Seriali
 use math::rq::{Poly, Representation};
 use protobuf::{Message, MessageField};
 use std::sync::Arc;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::SecretKey;
 
@@ -50,25 +50,22 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 			ct.mod_switch_to_next_level();
 		}
 		let ctx = self.par.ctx_at_level(ct.level)?;
-		let mut u =
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?;
-		let mut e1 =
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?;
-		let mut e2 =
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?;
+		let u = Zeroizing::new(
+			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+		);
+		let e1 = Zeroizing::new(
+			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+		);
+		let e2 = Zeroizing::new(
+			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+		);
 
-		let mut m = pt.to_poly()?;
-		let mut c0 = &u * &ct.c[0];
+		let m = Zeroizing::new(pt.to_poly()?);
+		let mut c0 = u.as_ref() * &ct.c[0];
 		c0 += &e1;
 		c0 += &m;
-		let mut c1 = &u * &ct.c[1];
+		let mut c1 = u.as_ref() * &ct.c[1];
 		c1 += &e2;
-
-		// Zeroize the temporary variables holding sensitive information.
-		u.zeroize();
-		e1.zeroize();
-		e2.zeroize();
-		m.zeroize();
 
 		// It is now safe to enable variable time computations.
 		unsafe {

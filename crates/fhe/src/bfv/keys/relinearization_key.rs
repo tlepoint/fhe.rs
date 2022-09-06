@@ -16,7 +16,7 @@ use math::rq::{
 	switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
 };
 use protobuf::{Message, MessageField};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// Relinearization key for the BFV encryption scheme.
 /// A relinearization key is a special type of key switching key,
@@ -45,21 +45,18 @@ impl RelinearizationKey {
 			));
 		}
 
-		let mut s = Poly::try_convert_from(
-			&sk.s_coefficients as &[i64],
+		let mut s = Zeroizing::new(Poly::try_convert_from(
+			&sk.coeffs as &[i64],
 			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
-		)?;
+		)?);
 		s.change_representation(Representation::Ntt);
-		let mut s2 = &s * &s;
+		let mut s2 = Zeroizing::new(s.as_ref() * s.as_ref());
 		s2.change_representation(Representation::PowerBasis);
 		let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
-		let mut s2_switched_up = s2.mod_switch_to(&switcher_up)?;
+		let s2_switched_up = Zeroizing::new(s2.mod_switch_to(&switcher_up)?);
 		let ksk = KeySwitchingKey::new(sk, &s2_switched_up, ciphertext_level, key_level)?;
-		s2.zeroize();
-		s.zeroize();
-		s2_switched_up.zeroize();
 		Ok(Self { ksk })
 	}
 
@@ -169,7 +166,7 @@ mod tests {
 
 				let ctx = params.ctx_at_level(0)?;
 				let mut s = Poly::try_convert_from(
-					&sk.s_coefficients as &[i64],
+					&sk.coeffs as &[i64],
 					ctx,
 					false,
 					Representation::PowerBasis,
@@ -222,7 +219,7 @@ mod tests {
 
 						let ctx = params.ctx_at_level(ciphertext_level)?;
 						let mut s = Poly::try_convert_from(
-							&sk.s_coefficients as &[i64],
+							&sk.coeffs as &[i64],
 							ctx,
 							false,
 							Representation::PowerBasis,

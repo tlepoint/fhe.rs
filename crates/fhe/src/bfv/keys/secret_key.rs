@@ -13,18 +13,18 @@ use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use util::sample_vec_cbd;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Secret key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
 	pub(crate) par: Arc<BfvParameters>,
-	pub(crate) s_coefficients: Box<[i64]>,
+	pub(crate) coeffs: Box<[i64]>,
 }
 
 impl Zeroize for SecretKey {
 	fn zeroize(&mut self) {
-		self.s_coefficients.zeroize();
+		self.coeffs.zeroize();
 	}
 }
 
@@ -41,7 +41,7 @@ impl SecretKey {
 	pub(crate) fn new(s_coefficients: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
 		Self {
 			par: par.clone(),
-			s_coefficients: s_coefficients.into_boxed_slice(),
+			coeffs: s_coefficients.into_boxed_slice(),
 		}
 	}
 
@@ -52,48 +52,41 @@ impl SecretKey {
 	/// This operations may run in a variable time depending on the value of the
 	/// noise.
 	pub unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize> {
-		let plaintext = self.try_decrypt(ct)?;
-		let mut m = plaintext.to_poly()?;
+		let plaintext = Zeroizing::new(self.try_decrypt(ct)?);
+		let m = Zeroizing::new(plaintext.to_poly()?);
 
 		// Let's create a secret key with the ciphertext context
-		let mut s = Poly::try_convert_from(
-			&self.s_coefficients as &[i64],
+		let mut s = Zeroizing::new(Poly::try_convert_from(
+			&self.coeffs as &[i64],
 			ct.c[0].ctx(),
 			false,
 			Representation::PowerBasis,
-		)?;
+		)?);
 		s.change_representation(Representation::Ntt);
 		let mut si = s.clone();
 
 		// Let's disable variable time computations
-		let mut c = ct.c[0].clone();
+		let mut c = Zeroizing::new(ct.c[0].clone());
 		c.disallow_variable_time_computations();
 
 		for i in 1..ct.c.len() {
-			let mut cis = ct.c[i].clone();
+			let mut cis = Zeroizing::new(ct.c[i].clone());
 			cis.disallow_variable_time_computations();
-			cis *= &si;
-			c += &cis;
-			cis.zeroize();
-			si *= &s;
+			*cis.as_mut() *= si.as_ref();
+			*c.as_mut() += &cis;
+			*si.as_mut() *= s.as_ref();
 		}
-		c -= &m;
+		*c.as_mut() -= &m;
 		c.change_representation(Representation::PowerBasis);
-
-		s.zeroize();
-		si.zeroize();
 
 		let ciphertext_modulus = ct.c[0].ctx().modulus();
 		let mut noise = 0usize;
-		for coeff in Vec::<BigUint>::from(&c) {
+		for coeff in Vec::<BigUint>::from(c.as_ref()) {
 			noise = std::cmp::max(
 				noise,
 				std::cmp::min(coeff.bits(), (ciphertext_modulus - &coeff).bits()) as usize,
 			)
 		}
-
-		c.zeroize();
-		m.zeroize();
 
 		Ok(noise)
 	}
@@ -112,24 +105,21 @@ impl SecretKey {
 		thread_rng().fill(&mut seed);
 
 		// Let's create a secret key with the ciphertext context
-		let mut s = Poly::try_convert_from(
-			&self.s_coefficients as &[i64],
+		let mut s = Zeroizing::new(Poly::try_convert_from(
+			&self.coeffs as &[i64],
 			p.ctx(),
 			false,
 			Representation::PowerBasis,
-		)?;
+		)?);
 		s.change_representation(Representation::Ntt);
 
 		let mut a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
-		let mut a_s = &a * &s;
-		s.zeroize();
+		let a_s = Zeroizing::new(&a * s.as_ref());
 
-		let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance).unwrap();
+		let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance)
+			.map_err(Error::MathError)?;
 		b -= &a_s;
 		b += p;
-
-		// Zeroize the temporary variables holding sensitive information.
-		a_s.zeroize();
 
 		// It is now safe to enable variable time computations.
 		unsafe {
@@ -155,12 +145,8 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 
 	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
-
-		let mut m = pt.to_poly()?;
-		let ct = self.encrypt_poly(&m);
-		m.zeroize();
-
-		ct
+		let m = Zeroizing::new(pt.to_poly()?);
+		self.encrypt_poly(&m)
 	}
 }
 
@@ -174,40 +160,38 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 			))
 		} else {
 			// Let's create a secret key with the ciphertext context
-			let mut s = Poly::try_convert_from(
-				&self.s_coefficients as &[i64],
+			let mut s = Zeroizing::new(Poly::try_convert_from(
+				&self.coeffs as &[i64],
 				ct.c[0].ctx(),
 				false,
 				Representation::PowerBasis,
-			)?;
+			)?);
 			s.change_representation(Representation::Ntt);
 			let mut si = s.clone();
 
-			let mut c = ct.c[0].clone();
+			let mut c = Zeroizing::new(ct.c[0].clone());
 			c.disallow_variable_time_computations();
 
 			for i in 1..ct.c.len() {
-				let mut cis = ct.c[i].clone();
+				let mut cis = Zeroizing::new(ct.c[i].clone());
 				cis.disallow_variable_time_computations();
-				cis *= &si;
-				c += &cis;
-				cis.zeroize();
-				si *= &s;
+				*cis.as_mut() *= si.as_ref();
+				*c.as_mut() += &cis;
+				*si.as_mut() *= s.as_ref();
 			}
 			c.change_representation(Representation::PowerBasis);
 
-			s.zeroize();
-			si.zeroize();
-
-			let mut d = c.scale(&self.par.scalers[ct.level])?;
+			let d = Zeroizing::new(c.scale(&self.par.scalers[ct.level])?);
 
 			// TODO: Can we handle plaintext moduli that are BigUint?
-			let mut v = Vec::<u64>::from(&d)
-				.iter_mut()
-				.map(|vi| *vi + self.par.plaintext.modulus())
-				.collect_vec();
+			let v = Zeroizing::new(
+				Vec::<u64>::from(d.as_ref())
+					.iter_mut()
+					.map(|vi| *vi + self.par.plaintext.modulus())
+					.collect_vec(),
+			);
 			let mut w = v[..self.par.degree()].to_vec();
-			let q = Modulus::new(self.par.moduli[0]).unwrap();
+			let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
 
@@ -227,11 +211,6 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 				level: ct.level,
 			};
 
-			// Zeroize the temporary variables potentially holding sensitive information.
-			c.zeroize();
-			d.zeroize();
-			v.zeroize();
-
 			Ok(pt)
 		}
 	}
@@ -250,7 +229,7 @@ mod tests {
 		let sk = SecretKey::random(&params);
 		assert_eq!(sk.par, params);
 
-		sk.s_coefficients.iter().for_each(|ci| {
+		sk.coeffs.iter().for_each(|ci| {
 			// Check that this is a small polynomial
 			assert!((*ci).abs() <= 2 * sk.par.variance as i64)
 		})

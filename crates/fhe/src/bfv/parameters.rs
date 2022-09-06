@@ -235,7 +235,7 @@ impl BfvParametersBuilder {
 		Self {
 			degree: Default::default(),
 			plaintext: Default::default(),
-			variance: 3,
+			variance: 10,
 			ciphertext_moduli: Default::default(),
 			ciphertext_moduli_sizes: Default::default(),
 		}
