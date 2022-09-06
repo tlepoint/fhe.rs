@@ -1,7 +1,7 @@
 [package]
 name = "fhe"
 description = "Fully Homomorphic Encryption in Rust"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
@@ -16,9 +16,9 @@ optimized_ops = []
 rgsw = []
 
 [dependencies]
-fhe-math = { version = "0.0.1-alpha", path = "../fhe-math" }
-fhe-traits = { version = "0.0.1-alpha", path = "../fhe-traits" }
-fhe-util = { version = "0.0.1-alpha", path = "../fhe-util" }
+fhe-math = { version = "0.1.0-beta.0", path = "../fhe-math" }
+fhe-traits = { version = "0.1.0-beta.0", path = "../fhe-traits" }
+fhe-util = { version = "0.1.0-beta.0", path = "../fhe-util" }
 
 itertools = "0.10.3"
 num-bigint = "0.4.3"
@@ -32,7 +32,7 @@ protobuf = "3.1.0"
 thiserror = "1.0.34"
 
 [dev-dependencies]
-utilities = { version = "0.0.1-alpha", path = "examples/utilities" }
+utilities = { version = "0.1.0-beta.0", path = "examples/utilities" }
 
 criterion = "0.3.6"
 indicatif = "0.17.0"

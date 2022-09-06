@@ -17,17 +17,17 @@ The library features:
 
 ## fhe.rs crates
 
-`fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of two public crates (packages):
+`fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of four public crates (packages):
 
 * [`fhe`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
+* [`fhe-math`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
 * [`fhe-traits`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
+* [`fhe-util`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
 
-The `fhe` crate also contains several features:
+The `fhe` crate has several features:
 
 * `optimized_ops`: Enable optimized operations (such as optimized inner-products between ciphertexts and plaintexts);
 * `leveled_bfv`: Enable a (leveled) variant of the BFV homomorphic encryption scheme (which enables modulus switching).
-
-The repository also contain several internal (private) crates, used by the public crates, implementing the core cryptographic and mathematical operations.
 
 ## Minimum supported version / toolchain
 
@@ -39,8 +39,8 @@ To use the latest published crate, add one or both of the following to your `Car
 
 ```toml
 [dependencies]
-fhe = "0.0.1-alpha"
-fhe-traits = "0.0.1-alpha"
+fhe = "0.1.0-beta.0"
+fhe-traits = "0.1.0-beta.0"
 ```
 
 ## Getting started

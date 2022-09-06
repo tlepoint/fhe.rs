@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "fhe"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 dependencies = [
  "console",
  "criterion",
@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 dependencies = [
  "criterion",
  "crypto-bigint",
@@ -281,11 +281,11 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 
 [[package]]
 name = "fhe-util"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 dependencies = [
  "itertools",
  "num-bigint-dig",
@@ -944,7 +944,7 @@ checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
 name = "utilities"
-version = "0.0.1-alpha"
+version = "0.1.0-beta.0"
 dependencies = [
  "fhe",
  "fhe-traits",
