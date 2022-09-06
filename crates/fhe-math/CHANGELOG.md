@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.1.0-beta.0 (2022-09-06)
 
+First pre-release version of the `fhe-math` crate for fhe.rs.
+
 ### Commit Statistics
 
 <csr-read-only-do-not-edit/>
