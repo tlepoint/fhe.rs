@@ -6,8 +6,8 @@ use crate::bfv::{
 	BfvParameters, Ciphertext, Encoding, Plaintext,
 };
 use crate::{Error, Result};
+use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
-use math::rq::{Poly, Representation};
 use protobuf::{Message, MessageField};
 use std::sync::Arc;
 use zeroize::Zeroizing;

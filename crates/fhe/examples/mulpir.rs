@@ -5,10 +5,10 @@ use fhe::bfv::{self, Ciphertext, Plaintext};
 use fhe_traits::{
 	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
+use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{thread_rng, RngCore};
 use std::{env, error::Error, process::exit, sync::Arc};
-use util::transcode_to_bytes;
 use utilities::{
 	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
 };
@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				elements_size,
 			);
 		let mut pt = vec![0u64; dim1 + dim2];
-		let inv = util::inverse(1 << level, plaintext_modulus).unwrap();
+		let inv = inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim2] = inv;
 		pt[dim1 + (query_index % dim2)] = inv;
 		let query_pt =

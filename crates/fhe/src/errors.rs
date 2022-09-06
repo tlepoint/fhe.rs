@@ -9,7 +9,7 @@ pub enum Error {
 	/// Indicates that an error from the underlying mathematical library was
 	/// encountered.
 	#[error("{0}")]
-	MathError(math::Error),
+	MathError(fhe_math::Error),
 
 	/// Indicates a serialization error.
 	#[error("Serialization error")]
@@ -45,8 +45,8 @@ pub enum Error {
 	DefaultError(String),
 }
 
-impl From<math::Error> for Error {
-	fn from(e: math::Error) -> Self {
+impl From<fhe_math::Error> for Error {
+	fn from(e: fhe_math::Error) -> Self {
 		Error::MathError(e)
 	}
 }
@@ -86,8 +86,8 @@ mod tests {
 	#[test]
 	fn error_strings() {
 		assert_eq!(
-			Error::MathError(math::Error::InvalidContext).to_string(),
-			math::Error::InvalidContext.to_string()
+			Error::MathError(fhe_math::Error::InvalidContext).to_string(),
+			fhe_math::Error::InvalidContext.to_string()
 		);
 		assert_eq!(Error::SerializationError.to_string(), "Serialization error");
 		assert_eq!(

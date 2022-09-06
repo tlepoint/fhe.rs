@@ -1,7 +1,7 @@
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
+use fhe_math::rq::*;
 use itertools::{izip, Itertools};
-use math::rq::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::Arc;
 use std::time::Duration;

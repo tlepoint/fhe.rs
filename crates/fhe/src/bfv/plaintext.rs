@@ -3,8 +3,8 @@ use crate::{
 	bfv::{BfvParameters, Encoding, PlaintextVec},
 	Error, Result,
 };
+use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
-use math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
@@ -99,7 +99,7 @@ impl TryConvertFrom<&Plaintext> for Poly {
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		_: R,
-	) -> math::Result<Self>
+	) -> fhe_math::Result<Self>
 	where
 		R: Into<Option<Representation>>,
 	{
@@ -107,9 +107,11 @@ impl TryConvertFrom<&Plaintext> for Poly {
 			!= pt
 				.par
 				.ctx_at_level(pt.level())
-				.map_err(|e| math::Error::Default(e.to_string()))?
+				.map_err(|e| fhe_math::Error::Default(e.to_string()))?
 		{
-			Err(math::Error::Default("Incompatible contexts".to_string()))
+			Err(fhe_math::Error::Default(
+				"Incompatible contexts".to_string(),
+			))
 		} else {
 			Poly::try_convert_from(
 				&pt.value as &[u64],
@@ -202,8 +204,8 @@ impl FheDecoder<Plaintext> for Vec<i64> {
 mod tests {
 	use super::{Encoding, Plaintext};
 	use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
+	use fhe_math::rq::{Poly, Representation};
 	use fhe_traits::{FheDecoder, FheEncoder};
-	use math::rq::{Poly, Representation};
 	use std::{error::Error, sync::Arc};
 	use zeroize::Zeroize;
 

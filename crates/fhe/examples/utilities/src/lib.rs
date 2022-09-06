@@ -5,8 +5,8 @@
 
 use fhe::bfv::{BfvParameters, Encoding, Plaintext};
 use fhe_traits::FheEncoder;
+use fhe_util::transcode_from_bytes;
 use std::{cmp::min, fmt, sync::Arc, time::Duration};
-use util::transcode_from_bytes;
 
 // Utility for displaying duration
 pub struct DisplayDuration(pub Duration);

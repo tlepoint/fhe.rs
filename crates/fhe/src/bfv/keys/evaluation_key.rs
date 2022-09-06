@@ -7,9 +7,9 @@ use crate::bfv::{
 	BfvParameters, Ciphertext, SecretKey,
 };
 use crate::{Error, Result};
+use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
+use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
-use math::zq::Modulus;
 use protobuf::Message;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

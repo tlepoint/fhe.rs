@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use math::zq::{ntt::NttOperator, Modulus};
+use fhe_math::zq::{ntt::NttOperator, Modulus};
 use std::sync::Arc;
 
 pub fn ntt_benchmark(c: &mut Criterion) {

@@ -9,10 +9,10 @@ use fhe::{
 	},
 	Result,
 };
+use fhe_math::rns::{RnsContext, ScalingFactor};
+use fhe_math::zq::primes::generate_prime;
 use fhe_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
-use math::rns::{RnsContext, ScalingFactor};
-use math::zq::primes::generate_prime;
 use num_bigint::BigUint;
 use std::time::Duration;
 

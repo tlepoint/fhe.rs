@@ -16,12 +16,12 @@ pub use ops::dot_product;
 
 use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
 use crate::{Error, Result};
+use fhe_util::sample_vec_cbd;
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2, Axis};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use util::sample_vec_cbd;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Possible representations of the underlying polynomial.

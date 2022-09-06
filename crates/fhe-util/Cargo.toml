@@ -1,5 +1,5 @@
 [package]
-name = "util"
+name = "fhe-util"
 description = "Utilities for the fhe.rs library"
 version = "0.0.1-alpha"
 edition = "2021"

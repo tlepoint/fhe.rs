@@ -4,10 +4,10 @@ use crate::bfv::{
 	parameters::BfvParameters, proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom,
 };
 use crate::{Error, Result};
+use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{
 	DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
 };
-use math::rq::{Poly, Representation};
 use protobuf::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -75,13 +75,13 @@ impl Ciphertext {
 		// Check that all polynomials have the expected representation and context.
 		for ci in c.iter() {
 			if ci.representation() != &Representation::Ntt {
-				return Err(Error::MathError(math::Error::IncorrectRepresentation(
+				return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
 					ci.representation().clone(),
 					Representation::Ntt,
 				)));
 			}
 			if ci.ctx() != ctx {
-				return Err(Error::MathError(math::Error::InvalidContext));
+				return Err(Error::MathError(fhe_math::Error::InvalidContext));
 			}
 		}
 
@@ -182,7 +182,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 		if !value.seed.is_empty() {
 			let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
 			if try_seed.is_err() {
-				return Err(Error::MathError(math::Error::InvalidSeedSize(
+				return Err(Error::MathError(fhe_math::Error::InvalidSeedSize(
 					value.seed.len(),
 					<ChaCha8Rng as SeedableRng>::Seed::default().len(),
 				)));

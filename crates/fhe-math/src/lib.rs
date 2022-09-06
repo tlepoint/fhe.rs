@@ -1,4 +1,4 @@
-#![crate_name = "math"]
+#![crate_name = "fhe_math"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
 #![feature(bigint_helper_methods, int_log, int_roundings, is_some_with, test)]

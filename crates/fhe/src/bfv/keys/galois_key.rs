@@ -7,7 +7,7 @@ use crate::bfv::{
 	BfvParameters, Ciphertext, SecretKey,
 };
 use crate::{Error, Result};
-use math::rq::{
+use fhe_math::rq::{
 	switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
 	SubstitutionExponent,
 };

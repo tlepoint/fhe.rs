@@ -2,17 +2,17 @@
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
-use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
-use itertools::Itertools;
-use math::{
+use fhe_math::{
 	rq::{traits::TryConvertFrom, Poly, Representation},
 	zq::Modulus,
 };
+use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
+use fhe_util::sample_vec_cbd;
+use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use util::sample_vec_cbd;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Secret key for the BFV encryption scheme.
@@ -93,7 +93,7 @@ impl SecretKey {
 
 	pub(crate) fn encrypt_poly(&self, p: &Poly) -> Result<Ciphertext> {
 		if p.representation() != &Representation::Ntt {
-			return Err(Error::MathError(math::Error::IncorrectRepresentation(
+			return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
 				p.representation().clone(),
 				Representation::Ntt,
 			)));
@@ -146,7 +146,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
 		let m = Zeroizing::new(pt.to_poly()?);
-		self.encrypt_poly(&m)
+		self.encrypt_poly(m.as_ref())
 	}
 }
 

@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use math::rns::{RnsContext, RnsScaler, ScalingFactor};
+use fhe_math::rns::{RnsContext, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 use std::sync::Arc;

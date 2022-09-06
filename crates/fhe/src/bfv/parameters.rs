@@ -2,13 +2,13 @@
 
 use crate::bfv::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
-use fhe_traits::{Deserialize, FheParameters, Serialize};
-use itertools::Itertools;
-use math::{
+use fhe_math::{
 	rns::{RnsContext, ScalingFactor},
 	rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
 	zq::{ntt::NttOperator, primes::generate_prime, Modulus},
 };
+use fhe_traits::{Deserialize, FheParameters, Serialize};
+use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use protobuf::Message;
