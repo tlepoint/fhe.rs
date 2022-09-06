@@ -46,6 +46,35 @@ fhe = "0.0.1-alpha"
 fhe-traits = "0.0.1-alpha"
 ```
 
+## Getting started
+
+```rust
+
+use fhe::bfv::self;
+use std::sync::Arc;
+
+fn main() {
+    let parameters = Arc::new(bfv::BfvParametersBuilder::new().set_degree(2048).set_moduli(&[0x3fffffff000001]).set_plaintext_modulus(1 << 10).build().unwrap());
+
+    let secret_key = bfv::SecretKey::random(&parameters);
+    let public_key = bfv::PublicKey::new(&secret_key).unwrap();
+
+    let plaintext_1 = bfv::Plaintext::try_encode(&[20] as &[u64], bfv::Encoding::poly(), &parameters).unwrap();
+    let plaintext_2 = bfv::Plaintext::try_encode(&[-7] as &[i64], bfv::Encoding::poly(), &parameters).unwrap();
+
+    let ciphertext_1: Ciphertext = secret_key.try_encrypt(&plaintext_1).unwrap();
+    let ciphertext_2: Ciphertext = public_key.try_encrypt(&plaintext_2).unwrap();
+
+    let result = &ciphertext_1 * &ciphertext_2;
+
+    let decrypted_plaintext = secret_key.try_decrypt(&result).unwrap();
+    let decrypted_vector = Vec::<u64>::try_decode(&decrypted_plaintext, bfv::Encoding::poly()).unwrap();
+
+    assert_eq!(decrypted_vector[0], ((1 << 10) - 20 * 7));
+}
+
+```
+
 ## ⚠️ Security warning
 
 The implementations contained in the `fhe.rs` ecosystem have never been independently audited for security.

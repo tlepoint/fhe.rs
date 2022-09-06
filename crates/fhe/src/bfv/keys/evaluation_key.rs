@@ -43,7 +43,7 @@ impl EvaluationKey {
 	/// Reports whether the evaluation key enables to compute an homomorphic
 	/// inner sums.
 	pub fn supports_inner_sum(&self) -> bool {
-		if self.evaluation_key_level == self.par.max_level() {
+		if self.evaluation_key_level == self.par.moduli().len() {
 			false
 		} else {
 			let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
@@ -87,7 +87,7 @@ impl EvaluationKey {
 	/// Reports whether the evaluation key enables to rotate the rows of the
 	/// plaintext.
 	pub fn supports_row_rotation(&self) -> bool {
-		if self.evaluation_key_level == self.par.max_level() {
+		if self.evaluation_key_level == self.par.moduli().len() {
 			false
 		} else {
 			self.gk.contains_key(&(self.par.degree() * 2 - 1))
@@ -109,7 +109,7 @@ impl EvaluationKey {
 	/// Reports whether the evaluation key enables to rotate the columns of the
 	/// plaintext.
 	pub fn supports_column_rotation_by(&self, i: usize) -> bool {
-		if self.evaluation_key_level == self.par.max_level() {
+		if self.evaluation_key_level == self.par.moduli().len() {
 			false
 		} else if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
 			self.gk.contains_key(exp)
@@ -137,7 +137,7 @@ impl EvaluationKey {
 	pub fn supports_expansion(&self, level: usize) -> bool {
 		if level == 0 {
 			true
-		} else if self.evaluation_key_level == self.par.max_level() {
+		} else if self.evaluation_key_level == self.par.moduli().len() {
 			false
 		} else {
 			let mut ret = level < self.par.degree().leading_zeros() as usize;

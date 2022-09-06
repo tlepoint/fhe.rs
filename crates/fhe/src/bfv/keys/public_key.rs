@@ -46,9 +46,12 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 
 	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
 		let mut ct = self.c.clone();
+
+		#[cfg(feature = "leveled_bfv")]
 		while ct.level != pt.level {
 			ct.mod_switch_to_next_level();
 		}
+
 		let ctx = self.par.ctx_at_level(ct.level)?;
 		let u = Zeroizing::new(
 			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
