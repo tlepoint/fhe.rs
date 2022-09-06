@@ -25,23 +25,30 @@ The library features:
 * [`fhe`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
 * [`fhe-traits`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
 
+The `fhe` crate also contains several features:
+
+* `optimized_ops`: Enable optimized operations (such as optimized inner-products between ciphertexts and plaintexts);
+* `leveled_bfv`: Enable a (leveled) variant of the BFV homomorphic encryption scheme (which enables modulus switching).
+
 The repository also contain several internal (private) crates, used by the public crates, implementing the core cryptographic and mathematical operations.
 
-## Minimum supported version
+## Minimum supported version / toolchain
 
-The `fhe` crate requires the `nightly` toolchain as it enables multiple unstable features. The minimal supported version will be changed to a stable version in a future update.
+The `fhe` crate requires the `nightly` toolchain as it uses multiple unstable features. The minimal supported version will be changed to a stable version in a future update.
 
 ## Installation
 
-To use the latest published crate, add the following to your `Cargo.toml` file:
+To use the latest published crate, add one or both of the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
 fhe = "0.0.1-alpha"
+fhe-traits = "0.0.1-alpha"
 ```
 
 ## ⚠️ Security warning
 
-The implementations contained in the `fhe.rs` ecosystem have never been independently audited for security. Additionally, no promise on the API and ABI stability will be made until version `1.0.0` of the crates.
+The implementations contained in the `fhe.rs` ecosystem have never been independently audited for security.
+Additionally, no promise on the API and ABI stability will be made until version `1.0.0` of the crates.
 
 Use at your own risk.
