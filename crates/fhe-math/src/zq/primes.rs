@@ -1,7 +1,7 @@
 //! Optimized primes generated as in the NFLlib library.
 
+use fhe_util::is_prime;
 use num_bigint::BigUint;
-use util::is_prime;
 
 /// Returns whether the modulus supports optimized multiplication and reduction.
 /// These optimized operations are possible when the modulus verifies
@@ -59,7 +59,7 @@ pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<
 #[cfg(test)]
 mod tests {
 	use super::generate_prime;
-	use util::catch_unwind;
+	use fhe_util::catch_unwind;
 
 	// Verifies that the same moduli as in the NFLlib library are generated.
 	// <https://github.com/quarkslab/NFLlib/blob/master/include/nfl/params.hpp>

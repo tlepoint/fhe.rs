@@ -241,10 +241,11 @@ version = "0.0.1-alpha"
 dependencies = [
  "console",
  "criterion",
+ "fhe-math",
  "fhe-traits",
+ "fhe-util",
  "indicatif",
  "itertools",
- "math",
  "ndarray",
  "num-bigint",
  "num-traits",
@@ -252,15 +253,45 @@ dependencies = [
  "rand",
  "rand_chacha",
  "thiserror",
- "util",
  "utilities",
  "zeroize",
  "zeroize_derive",
 ]
 
 [[package]]
+name = "fhe-math"
+version = "0.0.1-alpha"
+dependencies = [
+ "criterion",
+ "crypto-bigint",
+ "fhe-traits",
+ "fhe-util",
+ "itertools",
+ "ndarray",
+ "num-bigint",
+ "num-bigint-dig",
+ "num-traits",
+ "proptest",
+ "protobuf",
+ "rand",
+ "rand_chacha",
+ "thiserror",
+ "zeroize",
+]
+
+[[package]]
 name = "fhe-traits"
 version = "0.0.1-alpha"
+
+[[package]]
+name = "fhe-util"
+version = "0.0.1-alpha"
+dependencies = [
+ "itertools",
+ "num-bigint-dig",
+ "num-traits",
+ "rand",
+]
 
 [[package]]
 name = "fnv"
@@ -372,27 +403,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "math"
-version = "0.0.1-alpha"
-dependencies = [
- "criterion",
- "crypto-bigint",
- "fhe-traits",
- "itertools",
- "ndarray",
- "num-bigint",
- "num-bigint-dig",
- "num-traits",
- "proptest",
- "protobuf",
- "rand",
- "rand_chacha",
- "thiserror",
- "util",
- "zeroize",
 ]
 
 [[package]]
@@ -933,24 +943,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
-name = "util"
-version = "0.0.1-alpha"
-dependencies = [
- "itertools",
- "num-bigint-dig",
- "num-traits",
- "rand",
-]
-
-[[package]]
 name = "utilities"
 version = "0.0.1-alpha"
 dependencies = [
  "fhe",
  "fhe-traits",
+ "fhe-util",
  "indicatif",
  "ndarray",
- "util",
 ]
 
 [[package]]

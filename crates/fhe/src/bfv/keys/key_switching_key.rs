@@ -5,14 +5,14 @@ use crate::bfv::{
 	traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey,
 };
 use crate::{Error, Result};
-use fhe_traits::{DeserializeWithContext, Serialize};
-use itertools::izip;
-use math::rq::traits::TryConvertFrom;
-use math::rq::Context;
-use math::{
+use fhe_math::rq::traits::TryConvertFrom;
+use fhe_math::rq::Context;
+use fhe_math::{
 	rns::RnsContext,
 	rq::{Poly, Representation},
 };
+use fhe_traits::{DeserializeWithContext, Serialize};
+use itertools::izip;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
@@ -267,7 +267,7 @@ mod tests {
 		proto::bfv::KeySwitchingKey as KeySwitchingKeyProto, traits::TryConvertFrom, BfvParameters,
 		SecretKey,
 	};
-	use math::{
+	use fhe_math::{
 		rns::RnsContext,
 		rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation},
 	};

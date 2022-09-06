@@ -11,8 +11,8 @@ pub use mul::Multiplicator;
 
 use super::{Ciphertext, Plaintext};
 use crate::{Error, Result};
+use fhe_math::rq::{Poly, Representation};
 use itertools::{izip, Itertools};
-use math::rq::{Poly, Representation};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 impl Add<&Ciphertext> for &Ciphertext {

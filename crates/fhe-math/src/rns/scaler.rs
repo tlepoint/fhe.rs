@@ -377,11 +377,11 @@ mod tests {
 
 	use super::RnsScaler;
 	use crate::rns::{scaler::ScalingFactor, RnsContext};
+	use fhe_util::catch_unwind;
 	use ndarray::ArrayView1;
 	use num_bigint::BigUint;
 	use num_traits::{ToPrimitive, Zero};
 	use rand::{thread_rng, RngCore};
-	use util::catch_unwind;
 
 	#[test]
 	fn constructor() -> Result<(), Box<dyn Error>> {

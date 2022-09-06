@@ -1,11 +1,8 @@
-<h1 align="center">fhe.rs: Fully Homomorphic Encryption in Rust</h1>
-<p align="center">
-<a href="https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml"><img src="https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml/badge.svg?branch=main"/></a>
-<a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg"/></a>
-<a href="https://codecov.io/gh/tlepoint/fhe.rs"><img src="https://codecov.io/gh/tlepoint/fhe.rs/branch/main/graph/badge.svg?token=LCBSDMB5NS"/></a>
-</p>
+# fhe.rs: Fully Homomorphic Encryption in Rust
 
-This repository contains the `fhe.rs` library, a cryptographic library in Rust for Ring-LWE-based homomorphic encryption, developed by [Tancrède Lepoint](https://tancre.de). For more information about the library, see [fhe.rs](https://fhe.rs).
+[![continuous integration](https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Code coverage](https://codecov.io/gh/tlepoint/fhe.rs/branch/main/graph/badge.svg?token=LCBSDMB5NS)](https://codecov.io/gh/tlepoint/fhe.rs)
+
+This repository contains the `fhe.rs` library, an experimental cryptographic library in Rust for Ring-LWE-based homomorphic encryption, developed by [Tancrède Lepoint](https://tancre.de). For more information about the library, see [fhe.rs](https://fhe.rs).
 
 The library features:
 

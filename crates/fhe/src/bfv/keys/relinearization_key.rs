@@ -11,10 +11,10 @@ use crate::bfv::{
 	BfvParameters, Ciphertext, SecretKey,
 };
 use crate::{Error, Result};
-use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use math::rq::{
+use fhe_math::rq::{
 	switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
 };
+use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use protobuf::{Message, MessageField};
 use zeroize::Zeroizing;
 
@@ -162,8 +162,8 @@ mod tests {
 		proto::bfv::RelinearizationKey as RelinearizationKeyProto, traits::TryConvertFrom,
 		BfvParameters, Ciphertext, Encoding, SecretKey,
 	};
+	use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 	use fhe_traits::{FheDecoder, FheDecrypter};
-	use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 	use std::{error::Error, sync::Arc};
 
 	#[test]

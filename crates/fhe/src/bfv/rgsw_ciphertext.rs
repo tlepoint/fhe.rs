@@ -1,9 +1,9 @@
 use std::ops::Mul;
 
+use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_traits::{
 	DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
-use math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use protobuf::{Message, MessageField};
 use zeroize::Zeroizing;
 

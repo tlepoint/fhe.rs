@@ -6,12 +6,12 @@ pub mod ntt;
 pub mod primes;
 
 use crate::errors::{Error, Result};
+use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use rand::{distributions::Uniform, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use util::is_prime;
 
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
@@ -722,25 +722,25 @@ impl Modulus {
 	/// Panics if the length of the vector is not a multiple of 8.
 	pub fn serialize_vec(&self, a: &[u64]) -> Vec<u8> {
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		util::transcode_to_bytes(a, p_nbits)
+		transcode_to_bytes(a, p_nbits)
 	}
 
 	/// Deserialize a vector of bytes into a vector of elements mod p.
 	pub fn deserialize_vec(&self, b: &[u8]) -> Vec<u64> {
 		let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-		util::transcode_from_bytes(b, p_nbits)
+		transcode_from_bytes(b, p_nbits)
 	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::{primes, Modulus};
+	use fhe_util::catch_unwind;
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
 	use rand::{thread_rng, Rng, RngCore, SeedableRng};
 	use rand_chacha::ChaCha8Rng;
-	use util::catch_unwind;
 
 	// Utility functions for the proptests.
 

@@ -1,7 +1,7 @@
 use std::{cmp::min, sync::Arc};
 
+use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
 use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
-use math::rq::{traits::TryConvertFrom, Poly, Representation};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{

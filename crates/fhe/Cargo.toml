@@ -5,6 +5,7 @@ version = "0.0.1-alpha"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
+homepage = "https://fhe.rs/"
 
 [lib]
 bench = false  # Disable default bench (we use criterion)
@@ -15,9 +16,9 @@ optimized_ops = []
 rgsw = []
 
 [dependencies]
-math = { version = "0.0.1-alpha", path = "../../internal/math" }
+fhe-math = { version = "0.0.1-alpha", path = "../fhe-math" }
 fhe-traits = { version = "0.0.1-alpha", path = "../fhe-traits" }
-util = { version = "0.0.1-alpha", path = "../../internal/util" }
+fhe-util = { version = "0.0.1-alpha", path = "../fhe-util" }
 
 itertools = "0.10.3"
 num-bigint = "0.4.3"

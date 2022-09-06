@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use math::{
+use fhe_math::{
 	rns::ScalingFactor,
 	rq::{scaler::Scaler, Context, Representation},
 	zq::primes::generate_prime,
@@ -248,11 +248,11 @@ mod tests {
 	use crate::bfv::{
 		BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
 	};
-	use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
-	use math::{
+	use fhe_math::{
 		rns::{RnsContext, ScalingFactor},
 		zq::primes::generate_prime,
 	};
+	use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use num_bigint::BigUint;
 	use std::{error::Error, sync::Arc};
 
