@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.0-beta.1 (2022-09-07)
 
 Bump pre-release version to match that of `fhe`.
 
@@ -13,7 +13,7 @@ Bump pre-release version to match that of `fhe`.
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 1 unique issue was worked on: [#121](https://github.com/tlepoint/fhe.rs/issues/121)
 
@@ -25,6 +25,8 @@ Bump pre-release version to match that of `fhe`.
 
  * **[#121](https://github.com/tlepoint/fhe.rs/issues/121)**
     - Remove features, remove utilities crate, bump versions ([`570943a`](https://github.com/tlepoint/fhe.rs/commit/570943ae1822888a2ccb27412619ab3355b3ea3a))
+ * **Uncategorized**
+    - Bump version fhe-util ([`136134c`](https://github.com/tlepoint/fhe.rs/commit/136134ccefb563780a34c356c2a646f18285630b))
 </details>
 
 ## 0.1.0-beta.0 (2022-09-06)
