@@ -19,10 +19,10 @@ The library features:
 
 `fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of four public crates (packages):
 
-* [`fhe`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
-* [`fhe-math`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
-* [`fhe-traits`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
-* [`fhe-util`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
+* [`fhe`](https://crates.io/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
+* [`fhe-math`](https://crates.io/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
+* [`fhe-traits`](https://crates.io/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
+* [`fhe-util`](https://crates.io/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
 
 ## Minimum supported version / toolchain
 
@@ -30,11 +30,11 @@ The `fhe` crate requires the `nightly` toolchain as it uses multiple unstable fe
 
 ## Installation
 
-To use the latest published crate, add one or both of the following to your `Cargo.toml` file:
+To use the latest published crate(s), add one or both of the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.1"
+fhe = "0.1.0-beta.2"
 fhe-traits = "0.1.0-beta.1"
 ```
 
