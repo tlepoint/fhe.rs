@@ -32,5 +32,5 @@ repos:
         entry: cargo +nightly clippy
         language: system
         types: [rust]
-        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
+        args: ["--all-targets", "--", "-D", "warnings"]
         pass_filenames: false

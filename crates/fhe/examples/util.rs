@@ -44,7 +44,12 @@ pub fn encode_database(
 	level: usize,
 ) -> (Vec<Plaintext>, (usize, usize)) {
 	let elements_size = database[0].len();
-	let plaintext_nbits = 64 - (par.plaintext() - 1).leading_zeros() as usize;
+	// We want to capture the number of bits b such that 2^b <= par.plaintext()
+	// to simulate the `.ilog2()` function.
+	// For this, we compute 63 - par.plaintext().leading_zeros(). Indeed, when 2^b
+	// <= par.plaintext() < 2^(b+1), then par.plaintext().leading_zeros() = 64 - (b
+	// - 1).
+	let plaintext_nbits = 63 - par.plaintext().leading_zeros() as usize;
 	let number_elements_per_plaintext =
 		number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
 	let number_rows =
