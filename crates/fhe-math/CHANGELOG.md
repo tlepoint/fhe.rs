@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.0-beta.1 (2022-09-07)
 
 Bump pre-release version to match that of `fhe`.
 
@@ -13,7 +13,7 @@ Bump pre-release version to match that of `fhe`.
 
 <csr-read-only-do-not-edit/>
 
- - 7 commits contributed to the release.
+ - 8 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 2 unique issues were worked on: [#120](https://github.com/tlepoint/fhe.rs/issues/120), [#121](https://github.com/tlepoint/fhe.rs/issues/121)
 
@@ -28,6 +28,7 @@ Bump pre-release version to match that of `fhe`.
  * **[#121](https://github.com/tlepoint/fhe.rs/issues/121)**
     - Remove features, remove utilities crate, bump versions ([`570943a`](https://github.com/tlepoint/fhe.rs/commit/570943ae1822888a2ccb27412619ab3355b3ea3a))
  * **Uncategorized**
+    - Add changelog entry for fhe-math ([`3abb768`](https://github.com/tlepoint/fhe.rs/commit/3abb768ecd236e854bc1c1baa28f2646fb81ecd6))
     - Release fhe-traits v0.1.0-beta.0, fhe-util v0.1.0-beta.0, fhe-math v0.1.0-beta.0, fhe v0.1.0-beta.0 ([`e81e1c6`](https://github.com/tlepoint/fhe.rs/commit/e81e1c60769e63c52ad3885d16249161074ca293))
     - Write changelog ([`ef65eb4`](https://github.com/tlepoint/fhe.rs/commit/ef65eb4b14fd52dfe3796d6c782127d38e551f69))
     - Adjusting changelogs prior to release of fhe-traits v0.1.0-beta.0, fhe-util v0.1.0-beta.0, fhe-math v0.1.0-beta.0, fhe v0.1.0-beta.0 ([`4c9ed5b`](https://github.com/tlepoint/fhe.rs/commit/4c9ed5bc57ccaa4a9d9ac98e4883f6c5c2136b5b))
