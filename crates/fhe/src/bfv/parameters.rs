@@ -8,6 +8,7 @@ use fhe_math::{
 	zq::{ntt::NttOperator, primes::generate_prime, Modulus},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
+use fhe_util::div_ceil;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -399,7 +400,7 @@ impl BfvParametersBuilder {
 			// For the first multiplication, we want to extend to a context that
 			// is ~60 bits larger.
 			let modulus_size = moduli_sizes[..moduli_sizes.len() - i].iter().sum::<usize>();
-			let n_moduli = (modulus_size + 60).div_ceil(62);
+			let n_moduli = div_ceil(modulus_size + 60, 62);
 			let mut mul_1_moduli = vec![];
 			mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
 			mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());

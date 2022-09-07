@@ -770,7 +770,9 @@ mod tests {
 
 			// Otherwise, all moduli should work.
 			prop_assume!(p >> 2 >= 2);
-			prop_assert!(Modulus::new(p >> 2).is_ok_and(|q| q.modulus() == p >> 2));
+			let q = Modulus::new(p >> 2);
+			prop_assert!(q.is_ok());
+			prop_assert_eq!(q.unwrap().modulus(), p >> 2);
 		}
 
 		#[test]

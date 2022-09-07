@@ -831,14 +831,20 @@ mod tests {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let q = Modulus::new(*modulus).unwrap();
-			assert!(Poly::small(&ctx, Representation::PowerBasis, 0).is_err_and(
-				|e| e.to_string() == "The variance should be an integer between 1 and 16"
-			));
-			assert!(
-				Poly::small(&ctx, Representation::PowerBasis, 17).is_err_and(
-					|e| e.to_string() == "The variance should be an integer between 1 and 16"
-				)
+
+			let e = Poly::small(&ctx, Representation::PowerBasis, 0);
+			assert!(e.is_err());
+			assert_eq!(
+				e.unwrap_err().to_string(),
+				"The variance should be an integer between 1 and 16"
 			);
+			let e = Poly::small(&ctx, Representation::PowerBasis, 17);
+			assert!(e.is_err());
+			assert_eq!(
+				e.unwrap_err().to_string(),
+				"The variance should be an integer between 1 and 16"
+			);
+
 			for i in 1..=16 {
 				let p = Poly::small(&ctx, Representation::PowerBasis, i)?;
 				let coefficients = p.coefficients().to_slice().unwrap();
@@ -971,13 +977,15 @@ mod tests {
 
 		for _ in 0..ntests {
 			// If the polynomial has incorrect representation, an error is returned
-			assert!(Poly::random(&ctx, Representation::Ntt)
-				.mod_switch_down_next()
-				.is_err_and(|e| e
-					== &crate::Error::IncorrectRepresentation(
-						Representation::Ntt,
-						Representation::PowerBasis
-					)));
+			let e = Poly::random(&ctx, Representation::Ntt).mod_switch_down_next();
+			assert!(e.is_err());
+			assert_eq!(
+				e.unwrap_err(),
+				crate::Error::IncorrectRepresentation(
+					Representation::Ntt,
+					Representation::PowerBasis
+				)
+			);
 
 			// Otherwise, no error happens and the coefficients evolve as expected.
 			let mut p = Poly::random(&ctx, Representation::PowerBasis);
@@ -1059,14 +1067,12 @@ mod tests {
 	#[test]
 	fn mul_x_power() -> Result<(), Box<dyn Error>> {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-
-		assert!(Poly::random(&ctx, Representation::Ntt)
-			.multiply_inverse_power_of_x(1)
-			.is_err_and(|e| e
-				== &crate::Error::IncorrectRepresentation(
-					Representation::Ntt,
-					Representation::PowerBasis
-				)));
+		let e = Poly::random(&ctx, Representation::Ntt).multiply_inverse_power_of_x(1);
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::IncorrectRepresentation(Representation::Ntt, Representation::PowerBasis)
+		);
 
 		let mut p = Poly::random(&ctx, Representation::PowerBasis);
 		let q = p.clone();

@@ -5,6 +5,7 @@
 use super::RnsContext;
 use crate::u256::U256;
 use crypto_bigint::U192;
+use fhe_util::{div_ceil, ilog2};
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
@@ -122,9 +123,9 @@ impl RnsScaler {
 				.iter()
 				.map(|qi| {
 					192 - 1
-						- ((*qi as u128) * (from.moduli_u64.len() as u128))
-							.next_power_of_two()
-							.ilog2()
+						- ilog2(
+							((*qi as u128) * (from.moduli_u64.len() as u128)).next_power_of_two(),
+						)
 				})
 				.into_iter()
 				.min()
@@ -263,7 +264,7 @@ impl RnsScaler {
 		// Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
 		sum_theta_garner >>= self.theta_garner_shift - 1;
 		let v = <[u64; 3]>::from(sum_theta_garner);
-		let v = ((v[0] as u128) | ((v[1] as u128) << 64)).div_ceil(2);
+		let v = div_ceil((v[0] as u128) | ((v[1] as u128) << 64), 2);
 
 		// If the scaling factor is not 1, compute the inner product with the
 		// theta_omega
@@ -325,10 +326,10 @@ impl RnsScaler {
 
 			if w_sign {
 				w = u128::from(&((!sum_theta_omega) >> 126)) + 1;
-				w = w.div_floor(2);
+				w /= 2;
 			} else {
 				w = u128::from(&(sum_theta_omega >> 126));
-				w = w.div_ceil(2)
+				w = div_ceil(w, 2)
 			}
 		}
 

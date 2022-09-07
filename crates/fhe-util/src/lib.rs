@@ -1,16 +1,14 @@
 #![crate_name = "fhe_util"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
-#![feature(is_some_with)]
-#![feature(int_roundings)]
 #![feature(test)]
 
 //! Utilities for the fhe.rs library.
 
 use num_bigint::{prime::probably_prime, BigUint, ModInverse};
-use num_traits::cast::ToPrimitive;
+use num_traits::{cast::ToPrimitive, PrimInt};
 use rand::{thread_rng, RngCore};
-use std::panic::UnwindSafe;
+use std::{mem::size_of, panic::UnwindSafe};
 
 /// Define catch_unwind to silence the panic in unit tests.
 pub fn catch_unwind<F, R>(f: F) -> std::thread::Result<R>
@@ -69,7 +67,7 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
 	assert!(nbits > 0);
 
 	let mask = (u64::MAX >> (64 - nbits)) as u128;
-	let nbytes = (a.len() * nbits).div_ceil(8);
+	let nbytes = div_ceil(a.len() * nbits, 8);
 	let mut out = Vec::with_capacity(nbytes);
 
 	let mut current_index = 0;
@@ -105,7 +103,7 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
 	assert!(nbits > 0);
 	let mask = (u64::MAX >> (64 - nbits)) as u128;
 
-	let nelements = (b.len() * 8).div_ceil(nbits);
+	let nelements = div_ceil(b.len() * 8, nbits);
 	let mut out = Vec::with_capacity(nelements);
 
 	let mut current_value = 0u128;
@@ -142,7 +140,7 @@ pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usiz
 	assert!(output_nbits > 0);
 	let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
 	let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
-	let output_size = (a.len() * input_nbits).div_ceil(output_nbits);
+	let output_size = div_ceil(a.len() * input_nbits, output_nbits);
 	let mut out = Vec::with_capacity(output_size);
 
 	let mut current_index = 0;
@@ -180,12 +178,32 @@ pub fn inverse(a: u64, p: u64) -> Option<u64> {
 	a.mod_inverse(p)?.to_u64()
 }
 
+/// Returns the number of bits b such that 2^b <= value
+/// to simulate the `.ilog2()` function from <https://github.com/rust-lang/rust/issues/70887>.
+/// Panics when `value` is 0.
+pub fn ilog2<T: PrimInt>(value: T) -> usize {
+	assert!(value > T::zero());
+	// For this, we compute sizeof(T) - 1 - value.leading_zeros(). Indeed, when 2^b
+	// <= value < 2^(b+1), then value.leading_zeros() = sizeof(T) - (b + 1).
+	size_of::<T>() * 8 - 1 - value.leading_zeros() as usize
+}
+
+/// Returns the ceil of a divided by b, to simulate the
+/// `.div_ceil()` function from <https://github.com/rust-lang/rust/issues/88581>.
+/// Panics when `b` is 0.
+pub fn div_ceil<T: PrimInt>(a: T, b: T) -> T {
+	assert!(b > T::zero());
+	(a + b - T::one()) / b
+}
+
 #[cfg(test)]
 mod tests {
 	extern crate test;
 
 	use itertools::Itertools;
 	use rand::{thread_rng, RngCore};
+
+	use crate::{div_ceil, ilog2};
 
 	use super::{
 		inverse, is_prime, sample_vec_cbd, transcode_bidirectional, transcode_from_bytes,
@@ -207,6 +225,29 @@ mod tests {
 		assert!(!is_prime(8));
 		assert!(!is_prime(9));
 		assert!(!is_prime(4611686018326724607));
+	}
+
+	#[test]
+	fn ilog2_is_correct() {
+		assert_eq!(ilog2(1), 0);
+		assert_eq!(ilog2(2), 1);
+		assert_eq!(ilog2(3), 1);
+		assert_eq!(ilog2(4), 2);
+		for i in 2..=110 {
+			assert_eq!(ilog2(1u128 << i), i);
+			assert_eq!(ilog2((1u128 << i) + 1), i);
+			assert_eq!(ilog2((1u128 << (i + 1)) - 1), i);
+		}
+	}
+
+	#[test]
+	fn div_ceil_is_correct() {
+		for _ in 0..100 {
+			let a = (thread_rng().next_u32() >> 1) as usize;
+			assert_eq!(div_ceil(a, 1), a);
+			assert_eq!(div_ceil(a, 2), (a >> 1) + (a & 1));
+			assert_eq!(div_ceil(a, 8), (a + 7) / 8);
+		}
 	}
 
 	#[test]
