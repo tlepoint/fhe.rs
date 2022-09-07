@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.1.0-beta.1 (2022-09-07)
 
+Bump pre-release version to match that of `fhe`.
+
 ### Commit Statistics
 
 <csr-read-only-do-not-edit/>
