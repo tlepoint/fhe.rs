@@ -18,7 +18,6 @@ use super::{
 	keys::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, Ciphertext, Plaintext, SecretKey,
 };
 
-#[doc(cfg(feature = "rgsw"))]
 /// A RGSW ciphertext encrypting a plaintext.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RGSWCiphertext {
