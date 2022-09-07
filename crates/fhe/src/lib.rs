@@ -1,7 +1,7 @@
 #![crate_name = "fhe"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
-#![feature(doc_cfg, int_log, int_roundings, is_some_with, let_chains)]
+#![feature(int_log, int_roundings, is_some_with, let_chains)]
 
 //! fhers: Fully Homomorphic Encryption in Rust.
 
