@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.0-beta.2 (2022-09-07)
 
 This release fixes a bug that did not allow to decrypt a modulo-switched ciphertext correctly.
 
@@ -24,7 +24,7 @@ This release fixes a bug that did not allow to decrypt a modulo-switched ciphert
 <details><summary>view details</summary>
 
  * **Uncategorized**
-    - Remove forgotten cfg(not(feature ([`385c6fa`](https://github.com/tlepoint/fhe.rs/commit/385c6fabefbe7c06efbc90cdf4d8455fdfc33396))
+    - Remove forgotten cfg(not(feature ([`2e247f2`](https://github.com/tlepoint/fhe.rs/commit/2e247f235bbe632459259f6ca74a637a2f765187))
 </details>
 
 ## 0.1.0-beta.1 (2022-09-07)
