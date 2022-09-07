@@ -13,7 +13,7 @@ Bump pre-release version to match that of `fhe`.
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 3 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 1 unique issue was worked on: [#121](https://github.com/tlepoint/fhe.rs/issues/121)
 
@@ -25,6 +25,9 @@ Bump pre-release version to match that of `fhe`.
 
  * **[#121](https://github.com/tlepoint/fhe.rs/issues/121)**
     - Remove features, remove utilities crate, bump versions ([`570943a`](https://github.com/tlepoint/fhe.rs/commit/570943ae1822888a2ccb27412619ab3355b3ea3a))
+ * **Uncategorized**
+    - Add changelog entry ([`f32c4eb`](https://github.com/tlepoint/fhe.rs/commit/f32c4eba1f1f254d0162008919a0088282cc521e))
+    - Adjusting changelogs prior to release of fhe-traits v0.1.0-beta.1 ([`3f9506e`](https://github.com/tlepoint/fhe.rs/commit/3f9506ea81277db1fa4da6e3e501061ef6456e4c))
 </details>
 
 ## 0.1.0-beta.0 (2022-09-06)
