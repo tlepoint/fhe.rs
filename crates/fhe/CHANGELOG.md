@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0-beta.0 (2022-09-06)
+## 0.1.0-beta.1 (2022-09-06)
 
 First pre-release version of the `fhe` crate, that includes the BFV cryptosystem.
 
@@ -34,7 +34,7 @@ First pre-release version of the `fhe` crate, that includes the BFV cryptosystem
  * **[#120](https://github.com/tlepoint/fhe.rs/issues/120)**
     - Move internal to crates as they would be published, add changelog ([`cd3ba02`](https://github.com/tlepoint/fhe.rs/commit/cd3ba026d01275672e0c3f5e1d32aa473cde7978))
  * **Uncategorized**
-    - Adjusting changelogs prior to release of fhe-traits v0.1.0-beta.0, fhe-util v0.1.0-beta.0, fhe-math v0.1.0-beta.0, fhe v0.1.0-beta.0 ([`4c9ed5b`](https://github.com/tlepoint/fhe.rs/commit/4c9ed5bc57ccaa4a9d9ac98e4883f6c5c2136b5b))
+    - Adjusting changelogs prior to release of fhe-traits v0.1.0-beta.1, fhe-util v0.1.0-beta.1, fhe-math v0.1.0-beta.1, fhe v0.1.0-beta.0 ([`4c9ed5b`](https://github.com/tlepoint/fhe.rs/commit/4c9ed5bc57ccaa4a9d9ac98e4883f6c5c2136b5b))
     - Add space to test ([`f5e82f3`](https://github.com/tlepoint/fhe.rs/commit/f5e82f3708bc15a7f517f19bb482fce0044cf091))
     - Update changelog ([`85a00a1`](https://github.com/tlepoint/fhe.rs/commit/85a00a1b8113e4dc8b1d4e9d19fc6c354fb6ae0e))
     - Switch version to a pre-release number ([`cd8d3b2`](https://github.com/tlepoint/fhe.rs/commit/cd8d3b2d383367239436adcc2508bdbe816b9981))

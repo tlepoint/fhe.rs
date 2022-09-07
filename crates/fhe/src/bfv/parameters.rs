@@ -107,8 +107,6 @@ impl BfvParameters {
 		self.plaintext_modulus
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Returns the maximum level allowed by these parameters.
 	pub fn max_level(&self) -> usize {
 		self.moduli.len() - 1

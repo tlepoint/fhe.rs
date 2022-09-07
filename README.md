@@ -24,11 +24,6 @@ The library features:
 * [`fhe-traits`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
 * [`fhe-util`](https://github.com/tlepoint/fhe.rs/tree/main/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
 
-The `fhe` crate has several features:
-
-* `optimized_ops`: Enable optimized operations (such as optimized inner-products between ciphertexts and plaintexts);
-* `leveled_bfv`: Enable a (leveled) variant of the BFV homomorphic encryption scheme (which enables modulus switching).
-
 ## Minimum supported version / toolchain
 
 The `fhe` crate requires the `nightly` toolchain as it uses multiple unstable features. The minimal supported version will be changed to a stable version in a future update.
@@ -39,8 +34,8 @@ To use the latest published crate, add one or both of the following to your `Car
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.0"
-fhe-traits = "0.1.0-beta.0"
+fhe = "0.1.0-beta.1"
+fhe-traits = "0.1.0-beta.1"
 ```
 
 ## Getting started

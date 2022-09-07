@@ -45,9 +45,9 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 	type Error = Error;
 
 	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
+		#[allow(unused_mut)]
 		let mut ct = self.c.clone();
 
-		#[cfg(feature = "leveled_bfv")]
 		while ct.level != pt.level {
 			ct.mod_switch_to_next_level();
 		}

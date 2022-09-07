@@ -1,9 +1,6 @@
 //! Operations over ciphertexts
 
-#[cfg(feature = "optimized_ops")]
 mod dot_product;
-
-#[cfg(feature = "optimized_ops")]
 pub use dot_product::dot_product_scalar;
 
 mod mul;

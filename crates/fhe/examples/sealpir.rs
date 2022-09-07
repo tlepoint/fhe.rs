@@ -1,5 +1,7 @@
 #![feature(int_log, int_roundings)]
 
+mod util;
+
 use console::style;
 use fhe::bfv::{self};
 use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
@@ -13,9 +15,33 @@ use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{thread_rng, RngCore};
 use std::{env, error::Error, process::exit, sync::Arc};
-use utilities::{
-	encode_database, generate_database, number_elements_per_plaintext, timeit, timeit_n,
-};
+use util::{encode_database, generate_database, number_elements_per_plaintext};
+
+// Utility macros for timing
+macro_rules! timeit {
+	($name:expr, $code:expr) => {{
+		timeit_n!($name, 1, $code)
+	}};
+}
+
+macro_rules! timeit_n {
+	($name:expr, $loops:expr, $code:expr) => {{
+		use util::DisplayDuration;
+		let start = std::time::Instant::now();
+
+		#[allow(clippy::reversed_empty_ranges)]
+		for _ in 1..$loops {
+			let _ = $code;
+		}
+		let r = $code;
+		println!(
+			"⏱  {}: {}",
+			$name,
+			DisplayDuration(start.elapsed() / $loops)
+		);
+		r
+	}};
+}
 
 fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 	println!(

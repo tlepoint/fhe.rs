@@ -47,8 +47,6 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 	}
 }
 
-#[cfg(feature = "optimized_ops")]
-#[doc(cfg(feature = "optimized_ops"))]
 /// Compute the dot product between an iterator of [`Ciphertext`] and an
 /// iterator of [`Plaintext`]. Returns an error if the iterator counts are 0, if
 /// the parameters don't match, or if the ciphertexts have different
