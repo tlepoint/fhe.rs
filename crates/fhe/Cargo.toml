@@ -1,7 +1,7 @@
 [package]
 name = "fhe"
 description = "Fully Homomorphic Encryption in Rust"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
@@ -10,13 +10,8 @@ homepage = "https://fhe.rs/"
 [lib]
 bench = false  # Disable default bench (we use criterion)
 
-[features]
-leveled_bfv = []
-optimized_ops = []
-rgsw = []
-
 [dependencies]
-fhe-math = { version = "^0.1.0-beta.0", path = "../fhe-math" }
+fhe-math = { version = "^0.1.0-beta.1", path = "../fhe-math" }
 fhe-traits = { version = "^0.1.0-beta.0", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.0", path = "../fhe-util" }
 
@@ -32,8 +27,6 @@ protobuf = "3.1.0"
 thiserror = "1.0.34"
 
 [dev-dependencies]
-utilities = { version = "0.1.0-beta.0", path = "examples/utilities" }
-
 criterion = "0.3.6"
 indicatif = "0.17.0"
 itertools = "0.10.3"
@@ -48,17 +41,16 @@ harness = false
 [[bench]]
 name = "bfv_optimized_ops"
 harness = false
-required-features = ["optimized_ops"]
 
 [[bench]]
 name = "bfv_rgsw"
 harness = false
-required-features = ["rgsw"]
 
 [[example]]
 name = "mulpir"
-required-features = ["optimized_ops", "leveled_bfv"]
 
 [[example]]
 name = "sealpir"
-required-features = ["optimized_ops", "leveled_bfv"]
+
+[[example]]
+name = "util"

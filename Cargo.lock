@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "fhe"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "console",
  "criterion",
@@ -253,14 +253,13 @@ dependencies = [
  "rand",
  "rand_chacha",
  "thiserror",
- "utilities",
  "zeroize",
  "zeroize_derive",
 ]
 
 [[package]]
 name = "fhe-math"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "criterion",
  "crypto-bigint",
@@ -941,17 +940,6 @@ name = "unicode-xid"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
-
-[[package]]
-name = "utilities"
-version = "0.1.0-beta.0"
-dependencies = [
- "fhe",
- "fhe-traits",
- "fhe-util",
- "indicatif",
- "ndarray",
-]
 
 [[package]]
 name = "wait-timeout"

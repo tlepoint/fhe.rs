@@ -52,8 +52,6 @@ impl Multiplicator {
 		)
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Construct a multiplicator using custom scaling factors and extended
 	/// basis at a given level.
 	pub fn new_leveled(
@@ -147,8 +145,6 @@ impl Multiplicator {
 		Ok(())
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Enable modulus switching after multiplication (and relinearization, if
 	/// applicable).
 	pub fn enable_mod_switching(&mut self) -> Result<()> {
@@ -204,9 +200,9 @@ impl Multiplicator {
 
 		// Relinearize
 		if let Some(rk) = self.rk.as_ref() {
+			#[allow(unused_mut)]
 			let (mut c0r, mut c1r) = rk.relinearizes_poly(&c[2])?;
 
-			#[cfg(feature = "leveled_bfv")]
 			if c0r.ctx() != c[0].ctx() {
 				c0r.change_representation(Representation::PowerBasis);
 				c1r.change_representation(Representation::PowerBasis);
@@ -232,7 +228,6 @@ impl Multiplicator {
 		};
 
 		if self.mod_switch {
-			#[cfg(feature = "leveled_bfv")]
 			c.mod_switch_to_next_level();
 		} else {
 			c.c.iter_mut()

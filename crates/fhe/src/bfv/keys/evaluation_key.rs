@@ -258,8 +258,6 @@ impl EvaluationKeyBuilder {
 		})
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Creates a new builder from the [`SecretKey`], for operations on
 	/// ciphertexts at level `ciphertext_level` using keys at level
 	/// `evaluation_key_level`. This raises an error if the key level is larger
@@ -493,8 +491,10 @@ mod tests {
 	fn builder() -> Result<(), Box<dyn Error>> {
 		let params = Arc::new(BfvParameters::default(6, 8));
 		let sk = SecretKey::random(&params);
-		for ciphertext_level in 0..=params.max_level() {
-			for evaluation_key_level in 0..=min(params.max_level() - 1, ciphertext_level) {
+
+		let max_level = params.max_level();
+		for ciphertext_level in 0..=max_level {
+			for evaluation_key_level in 0..=min(max_level - 1, ciphertext_level) {
 				let mut builder =
 					EvaluationKeyBuilder::new_leveled(&sk, ciphertext_level, evaluation_key_level)?;
 
@@ -772,6 +772,7 @@ mod tests {
 			let sk = SecretKey::random(&params);
 
 			let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?.build()?;
+
 			let proto = LeveledEvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
@@ -779,6 +780,7 @@ mod tests {
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_row_rotation()?
 					.build()?;
+
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 

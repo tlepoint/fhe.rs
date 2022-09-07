@@ -1,6 +1,3 @@
-#![feature(int_log)]
-#![feature(int_roundings)]
-
 //! Utility functions for the examples
 
 use fhe::bfv::{BfvParameters, Encoding, Plaintext};
@@ -20,33 +17,6 @@ impl fmt::Display for DisplayDuration {
 			write!(f, "{} us", duration_us)
 		}
 	}
-}
-
-// Utility macros for timing
-#[macro_export]
-macro_rules! timeit {
-	($name:expr, $code:expr) => {{
-		timeit_n!($name, 1, $code)
-	}};
-}
-
-#[macro_export]
-macro_rules! timeit_n {
-	($name:expr, $loops:expr, $code:expr) => {{
-		use utilities::DisplayDuration;
-		let start = std::time::Instant::now();
-		#[allow(clippy::reversed_empty_ranges)]
-		for i in 1..$loops {
-			let r = $code;
-		}
-		let r = $code;
-		println!(
-			"⏱  {}: {}",
-			$name,
-			DisplayDuration(start.elapsed() / $loops)
-		);
-		r
-	}};
 }
 
 // Utility functions for PIR
@@ -74,19 +44,18 @@ pub fn encode_database(
 	level: usize,
 ) -> (Vec<Plaintext>, (usize, usize)) {
 	let elements_size = database[0].len();
-	let number_elements_per_plaintext = number_elements_per_plaintext(
-		par.degree(),
-		par.plaintext().ilog2() as usize,
-		elements_size,
-	);
-	let number_rows = database.len().div_ceil(number_elements_per_plaintext);
+	let plaintext_nbits = 64 - (par.plaintext() - 1).leading_zeros() as usize;
+	let number_elements_per_plaintext =
+		number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
+	let number_rows =
+		(database.len() + number_elements_per_plaintext - 1) / number_elements_per_plaintext;
 	println!("number_rows = {}", number_rows);
 	println!(
 		"number_elements_per_plaintext = {}",
 		number_elements_per_plaintext
 	);
 	let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
-	let dimension_2 = number_rows.div_ceil(dimension_1);
+	let dimension_2 = (number_rows + dimension_1 - 1) / dimension_1;
 	println!("dimensions = {} {}", dimension_1, dimension_2);
 	println!("dimension = {}", dimension_1 * dimension_2);
 	let mut preprocessed_database = vec![
@@ -101,11 +70,13 @@ pub fn encode_database(
 				serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
 			}
 		}
-		let pt_values =
-			transcode_from_bytes(&serialized_plaintext, par.plaintext().ilog2() as usize);
+		let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
 		preprocessed_database[i] =
 			Plaintext::try_encode(&pt_values as &[u64], Encoding::poly_at_level(level), &par)
 				.unwrap();
 	});
 	(preprocessed_database, (dimension_1, dimension_2))
 }
+
+#[allow(dead_code)]
+fn main() {}

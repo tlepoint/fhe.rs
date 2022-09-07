@@ -32,8 +32,6 @@ impl RelinearizationKey {
 		Self::new_leveled_internal(sk, 0, 0)
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
 	pub fn new_leveled(sk: &SecretKey, ciphertext_level: usize, key_level: usize) -> Result<Self> {
 		Self::new_leveled_internal(sk, ciphertext_level, key_level)
@@ -81,9 +79,10 @@ impl RelinearizationKey {
 		} else {
 			let mut c2 = ct.c[2].clone();
 			c2.change_representation(Representation::PowerBasis);
+
+			#[allow(unused_mut)]
 			let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
 
-			#[cfg(feature = "leveled_bfv")]
 			if c0.ctx() != ct.c[0].ctx() {
 				c0.change_representation(Representation::PowerBasis);
 				c1.change_representation(Representation::PowerBasis);

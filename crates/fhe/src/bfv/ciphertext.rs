@@ -30,8 +30,6 @@ pub struct Ciphertext {
 }
 
 impl Ciphertext {
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Modulo switch the ciphertext to the last level.
 	pub fn mod_switch_to_last_level(&mut self) {
 		self.level = self.par.max_level();
@@ -46,8 +44,6 @@ impl Ciphertext {
 		});
 	}
 
-	#[cfg(feature = "leveled_bfv")]
-	#[doc(cfg(feature = "leveled_bfv"))]
 	/// Modulo switch the ciphertext to the next level.
 	pub fn mod_switch_to_next_level(&mut self) {
 		if self.level < self.par.max_level() {
@@ -158,7 +154,6 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			return Err(Error::DefaultError("Not enough polynomials".to_string()));
 		}
 
-		#[cfg(feature = "leveled_bfv")]
 		if value.level as usize > par.max_level() {
 			return Err(Error::DefaultError("Invalid level".to_string()));
 		}
@@ -208,7 +203,8 @@ mod tests {
 		proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom, BfvParameters,
 		Ciphertext, Encoding, Plaintext, SecretKey,
 	};
-	use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+	use fhe_traits::FheDecrypter;
+	use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
