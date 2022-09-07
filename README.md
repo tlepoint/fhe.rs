@@ -35,7 +35,7 @@ To use the latest published crate, add one or both of the following to your `Car
 ```toml
 [dependencies]
 fhe = "0.1.0-beta.1"
-fhe-traits = "0.1.0-beta.0"
+fhe-traits = "0.1.0-beta.1"
 ```
 
 ## Getting started

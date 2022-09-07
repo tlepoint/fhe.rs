@@ -280,11 +280,11 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "fhe-util"
-version = "0.1.0-beta.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "itertools",
  "num-bigint-dig",
