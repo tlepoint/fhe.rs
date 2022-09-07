@@ -1,43 +1,18 @@
-#![feature(int_log, int_roundings)]
-
 mod util;
 
 use console::style;
-use fhe::bfv::{self, Ciphertext, Plaintext};
+use fhe::bfv;
 use fhe_traits::{
 	DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
-use fhe_util::{inverse, transcode_to_bytes};
+use fhe_util::{ilog2, inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{thread_rng, RngCore};
 use std::{env, error::Error, process::exit, sync::Arc};
-use util::{encode_database, generate_database, number_elements_per_plaintext};
-
-// Utility macros for timing
-macro_rules! timeit {
-	($name:expr, $code:expr) => {{
-		timeit_n!($name, 1, $code)
-	}};
-}
-
-macro_rules! timeit_n {
-	($name:expr, $loops:expr, $code:expr) => {{
-		use util::DisplayDuration;
-		let start = std::time::Instant::now();
-
-		#[allow(clippy::reversed_empty_ranges)]
-		for _ in 1..$loops {
-			let _ = $code;
-		}
-		let r = $code;
-		println!(
-			"⏱  {}: {}",
-			$name,
-			DisplayDuration(start.elapsed() / $loops)
-		);
-		r
-	}};
-}
+use util::{
+	encode_database, generate_database, number_elements_per_plaintext,
+	timeit::{timeit, timeit_n},
+};
 
 fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 	println!(
@@ -66,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let degree = 8192;
 	let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
 	let moduli_sizes = [50, 55, 55];
-	let max_element_size = ((plaintext_modulus.ilog2() * degree as u32) / 8) as usize;
+	let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
 
 	let args: Vec<String> = env::args().skip(1).collect();
 
@@ -147,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Client setup
 	let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
 		let sk = bfv::SecretKey::random(&params);
-		let level = (dim1 + dim2).next_power_of_two().ilog2();
+		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
 		println!("level = {}", level);
 		let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
@@ -177,11 +152,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	// Client query
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
-		let level = (dim1 + dim2).next_power_of_two().ilog2();
+		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
 		let query_index = index
 			/ number_elements_per_plaintext(
 				params.degree(),
-				params.plaintext().ilog2() as usize,
+				ilog2(plaintext_modulus),
 				elements_size,
 			);
 		let mut pt = vec![0u64; dim1 + dim2];
@@ -190,7 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[dim1 + (query_index % dim2)] = inv;
 		let query_pt =
 			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
-		let query: Ciphertext = sk.try_encrypt(&query_pt)?;
+		let query: bfv::Ciphertext = sk.try_encrypt(&query_pt)?;
 		query.to_bytes()
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
@@ -203,10 +178,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 		println!("Expand: {:?}", start.elapsed());
 
 		let query_vec = &expanded_query[..dim1];
-		let dot_product_mod_switch = move |i, database: &[Plaintext]| -> fhe::Result<Ciphertext> {
-			let column = database.iter().skip(i).step_by(dim2);
-			bfv::dot_product_scalar(query_vec.iter(), column)
-		};
+		let dot_product_mod_switch =
+			move |i, database: &[bfv::Plaintext]| -> fhe::Result<bfv::Ciphertext> {
+				let column = database.iter().skip(i).step_by(dim2);
+				bfv::dot_product_scalar(query_vec.iter(), column)
+			};
 
 		let mut out = bfv::Ciphertext::zero(&params);
 		for (i, ci) in expanded_query[dim1..].iter().enumerate() {
@@ -224,11 +200,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 		let pt = sk.try_decrypt(&response).unwrap();
 		let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
-		let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
+		let plaintext = transcode_to_bytes(&pt, ilog2(plaintext_modulus));
 		let offset = index
 			% number_elements_per_plaintext(
 				params.degree(),
-				params.plaintext().ilog2() as usize,
+				ilog2(plaintext_modulus),
 				elements_size,
 			);
 

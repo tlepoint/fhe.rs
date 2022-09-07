@@ -153,12 +153,15 @@ mod tests {
 		assert!(RnsContext::new(&[2, 3]).is_ok());
 		assert!(RnsContext::new(&[4, 15, 1153]).is_ok());
 
-		assert!(RnsContext::new(&[]).is_err_and(|e| e.to_string() == "The list of moduli is empty"));
-		assert!(
-			RnsContext::new(&[2, 4]).is_err_and(|e| e.to_string() == "The moduli are not coprime")
-		);
-		assert!(RnsContext::new(&[2, 3, 5, 30])
-			.is_err_and(|e| e.to_string() == "The moduli are not coprime"));
+		let e = RnsContext::new(&[]);
+		assert!(e.is_err());
+		assert_eq!(e.unwrap_err().to_string(), "The list of moduli is empty");
+		let e = RnsContext::new(&[2, 4]);
+		assert!(e.is_err());
+		assert_eq!(e.unwrap_err().to_string(), "The moduli are not coprime");
+		let e = RnsContext::new(&[2, 3, 5, 30]);
+		assert!(e.is_err());
+		assert_eq!(e.unwrap_err().to_string(), "The moduli are not coprime");
 	}
 
 	#[test]
@@ -166,7 +169,9 @@ mod tests {
 		let rns = RnsContext::new(&[4, 15, 1153])?;
 
 		for i in 0..3 {
-			assert!(rns.get_garner(i).is_some_and(|g| *g == &rns.garner[i]));
+			let gi = rns.get_garner(i);
+			assert!(gi.is_some());
+			assert_eq!(gi.unwrap(), &rns.garner[i]);
 		}
 		assert!(rns.get_garner(3).is_none());
 
