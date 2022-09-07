@@ -158,13 +158,6 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 			return Err(Error::DefaultError("Invalid level".to_string()));
 		}
 
-		#[cfg(not(feature = "leveled_bfv"))]
-		if value.level != 0 {
-			return Err(Error::DefaultError(
-				"Invalid level: did you enable the leveled_bfv feature?".to_string(),
-			));
-		}
-
 		let ctx = par.ctx_at_level(value.level as usize)?;
 
 		let mut seed = None;
