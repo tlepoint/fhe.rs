@@ -26,7 +26,7 @@ The library features:
 
 ## Minimum supported version / toolchain
 
-The `fhe` crate requires the `nightly` toolchain as it uses multiple unstable features. The minimal supported version will be changed to a stable version in a future update.
+Rust **1.62** or newer.
 
 ## Installation
 
