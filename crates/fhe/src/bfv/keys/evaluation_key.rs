@@ -225,6 +225,7 @@ impl DeserializeParametrized for EvaluationKey {
 }
 
 /// Builder for a leveled evaluation key from the secret key.
+#[derive(Debug)]
 pub struct EvaluationKeyBuilder {
 	sk: SecretKey,
 	ciphertext_level: usize,
@@ -551,17 +552,21 @@ mod tests {
 			}
 		}
 
-		assert!(
-			EvaluationKeyBuilder::new_leveled(&sk, params.max_level(), params.max_level())?
-				.enable_inner_sum()
-				.is_err_and(|e| e
-					== &crate::Error::DefaultError(
-						"Not enough moduli to enable relinearization".to_string()
-					))
+		let mut builder =
+			EvaluationKeyBuilder::new_leveled(&sk, params.max_level(), params.max_level())?;
+		let e = builder.enable_inner_sum();
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::DefaultError("Not enough moduli to enable relinearization".to_string())
 		);
 
-		assert!(EvaluationKeyBuilder::new_leveled(&sk, 0, 1)
-			.is_err_and(|e| e == &crate::Error::DefaultError("Unexpected levels".to_string())));
+		let e = EvaluationKeyBuilder::new_leveled(&sk, 0, 1);
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::DefaultError("Unexpected levels".to_string())
+		);
 
 		Ok(())
 	}

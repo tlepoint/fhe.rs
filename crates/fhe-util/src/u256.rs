@@ -15,20 +15,32 @@ impl U256 {
 
 	/// Add an U256 to self, wrapping modulo 2^256.
 	pub fn wrapping_add_assign(&mut self, other: Self) {
-		let mut _carry = false;
-		(self.0, _carry) = self.0.carrying_add(other.0, _carry);
-		(self.1, _carry) = self.1.carrying_add(other.1, _carry);
-		(self.2, _carry) = self.2.carrying_add(other.2, _carry);
-		(self.3, _carry) = self.3.carrying_add(other.3, _carry);
+		let (a, c1) = self.0.overflowing_add(other.0);
+		let (b, c2) = self.1.overflowing_add(other.1);
+		let (c, c3) = b.overflowing_add(c1 as u64);
+		let (d, c4) = self.2.overflowing_add(other.2);
+		let (e, c5) = d.overflowing_add((c2 | c3) as u64);
+		let f = self.3.wrapping_add(other.3);
+		let g = f.wrapping_add((c4 | c5) as u64);
+		self.0 = a;
+		self.1 = c;
+		self.2 = e;
+		self.3 = g;
 	}
 
 	/// Subtract an U256 to self, wrapping modulo 2^256.
 	pub fn wrapping_sub_assign(&mut self, other: Self) {
-		let mut _borrow = false;
-		(self.0, _borrow) = self.0.borrowing_sub(other.0, _borrow);
-		(self.1, _borrow) = self.1.borrowing_sub(other.1, _borrow);
-		(self.2, _borrow) = self.2.borrowing_sub(other.2, _borrow);
-		(self.3, _borrow) = self.3.borrowing_sub(other.3, _borrow);
+		let (a, b1) = self.0.overflowing_sub(other.0);
+		let (b, b2) = self.1.overflowing_sub(other.1);
+		let (c, b3) = b.overflowing_sub(b1 as u64);
+		let (d, b4) = self.2.overflowing_sub(other.2);
+		let (e, b5) = d.overflowing_sub((b2 | b3) as u64);
+		let f = self.3.wrapping_sub(other.3);
+		let g = f.wrapping_sub((b4 | b5) as u64);
+		self.0 = a;
+		self.1 = c;
+		self.2 = e;
+		self.3 = g;
 	}
 
 	/// Returns the most significant bit of the unsigned integer.

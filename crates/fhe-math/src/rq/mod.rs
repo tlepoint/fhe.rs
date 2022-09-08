@@ -570,9 +570,9 @@ impl Zeroize for Poly {
 
 #[cfg(test)]
 mod tests {
-	extern crate test;
 	use super::{switcher::Switcher, Context, Poly, Representation};
 	use crate::{rq::SubstitutionExponent, zq::Modulus};
+	use fhe_util::variance;
 	use itertools::Itertools;
 	use num_bigint::BigUint;
 	use num_traits::{One, Zero};
@@ -848,13 +848,9 @@ mod tests {
 			for i in 1..=16 {
 				let p = Poly::small(&ctx, Representation::PowerBasis, i)?;
 				let coefficients = p.coefficients().to_slice().unwrap();
-				let v = unsafe { q.center_vec_vt(coefficients) }
-					.iter()
-					.map(|ai| *ai as f64)
-					.collect_vec();
-				let s = test::stats::Summary::new(&v);
-				assert!(s.min >= -2.0 * (i as f64));
-				assert!(s.max <= 2.0 * (i as f64));
+				let v = unsafe { q.center_vec_vt(coefficients) };
+
+				assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * i as i64);
 			}
 		}
 
@@ -863,14 +859,9 @@ mod tests {
 		let q = Modulus::new(4611686018326724609).unwrap();
 		let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
 		let coefficients = p.coefficients().to_slice().unwrap();
-		let v = unsafe { q.center_vec_vt(coefficients) }
-			.iter()
-			.map(|ai| *ai as f64)
-			.collect_vec();
-		let s = test::stats::Summary::new(&v);
-		assert!(s.min >= -16.0);
-		assert!(s.max <= 16.0);
-		assert_eq!(s.var.round(), 8.0);
+		let v = unsafe { q.center_vec_vt(coefficients) };
+		assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 16);
+		assert_eq!(variance(&v).round(), 8.0);
 
 		Ok(())
 	}

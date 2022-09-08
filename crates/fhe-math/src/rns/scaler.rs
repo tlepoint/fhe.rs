@@ -3,9 +3,8 @@
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
 use super::RnsContext;
-use crate::u256::U256;
 use crypto_bigint::U192;
-use fhe_util::{div_ceil, ilog2};
+use fhe_util::{div_ceil, ilog2, U256};
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
@@ -335,11 +334,11 @@ impl RnsScaler {
 
 		unsafe {
 			for i in 0..out.len() {
-				debug_assert!(starting_index + i <= self.to.moduli.len());
-				debug_assert!(starting_index + i <= self.omega.len());
-				debug_assert!(starting_index + i <= self.omega_shoup.len());
-				debug_assert!(starting_index + i <= self.gamma.len());
-				debug_assert!(starting_index + i <= self.gamma_shoup.len());
+				debug_assert!(starting_index + i < self.to.moduli.len());
+				debug_assert!(starting_index + i < self.omega.len());
+				debug_assert!(starting_index + i < self.omega_shoup.len());
+				debug_assert!(starting_index + i < self.gamma.len());
+				debug_assert!(starting_index + i < self.gamma_shoup.len());
 				let out_i = out.get_mut(i).unwrap();
 				let qi = self.to.moduli.get_unchecked(starting_index + i);
 				let omega_i = self.omega.get_unchecked(starting_index + i);

@@ -442,8 +442,11 @@ mod tests {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let p = Poly::random(&ctx, Representation::PowerBasis);
 			let proto = Rq::from(&p);
-			assert!(Poly::try_convert_from(&proto, &ctx, false, None).is_ok_and(|q| q == &p));
-			assert!(Poly::try_convert_from(&proto, &ctx, false, None).is_ok_and(|q| q == &p));
+			assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
+			assert_eq!(
+				Poly::try_convert_from(&proto, &ctx, false, Representation::PowerBasis)?,
+				p
+			);
 			assert_eq!(
 				Poly::try_convert_from(&proto, &ctx, false, Representation::Ntt)
 					.expect_err("Should fail because of mismatched representations"),
@@ -459,8 +462,11 @@ mod tests {
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 		let p = Poly::random(&ctx, Representation::PowerBasis);
 		let proto = Rq::from(&p);
-		assert!(Poly::try_convert_from(&proto, &ctx, false, None).is_ok_and(|q| q == &p));
-		assert!(Poly::try_convert_from(&proto, &ctx, false, None).is_ok_and(|q| q == &p));
+		assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
+		assert_eq!(
+			Poly::try_convert_from(&proto, &ctx, false, Representation::PowerBasis)?,
+			p
+		);
 		assert_eq!(
 			Poly::try_convert_from(&proto, &ctx, false, Representation::Ntt)
 				.expect_err("Should fail because of mismatched representations"),
@@ -488,70 +494,87 @@ mod tests {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 
 			// Power Basis
-			let p = Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0i64], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(&[0i64; 8], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			let p = Poly::try_convert_from(
+			assert_eq!(
+				Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert_eq!(
+				Poly::try_convert_from(&[0i64], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert_eq!(
+				Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert_eq!(
+				Poly::try_convert_from(&[0i64; 8], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert!(Poly::try_convert_from(
 				&[0u64; 9], // One too many
 				&ctx,
 				false,
 				Representation::PowerBasis,
-			);
-			assert!(p.is_err());
+			)
+			.is_err());
 
 			// Ntt
-			let p = Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(&[0i64], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::Ntt);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
-			let p = Poly::try_convert_from(&[0i64; 8], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
-			let p = Poly::try_convert_from(
+			assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
+			assert!(Poly::try_convert_from(&[0i64], &ctx, false, Representation::Ntt).is_err());
+			assert_eq!(
+				Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::Ntt)?,
+				Poly::zero(&ctx, Representation::Ntt)
+			);
+			assert!(Poly::try_convert_from(&[0i64; 8], &ctx, false, Representation::Ntt).is_err());
+			assert!(Poly::try_convert_from(
 				&[0u64; 9], // One too many
 				&ctx,
 				false,
 				Representation::Ntt,
-			);
-			assert!(p.is_err());
+			)
+			.is_err());
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let mut p = Poly::try_convert_from(
-			Vec::<u64>::default(),
-			&ctx,
-			false,
-			Representation::PowerBasis,
+		assert_eq!(
+			Poly::try_convert_from(
+				Vec::<u64>::default(),
+				&ctx,
+				false,
+				Representation::PowerBasis,
+			)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
 		);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(Vec::<u64>::default(), &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert!(
+			Poly::try_convert_from(Vec::<u64>::default(), &ctx, false, Representation::Ntt)
+				.is_err()
+		);
 
-		p = Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert_eq!(
+			Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert_eq!(
+			Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(Poly::try_convert_from(&[0u64; 8], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(&[0u64; 9], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_err());
-		p = Poly::try_convert_from(&[0u64; 9], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert!(
+			Poly::try_convert_from(&[0u64; 9], &ctx, false, Representation::PowerBasis).is_err()
+		);
+		assert!(Poly::try_convert_from(&[0u64; 9], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(&[0u64; 24], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(&[0u64; 24], &ctx, false, Representation::Ntt);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
+		assert_eq!(
+			Poly::try_convert_from(&[0u64; 24], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert_eq!(
+			Poly::try_convert_from(&[0u64; 24], &ctx, false, Representation::Ntt)?,
+			Poly::zero(&ctx, Representation::Ntt)
+		);
 
 		Ok(())
 	}
@@ -560,52 +583,66 @@ mod tests {
 	fn try_convert_from_vec_zero() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			let mut p = Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
+			assert_eq!(
+				Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert!(Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt).is_err());
 
-			p = Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
+			assert_eq!(
+				Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert!(Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt).is_err());
 
-			p = Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::Ntt);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
+			assert_eq!(
+				Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::PowerBasis)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
+			);
+			assert_eq!(
+				Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::Ntt)?,
+				Poly::zero(&ctx, Representation::Ntt)
+			);
 
-			p = Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::PowerBasis);
-			assert!(p.is_err());
-			p = Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::Ntt);
-			assert!(p.is_err());
+			assert!(
+				Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::PowerBasis)
+					.is_err()
+			);
+			assert!(Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::Ntt).is_err());
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let mut p = Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert_eq!(
+			Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert_eq!(
+			Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert_eq!(
+			Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(Poly::try_convert_from(vec![0; 8], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_err());
-		p = Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+		assert!(
+			Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::PowerBasis).is_err()
+		);
+		assert!(Poly::try_convert_from(vec![0; 9], &ctx, false, Representation::Ntt).is_err());
 
-		p = Poly::try_convert_from(vec![0; 24], &ctx, false, Representation::PowerBasis);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = Poly::try_convert_from(vec![0; 24], &ctx, false, Representation::Ntt);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::Ntt)));
+		assert_eq!(
+			Poly::try_convert_from(vec![0; 24], &ctx, false, Representation::PowerBasis)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert_eq!(
+			Poly::try_convert_from(vec![0; 24], &ctx, false, Representation::Ntt)?,
+			Poly::zero(&ctx, Representation::Ntt)
+		);
 
 		Ok(())
 	}
@@ -614,32 +651,41 @@ mod tests {
 	fn try_convert_from_u64_zero() -> Result<(), Box<dyn Error>> {
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			let mut p = <Poly as TryConvertFrom<u64>>::try_convert_from(
-				0,
-				&ctx,
-				false,
-				Representation::PowerBasis,
+			assert_eq!(
+				<Poly as TryConvertFrom<u64>>::try_convert_from(
+					0,
+					&ctx,
+					false,
+					Representation::PowerBasis,
+				)?,
+				Poly::zero(&ctx, Representation::PowerBasis)
 			);
-			assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-			p = <Poly as TryConvertFrom<u64>>::try_convert_from(
+			assert!(<Poly as TryConvertFrom<u64>>::try_convert_from(
 				0,
 				&ctx,
 				false,
 				Representation::Ntt,
-			);
-			assert!(p.is_err());
+			)
+			.is_err());
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let mut p = <Poly as TryConvertFrom<u64>>::try_convert_from(
+		assert_eq!(
+			<Poly as TryConvertFrom<u64>>::try_convert_from(
+				0,
+				&ctx,
+				false,
+				Representation::PowerBasis,
+			)?,
+			Poly::zero(&ctx, Representation::PowerBasis)
+		);
+		assert!(<Poly as TryConvertFrom<u64>>::try_convert_from(
 			0,
 			&ctx,
 			false,
-			Representation::PowerBasis,
-		);
-		assert!(p.is_ok_and(|pp| pp == &Poly::zero(&ctx, Representation::PowerBasis)));
-		p = <Poly as TryConvertFrom<u64>>::try_convert_from(0, &ctx, false, Representation::Ntt);
-		assert!(p.is_err());
+			Representation::Ntt
+		)
+		.is_err());
 
 		Ok(())
 	}

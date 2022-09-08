@@ -155,13 +155,17 @@ impl FheDecoder<Plaintext> for Vec<u64> {
 			return Err(Error::UnspecifiedInput("No encoding specified".to_string()));
 		} else if pt.encoding.is_some() {
 			enc = pt.encoding.as_ref().unwrap().clone();
-			if let Some(arg_enc) = encoding && arg_enc != enc {
-				return Err(Error::EncodingMismatch(arg_enc.into(), enc.into()))
+			if let Some(arg_enc) = encoding {
+				if arg_enc != enc {
+					return Err(Error::EncodingMismatch(arg_enc.into(), enc.into()));
+				}
 			}
 		} else {
 			enc = encoding.unwrap();
-			if let Some(pt_enc) = pt.encoding.as_ref() && pt_enc != &enc {
-				return Err(Error::EncodingMismatch(pt_enc.into(), enc.into()))
+			if let Some(pt_enc) = pt.encoding.as_ref() {
+				if pt_enc != &enc {
+					return Err(Error::EncodingMismatch(pt_enc.into(), enc.into()));
+				}
 			}
 		}
 
@@ -248,27 +252,27 @@ mod tests {
 	}
 
 	#[test]
-	fn encode_decode() {
-		(0..40).for_each(|_| {
-			let params = Arc::new(BfvParameters::default(1, 8));
-			let a = params.plaintext.random_vec(params.degree());
+	fn encode_decode() -> Result<(), Box<dyn Error>> {
+		let params = Arc::new(BfvParameters::default(1, 8));
+		let a = params.plaintext.random_vec(params.degree());
 
-			let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::simd(), &params);
-			assert!(plaintext.is_ok());
-			let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::simd());
-			assert!(b.is_ok_and(|b| b == &a));
+		let plaintext = Plaintext::try_encode(&a as &[u64], Encoding::simd(), &params);
+		assert!(plaintext.is_ok());
+		let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::simd())?;
+		assert_eq!(b, a);
 
-			let a = unsafe { params.plaintext.center_vec_vt(&a) };
-			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::poly(), &params);
-			assert!(plaintext.is_ok());
-			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::poly());
-			assert!(b.is_ok_and(|b| b == &a));
+		let a = unsafe { params.plaintext.center_vec_vt(&a) };
+		let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::poly(), &params);
+		assert!(plaintext.is_ok());
+		let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::poly())?;
+		assert_eq!(b, a);
 
-			let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::simd(), &params);
-			assert!(plaintext.is_ok());
-			let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::simd());
-			assert!(b.is_ok_and(|b| b == &a));
-		})
+		let plaintext = Plaintext::try_encode(&a as &[i64], Encoding::simd(), &params);
+		assert!(plaintext.is_ok());
+		let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::simd())?;
+		assert_eq!(b, a);
+
+		Ok(())
 	}
 
 	#[test]
@@ -298,25 +302,29 @@ mod tests {
 		let mut plaintext = Plaintext::try_encode(&a as &[u64], Encoding::poly(), &params)?;
 
 		assert!(Vec::<u64>::try_decode(&plaintext, None).is_ok());
-		assert!(
-			Vec::<u64>::try_decode(&plaintext, Encoding::simd()).is_err_and(|err| err
-				== &crate::Error::EncodingMismatch(
-					Encoding::simd().into(),
-					Encoding::poly().into()
-				))
+		let e = Vec::<u64>::try_decode(&plaintext, Encoding::simd());
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::EncodingMismatch(Encoding::simd().into(), Encoding::poly().into())
 		);
-		assert!(
-			Vec::<u64>::try_decode(&plaintext, Encoding::poly_at_level(1)).is_err_and(|err| err
-				== &crate::Error::EncodingMismatch(
-					Encoding::poly_at_level(1).into(),
-					Encoding::poly().into()
-				))
+		let e = Vec::<u64>::try_decode(&plaintext, Encoding::poly_at_level(1));
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::EncodingMismatch(
+				Encoding::poly_at_level(1).into(),
+				Encoding::poly().into()
+			)
 		);
 
 		plaintext.encoding = None;
-		assert!(Vec::<u64>::try_decode(&plaintext, None).is_err_and(
-			|err| err == &crate::Error::UnspecifiedInput("No encoding specified".to_string())
-		));
+		let e = Vec::<u64>::try_decode(&plaintext, None);
+		assert!(e.is_err());
+		assert_eq!(
+			e.unwrap_err(),
+			crate::Error::UnspecifiedInput("No encoding specified".to_string())
+		);
 
 		Ok(())
 	}

@@ -153,10 +153,8 @@ mod tests {
 				assert_eq!(plaintexts.0.len(), i);
 
 				for j in 0..i {
-					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0));
-					assert!(
-						b.is_ok_and(|b| b == &a[j * params.degree()..(j + 1) * params.degree()])
-					);
+					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0))?;
+					assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
 				}
 
 				let plaintexts = unsafe {
@@ -165,10 +163,8 @@ mod tests {
 				assert_eq!(plaintexts.0.len(), i);
 
 				for j in 0..i {
-					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0));
-					assert!(
-						b.is_ok_and(|b| b == &a[j * params.degree()..(j + 1) * params.degree()])
-					);
+					let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0))?;
+					assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
 				}
 			}
 		}
