@@ -1,9 +1,15 @@
 #![crate_name = "fhe_util"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
-#![feature(test)]
 
 //! Utilities for the fhe.rs library.
+
+#[cfg(test)]
+#[macro_use]
+extern crate proptest;
+
+mod u256;
+pub use u256::U256;
 
 use num_bigint::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
@@ -196,14 +202,22 @@ pub fn div_ceil<T: PrimInt>(a: T, b: T) -> T {
 	(a + b - T::one()) / b
 }
 
+/// Compute the sample variance of a list of values.
+/// Panics if the length of value is < 2.
+pub fn variance<T: PrimInt>(values: &[T]) -> f64 {
+	assert!(values.len() > 1);
+	let mean = values.iter().fold(0f64, |acc, i| acc + i.to_f64().unwrap()) / (values.len() as f64);
+	values.iter().fold(0f64, |acc, i| {
+		acc + (i.to_f64().unwrap() - mean) * (i.to_f64().unwrap() - mean)
+	}) / ((values.len() as f64) - 1.0)
+}
+
 #[cfg(test)]
 mod tests {
-	extern crate test;
-
 	use itertools::Itertools;
 	use rand::{thread_rng, RngCore};
 
-	use crate::{div_ceil, ilog2};
+	use crate::{div_ceil, ilog2, variance};
 
 	use super::{
 		inverse, is_prime, sample_vec_cbd, transcode_bidirectional, transcode_from_bytes,
@@ -263,14 +277,12 @@ mod tests {
 
 			// Verifies that the min, max are in absolute value smaller than 2 * var
 			let v = sample_vec_cbd(100000, var).unwrap();
-			let w = test::stats::Summary::new(&v.iter().map(|vi| *vi as f64).collect_vec());
-			assert!(w.max <= (2.0 * var as f64));
-			assert!(w.min >= (-2.0 * var as f64));
+			assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * var as i64);
 
 			// Verifies that the variance is correct. We could probably refine the bound
 			// but for now, we will just check that the rounded value is equal to the
 			// variance.
-			assert!(w.var.round() == (var as f64));
+			assert!(variance(&v).round() == (var as f64));
 		}
 	}
 

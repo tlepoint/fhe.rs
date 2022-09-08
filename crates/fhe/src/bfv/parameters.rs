@@ -612,16 +612,18 @@ mod tests {
 			.set_degree(8)
 			.set_plaintext_modulus(2)
 			.set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
-			.build();
-		assert!(params.is_ok_and(|p| p.moduli.to_vec()
-			== [
+			.build()?;
+		assert_eq!(
+			params.moduli.to_vec(),
+			&[
 				4611686018427387761,
 				4611686018427387617,
 				4611686018427387409,
 				2305843009213693921,
 				1152921504606846577,
 				2017
-			]));
+			]
+		);
 
 		let params = BfvParametersBuilder::new()
 			.set_degree(8)
@@ -634,8 +636,8 @@ mod tests {
 				1152921504606846577,
 				2017,
 			])
-			.build();
-		assert!(params.is_ok_and(|p| p.moduli_sizes.to_vec() == [62, 62, 62, 61, 60, 11]));
+			.build()?;
+		assert_eq!(params.moduli_sizes.to_vec(), &[62, 62, 62, 61, 60, 11]);
 
 		Ok(())
 	}

@@ -1,6 +1,3 @@
-#![feature(int_log)]
-#![feature(int_roundings)]
-
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe::{
 	bfv::{
@@ -12,6 +9,7 @@ use fhe::{
 use fhe_math::rns::{RnsContext, ScalingFactor};
 use fhe_math::zq::primes::generate_prime;
 use fhe_traits::{FheEncoder, FheEncrypter};
+use fhe_util::{div_ceil, ilog2};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use std::time::Duration;
@@ -33,7 +31,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 					.unwrap()
 					.enable_column_rotation(1)
 					.unwrap()
-					.enable_expansion(par.degree().ilog2() as usize)
+					.enable_expansion(ilog2(par.degree() as u64))
 					.unwrap()
 					.build()
 					.unwrap(),
@@ -214,7 +212,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				},
 			);
 
-			for i in 1..par.degree().ilog2() + 1 {
+			for i in 1..=ilog2(par.degree() as u64) {
 				if par.degree() > 2048 && i > 4 {
 					continue; // Skip slow benchmarks
 				}
@@ -269,7 +267,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			);
 
 			// Second multiplication option.
-			let nmoduli = (q).div_ceil(62);
+			let nmoduli = div_ceil(q, 62);
 			let mut extended_basis = par.moduli().to_vec();
 			let mut upper_bound = u64::MAX >> 2;
 			while extended_basis.len() != nmoduli + par.moduli().len() {

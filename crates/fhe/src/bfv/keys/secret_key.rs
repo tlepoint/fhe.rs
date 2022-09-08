@@ -251,10 +251,10 @@ mod tests {
 						&params,
 					)?;
 					let ct = sk.try_encrypt(&pt)?;
-					let pt2 = sk.try_decrypt(&ct);
+					let pt2 = sk.try_decrypt(&ct)?;
 
 					println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-					assert!(pt2.is_ok_and(|pt2| pt2 == &pt));
+					assert_eq!(pt2, pt);
 				}
 			}
 		}

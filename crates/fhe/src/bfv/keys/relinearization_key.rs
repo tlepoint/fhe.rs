@@ -210,7 +210,8 @@ mod tests {
 				// Print the noise and decrypt
 				println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
 				let pt = sk.try_decrypt(&ct)?;
-				assert!(Vec::<u64>::try_decode(&pt, Encoding::poly()).is_ok_and(|v| v == &[0u64; 8]))
+				let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
+				assert_eq!(w, &[0u64; 8]);
 			}
 		}
 		Ok(())
@@ -264,8 +265,8 @@ mod tests {
 						// Print the noise and decrypt
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
 						let pt = sk.try_decrypt(&ct)?;
-						assert!(Vec::<u64>::try_decode(&pt, Encoding::poly())
-							.is_ok_and(|v| v == &[0u64; 8]))
+						let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
+						assert_eq!(w, &[0u64; 8]);
 					}
 				}
 			}

@@ -1,5 +1,3 @@
-#![feature(int_log)]
-
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe::bfv::{dot_product_scalar, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_traits::{FheEncoder, FheEncrypter};
