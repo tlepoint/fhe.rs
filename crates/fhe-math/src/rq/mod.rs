@@ -13,13 +13,14 @@ pub mod switcher;
 pub mod traits;
 pub use context::Context;
 pub use ops::dot_product;
+use sha2::{Digest, Sha256};
 
 use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
 use crate::{Error, Result};
 use fhe_util::sample_vec_cbd;
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2, Axis};
-use rand::{Rng, SeedableRng};
+use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
@@ -221,12 +222,16 @@ impl Poly {
 	}
 
 	/// Generate a random polynomial.
-	pub fn random(ctx: &Arc<Context>, representation: Representation) -> Self {
+	pub fn random<R: RngCore + CryptoRng>(
+		ctx: &Arc<Context>,
+		representation: Representation,
+		rng: &mut R,
+	) -> Self {
 		let mut p = Poly::zero(ctx, representation);
 		izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
 			v.as_slice_mut()
 				.unwrap()
-				.copy_from_slice(&qi.random_vec(ctx.degree))
+				.copy_from_slice(&qi.random_vec(ctx.degree, rng))
 		});
 		if p.representation == Representation::NttShoup {
 			p.compute_coefficients_shoup()
@@ -240,14 +245,16 @@ impl Poly {
 		representation: Representation,
 		seed: <ChaCha8Rng as SeedableRng>::Seed,
 	) -> Self {
-		let mut rng = ChaCha8Rng::from_seed(seed);
+		// Let's hash the seed into a ChaCha8Rng seed.
+		let mut hasher = Sha256::new();
+		hasher.update(seed);
+		let mut prng =
+			ChaCha8Rng::from_seed(<ChaCha8Rng as SeedableRng>::Seed::from(hasher.finalize()));
 		let mut p = Poly::zero(ctx, representation);
 		izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
-			let mut seed_for_vec = <ChaCha8Rng as SeedableRng>::Seed::default();
-			rng.fill(&mut seed_for_vec);
 			v.as_slice_mut()
 				.unwrap()
-				.copy_from_slice(&qi.random_vec_from_seed(ctx.degree, seed_for_vec))
+				.copy_from_slice(&qi.random_vec(ctx.degree, &mut prng))
 		});
 		if p.representation == Representation::NttShoup {
 			p.compute_coefficients_shoup()
@@ -259,10 +266,11 @@ impl Poly {
 	/// representation.
 	///
 	/// Returns an error if the variance does not belong to [1, ..., 16].
-	pub fn small(
+	pub fn small<T: RngCore + CryptoRng>(
 		ctx: &Arc<Context>,
 		representation: Representation,
 		variance: usize,
+		rng: &mut T,
 	) -> Result<Self> {
 		if !(1..=16).contains(&variance) {
 			Err(Error::Default(
@@ -270,7 +278,8 @@ impl Poly {
 			))
 		} else {
 			let coeffs = Zeroizing::new(
-				sample_vec_cbd(ctx.degree, variance).map_err(|e| Error::Default(e.to_string()))?,
+				sample_vec_cbd(ctx.degree, variance, rng)
+					.map_err(|e| Error::Default(e.to_string()))?,
 			);
 			let mut p = Poly::try_convert_from(
 				coeffs.as_ref() as &[i64],
@@ -640,6 +649,7 @@ mod tests {
 
 	#[test]
 	fn random() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for _ in 0..100 {
 			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
 			thread_rng().fill(&mut seed);
@@ -660,7 +670,7 @@ mod tests {
 			let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
 			assert_ne!(p, q);
 
-			let r = Poly::random(&ctx, Representation::Ntt);
+			let r = Poly::random(&ctx, Representation::Ntt, &mut rng);
 			assert_ne!(p, r);
 			assert_ne!(q, r);
 		}
@@ -669,16 +679,17 @@ mod tests {
 
 	#[test]
 	fn coefficients() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for _ in 0..50 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-				let p = Poly::random(&ctx, Representation::Ntt);
+				let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
 				let p_coefficients = Vec::<u64>::from(&p);
 				assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
 			}
 
 			let ctx = Arc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::Ntt);
+			let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
 			let p_coefficients = Vec::<u64>::from(&p);
 			assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
 		}
@@ -703,9 +714,10 @@ mod tests {
 
 	#[test]
 	fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			let mut p = Poly::random(&ctx, Representation::default());
+			let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
 			assert!(!p.allow_variable_time_computations);
 
 			unsafe { p.allow_variable_time_computations() }
@@ -719,7 +731,7 @@ mod tests {
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let mut p = Poly::random(&ctx, Representation::default());
+		let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
 		assert!(!p.allow_variable_time_computations);
 
 		unsafe { p.allow_variable_time_computations() }
@@ -729,9 +741,9 @@ mod tests {
 		assert!(q.allow_variable_time_computations);
 
 		// Allowing variable time propagates.
-		let mut p = Poly::random(&ctx, Representation::Ntt);
+		let mut p = Poly::random(&ctx, Representation::Ntt, &mut rng);
 		unsafe { p.allow_variable_time_computations() }
-		let mut q = Poly::random(&ctx, Representation::Ntt);
+		let mut q = Poly::random(&ctx, Representation::Ntt, &mut rng);
 
 		assert!(!q.allow_variable_time_computations);
 		q *= &p;
@@ -753,9 +765,10 @@ mod tests {
 
 	#[test]
 	fn change_representation() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
-		let mut p = Poly::random(&ctx, Representation::default());
+		let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
 		assert_eq!(p.representation, Representation::default());
 		assert_eq!(p.representation(), &Representation::default());
 
@@ -796,9 +809,10 @@ mod tests {
 
 	#[test]
 	fn override_representation() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
-		let mut p = Poly::random(&ctx, Representation::PowerBasis);
+		let mut p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 		assert_eq!(p.representation(), &p.representation);
 		let q = p.clone();
 
@@ -828,17 +842,18 @@ mod tests {
 
 	#[test]
 	fn small() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
 			let q = Modulus::new(*modulus).unwrap();
 
-			let e = Poly::small(&ctx, Representation::PowerBasis, 0);
+			let e = Poly::small(&ctx, Representation::PowerBasis, 0, &mut rng);
 			assert!(e.is_err());
 			assert_eq!(
 				e.unwrap_err().to_string(),
 				"The variance should be an integer between 1 and 16"
 			);
-			let e = Poly::small(&ctx, Representation::PowerBasis, 17);
+			let e = Poly::small(&ctx, Representation::PowerBasis, 17, &mut rng);
 			assert!(e.is_err());
 			assert_eq!(
 				e.unwrap_err().to_string(),
@@ -846,7 +861,7 @@ mod tests {
 			);
 
 			for i in 1..=16 {
-				let p = Poly::small(&ctx, Representation::PowerBasis, i)?;
+				let p = Poly::small(&ctx, Representation::PowerBasis, i, &mut rng)?;
 				let coefficients = p.coefficients().to_slice().unwrap();
 				let v = unsafe { q.center_vec_vt(coefficients) };
 
@@ -857,7 +872,7 @@ mod tests {
 		// Generate a very large polynomial to check the variance (here equal to 8).
 		let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 18)?);
 		let q = Modulus::new(4611686018326724609).unwrap();
-		let p = Poly::small(&ctx, Representation::PowerBasis, 8)?;
+		let p = Poly::small(&ctx, Representation::PowerBasis, 8, &mut thread_rng())?;
 		let coefficients = p.coefficients().to_slice().unwrap();
 		let v = unsafe { q.center_vec_vt(coefficients) };
 		assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 16);
@@ -868,9 +883,10 @@ mod tests {
 
 	#[test]
 	fn substitute() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 			let mut p_ntt = p.clone();
 			p_ntt.change_representation(Representation::Ntt);
 			let mut p_ntt_shoup = p.clone();
@@ -934,7 +950,7 @@ mod tests {
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let p = Poly::random(&ctx, Representation::PowerBasis);
+		let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 		let mut p_ntt = p.clone();
 		p_ntt.change_representation(Representation::Ntt);
 		let mut p_ntt_shoup = p.clone();
@@ -963,12 +979,13 @@ mod tests {
 
 	#[test]
 	fn mod_switch_down_next() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ntests = 100;
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
 
 		for _ in 0..ntests {
 			// If the polynomial has incorrect representation, an error is returned
-			let e = Poly::random(&ctx, Representation::Ntt).mod_switch_down_next();
+			let e = Poly::random(&ctx, Representation::Ntt, &mut rng).mod_switch_down_next();
 			assert!(e.is_err());
 			assert_eq!(
 				e.unwrap_err(),
@@ -979,7 +996,7 @@ mod tests {
 			);
 
 			// Otherwise, no error happens and the coefficients evolve as expected.
-			let mut p = Poly::random(&ctx, Representation::PowerBasis);
+			let mut p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 			let mut reference = Vec::<BigUint>::from(&p);
 			let mut current_ctx = ctx.clone();
 			assert_eq!(p.ctx, current_ctx);
@@ -1008,12 +1025,13 @@ mod tests {
 
 	#[test]
 	fn mod_switch_down_to() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ntests = 100;
 		let ctx1 = Arc::new(Context::new(MODULI, 8)?);
 		let ctx2 = Arc::new(Context::new(&MODULI[..2], 8)?);
 
 		for _ in 0..ntests {
-			let mut p = Poly::random(&ctx1, Representation::PowerBasis);
+			let mut p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
 			let reference = Vec::<BigUint>::from(&p);
 
 			p.mod_switch_down_to(&ctx2)?;
@@ -1033,12 +1051,13 @@ mod tests {
 
 	#[test]
 	fn mod_switch_to() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ntests = 100;
 		let ctx1 = Arc::new(Context::new(&MODULI[..2], 8)?);
 		let ctx2 = Arc::new(Context::new(&MODULI[3..], 8)?);
 		let switcher = Switcher::new(&ctx1, &ctx2)?;
 		for _ in 0..ntests {
-			let p = Poly::random(&ctx1, Representation::PowerBasis);
+			let p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
 			let reference = Vec::<BigUint>::from(&p);
 
 			let q = p.mod_switch_to(&switcher)?;
@@ -1057,15 +1076,16 @@ mod tests {
 
 	#[test]
 	fn mul_x_power() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let e = Poly::random(&ctx, Representation::Ntt).multiply_inverse_power_of_x(1);
+		let e = Poly::random(&ctx, Representation::Ntt, &mut rng).multiply_inverse_power_of_x(1);
 		assert!(e.is_err());
 		assert_eq!(
 			e.unwrap_err(),
 			crate::Error::IncorrectRepresentation(Representation::Ntt, Representation::PowerBasis)
 		);
 
-		let mut p = Poly::random(&ctx, Representation::PowerBasis);
+		let mut p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 		let q = p.clone();
 
 		p.multiply_inverse_power_of_x(0)?;

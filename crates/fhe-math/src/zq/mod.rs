@@ -10,8 +10,7 @@ use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
-use rand::{distributions::Uniform, thread_rng, Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
+use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
 
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
@@ -686,25 +685,8 @@ impl Modulus {
 		}
 	}
 
-	/// Returns a random vector and a seed that generated that random element.
-	///
-	/// Panics if the size is 0.
-	pub fn random_vec(&self, size: usize) -> Vec<u64> {
-		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-		thread_rng().fill(&mut seed);
-		self.random_vec_from_seed(size, seed)
-	}
-
-	/// Returns a random vector generated deterministically from a seed.
-	///
-	/// Panics if the size is 0.
-	pub fn random_vec_from_seed(
-		&self,
-		size: usize,
-		seed: <ChaCha8Rng as SeedableRng>::Seed,
-	) -> Vec<u64> {
-		assert_ne!(size, 0);
-		let rng = rand_chacha::ChaCha8Rng::from_seed(seed);
+	/// Returns a random vector.
+	pub fn random_vec<R: RngCore + CryptoRng>(&self, size: usize, rng: &mut R) -> Vec<u64> {
 		rng.sample_iter(self.distribution).take(size).collect_vec()
 	}
 
@@ -739,8 +721,7 @@ mod tests {
 	use itertools::{izip, Itertools};
 	use proptest::collection::vec as prop_vec;
 	use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
-	use rand::{thread_rng, Rng, RngCore, SeedableRng};
-	use rand_chacha::ChaCha8Rng;
+	use rand::{thread_rng, RngCore};
 
 	// Utility functions for the proptests.
 
@@ -986,25 +967,17 @@ mod tests {
 
 		#[test]
 		fn random_vec(p in valid_moduli(), size in 1..1000usize) {
-			let v = p.random_vec(size);
+			let mut rng = thread_rng();
+
+			let v = p.random_vec(size, &mut rng);
 			prop_assert_eq!(v.len(), size);
 
-			let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-			thread_rng().fill(&mut seed);
-			let x = p.random_vec_from_seed(size, seed);
-			let y = p.random_vec_from_seed(size, seed);
-			prop_assert_eq!(x.len(), size);
-			prop_assert_eq!(&x, &y);
+			let w = p.random_vec(size, &mut rng);
+			prop_assert_eq!(w.len(), size);
 
-			thread_rng().fill(&mut seed);
-			let y = p.random_vec_from_seed(size, seed);
-			prop_assert_eq!(y.len(), size);
 			if p.modulus().leading_zeros() <= 30 {
-				prop_assert_ne!(x, y); // This will hold with probability at least 2^(-30)
+				prop_assert_ne!(v, w); // This will hold with probability at least 2^(-30)
 			}
-
-			prop_assert!(catch_unwind(|| p.random_vec(0)).is_err());
-			prop_assert!(catch_unwind(|| p.random_vec_from_seed(0, seed)).is_err());
 		}
 
 		#[test]

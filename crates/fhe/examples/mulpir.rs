@@ -7,7 +7,7 @@ use fhe_traits::{
 };
 use fhe_util::{ilog2, inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
-use rand::{thread_rng, RngCore};
+use rand::{rngs::OsRng, thread_rng, RngCore};
 use std::{env, error::Error, process::exit, sync::Arc};
 use util::{
 	encode_database, generate_database, number_elements_per_plaintext,
@@ -121,13 +121,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	// Client setup
 	let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
-		let sk = bfv::SecretKey::random(&params);
+		let sk = bfv::SecretKey::random(&params, &mut OsRng);
 		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
 		println!("level = {}", level);
 		let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
 			.enable_expansion(level as usize)?
-			.build()?;
-		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1)?;
+			.build(&mut thread_rng())?;
+		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1, &mut thread_rng())?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();
 		let rk_serialized = rk.to_bytes();
 		(sk, ek_expansion_serialized, rk_serialized)
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		pt[dim1 + (query_index % dim2)] = inv;
 		let query_pt =
 			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
-		let query: bfv::Ciphertext = sk.try_encrypt(&query_pt)?;
+		let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut thread_rng())?;
 		query.to_bytes()
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));

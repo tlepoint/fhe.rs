@@ -135,18 +135,18 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
 #[cfg(test)]
 mod tests {
-	use std::{error::Error, sync::Arc};
-
-	use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
-
 	use crate::bfv::{BfvParameters, Encoding, PlaintextVec};
+	use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
+	use rand::thread_rng;
+	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn encode_decode() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for _ in 0..20 {
 			for i in 1..5 {
 				let params = Arc::new(BfvParameters::default(1, 8));
-				let a = params.plaintext.random_vec(params.degree() * i);
+				let a = params.plaintext.random_vec(params.degree() * i, &mut rng);
 
 				let plaintexts =
 					PlaintextVec::try_encode(&a as &[u64], Encoding::poly_at_level(0), &params)?;

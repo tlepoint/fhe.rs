@@ -9,11 +9,11 @@
 extern crate proptest;
 
 mod u256;
+use rand::{CryptoRng, RngCore};
 pub use u256::U256;
 
 use num_bigint::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
-use rand::{thread_rng, RngCore};
 use std::{mem::size_of, panic::UnwindSafe};
 
 /// Define catch_unwind to silence the panic in unit tests.
@@ -35,7 +35,11 @@ pub fn is_prime(p: u64) -> bool {
 
 /// Sample a vector of independent centered binomial distributions of a given
 /// variance. Returns an error if the variance is strictly larger than 16.
-pub fn sample_vec_cbd(vector_size: usize, variance: usize) -> Result<Vec<i64>, &'static str> {
+pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
+	vector_size: usize,
+	variance: usize,
+	rng: &mut R,
+) -> Result<Vec<i64>, &'static str> {
 	if !(1..=16).contains(&variance) {
 		return Err("The variance should be between 1 and 16");
 	}
@@ -48,7 +52,6 @@ pub fn sample_vec_cbd(vector_size: usize, variance: usize) -> Result<Vec<i64>, &
 
 	let mut current_pool = 0u128;
 	let mut current_pool_nbits = 0;
-	let mut rng = thread_rng();
 
 	for _ in 0..vector_size {
 		if current_pool_nbits < number_bits {
@@ -266,17 +269,17 @@ mod tests {
 
 	#[test]
 	fn sample_cbd() {
-		assert!(sample_vec_cbd(10, 0).is_err());
-		assert!(sample_vec_cbd(10, 17).is_err());
+		assert!(sample_vec_cbd(10, 0, &mut thread_rng()).is_err());
+		assert!(sample_vec_cbd(10, 17, &mut thread_rng()).is_err());
 
 		for var in 1..=16 {
 			for size in 0..=100 {
-				let v = sample_vec_cbd(size, var).unwrap();
+				let v = sample_vec_cbd(size, var, &mut thread_rng()).unwrap();
 				assert_eq!(v.len(), size);
 			}
 
 			// Verifies that the min, max are in absolute value smaller than 2 * var
-			let v = sample_vec_cbd(100000, var).unwrap();
+			let v = sample_vec_cbd(100000, var, &mut thread_rng()).unwrap();
 			assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * var as i64);
 
 			// Verifies that the variance is correct. We could probably refine the bound

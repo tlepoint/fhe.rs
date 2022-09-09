@@ -141,6 +141,7 @@ mod tests {
 	use itertools::Itertools;
 	use num_bigint::BigUint;
 	use num_traits::{One, Zero};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	// Moduli to be used in tests.
@@ -158,6 +159,7 @@ mod tests {
 
 	#[test]
 	fn scaler() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let ntests = 100;
 		let from = Arc::new(Context::new(Q, 8)?);
 		let to = Arc::new(Context::new(P, 8)?);
@@ -170,7 +172,7 @@ mod tests {
 				let scaler = Scaler::new(&from, &to, ScalingFactor::new(&n, &d))?;
 
 				for _ in 0..ntests {
-					let mut poly = Poly::random(&from, Representation::PowerBasis);
+					let mut poly = Poly::random(&from, Representation::PowerBasis, &mut rng);
 					let poly_biguint = Vec::<BigUint>::from(&poly);
 
 					let scaled_poly = scaler.scale(&poly)?;

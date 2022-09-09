@@ -432,15 +432,17 @@ mod tests {
 		Error as CrateError,
 	};
 	use num_bigint::BigUint;
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
 
 	#[test]
 	fn proto() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for modulus in MODULI {
 			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 			let proto = Rq::from(&p);
 			assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
 			assert_eq!(
@@ -460,7 +462,7 @@ mod tests {
 		}
 
 		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		let p = Poly::random(&ctx, Representation::PowerBasis);
+		let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 		let proto = Rq::from(&p);
 		assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
 		assert_eq!(
@@ -692,10 +694,11 @@ mod tests {
 
 	#[test]
 	fn biguint() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for _ in 0..100 {
 			for modulus in MODULI {
 				let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-				let p = Poly::random(&ctx, Representation::PowerBasis);
+				let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 				let p_coeffs = Vec::<BigUint>::from(&p);
 				let q = Poly::try_convert_from(
 					p_coeffs.as_slice(),
@@ -707,7 +710,7 @@ mod tests {
 			}
 
 			let ctx = Arc::new(Context::new(MODULI, 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 			let p_coeffs = Vec::<BigUint>::from(&p);
 			assert_eq!(p_coeffs.len(), ctx.degree);
 			let q = Poly::try_convert_from(

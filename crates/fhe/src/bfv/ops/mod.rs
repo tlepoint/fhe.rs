@@ -282,31 +282,34 @@ mod tests {
 		encoding::EncodingEnum, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
 	};
 	use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+	use rand::{rngs::OsRng, thread_rng};
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn add() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
+
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let zero = Ciphertext::zero(&params);
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
-				let b = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
+				let b = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
 
-					let mut ct_a = sk.try_encrypt(&pt_a)?;
+					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(ct_a, &ct_a + &zero);
 					assert_eq!(ct_a, &zero + &ct_a);
-					let ct_b: Ciphertext = sk.try_encrypt(&pt_b)?;
+					let ct_b: Ciphertext = sk.try_encrypt(&pt_b, &mut rng)?;
 					let ct_c = &ct_a + &ct_b;
 					ct_a += &ct_b;
 
@@ -323,24 +326,26 @@ mod tests {
 
 	#[test]
 	fn add_scalar() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
+
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
-				let b = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
+				let b = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut c = a.clone();
 				params.plaintext.add_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let zero = Plaintext::zero(encoding.clone(), &params)?;
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
 
-					let mut ct_a = sk.try_encrypt(&pt_a)?;
+					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(
 						Vec::<u64>::try_decode(
 							&sk.try_decrypt(&(&ct_a + &zero))?,
@@ -371,26 +376,27 @@ mod tests {
 
 	#[test]
 	fn sub() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let zero = Ciphertext::zero(&params);
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut a_neg = a.clone();
 				params.plaintext.neg_vec(&mut a_neg);
-				let b = params.plaintext.random_vec(params.degree());
+				let b = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
 
-					let mut ct_a = sk.try_encrypt(&pt_a)?;
+					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(ct_a, &ct_a - &zero);
 					assert_eq!(
 						Vec::<u64>::try_decode(
@@ -399,7 +405,7 @@ mod tests {
 						)?,
 						a_neg
 					);
-					let ct_b: Ciphertext = sk.try_encrypt(&pt_b)?;
+					let ct_b: Ciphertext = sk.try_encrypt(&pt_b, &mut rng)?;
 					let ct_c = &ct_a - &ct_b;
 					ct_a -= &ct_b;
 
@@ -416,26 +422,27 @@ mod tests {
 
 	#[test]
 	fn sub_scalar() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut a_neg = a.clone();
 				params.plaintext.neg_vec(&mut a_neg);
-				let b = params.plaintext.random_vec(params.degree());
+				let b = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut c = a.clone();
 				params.plaintext.sub_vec(&mut c, &b);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let zero = Plaintext::zero(encoding.clone(), &params)?;
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
 
-					let mut ct_a = sk.try_encrypt(&pt_a)?;
+					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(
 						Vec::<u64>::try_decode(
 							&sk.try_decrypt(&(&ct_a - &zero))?,
@@ -466,20 +473,21 @@ mod tests {
 
 	#[test]
 	fn neg() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
 				let mut c = a.clone();
 				params.plaintext.neg_vec(&mut c);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 
-					let ct_a: Ciphertext = sk.try_encrypt(&pt_a)?;
+					let ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
 
 					let ct_c = -&ct_a;
 					let pt_c = sk.try_decrypt(&ct_c)?;
@@ -497,15 +505,17 @@ mod tests {
 
 	#[test]
 	fn mul_scalar() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
+
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for _ in 0..50 {
-				let a = params.plaintext.random_vec(params.degree());
-				let b = params.plaintext.random_vec(params.degree());
+				let a = params.plaintext.random_vec(params.degree(), &mut rng);
+				let b = params.plaintext.random_vec(params.degree(), &mut rng);
 
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let mut c = vec![0u64; params.degree()];
 					match encoding.encoding {
@@ -534,7 +544,7 @@ mod tests {
 					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
 					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
 
-					let mut ct_a = sk.try_encrypt(&pt_a)?;
+					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					let ct_c = &ct_a * &pt_b;
 					ct_a *= &pt_b;
 
@@ -551,6 +561,7 @@ mod tests {
 
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for par in [
 			Arc::new(BfvParameters::default(2, 8)),
 			Arc::new(BfvParameters::default(8, 8)),
@@ -558,17 +569,17 @@ mod tests {
 			for _ in 0..1 {
 				// We will encode `values` in an Simd format, and check that the product is
 				// computed correctly.
-				let v1 = par.plaintext.random_vec(par.degree());
-				let v2 = par.plaintext.random_vec(par.degree());
+				let v1 = par.plaintext.random_vec(par.degree(), &mut rng);
+				let v2 = par.plaintext.random_vec(par.degree(), &mut rng);
 				let mut expected = v1.clone();
 				par.plaintext.mul_vec(&mut expected, &v2);
 
-				let sk = SecretKey::random(&par);
+				let sk = SecretKey::random(&par, &mut OsRng);
 				let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
 				let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
 
-				let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
-				let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
+				let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
+				let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
 				let ct3 = &ct1 * &ct2;
 				let ct4 = &ct3 * &ct3;
 
@@ -588,18 +599,19 @@ mod tests {
 
 	#[test]
 	fn square() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let par = Arc::new(BfvParameters::default(6, 8));
 		for _ in 0..20 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
-			let v = par.plaintext.random_vec(par.degree());
+			let v = par.plaintext.random_vec(par.degree(), &mut rng);
 			let mut expected = v.clone();
 			par.plaintext.mul_vec(&mut expected, &v);
 
-			let sk = SecretKey::random(&par);
+			let sk = SecretKey::random(&par, &mut OsRng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &par)?;
 
-			let ct1: Ciphertext = sk.try_encrypt(&pt)?;
+			let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let ct2 = &ct1 * &ct1;
 
 			println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });

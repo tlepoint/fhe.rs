@@ -12,6 +12,7 @@ use fhe_math::rq::{
 	SubstitutionExponent,
 };
 use protobuf::MessageField;
+use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -26,11 +27,12 @@ pub struct GaloisKey {
 
 impl GaloisKey {
 	/// Generate a [`GaloisKey`] from a [`SecretKey`].
-	pub fn new(
+	pub fn new<R: RngCore + CryptoRng>(
 		sk: &SecretKey,
 		exponent: usize,
 		ciphertext_level: usize,
 		galois_key_level: usize,
+		rng: &mut R,
 	) -> Result<Self> {
 		let ctx_galois_key = sk.par.ctx_at_level(galois_key_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
@@ -49,7 +51,13 @@ impl GaloisKey {
 		let mut s_sub_switched_up = Zeroizing::new(s_sub.mod_switch_to(&switcher_up)?);
 		s_sub_switched_up.change_representation(Representation::PowerBasis);
 
-		let ksk = KeySwitchingKey::new(sk, &s_sub_switched_up, ciphertext_level, galois_key_level)?;
+		let ksk = KeySwitchingKey::new(
+			sk,
+			&s_sub_switched_up,
+			ciphertext_level,
+			galois_key_level,
+			rng,
+		)?;
 
 		Ok(Self {
 			element: ciphertext_exponent,
@@ -123,27 +131,29 @@ mod tests {
 		Plaintext, SecretKey,
 	};
 	use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn relinearization() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(3, 8)),
 		] {
 			for _ in 0..30 {
-				let sk = SecretKey::random(&params);
-				let v = params.plaintext.random_vec(params.degree());
+				let sk = SecretKey::random(&params, &mut rng);
+				let v = params.plaintext.random_vec(params.degree(), &mut rng);
 				let row_size = params.degree() >> 1;
 
 				let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-				let ct = sk.try_encrypt(&pt)?;
+				let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 				for i in 1..2 * params.degree() {
 					if i & 1 == 0 {
-						assert!(GaloisKey::new(&sk, i, 0, 0).is_err())
+						assert!(GaloisKey::new(&sk, i, 0, 0, &mut rng).is_err())
 					} else {
-						let gk = GaloisKey::new(&sk, i, 0, 0)?;
+						let gk = GaloisKey::new(&sk, i, 0, 0, &mut rng)?;
 						let ct2 = gk.relinearize(&ct)?;
 						println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
 
@@ -176,12 +186,13 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(4, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let gk = GaloisKey::new(&sk, 9, 0, 0)?;
+			let sk = SecretKey::random(&params, &mut rng);
+			let gk = GaloisKey::new(&sk, 9, 0, 0, &mut rng)?;
 			let proto = GaloisKeyProto::from(&gk);
 			assert_eq!(gk, GaloisKey::try_convert_from(&proto, &params)?);
 		}
