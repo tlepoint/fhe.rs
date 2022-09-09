@@ -401,6 +401,8 @@ impl NttOperator {
 
 #[cfg(test)]
 mod tests {
+	use rand::thread_rng;
+
 	use super::{supports_ntt, NttOperator};
 	use crate::zq::Modulus;
 
@@ -425,6 +427,7 @@ mod tests {
 	#[test]
 	fn bijection() {
 		let ntests = 100;
+		let mut rng = thread_rng();
 
 		for size in [8, 1024] {
 			for p in [1153, 4611686018326724609] {
@@ -434,7 +437,7 @@ mod tests {
 					let op = NttOperator::new(&q, size).unwrap();
 
 					for _ in 0..ntests {
-						let mut a = q.random_vec(size);
+						let mut a = q.random_vec(size, &mut rng);
 						let a_clone = a.clone();
 						let mut b = a.clone();
 
@@ -458,6 +461,7 @@ mod tests {
 	#[test]
 	fn forward_lazy() {
 		let ntests = 100;
+		let mut rng = thread_rng();
 
 		for size in [8, 1024] {
 			for p in [1153, 4611686018326724609] {
@@ -467,7 +471,7 @@ mod tests {
 					let op = NttOperator::new(&q, size).unwrap();
 
 					for _ in 0..ntests {
-						let mut a = q.random_vec(size);
+						let mut a = q.random_vec(size, &mut rng);
 						let mut a_lazy = a.clone();
 
 						op.forward(&mut a);

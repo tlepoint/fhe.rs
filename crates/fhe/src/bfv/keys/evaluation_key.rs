@@ -12,6 +12,7 @@ use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use fhe_util::ilog2;
 use protobuf::Message;
+use rand::{CryptoRng, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -358,7 +359,7 @@ impl EvaluationKeyBuilder {
 	}
 
 	/// Build an [`EvaluationKey`] with the specified attributes.
-	pub fn build(&mut self) -> Result<EvaluationKey> {
+	pub fn build<R: RngCore + CryptoRng>(&mut self, rng: &mut R) -> Result<EvaluationKey> {
 		let mut ek = EvaluationKey {
 			gk: HashMap::default(),
 			par: self.sk.par.clone(),
@@ -411,6 +412,7 @@ impl EvaluationKeyBuilder {
 					index,
 					self.ciphertext_level,
 					self.evaluation_key_level,
+					rng,
 				)?,
 			);
 		}
@@ -488,12 +490,14 @@ mod tests {
 	};
 	use fhe_util::ilog2;
 	use itertools::izip;
+	use rand::thread_rng;
 	use std::{cmp::min, error::Error, sync::Arc};
 
 	#[test]
 	fn builder() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let params = Arc::new(BfvParameters::default(6, 8));
-		let sk = SecretKey::random(&params);
+		let sk = SecretKey::random(&params, &mut rng);
 
 		let max_level = params.max_level();
 		for ciphertext_level in 0..=max_level {
@@ -501,46 +505,46 @@ mod tests {
 				let mut builder =
 					EvaluationKeyBuilder::new_leveled(&sk, ciphertext_level, evaluation_key_level)?;
 
-				assert!(!builder.build()?.supports_row_rotation());
-				assert!(!builder.build()?.supports_column_rotation_by(0));
-				assert!(!builder.build()?.supports_column_rotation_by(1));
-				assert!(!builder.build()?.supports_inner_sum());
-				assert!(!builder.build()?.supports_expansion(1));
-				assert!(builder.build()?.supports_expansion(0));
+				assert!(!builder.build(&mut rng)?.supports_row_rotation());
+				assert!(!builder.build(&mut rng)?.supports_column_rotation_by(0));
+				assert!(!builder.build(&mut rng)?.supports_column_rotation_by(1));
+				assert!(!builder.build(&mut rng)?.supports_inner_sum());
+				assert!(!builder.build(&mut rng)?.supports_expansion(1));
+				assert!(builder.build(&mut rng)?.supports_expansion(0));
 				assert!(builder.enable_column_rotation(0).is_err());
 				assert!(builder
 					.enable_expansion(64 - params.degree().leading_zeros() as usize)
 					.is_err());
 
 				builder.enable_column_rotation(1)?;
-				assert!(builder.build()?.supports_column_rotation_by(1));
-				assert!(!builder.build()?.supports_row_rotation());
-				assert!(!builder.build()?.supports_inner_sum());
-				assert!(!builder.build()?.supports_expansion(1));
+				assert!(builder.build(&mut rng)?.supports_column_rotation_by(1));
+				assert!(!builder.build(&mut rng)?.supports_row_rotation());
+				assert!(!builder.build(&mut rng)?.supports_inner_sum());
+				assert!(!builder.build(&mut rng)?.supports_expansion(1));
 
 				builder.enable_row_rotation()?;
-				assert!(builder.build()?.supports_row_rotation());
-				assert!(!builder.build()?.supports_inner_sum());
-				assert!(!builder.build()?.supports_expansion(1));
+				assert!(builder.build(&mut rng)?.supports_row_rotation());
+				assert!(!builder.build(&mut rng)?.supports_inner_sum());
+				assert!(!builder.build(&mut rng)?.supports_expansion(1));
 
 				builder.enable_inner_sum()?;
-				assert!(builder.build()?.supports_inner_sum());
-				assert!(builder.build()?.supports_expansion(1));
+				assert!(builder.build(&mut rng)?.supports_inner_sum());
+				assert!(builder.build(&mut rng)?.supports_expansion(1));
 				assert!(!builder
-					.build()?
+					.build(&mut rng)?
 					.supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
 
 				builder.enable_expansion(64 - 1 - params.degree().leading_zeros() as usize)?;
 				assert!(builder
-					.build()?
+					.build(&mut rng)?
 					.supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
 
-				assert!(builder.build().is_ok());
+				assert!(builder.build(&mut rng).is_ok());
 
 				// Enabling inner sum enables row rotation and a few column rotations :)
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.build()?;
+					.build(&mut rng)?;
 				assert!(ek.supports_inner_sum());
 				assert!(ek.supports_row_rotation());
 				let mut i = 1;
@@ -573,6 +577,7 @@ mod tests {
 
 	#[test]
 	fn inner_sum() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
@@ -580,16 +585,16 @@ mod tests {
 			for _ in 0..25 {
 				for ciphertext_level in 0..=params.max_level() {
 					for evaluation_key_level in 0..=min(params.max_level() - 1, ciphertext_level) {
-						let sk = SecretKey::random(&params);
+						let sk = SecretKey::random(&params, &mut rng);
 						let ek = EvaluationKeyBuilder::new_leveled(
 							&sk,
 							ciphertext_level,
 							evaluation_key_level,
 						)?
 						.enable_inner_sum()?
-						.build()?;
+						.build(&mut rng)?;
 
-						let v = params.plaintext.random_vec(params.degree());
+						let v = params.plaintext.random_vec(params.degree(), &mut rng);
 						let expected = params
 							.plaintext
 							.reduce_u128(v.iter().map(|vi| *vi as u128).sum());
@@ -599,7 +604,7 @@ mod tests {
 							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
-						let ct = sk.try_encrypt(&pt)?;
+						let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 						let ct2 = ek.computes_inner_sum(&ct)?;
 						let pt = sk.try_decrypt(&ct2)?;
@@ -616,6 +621,7 @@ mod tests {
 
 	#[test]
 	fn row_rotation() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
@@ -623,16 +629,16 @@ mod tests {
 			for _ in 0..50 {
 				for ciphertext_level in 0..=params.max_level() {
 					for evaluation_key_level in 0..=min(params.max_level() - 1, ciphertext_level) {
-						let sk = SecretKey::random(&params);
+						let sk = SecretKey::random(&params, &mut rng);
 						let ek = EvaluationKeyBuilder::new_leveled(
 							&sk,
 							ciphertext_level,
 							evaluation_key_level,
 						)?
 						.enable_row_rotation()?
-						.build()?;
+						.build(&mut rng)?;
 
-						let v = params.plaintext.random_vec(params.degree());
+						let v = params.plaintext.random_vec(params.degree(), &mut rng);
 						let row_size = params.degree() >> 1;
 						let mut expected = vec![0u64; params.degree()];
 						expected[..row_size].copy_from_slice(&v[row_size..]);
@@ -643,7 +649,7 @@ mod tests {
 							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
-						let ct = sk.try_encrypt(&pt)?;
+						let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 						let ct2 = ek.rotates_rows(&ct)?;
 						let pt = sk.try_decrypt(&ct2)?;
@@ -660,6 +666,7 @@ mod tests {
 
 	#[test]
 	fn column_rotation() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
@@ -671,16 +678,16 @@ mod tests {
 						for evaluation_key_level in
 							0..=min(params.max_level() - 1, ciphertext_level)
 						{
-							let sk = SecretKey::random(&params);
+							let sk = SecretKey::random(&params, &mut rng);
 							let ek = EvaluationKeyBuilder::new_leveled(
 								&sk,
 								ciphertext_level,
 								evaluation_key_level,
 							)?
 							.enable_column_rotation(i)?
-							.build()?;
+							.build(&mut rng)?;
 
-							let v = params.plaintext.random_vec(params.degree());
+							let v = params.plaintext.random_vec(params.degree(), &mut rng);
 							let row_size = params.degree() >> 1;
 							let mut expected = vec![0u64; params.degree()];
 							expected[..row_size - i].copy_from_slice(&v[i..row_size]);
@@ -695,7 +702,7 @@ mod tests {
 								Encoding::simd_at_level(ciphertext_level),
 								&params,
 							)?;
-							let ct = sk.try_encrypt(&pt)?;
+							let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 							let ct2 = ek.rotates_columns_by(&ct, i)?;
 							let pt = sk.try_decrypt(&ct2)?;
@@ -716,6 +723,7 @@ mod tests {
 
 	#[test]
 	fn expansion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
@@ -727,24 +735,24 @@ mod tests {
 						for evaluation_key_level in
 							0..=min(params.max_level() - 1, ciphertext_level)
 						{
-							let sk = SecretKey::random(&params);
+							let sk = SecretKey::random(&params, &mut rng);
 							let ek = EvaluationKeyBuilder::new_leveled(
 								&sk,
 								ciphertext_level,
 								evaluation_key_level,
 							)?
 							.enable_expansion(i)?
-							.build()?;
+							.build(&mut rng)?;
 
 							assert!(ek.supports_expansion(i));
 							assert!(!ek.supports_expansion(i + 1));
-							let v = params.plaintext.random_vec(1 << i);
+							let v = params.plaintext.random_vec(1 << i, &mut rng);
 							let pt = Plaintext::try_encode(
 								&v as &[u64],
 								Encoding::poly_at_level(ciphertext_level),
 								&params,
 							)?;
-							let ct = sk.try_encrypt(&pt)?;
+							let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 							let ct2 = ek.expands(&ct, 1 << i)?;
 							assert_eq!(ct2.len(), 1 << i);
@@ -771,14 +779,15 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
-			let sk = SecretKey::random(&params);
+			let sk = SecretKey::random(&params, &mut rng);
 
-			let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?.build()?;
+			let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?.build(&mut rng)?;
 
 			let proto = LeveledEvaluationKeyProto::from(&ek);
 			assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
@@ -786,27 +795,27 @@ mod tests {
 			if params.moduli.len() > 1 {
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_row_rotation()?
-					.build()?;
+					.build(&mut rng)?;
 
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.build()?;
+					.build(&mut rng)?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_expansion(ilog2(params.degree() as u64) as usize)?
-					.build()?;
+					.build(&mut rng)?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
 					.enable_expansion(ilog2(params.degree() as u64) as usize)?
-					.build()?;
+					.build(&mut rng)?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 			}
@@ -816,39 +825,40 @@ mod tests {
 
 	#[test]
 	fn serialize() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
+			let sk = SecretKey::random(&params, &mut rng);
 
-			let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?.build()?;
+			let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?.build(&mut rng)?;
 			let bytes = ek.to_bytes();
 			assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 			if params.moduli.len() > 1 {
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_row_rotation()?
-					.build()?;
+					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.build()?;
+					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_expansion(ilog2(params.degree() as u64) as usize)?
-					.build()?;
+					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
 					.enable_expansion(ilog2(params.degree() as u64) as usize)?
-					.build()?;
+					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 			}

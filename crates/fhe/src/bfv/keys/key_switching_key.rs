@@ -13,7 +13,7 @@ use fhe_math::{
 };
 use fhe_traits::{DeserializeWithContext, Serialize};
 use itertools::izip;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -45,11 +45,12 @@ pub struct KeySwitchingKey {
 impl KeySwitchingKey {
 	/// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial
 	/// `from`.
-	pub fn new(
+	pub fn new<R: RngCore + CryptoRng>(
 		sk: &SecretKey,
 		from: &Poly,
 		ciphertext_level: usize,
 		ksk_level: usize,
+		rng: &mut R,
 	) -> Result<Self> {
 		let ctx_ksk = sk.par.ctx_at_level(ksk_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
@@ -67,9 +68,9 @@ impl KeySwitchingKey {
 		}
 
 		let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-		thread_rng().fill(&mut seed);
+		rng.fill(&mut seed);
 		let c1 = Self::generate_c1(ctx_ksk, seed, ctx_ciphertext.moduli().len());
-		let c0 = Self::generate_c0(sk, from, &c1)?;
+		let c0 = Self::generate_c0(sk, from, &c1, rng)?;
 
 		Ok(Self {
 			par: sk.par.clone(),
@@ -102,7 +103,12 @@ impl KeySwitchingKey {
 	}
 
 	/// Generate the c0's from the c1's and the secret key
-	fn generate_c0(sk: &SecretKey, from: &Poly, c1: &[Poly]) -> Result<Vec<Poly>> {
+	fn generate_c0<R: RngCore + CryptoRng>(
+		sk: &SecretKey,
+		from: &Poly,
+		c1: &[Poly],
+		rng: &mut R,
+	) -> Result<Vec<Poly>> {
 		if c1.is_empty() {
 			return Err(Error::DefaultError("Empty number of c1's".to_string()));
 		}
@@ -133,7 +139,8 @@ impl KeySwitchingKey {
 				*a_s.as_mut() *= s.as_ref();
 				a_s.change_representation(Representation::PowerBasis);
 
-				let mut b = Poly::small(a_s.ctx(), Representation::PowerBasis, sk.par.variance)?;
+				let mut b =
+					Poly::small(a_s.ctx(), Representation::PowerBasis, sk.par.variance, rng)?;
 				b -= &a_s;
 
 				let gi = rns.get_garner(i).unwrap();
@@ -272,18 +279,20 @@ mod tests {
 		rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation},
 	};
 	use num_bigint::BigUint;
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn constructor() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(3, 8)),
 		] {
-			let sk = SecretKey::random(&params);
+			let sk = SecretKey::random(&params, &mut rng);
 			let ctx = params.ctx_at_level(0)?;
-			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
-			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0);
+			let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
+			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng);
 			assert!(ksk.is_ok());
 		}
 		Ok(())
@@ -291,12 +300,13 @@ mod tests {
 
 	#[test]
 	fn key_switch() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [Arc::new(BfvParameters::default(6, 8))] {
 			for _ in 0..100 {
-				let sk = SecretKey::random(&params);
+				let sk = SecretKey::random(&params, &mut rng);
 				let ctx = params.ctx_at_level(0)?;
-				let mut p = Poly::small(ctx, Representation::PowerBasis, 10)?;
-				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
+				let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
+				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
 				let mut s = Poly::try_convert_from(
 					&sk.coeffs as &[i64],
 					ctx,
@@ -306,7 +316,7 @@ mod tests {
 				.map_err(crate::Error::MathError)?;
 				s.change_representation(Representation::Ntt);
 
-				let mut input = Poly::random(ctx, Representation::PowerBasis);
+				let mut input = Poly::random(ctx, Representation::PowerBasis, &mut rng);
 				let (c0, c1) = ksk.key_switch(&input)?;
 
 				let mut c2 = &c0 + &(&c1 * &s);
@@ -328,14 +338,15 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(3, 8)),
 		] {
-			let sk = SecretKey::random(&params);
+			let sk = SecretKey::random(&params, &mut rng);
 			let ctx = params.ctx_at_level(0)?;
-			let p = Poly::small(ctx, Representation::PowerBasis, 10)?;
-			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0)?;
+			let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
+			let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
 			let ksk_proto = KeySwitchingKeyProto::from(&ksk);
 			assert_eq!(ksk, KeySwitchingKey::try_convert_from(&ksk_proto, &params)?);
 		}

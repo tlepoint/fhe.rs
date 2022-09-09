@@ -16,6 +16,7 @@ use fhe_math::rq::{
 };
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use protobuf::{Message, MessageField};
+use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 /// Relinearization key for the BFV encryption scheme.
@@ -28,19 +29,25 @@ pub struct RelinearizationKey {
 
 impl RelinearizationKey {
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
-	pub fn new(sk: &SecretKey) -> Result<Self> {
-		Self::new_leveled_internal(sk, 0, 0)
+	pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Result<Self> {
+		Self::new_leveled_internal(sk, 0, 0, rng)
 	}
 
 	/// Generate a [`RelinearizationKey`] from a [`SecretKey`].
-	pub fn new_leveled(sk: &SecretKey, ciphertext_level: usize, key_level: usize) -> Result<Self> {
-		Self::new_leveled_internal(sk, ciphertext_level, key_level)
-	}
-
-	fn new_leveled_internal(
+	pub fn new_leveled<R: RngCore + CryptoRng>(
 		sk: &SecretKey,
 		ciphertext_level: usize,
 		key_level: usize,
+		rng: &mut R,
+	) -> Result<Self> {
+		Self::new_leveled_internal(sk, ciphertext_level, key_level, rng)
+	}
+
+	fn new_leveled_internal<R: RngCore + CryptoRng>(
+		sk: &SecretKey,
+		ciphertext_level: usize,
+		key_level: usize,
+		rng: &mut R,
 	) -> Result<Self> {
 		let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
 		let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
@@ -62,7 +69,7 @@ impl RelinearizationKey {
 		s2.change_representation(Representation::PowerBasis);
 		let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
 		let s2_switched_up = Zeroizing::new(s2.mod_switch_to(&switcher_up)?);
-		let ksk = KeySwitchingKey::new(sk, &s2_switched_up, ciphertext_level, key_level)?;
+		let ksk = KeySwitchingKey::new(sk, &s2_switched_up, ciphertext_level, key_level, rng)?;
 		Ok(Self { ksk })
 	}
 
@@ -163,14 +170,16 @@ mod tests {
 	};
 	use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 	use fhe_traits::{FheDecoder, FheDecrypter};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn relinearization() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [Arc::new(BfvParameters::default(6, 8))] {
 			for _ in 0..100 {
-				let sk = SecretKey::random(&params);
-				let rk = RelinearizationKey::new(&sk)?;
+				let sk = SecretKey::random(&params, &mut rng);
+				let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
 				let ctx = params.ctx_at_level(0)?;
 				let mut s = Poly::try_convert_from(
@@ -182,11 +191,12 @@ mod tests {
 				.map_err(crate::Error::MathError)?;
 				s.change_representation(Representation::Ntt);
 				let s2 = &s * &s;
+
 				// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 * s^2,
 				// c1, c2) encrypting 0.
-				let mut c2 = Poly::random(ctx, Representation::Ntt);
-				let c1 = Poly::random(ctx, Representation::Ntt);
-				let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16)?;
+				let mut c2 = Poly::random(ctx, Representation::Ntt, &mut rng);
+				let c1 = Poly::random(ctx, Representation::Ntt, &mut rng);
+				let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16, &mut rng)?;
 				c0.change_representation(Representation::Ntt);
 				c0 -= &(&c1 * &s);
 				c0 -= &(&c2 * &s2);
@@ -219,12 +229,18 @@ mod tests {
 
 	#[test]
 	fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [Arc::new(BfvParameters::default(5, 8))] {
 			for ciphertext_level in 0..3 {
 				for key_level in 0..ciphertext_level {
 					for _ in 0..10 {
-						let sk = SecretKey::random(&params);
-						let rk = RelinearizationKey::new_leveled(&sk, ciphertext_level, key_level)?;
+						let sk = SecretKey::random(&params, &mut rng);
+						let rk = RelinearizationKey::new_leveled(
+							&sk,
+							ciphertext_level,
+							key_level,
+							&mut rng,
+						)?;
 
 						let ctx = params.ctx_at_level(ciphertext_level)?;
 						let mut s = Poly::try_convert_from(
@@ -238,9 +254,9 @@ mod tests {
 						let s2 = &s * &s;
 						// Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 *
 						// s^2, c1, c2) encrypting 0.
-						let mut c2 = Poly::random(ctx, Representation::Ntt);
-						let c1 = Poly::random(ctx, Representation::Ntt);
-						let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16)?;
+						let mut c2 = Poly::random(ctx, Representation::Ntt, &mut rng);
+						let c1 = Poly::random(ctx, Representation::Ntt, &mut rng);
+						let mut c0 = Poly::small(ctx, Representation::PowerBasis, 16, &mut rng)?;
 						c0.change_representation(Representation::Ntt);
 						c0 -= &(&c1 * &s);
 						c0 -= &(&c2 * &s2);
@@ -276,12 +292,13 @@ mod tests {
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(3, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let rk = RelinearizationKey::new(&sk)?;
+			let sk = SecretKey::random(&params, &mut rng);
+			let rk = RelinearizationKey::new(&sk, &mut rng)?;
 			let proto = RelinearizationKeyProto::from(&rk);
 			assert_eq!(rk, RelinearizationKey::try_convert_from(&proto, &params)?);
 		}

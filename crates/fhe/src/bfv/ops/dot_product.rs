@@ -160,27 +160,29 @@ mod tests {
 	use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
 	use fhe_traits::{FheEncoder, FheEncrypter};
 	use itertools::{izip, Itertools};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(2, 16)),
 		] {
-			let sk = SecretKey::random(&params);
+			let sk = SecretKey::random(&params, &mut rng);
 			for size in 1..128 {
 				let ct = (0..size)
 					.map(|_| {
-						let v = params.plaintext.random_vec(params.degree());
+						let v = params.plaintext.random_vec(params.degree(), &mut rng);
 						let pt =
 							Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params).unwrap();
-						sk.try_encrypt(&pt).unwrap()
+						sk.try_encrypt(&pt, &mut rng).unwrap()
 					})
 					.collect_vec();
 				let pt = (0..size)
 					.map(|_| {
-						let v = params.plaintext.random_vec(params.degree());
+						let v = params.plaintext.random_vec(params.degree(), &mut rng);
 						Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params).unwrap()
 					})
 					.collect_vec();

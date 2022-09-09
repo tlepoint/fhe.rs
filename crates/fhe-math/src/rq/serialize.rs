@@ -29,6 +29,7 @@ mod tests {
 	use std::{error::Error, sync::Arc};
 
 	use fhe_traits::{DeserializeWithContext, Serialize};
+	use rand::thread_rng;
 
 	use crate::rq::{Context, Poly, Representation};
 
@@ -40,22 +41,24 @@ mod tests {
 
 	#[test]
 	fn serialize() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
+
 		for qi in Q {
 			let ctx = Arc::new(Context::new(&[*qi], 8)?);
-			let p = Poly::random(&ctx, Representation::PowerBasis);
+			let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 			assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
-			let p = Poly::random(&ctx, Representation::Ntt);
+			let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
 			assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
-			let p = Poly::random(&ctx, Representation::NttShoup);
+			let p = Poly::random(&ctx, Representation::NttShoup, &mut rng);
 			assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
 		}
 
 		let ctx = Arc::new(Context::new(Q, 8)?);
-		let p = Poly::random(&ctx, Representation::PowerBasis);
+		let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
 		assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
-		let p = Poly::random(&ctx, Representation::Ntt);
+		let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
 		assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
-		let p = Poly::random(&ctx, Representation::NttShoup);
+		let p = Poly::random(&ctx, Representation::NttShoup, &mut rng);
 		assert_eq!(p, Poly::from_bytes(&p.to_bytes(), &ctx)?);
 
 		Ok(())

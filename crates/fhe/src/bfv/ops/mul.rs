@@ -250,25 +250,27 @@ mod tests {
 	};
 	use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 	use num_bigint::BigUint;
+	use rand::{rngs::OsRng, thread_rng};
 	use std::{error::Error, sync::Arc};
 
 	use super::Multiplicator;
 
 	#[test]
 	fn mul() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let par = Arc::new(BfvParameters::default(3, 8));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
-			let values = par.plaintext.random_vec(par.degree());
+			let values = par.plaintext.random_vec(par.degree(), &mut rng);
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let sk = SecretKey::random(&par, &mut OsRng);
+			let rk = RelinearizationKey::new(&sk, &mut rng)?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
-			let ct1 = sk.try_encrypt(&pt)?;
-			let ct2 = sk.try_encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
+			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 
 			let mut multiplicator = Multiplicator::default(&rk)?;
 			let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -288,19 +290,20 @@ mod tests {
 
 	#[test]
 	fn mul_at_level() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let par = Arc::new(BfvParameters::default(3, 8));
 		for _ in 0..15 {
 			for level in 0..2 {
-				let values = par.plaintext.random_vec(par.degree());
+				let values = par.plaintext.random_vec(par.degree(), &mut rng);
 				let mut expected = values.clone();
 				par.plaintext.mul_vec(&mut expected, &values);
 
-				let sk = SecretKey::random(&par);
-				let rk = RelinearizationKey::new_leveled(&sk, level, level)?;
+				let sk = SecretKey::random(&par, &mut OsRng);
+				let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
 				let pt =
 					Plaintext::try_encode(&values as &[u64], Encoding::simd_at_level(level), &par)?;
-				let ct1: Ciphertext = sk.try_encrypt(&pt)?;
-				let ct2: Ciphertext = sk.try_encrypt(&pt)?;
+				let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+				let ct2: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 				assert_eq!(ct1.level, level);
 				assert_eq!(ct2.level, level);
 
@@ -323,19 +326,20 @@ mod tests {
 
 	#[test]
 	fn mul_no_relin() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let par = Arc::new(BfvParameters::default(6, 8));
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
-			let values = par.plaintext.random_vec(par.degree());
+			let values = par.plaintext.random_vec(par.degree(), &mut rng);
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
-			let rk = RelinearizationKey::new(&sk)?;
+			let sk = SecretKey::random(&par, &mut OsRng);
+			let rk = RelinearizationKey::new(&sk, &mut rng)?;
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
-			let ct1 = sk.try_encrypt(&pt)?;
-			let ct2 = sk.try_encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
+			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 
 			let mut multiplicator = Multiplicator::default(&rk)?;
 			// Remove the relinearization key.
@@ -359,6 +363,7 @@ mod tests {
 	fn different_mul_strategy() -> Result<(), Box<dyn Error>> {
 		// Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
+		let mut rng = thread_rng();
 		let par = Arc::new(BfvParameters::default(3, 8));
 		let mut extended_basis = par.moduli().to_vec();
 		extended_basis
@@ -372,14 +377,14 @@ mod tests {
 		for _ in 0..30 {
 			// We will encode `values` in an Simd format, and check that the product is
 			// computed correctly.
-			let values = par.plaintext.random_vec(par.degree());
+			let values = par.plaintext.random_vec(par.degree(), &mut rng);
 			let mut expected = values.clone();
 			par.plaintext.mul_vec(&mut expected, &values);
 
-			let sk = SecretKey::random(&par);
+			let sk = SecretKey::random(&par, &mut OsRng);
 			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
-			let ct1 = sk.try_encrypt(&pt)?;
-			let ct2 = sk.try_encrypt(&pt)?;
+			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
+			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 
 			let mut multiplicator = Multiplicator::new(
 				ScalingFactor::one(),

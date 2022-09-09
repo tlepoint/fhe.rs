@@ -198,18 +198,20 @@ mod tests {
 	};
 	use fhe_traits::FheDecrypter;
 	use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn proto_conversion() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v = params.plaintext.random_vec(params.degree(), &mut rng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-			let ct = sk.try_encrypt(&pt)?;
+			let ct = sk.try_encrypt(&pt, &mut rng)?;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
 
@@ -222,14 +224,15 @@ mod tests {
 
 	#[test]
 	fn serialize() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v = params.plaintext.random_vec(params.degree(), &mut rng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-			let ct: Ciphertext = sk.try_encrypt(&pt)?;
+			let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let ct_bytes = ct.to_bytes();
 			assert_eq!(ct, Ciphertext::from_bytes(&ct_bytes, &params)?);
 		}
@@ -238,14 +241,15 @@ mod tests {
 
 	#[test]
 	fn new() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v = params.plaintext.random_vec(params.degree(), &mut rng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-			let ct: Ciphertext = sk.try_encrypt(&pt)?;
+			let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let mut ct3 = &ct * &ct;
 
 			let c0 = ct3.get(0).unwrap();
@@ -275,14 +279,15 @@ mod tests {
 
 	#[test]
 	fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v = params.plaintext.random_vec(params.degree(), &mut rng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-			let mut ct: Ciphertext = sk.try_encrypt(&pt)?;
+			let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
 			assert_eq!(ct.level, 0);
 			ct.mod_switch_to_last_level();

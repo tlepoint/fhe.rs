@@ -10,7 +10,7 @@ use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
 use fhe_util::sample_vec_cbd;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -32,16 +32,16 @@ impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
 	/// Generate a random [`SecretKey`].
-	pub fn random(par: &Arc<BfvParameters>) -> Self {
-		let s_coefficients = sample_vec_cbd(par.degree(), par.variance).unwrap();
+	pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
+		let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
 		Self::new(s_coefficients, par)
 	}
 
 	/// Generate a [`SecretKey`] from its coefficients.
-	pub(crate) fn new(s_coefficients: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
+	pub(crate) fn new(coeffs: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
 		Self {
 			par: par.clone(),
-			coeffs: s_coefficients.into_boxed_slice(),
+			coeffs: coeffs.into_boxed_slice(),
 		}
 	}
 
@@ -91,7 +91,11 @@ impl SecretKey {
 		Ok(noise)
 	}
 
-	pub(crate) fn encrypt_poly(&self, p: &Poly) -> Result<Ciphertext> {
+	pub(crate) fn encrypt_poly<R: RngCore + CryptoRng>(
+		&self,
+		p: &Poly,
+		rng: &mut R,
+	) -> Result<Ciphertext> {
 		if p.representation() != &Representation::Ntt {
 			return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
 				p.representation().clone(),
@@ -116,7 +120,7 @@ impl SecretKey {
 		let mut a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
 		let a_s = Zeroizing::new(&a * s.as_ref());
 
-		let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance)
+		let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance, rng)
 			.map_err(Error::MathError)?;
 		b -= &a_s;
 		b += p;
@@ -143,10 +147,14 @@ impl FheParametrized for SecretKey {
 impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 	type Error = Error;
 
-	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
+	fn try_encrypt<R: RngCore + CryptoRng>(
+		&self,
+		pt: &Plaintext,
+		rng: &mut R,
+	) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
 		let m = Zeroizing::new(pt.to_poly()?);
-		self.encrypt_poly(m.as_ref())
+		self.encrypt_poly(m.as_ref(), rng)
 	}
 }
 
@@ -221,12 +229,14 @@ mod tests {
 	use super::SecretKey;
 	use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext};
 	use fhe_traits::{FheDecrypter, FheEncoder, FheEncrypter};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn keygen() {
+		let mut rng = thread_rng();
 		let params = Arc::new(BfvParameters::default(1, 8));
-		let sk = SecretKey::random(&params);
+		let sk = SecretKey::random(&params, &mut rng);
 		assert_eq!(sk.par, params);
 
 		sk.coeffs.iter().for_each(|ci| {
@@ -237,20 +247,21 @@ mod tests {
 
 	#[test]
 	fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for level in 0..params.max_level() {
 				for _ in 0..20 {
-					let sk = SecretKey::random(&params);
+					let sk = SecretKey::random(&params, &mut rng);
 
 					let pt = Plaintext::try_encode(
-						&params.plaintext.random_vec(params.degree()) as &[u64],
+						&params.plaintext.random_vec(params.degree(), &mut rng) as &[u64],
 						Encoding::poly_at_level(level),
 						&params,
 					)?;
-					let ct = sk.try_encrypt(&pt)?;
+					let ct = sk.try_encrypt(&pt, &mut rng)?;
 					let pt2 = sk.try_decrypt(&ct)?;
 
 					println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });

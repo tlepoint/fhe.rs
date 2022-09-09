@@ -2,7 +2,8 @@
 
 [![continuous integration](https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/tlepoint/fhe.rs/actions/workflows/rust.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Code coverage](https://codecov.io/gh/tlepoint/fhe.rs/branch/main/graph/badge.svg?token=LCBSDMB5NS)](https://codecov.io/gh/tlepoint/fhe.rs)
 
-This repository contains the `fhe.rs` library, an experimental cryptographic library in Rust for Ring-LWE-based homomorphic encryption, developed by [Tancrède Lepoint](https://tancre.de). For more information about the library, see [fhe.rs](https://fhe.rs).
+This repository contains the `fhe.rs` library, an experimental cryptographic library in Rust for Ring-LWE-based homomorphic encryption, developed by [Tancrède Lepoint](https://tancre.de).
+For more information about the library, see [fhe.rs](https://fhe.rs).
 
 The library features:
 
@@ -40,11 +41,13 @@ fhe-traits = "0.1.0-beta.1"
 
 ## Getting started
 
-Below is a simple example of an homomorphic multiplication modulo `1024 (= 1 << 10)`, where one ciphertext is encrypted using the secret key, and one ciphertext encrypted using the public key. The `poly()` encoding means that the vector being encoded corresponds to the coefficients of a polynomial in `(ZZ / (1024))[x] / (x^2048+1)`.
+Below is a simple example of an homomorphic multiplication modulo `1024 (= 1 << 10)`, where one ciphertext is encrypted using the secret key, and one ciphertext encrypted using the public key.
+The `poly()` encoding means that the vector being encoded corresponds to the coefficients of a polynomial in `(ZZ / (1024))[x] / (x^2048+1)`.
 
 ```rust
 use fhe::bfv;
 use fhe_traits::*;
+use rand::{thread_rng, rngs::OsRng};
 use std::sync::Arc;
 
 fn main() {
@@ -56,9 +59,10 @@ fn main() {
             .build()
             .unwrap(),
     );
+    let mut rng = thread_rng();
 
-    let secret_key = bfv::SecretKey::random(&parameters);
-    let public_key = bfv::PublicKey::new(&secret_key).unwrap();
+    let secret_key = bfv::SecretKey::random(&parameters, &mut OsRng);
+    let public_key = bfv::PublicKey::new(&secret_key, &mut rng).unwrap();
 
     let plaintext_1 =
         bfv::Plaintext::try_encode(&[20_u64] as &[u64], bfv::Encoding::poly(), &parameters)
@@ -67,8 +71,8 @@ fn main() {
         bfv::Plaintext::try_encode(&[-7_i64] as &[i64], bfv::Encoding::poly(), &parameters)
             .unwrap();
 
-    let ciphertext_1: bfv::Ciphertext = secret_key.try_encrypt(&plaintext_1).unwrap();
-    let ciphertext_2: bfv::Ciphertext = public_key.try_encrypt(&plaintext_2).unwrap();
+    let ciphertext_1: bfv::Ciphertext = secret_key.try_encrypt(&plaintext_1, &mut rng).unwrap();
+    let ciphertext_2: bfv::Ciphertext = public_key.try_encrypt(&plaintext_2, &mut rng).unwrap();
 
     let result = &ciphertext_1 * &ciphertext_2;
 

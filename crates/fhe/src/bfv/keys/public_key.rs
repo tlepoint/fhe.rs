@@ -9,6 +9,7 @@ use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
 use protobuf::{Message, MessageField};
+use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -23,9 +24,9 @@ pub struct PublicKey {
 
 impl PublicKey {
 	/// Generate a new [`PublicKey`] from a [`SecretKey`].
-	pub fn new(sk: &SecretKey) -> Result<Self> {
+	pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Result<Self> {
 		let zero = Plaintext::zero(Encoding::poly(), &sk.par)?;
-		let mut c: Ciphertext = sk.try_encrypt(&zero)?;
+		let mut c: Ciphertext = sk.try_encrypt(&zero, rng)?;
 		// The polynomials of a public key should not allow for variable time
 		// computation.
 		c.c.iter_mut()
@@ -44,7 +45,11 @@ impl FheParametrized for PublicKey {
 impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 	type Error = Error;
 
-	fn try_encrypt(&self, pt: &Plaintext) -> Result<Ciphertext> {
+	fn try_encrypt<R: RngCore + CryptoRng>(
+		&self,
+		pt: &Plaintext,
+		rng: &mut R,
+	) -> Result<Ciphertext> {
 		#[allow(unused_mut)]
 		let mut ct = self.c.clone();
 
@@ -54,13 +59,16 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 
 		let ctx = self.par.ctx_at_level(ct.level)?;
 		let u = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
+				.map_err(Error::MathError)?,
 		);
 		let e1 = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
+				.map_err(Error::MathError)?,
 		);
 		let e2 = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance).map_err(Error::MathError)?,
+			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
+				.map_err(Error::MathError)?,
 		);
 
 		let m = Zeroizing::new(pt.to_poly()?);
@@ -130,13 +138,15 @@ mod tests {
 	use super::PublicKey;
 	use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext, SecretKey};
 	use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+	use rand::thread_rng;
 	use std::{error::Error, sync::Arc};
 
 	#[test]
 	fn keygen() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		let params = Arc::new(BfvParameters::default(1, 8));
-		let sk = SecretKey::random(&params);
-		let pk = PublicKey::new(&sk)?;
+		let sk = SecretKey::random(&params, &mut rng);
+		let pk = PublicKey::new(&sk, &mut rng)?;
 		assert_eq!(pk.par, params);
 		assert_eq!(
 			sk.try_decrypt(&pk.c)?,
@@ -147,21 +157,22 @@ mod tests {
 
 	#[test]
 	fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			for level in 0..params.max_level() {
 				for _ in 0..20 {
-					let sk = SecretKey::random(&params);
-					let pk = PublicKey::new(&sk)?;
+					let sk = SecretKey::random(&params, &mut rng);
+					let pk = PublicKey::new(&sk, &mut rng)?;
 
 					let pt = Plaintext::try_encode(
-						&params.plaintext.random_vec(params.degree()) as &[u64],
+						&params.plaintext.random_vec(params.degree(), &mut rng) as &[u64],
 						Encoding::poly_at_level(level),
 						&params,
 					)?;
-					let ct = pk.try_encrypt(&pt)?;
+					let ct = pk.try_encrypt(&pt, &mut rng)?;
 					let pt2 = sk.try_decrypt(&ct)?;
 
 					println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
@@ -175,12 +186,13 @@ mod tests {
 
 	#[test]
 	fn test_serialize() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(1, 8)),
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let pk = PublicKey::new(&sk)?;
+			let sk = SecretKey::random(&params, &mut rng);
+			let pk = PublicKey::new(&sk, &mut thread_rng())?;
 			let bytes = pk.to_bytes();
 			assert_eq!(pk, PublicKey::from_bytes(&bytes, &params)?);
 		}

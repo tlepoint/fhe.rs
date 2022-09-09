@@ -6,6 +6,8 @@
 
 use std::sync::Arc;
 
+use rand::{CryptoRng, RngCore};
+
 /// The homomorphic encryption parameters.
 pub trait FheParameters {}
 
@@ -107,7 +109,7 @@ pub trait FheEncrypter<
 	type Error;
 
 	/// Try to encrypt an [`FhePlaintext`] into an [`FheCiphertext`].
-	fn try_encrypt(&self, pt: &P) -> Result<C, Self::Error>;
+	fn try_encrypt<R: RngCore + CryptoRng>(&self, pt: &P, rng: &mut R) -> Result<C, Self::Error>;
 }
 
 /// Decrypt a ciphertext into a plaintext

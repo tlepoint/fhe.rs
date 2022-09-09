@@ -5,6 +5,7 @@ use fhe_traits::{
 	DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
 use protobuf::{Message, MessageField};
+use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -81,7 +82,11 @@ impl FheCiphertext for RGSWCiphertext {}
 impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
 	type Error = Error;
 
-	fn try_encrypt(&self, pt: &Plaintext) -> Result<RGSWCiphertext> {
+	fn try_encrypt<R: RngCore + CryptoRng>(
+		&self,
+		pt: &Plaintext,
+		rng: &mut R,
+	) -> Result<RGSWCiphertext> {
 		let level = pt.level;
 		let ctx = self.par.ctx_at_level(level)?;
 
@@ -97,8 +102,8 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
 		m_s.change_representation(Representation::PowerBasis);
 		m.change_representation(Representation::PowerBasis);
 
-		let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level)?;
-		let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level)?;
+		let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level, rng)?;
+		let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level, rng)?;
 
 		Ok(RGSWCiphertext { ksk0, ksk1 })
 	}
@@ -149,25 +154,27 @@ mod tests {
 
 	use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
 	use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+	use rand::thread_rng;
 
 	use super::RGSWCiphertext;
 
 	#[test]
 	fn external_product() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(2, 8)),
 			Arc::new(BfvParameters::default(8, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v1 = params.plaintext.random_vec(params.degree());
-			let v2 = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
+			let v2 = params.plaintext.random_vec(params.degree(), &mut rng);
 
 			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &params)?;
 			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &params)?;
 
-			let ct1: Ciphertext = sk.try_encrypt(&pt1)?;
-			let ct2: Ciphertext = sk.try_encrypt(&pt2)?;
-			let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2)?;
+			let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
+			let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
+			let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2, &mut rng)?;
 
 			let product = &ct1 * &ct2;
 			let expected = sk.try_decrypt(&product)?;
@@ -185,14 +192,15 @@ mod tests {
 
 	#[test]
 	fn serialize() -> Result<(), Box<dyn Error>> {
+		let mut rng = thread_rng();
 		for params in [
 			Arc::new(BfvParameters::default(6, 8)),
 			Arc::new(BfvParameters::default(5, 8)),
 		] {
-			let sk = SecretKey::random(&params);
-			let v = params.plaintext.random_vec(params.degree());
+			let sk = SecretKey::random(&params, &mut rng);
+			let v = params.plaintext.random_vec(params.degree(), &mut rng);
 			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
-			let ct: RGSWCiphertext = sk.try_encrypt(&pt)?;
+			let ct: RGSWCiphertext = sk.try_encrypt(&pt, &mut rng)?;
 
 			let bytes = ct.to_bytes();
 			assert_eq!(RGSWCiphertext::from_bytes(&bytes, &params)?, ct);

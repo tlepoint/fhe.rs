@@ -12,17 +12,18 @@ use fhe_traits::{FheEncoder, FheEncrypter};
 use fhe_util::{div_ceil, ilog2};
 use itertools::Itertools;
 use num_bigint::BigUint;
+use rand::{rngs::OsRng, thread_rng};
 use std::time::Duration;
 
 pub fn bfv_benchmark(c: &mut Criterion) {
+	let mut rng = thread_rng();
 	let mut group = c.benchmark_group("bfv");
 	group.sample_size(10);
 	group.warm_up_time(Duration::from_millis(600));
 	group.measurement_time(Duration::from_millis(1000));
 
 	for par in BfvParameters::default_parameters_128(20) {
-		let sk = SecretKey::random(&par);
-
+		let sk = SecretKey::random(&par, &mut OsRng);
 		let ek = if par.moduli().len() > 1 {
 			Some(
 				EvaluationKeyBuilder::new(&sk)
@@ -33,7 +34,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 					.unwrap()
 					.enable_expansion(ilog2(par.degree() as u64))
 					.unwrap()
-					.build()
+					.build(&mut rng)
 					.unwrap(),
 			)
 		} else {
@@ -41,7 +42,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		};
 
 		let rk = if par.moduli().len() > 1 {
-			Some(RelinearizationKey::new(&sk).unwrap())
+			Some(RelinearizationKey::new(&sk, &mut rng).unwrap())
 		} else {
 			None
 		};
@@ -52,29 +53,29 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		let pt2 =
 			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::simd(), &par)
 				.unwrap();
-		let mut c1: Ciphertext = sk.try_encrypt(&pt1).unwrap();
-		let c2: Ciphertext = sk.try_encrypt(&pt2).unwrap();
+		let mut c1: Ciphertext = sk.try_encrypt(&pt1, &mut rng).unwrap();
+		let c2: Ciphertext = sk.try_encrypt(&pt2, &mut rng).unwrap();
 
 		let q = par.moduli_sizes().iter().sum::<usize>();
 
 		group.bench_function(
 			BenchmarkId::new("keygen_sk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| SecretKey::random(&par));
+				b.iter(|| SecretKey::random(&par, &mut OsRng));
 			},
 		);
 
 		group.bench_function(
 			BenchmarkId::new("keygen_pk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| PublicKey::new(&sk));
+				b.iter(|| PublicKey::new(&sk, &mut rng));
 			},
 		);
 
 		group.bench_function(
 			BenchmarkId::new("keygen_rk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| RelinearizationKey::new(&sk));
+				b.iter(|| RelinearizationKey::new(&sk, &mut rng));
 			},
 		);
 
@@ -108,7 +109,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			BenchmarkId::new("encrypt_sk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
 				b.iter(|| {
-					let _: Result<Ciphertext> = sk.try_encrypt(&pt1);
+					let _: Result<Ciphertext> = sk.try_encrypt(&pt1, &mut rng);
 				});
 			},
 		);
