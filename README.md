@@ -20,18 +20,14 @@ The library features:
 
 `fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of four public crates (packages):
 
-* [`fhe`](https://crates.io/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
-* [`fhe-math`](https://crates.io/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
-* [`fhe-traits`](https://crates.io/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes.
-* [`fhe-util`](https://crates.io/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
+* [![fhe crate version](https://img.shields.io/crates/v/fhe.svg)](https://crates.io/crates/fhe) [`fhe`](https://crates.io/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
+* [![fhe-math crate version](https://img.shields.io/crates/v/fhe-math.svg)](https://crates.io/crates/fhe-math) [`fhe-math`](https://crates.io/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
+* [![fhe-traits crate version](https://img.shields.io/crates/v/fhe-traits.svg)](https://crates.io/crates/fhe-traits) [`fhe-traits`](https://crates.io/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes;
+* [![fhe-util crate version](https://img.shields.io/crates/v/fhe-util.svg)](https://crates.io/crates/fhe-util) [`fhe-util`](https://crates.io/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
 
-## Minimum supported version / toolchain
+### Installation
 
-Rust **1.62** or newer.
-
-## Installation
-
-To use the latest published crate(s), add one or both of the following to your `Cargo.toml` file:
+To install, add the following to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
@@ -39,50 +35,11 @@ fhe = "0.1.0-beta.2"
 fhe-traits = "0.1.0-beta.1"
 ```
 
-## Getting started
+## Minimum supported version / toolchain
 
-Below is a simple example of an homomorphic multiplication modulo `1024 (= 1 << 10)`, where one ciphertext is encrypted using the secret key, and one ciphertext encrypted using the public key.
-The `poly()` encoding means that the vector being encoded corresponds to the coefficients of a polynomial in `(ZZ / (1024))[x] / (x^2048+1)`.
+Rust **1.62** or newer.
 
-```rust
-use fhe::bfv;
-use fhe_traits::*;
-use rand::{rngs::OsRng, thread_rng};
-use std::sync::Arc;
-
-fn main() {
-    let parameters = Arc::new(
-        bfv::BfvParametersBuilder::new()
-            .set_degree(2048)
-            .set_moduli(&[0x3fffffff000001])
-            .set_plaintext_modulus(1 << 10)
-            .build()
-            .unwrap(),
-    );
-    let mut rng = thread_rng();
-
-    let secret_key = bfv::SecretKey::random(&parameters, &mut OsRng);
-    let public_key = bfv::PublicKey::new(&secret_key, &mut rng);
-
-    let plaintext_1 =
-        bfv::Plaintext::try_encode(&[20_u64], bfv::Encoding::poly(), &parameters).unwrap();
-    let plaintext_2 =
-        bfv::Plaintext::try_encode(&[-7_i64], bfv::Encoding::poly(), &parameters).unwrap();
-
-    let ciphertext_1: bfv::Ciphertext = secret_key.try_encrypt(&plaintext_1, &mut rng).unwrap();
-    let ciphertext_2: bfv::Ciphertext = public_key.try_encrypt(&plaintext_2, &mut rng).unwrap();
-
-    let result = &ciphertext_1 * &ciphertext_2;
-
-    let decrypted_plaintext = secret_key.try_decrypt(&result).unwrap();
-    let decrypted_vector =
-        Vec::<u64>::try_decode(&decrypted_plaintext, bfv::Encoding::poly()).unwrap();
-
-    assert_eq!(decrypted_vector[0], ((1 << 10) - 20 * 7));
-}
-```
-
-## ⚠️ Security warning
+## ⚠️ Security / Stability
 
 The implementations contained in the `fhe.rs` ecosystem have never been independently audited for security.
 Additionally, no promise on the API and ABI stability will be made until version `1.0.0` of the crates.
