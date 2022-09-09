@@ -1,8 +1,7 @@
 #![crate_name = "fhe"]
 #![crate_type = "lib"]
 #![warn(missing_docs, unused_imports)]
-
-//! fhers: Fully Homomorphic Encryption in Rust.
+#![doc = include_str!("../README.md")]
 
 mod errors;
 
