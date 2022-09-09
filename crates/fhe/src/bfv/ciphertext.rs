@@ -210,7 +210,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
 			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 			let ct = sk.try_encrypt(&pt, &mut rng)?;
 			let ct_proto = CiphertextProto::from(&ct);
 			assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
@@ -231,7 +231,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
 			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 			let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let ct_bytes = ct.to_bytes();
 			assert_eq!(ct, Ciphertext::from_bytes(&ct_bytes, &params)?);
@@ -248,7 +248,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
 			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 			let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let mut ct3 = &ct * &ct;
 
@@ -286,7 +286,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
 			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 			let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
 			assert_eq!(ct.level, 0);

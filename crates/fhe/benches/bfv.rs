@@ -1,10 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use fhe::{
-	bfv::{
-		BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext,
-		PublicKey, RelinearizationKey, SecretKey,
-	},
-	Result,
+use fhe::bfv::{
+	BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, PublicKey,
+	RelinearizationKey, SecretKey,
 };
 use fhe_math::rns::{RnsContext, ScalingFactor};
 use fhe_math::zq::primes::generate_prime;
@@ -47,12 +44,8 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			None
 		};
 
-		let pt1 =
-			Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::simd(), &par)
-				.unwrap();
-		let pt2 =
-			Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::simd(), &par)
-				.unwrap();
+		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::simd(), &par).unwrap();
+		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec(), Encoding::simd(), &par).unwrap();
 		let mut c1: Ciphertext = sk.try_encrypt(&pt1, &mut rng).unwrap();
 		let c2: Ciphertext = sk.try_encrypt(&pt2, &mut rng).unwrap();
 
@@ -82,26 +75,14 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		group.bench_function(
 			BenchmarkId::new("encode_poly", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| {
-					Plaintext::try_encode(
-						&(1..16u64).collect_vec() as &[u64],
-						Encoding::poly(),
-						&par,
-					)
-				});
+				b.iter(|| Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::poly(), &par));
 			},
 		);
 
 		group.bench_function(
 			BenchmarkId::new("encode_simd", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
-				b.iter(|| {
-					Plaintext::try_encode(
-						&(1..16u64).collect_vec() as &[u64],
-						Encoding::simd(),
-						&par,
-					)
-				});
+				b.iter(|| Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::simd(), &par));
 			},
 		);
 
@@ -109,7 +90,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 			BenchmarkId::new("encrypt_sk", format!("n={}/log(q)={}", par.degree(), q)),
 			|b| {
 				b.iter(|| {
-					let _: Result<Ciphertext> = sk.try_encrypt(&pt1, &mut rng);
+					let _: fhe::Result<Ciphertext> = sk.try_encrypt(&pt1, &mut rng);
 				});
 			},
 		);

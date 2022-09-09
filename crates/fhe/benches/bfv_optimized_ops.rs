@@ -16,29 +16,20 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 		for size in [10, 128, 1000] {
 			let sk = SecretKey::random(par, &mut OsRng);
 			let pt1 =
-				Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::poly(), par)
-					.unwrap();
+				Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::poly(), par).unwrap();
 			let mut c1: Ciphertext = sk.try_encrypt(&pt1, &mut rng).unwrap();
 
 			let ct_vec = (0..size)
 				.map(|i| {
-					let pt = Plaintext::try_encode(
-						&(i..16u64).collect_vec() as &[u64],
-						Encoding::poly(),
-						par,
-					)
-					.unwrap();
+					let pt =
+						Plaintext::try_encode(&(i..16u64).collect_vec(), Encoding::poly(), par)
+							.unwrap();
 					sk.try_encrypt(&pt, &mut rng).unwrap()
 				})
 				.collect_vec();
 			let pt_vec = (0..size)
 				.map(|i| {
-					Plaintext::try_encode(
-						&(i..39u64).collect_vec() as &[u64],
-						Encoding::poly(),
-						par,
-					)
-					.unwrap()
+					Plaintext::try_encode(&(i..39u64).collect_vec(), Encoding::poly(), par).unwrap()
 				})
 				.collect_vec();
 

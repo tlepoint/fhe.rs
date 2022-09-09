@@ -1,6 +1,6 @@
 //! Implementation of conversions from and to polynomials.
 
-use super::{traits::TryConvertFrom, traits::Unsigned, Context, Poly, Representation};
+use super::{traits::TryConvertFrom, Context, Poly, Representation};
 use crate::{
 	proto::rq::{rq, Rq},
 	Error, Result,
@@ -11,34 +11,6 @@ use num_bigint::BigUint;
 use protobuf::EnumOrUnknown;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
-
-impl Unsigned for u8 {}
-impl Unsigned for u16 {}
-impl Unsigned for u32 {}
-impl Unsigned for u64 {}
-
-impl<T: Unsigned> TryConvertFrom<T> for Poly {
-	fn try_convert_from<R>(
-		value: T,
-		ctx: &Arc<Context>,
-		variable_time: bool,
-		representation: R,
-	) -> Result<Self>
-	where
-		R: Into<Option<Representation>>,
-	{
-		let repr = representation.into();
-		match repr {
-			Some(Representation::PowerBasis) => {
-				Poly::try_convert_from(&[value], ctx, variable_time, repr)
-			}
-			_ => Err(Error::Default(
-				"Converting from constant values is only possible in PowerBasis representation"
-					.to_string(),
-			)),
-		}
-	}
-}
 
 impl From<&Poly> for Rq {
 	fn from(p: &Poly) -> Self {
@@ -253,9 +225,9 @@ impl TryConvertFrom<Array2<u64>> for Poly {
 	}
 }
 
-impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
+impl<'a> TryConvertFrom<&'a [u64]> for Poly {
 	fn try_convert_from<R>(
-		v: &[T],
+		v: &'a [u64],
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -263,14 +235,13 @@ impl<T: Unsigned> TryConvertFrom<&[T]> for Poly {
 	where
 		R: Into<Option<Representation>>,
 	{
-		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
-		Poly::try_convert_from(v_clone, ctx, variable_time, representation)
+		Poly::try_convert_from(v.to_vec(), ctx, variable_time, representation)
 	}
 }
 
-impl TryConvertFrom<&[i64]> for Poly {
+impl<'a> TryConvertFrom<&'a [i64]> for Poly {
 	fn try_convert_from<R>(
-		v: &[i64],
+		v: &'a [i64],
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -303,9 +274,23 @@ impl TryConvertFrom<&[i64]> for Poly {
 	}
 }
 
-impl TryConvertFrom<&[BigUint]> for Poly {
+impl<'a> TryConvertFrom<&'a Vec<i64>> for Poly {
 	fn try_convert_from<R>(
-		v: &[BigUint],
+		v: &'a Vec<i64>,
+		ctx: &Arc<Context>,
+		variable_time: bool,
+		representation: R,
+	) -> Result<Self>
+	where
+		R: Into<Option<Representation>>,
+	{
+		Poly::try_convert_from(v.as_ref() as &[i64], ctx, variable_time, representation)
+	}
+}
+
+impl<'a> TryConvertFrom<&'a [BigUint]> for Poly {
+	fn try_convert_from<R>(
+		v: &'a [BigUint],
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -353,9 +338,9 @@ impl TryConvertFrom<&[BigUint]> for Poly {
 	}
 }
 
-impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
+impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly {
 	fn try_convert_from<R>(
-		v: &Vec<T>,
+		v: &'a Vec<u64>,
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -363,28 +348,13 @@ impl<T: Unsigned> TryConvertFrom<&Vec<T>> for Poly {
 	where
 		R: Into<Option<Representation>>,
 	{
-		let v_clone: Vec<u64> = v.iter().map(|vi| (*vi).into()).collect_vec();
-		Poly::try_convert_from(v_clone, ctx, variable_time, representation)
+		Poly::try_convert_from(v.to_vec(), ctx, variable_time, representation)
 	}
 }
 
-impl<T: Unsigned, const N: usize> TryConvertFrom<&[T; N]> for Poly {
+impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly {
 	fn try_convert_from<R>(
-		v: &[T; N],
-		ctx: &Arc<Context>,
-		variable_time: bool,
-		representation: R,
-	) -> Result<Self>
-	where
-		R: Into<Option<Representation>>,
-	{
-		Poly::try_convert_from(v.as_ref(), ctx, variable_time, representation)
-	}
-}
-
-impl<const N: usize> TryConvertFrom<&[BigUint; N]> for Poly {
-	fn try_convert_from<R>(
-		v: &[BigUint; N],
+		v: &'a [u64; N],
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -396,9 +366,23 @@ impl<const N: usize> TryConvertFrom<&[BigUint; N]> for Poly {
 	}
 }
 
-impl<const N: usize> TryConvertFrom<&[i64; N]> for Poly {
+impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly {
 	fn try_convert_from<R>(
-		v: &[i64; N],
+		v: &'a [BigUint; N],
+		ctx: &Arc<Context>,
+		variable_time: bool,
+		representation: R,
+	) -> Result<Self>
+	where
+		R: Into<Option<Representation>>,
+	{
+		Poly::try_convert_from(v.as_ref(), ctx, variable_time, representation)
+	}
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [i64; N]> for Poly {
+	fn try_convert_from<R>(
+		v: &'a [i64; N],
 		ctx: &Arc<Context>,
 		variable_time: bool,
 		representation: R,
@@ -645,49 +629,6 @@ mod tests {
 			Poly::try_convert_from(vec![0; 24], &ctx, false, Representation::Ntt)?,
 			Poly::zero(&ctx, Representation::Ntt)
 		);
-
-		Ok(())
-	}
-
-	#[test]
-	fn try_convert_from_u64_zero() -> Result<(), Box<dyn Error>> {
-		for modulus in MODULI {
-			let ctx = Arc::new(Context::new(&[*modulus], 8)?);
-			assert_eq!(
-				<Poly as TryConvertFrom<u64>>::try_convert_from(
-					0,
-					&ctx,
-					false,
-					Representation::PowerBasis,
-				)?,
-				Poly::zero(&ctx, Representation::PowerBasis)
-			);
-			assert!(<Poly as TryConvertFrom<u64>>::try_convert_from(
-				0,
-				&ctx,
-				false,
-				Representation::Ntt,
-			)
-			.is_err());
-		}
-
-		let ctx = Arc::new(Context::new(MODULI, 8)?);
-		assert_eq!(
-			<Poly as TryConvertFrom<u64>>::try_convert_from(
-				0,
-				&ctx,
-				false,
-				Representation::PowerBasis,
-			)?,
-			Poly::zero(&ctx, Representation::PowerBasis)
-		);
-		assert!(<Poly as TryConvertFrom<u64>>::try_convert_from(
-			0,
-			&ctx,
-			false,
-			Representation::Ntt
-		)
-		.is_err());
 
 		Ok(())
 	}

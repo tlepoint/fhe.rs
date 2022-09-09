@@ -15,10 +15,8 @@ pub fn bfv_rgsw_benchmark(c: &mut Criterion) {
 		let mut rng = thread_rng();
 		let sk = SecretKey::random(par, &mut OsRng);
 
-		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec() as &[u64], Encoding::simd(), par)
-			.unwrap();
-		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec() as &[u64], Encoding::simd(), par)
-			.unwrap();
+		let pt1 = Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::simd(), par).unwrap();
+		let pt2 = Plaintext::try_encode(&(3..39u64).collect_vec(), Encoding::simd(), par).unwrap();
 		let c1: Ciphertext = sk.try_encrypt(&pt1, &mut rng).unwrap();
 		let c2: RGSWCiphertext = sk.try_encrypt(&pt2, &mut rng).unwrap();
 		let q = par.moduli_sizes().iter().sum::<usize>();

@@ -268,7 +268,7 @@ mod tests {
 
 			let sk = SecretKey::random(&par, &mut OsRng);
 			let rk = RelinearizationKey::new(&sk, &mut rng)?;
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
 			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
 			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 
@@ -300,8 +300,7 @@ mod tests {
 
 				let sk = SecretKey::random(&par, &mut OsRng);
 				let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
-				let pt =
-					Plaintext::try_encode(&values as &[u64], Encoding::simd_at_level(level), &par)?;
+				let pt = Plaintext::try_encode(&values, Encoding::simd_at_level(level), &par)?;
 				let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 				let ct2: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 				assert_eq!(ct1.level, level);
@@ -337,7 +336,7 @@ mod tests {
 
 			let sk = SecretKey::random(&par, &mut OsRng);
 			let rk = RelinearizationKey::new(&sk, &mut rng)?;
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
 			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
 			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 
@@ -382,7 +381,7 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &values);
 
 			let sk = SecretKey::random(&par, &mut OsRng);
-			let pt = Plaintext::try_encode(&values as &[u64], Encoding::simd(), &par)?;
+			let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
 			let ct1 = sk.try_encrypt(&pt, &mut rng)?;
 			let ct2 = sk.try_encrypt(&pt, &mut rng)?;
 

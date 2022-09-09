@@ -64,12 +64,8 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 						}
 					};
 
-					let mut poly = Poly::try_convert_from(
-						&v as &[u64],
-						ctx,
-						true,
-						Representation::PowerBasis,
-					)?;
+					let mut poly =
+						Poly::try_convert_from(&v, ctx, true, Representation::PowerBasis)?;
 					poly.change_representation(Representation::Ntt);
 
 					Ok(Plaintext {
@@ -112,12 +108,8 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 						}
 					};
 
-					let mut poly = Poly::try_convert_from(
-						&v as &[u64],
-						ctx,
-						false,
-						Representation::PowerBasis,
-					)?;
+					let mut poly =
+						Poly::try_convert_from(&v, ctx, false, Representation::PowerBasis)?;
 					poly.change_representation(Representation::Ntt);
 
 					Ok(Plaintext {
@@ -148,8 +140,7 @@ mod tests {
 				let params = Arc::new(BfvParameters::default(1, 8));
 				let a = params.plaintext.random_vec(params.degree() * i, &mut rng);
 
-				let plaintexts =
-					PlaintextVec::try_encode(&a as &[u64], Encoding::poly_at_level(0), &params)?;
+				let plaintexts = PlaintextVec::try_encode(&a, Encoding::poly_at_level(0), &params)?;
 				assert_eq!(plaintexts.0.len(), i);
 
 				for j in 0..i {
@@ -158,7 +149,7 @@ mod tests {
 				}
 
 				let plaintexts = unsafe {
-					PlaintextVec::try_encode_vt(&a as &[u64], Encoding::poly_at_level(0), &params)?
+					PlaintextVec::try_encode_vt(&a, Encoding::poly_at_level(0), &params)?
 				};
 				assert_eq!(plaintexts.0.len(), i);
 
