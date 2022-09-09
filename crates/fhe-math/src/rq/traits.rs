@@ -30,10 +30,3 @@ where
 	where
 		R: Into<Option<Representation>>;
 }
-
-/// Unsigned trait.
-pub trait Unsigned
-where
-	Self: Into<u64> + Copy,
-{
-}

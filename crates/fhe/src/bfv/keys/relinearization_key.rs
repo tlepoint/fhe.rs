@@ -59,7 +59,7 @@ impl RelinearizationKey {
 		}
 
 		let mut s = Zeroizing::new(Poly::try_convert_from(
-			&sk.coeffs as &[i64],
+			sk.coeffs.as_ref(),
 			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
@@ -183,7 +183,7 @@ mod tests {
 
 				let ctx = params.ctx_at_level(0)?;
 				let mut s = Poly::try_convert_from(
-					&sk.coeffs as &[i64],
+					sk.coeffs.as_ref(),
 					ctx,
 					false,
 					Representation::PowerBasis,
@@ -244,7 +244,7 @@ mod tests {
 
 						let ctx = params.ctx_at_level(ciphertext_level)?;
 						let mut s = Poly::try_convert_from(
-							&sk.coeffs as &[i64],
+							sk.coeffs.as_ref(),
 							ctx,
 							false,
 							Representation::PowerBasis,

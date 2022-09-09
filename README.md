@@ -47,7 +47,7 @@ The `poly()` encoding means that the vector being encoded corresponds to the coe
 ```rust
 use fhe::bfv;
 use fhe_traits::*;
-use rand::{thread_rng, rngs::OsRng};
+use rand::{rngs::OsRng, thread_rng};
 use std::sync::Arc;
 
 fn main() {
@@ -62,14 +62,12 @@ fn main() {
     let mut rng = thread_rng();
 
     let secret_key = bfv::SecretKey::random(&parameters, &mut OsRng);
-    let public_key = bfv::PublicKey::new(&secret_key, &mut rng).unwrap();
+    let public_key = bfv::PublicKey::new(&secret_key, &mut rng);
 
     let plaintext_1 =
-        bfv::Plaintext::try_encode(&[20_u64] as &[u64], bfv::Encoding::poly(), &parameters)
-            .unwrap();
+        bfv::Plaintext::try_encode(&[20_u64], bfv::Encoding::poly(), &parameters).unwrap();
     let plaintext_2 =
-        bfv::Plaintext::try_encode(&[-7_i64] as &[i64], bfv::Encoding::poly(), &parameters)
-            .unwrap();
+        bfv::Plaintext::try_encode(&[-7_i64], bfv::Encoding::poly(), &parameters).unwrap();
 
     let ciphertext_1: bfv::Ciphertext = secret_key.try_encrypt(&plaintext_1, &mut rng).unwrap();
     let ciphertext_2: bfv::Ciphertext = public_key.try_encrypt(&plaintext_2, &mut rng).unwrap();

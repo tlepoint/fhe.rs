@@ -121,7 +121,7 @@ impl KeySwitchingKey {
 		let size = c1.len();
 
 		let mut s = Zeroizing::new(Poly::try_convert_from(
-			&sk.coeffs as &[i64],
+			sk.coeffs.as_ref(),
 			c1[0].ctx(),
 			false,
 			Representation::PowerBasis,
@@ -308,7 +308,7 @@ mod tests {
 				let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
 				let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
 				let mut s = Poly::try_convert_from(
-					&sk.coeffs as &[i64],
+					sk.coeffs.as_ref(),
 					ctx,
 					false,
 					Representation::PowerBasis,

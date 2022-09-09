@@ -61,7 +61,7 @@ impl AddAssign<&Plaintext> for Ciphertext {
 		assert!(!self.c.is_empty());
 		assert_eq!(self.level, rhs.level);
 
-		let poly = rhs.to_poly().unwrap();
+		let poly = rhs.to_poly();
 		self.c[0] += &poly;
 		self.seed = None
 	}
@@ -116,7 +116,7 @@ impl SubAssign<&Plaintext> for Ciphertext {
 		assert!(!self.c.is_empty());
 		assert_eq!(self.level, rhs.level);
 
-		let poly = rhs.to_poly().unwrap();
+		let poly = rhs.to_poly();
 		self.c[0] -= &poly;
 		self.seed = None
 	}
@@ -303,8 +303,8 @@ mod tests {
 				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
+					let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
 					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(ct_a, &ct_a + &zero);
@@ -342,8 +342,8 @@ mod tests {
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let zero = Plaintext::zero(encoding.clone(), &params)?;
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
+					let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
 					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(
@@ -393,8 +393,8 @@ mod tests {
 				let sk = SecretKey::random(&params, &mut rng);
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
+					let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
 					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(ct_a, &ct_a - &zero);
@@ -439,8 +439,8 @@ mod tests {
 
 				for encoding in [Encoding::poly(), Encoding::simd()] {
 					let zero = Plaintext::zero(encoding.clone(), &params)?;
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
+					let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
 					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					assert_eq!(
@@ -485,7 +485,7 @@ mod tests {
 
 				let sk = SecretKey::random(&params, &mut rng);
 				for encoding in [Encoding::poly(), Encoding::simd()] {
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
 
 					let ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
 
@@ -541,8 +541,8 @@ mod tests {
 						}
 					}
 
-					let pt_a = Plaintext::try_encode(&a as &[u64], encoding.clone(), &params)?;
-					let pt_b = Plaintext::try_encode(&b as &[u64], encoding.clone(), &params)?;
+					let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
+					let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
 					let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
 					let ct_c = &ct_a * &pt_b;
@@ -575,8 +575,8 @@ mod tests {
 				par.plaintext.mul_vec(&mut expected, &v2);
 
 				let sk = SecretKey::random(&par, &mut OsRng);
-				let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &par)?;
-				let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &par)?;
+				let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &par)?;
+				let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &par)?;
 
 				let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
 				let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
@@ -609,7 +609,7 @@ mod tests {
 			par.plaintext.mul_vec(&mut expected, &v);
 
 			let sk = SecretKey::random(&par, &mut OsRng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &par)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &par)?;
 
 			let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 			let ct2 = &ct1 * &ct1;

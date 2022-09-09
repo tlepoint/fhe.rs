@@ -175,15 +175,14 @@ mod tests {
 				let ct = (0..size)
 					.map(|_| {
 						let v = params.plaintext.random_vec(params.degree(), &mut rng);
-						let pt =
-							Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params).unwrap();
+						let pt = Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap();
 						sk.try_encrypt(&pt, &mut rng).unwrap()
 					})
 					.collect_vec();
 				let pt = (0..size)
 					.map(|_| {
 						let v = params.plaintext.random_vec(params.degree(), &mut rng);
-						Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params).unwrap()
+						Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap()
 					})
 					.collect_vec();
 

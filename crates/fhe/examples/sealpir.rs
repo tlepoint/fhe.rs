@@ -157,8 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		let inv = inverse(1 << level, plaintext_modulus).unwrap();
 		pt[query_index / dim2] = inv;
 		pt[dim1 + (query_index % dim2)] = inv;
-		let query_pt =
-			bfv::Plaintext::try_encode(&pt as &[u64], bfv::Encoding::poly_at_level(1), &params)?;
+		let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
 		let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut thread_rng())?;
 		query.to_bytes()
 	});
@@ -203,7 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 				));
 				unsafe {
 					Ok(bfv::PlaintextVec::try_encode_vt(
-						&pt_values as &[u64],
+						&pt_values,
 						bfv::Encoding::poly_at_level(1),
 						&params,
 					)?

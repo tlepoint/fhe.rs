@@ -116,12 +116,9 @@ pub fn encode_database(
 			}
 		}
 		let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
-		preprocessed_database[i] = bfv::Plaintext::try_encode(
-			&pt_values as &[u64],
-			bfv::Encoding::poly_at_level(level),
-			&par,
-		)
-		.unwrap();
+		preprocessed_database[i] =
+			bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
+				.unwrap();
 	});
 	(preprocessed_database, (dimension_1, dimension_2))
 }

@@ -92,7 +92,7 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
 
 		let mut m = Zeroizing::new(pt.poly_ntt.clone());
 		let mut m_s = Zeroizing::new(Poly::try_convert_from(
-			&self.coeffs as &[i64],
+			self.coeffs.as_ref(),
 			ctx,
 			false,
 			Representation::PowerBasis,
@@ -169,8 +169,8 @@ mod tests {
 			let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
 			let v2 = params.plaintext.random_vec(params.degree(), &mut rng);
 
-			let pt1 = Plaintext::try_encode(&v1 as &[u64], Encoding::simd(), &params)?;
-			let pt2 = Plaintext::try_encode(&v2 as &[u64], Encoding::simd(), &params)?;
+			let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &params)?;
+			let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &params)?;
 
 			let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
 			let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
@@ -199,7 +199,7 @@ mod tests {
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
 			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 			let ct: RGSWCiphertext = sk.try_encrypt(&pt, &mut rng)?;
 
 			let bytes = ct.to_bytes();

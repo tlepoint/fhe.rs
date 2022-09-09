@@ -394,7 +394,7 @@ impl EvaluationKeyBuilder {
 			let mut monomial = vec![0i64; self.sk.par.degree()];
 			monomial[self.sk.par.degree() - (1 << l)] = -1;
 			let mut monomial = Poly::try_convert_from(
-				&monomial as &[i64],
+				&monomial,
 				ciphertext_ctx,
 				true,
 				Representation::PowerBasis,
@@ -457,7 +457,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 			let mut monomial = vec![0i64; par.degree()];
 			monomial[par.degree() - (1 << l)] = -1;
 			let mut monomial = Poly::try_convert_from(
-				&monomial as &[i64],
+				&monomial,
 				ciphertext_ctx,
 				true,
 				Representation::PowerBasis,
@@ -600,7 +600,7 @@ mod tests {
 							.reduce_u128(v.iter().map(|vi| *vi as u128).sum());
 
 						let pt = Plaintext::try_encode(
-							&v as &[u64],
+							&v,
 							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
@@ -645,7 +645,7 @@ mod tests {
 						expected[row_size..].copy_from_slice(&v[..row_size]);
 
 						let pt = Plaintext::try_encode(
-							&v as &[u64],
+							&v,
 							Encoding::simd_at_level(ciphertext_level),
 							&params,
 						)?;
@@ -698,7 +698,7 @@ mod tests {
 								.copy_from_slice(&v[row_size..row_size + i]);
 
 							let pt = Plaintext::try_encode(
-								&v as &[u64],
+								&v,
 								Encoding::simd_at_level(ciphertext_level),
 								&params,
 							)?;
@@ -748,7 +748,7 @@ mod tests {
 							assert!(!ek.supports_expansion(i + 1));
 							let v = params.plaintext.random_vec(1 << i, &mut rng);
 							let pt = Plaintext::try_encode(
-								&v as &[u64],
+								&v,
 								Encoding::poly_at_level(ciphertext_level),
 								&params,
 							)?;

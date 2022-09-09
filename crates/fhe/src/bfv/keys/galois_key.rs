@@ -42,7 +42,7 @@ impl GaloisKey {
 
 		let switcher_up = Switcher::new(ctx_ciphertext, ctx_galois_key)?;
 		let s = Zeroizing::new(Poly::try_convert_from(
-			&sk.coeffs as &[i64],
+			sk.coeffs.as_ref(),
 			ctx_ciphertext,
 			false,
 			Representation::PowerBasis,
@@ -146,7 +146,7 @@ mod tests {
 				let v = params.plaintext.random_vec(params.degree(), &mut rng);
 				let row_size = params.degree() >> 1;
 
-				let pt = Plaintext::try_encode(&v as &[u64], Encoding::simd(), &params)?;
+				let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
 				let ct = sk.try_encrypt(&pt, &mut rng)?;
 
 				for i in 1..2 * params.degree() {

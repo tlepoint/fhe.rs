@@ -24,17 +24,17 @@ pub struct PublicKey {
 
 impl PublicKey {
 	/// Generate a new [`PublicKey`] from a [`SecretKey`].
-	pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Result<Self> {
-		let zero = Plaintext::zero(Encoding::poly(), &sk.par)?;
-		let mut c: Ciphertext = sk.try_encrypt(&zero, rng)?;
+	pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Self {
+		let zero = Plaintext::zero(Encoding::poly(), &sk.par).unwrap();
+		let mut c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
 		// The polynomials of a public key should not allow for variable time
 		// computation.
 		c.c.iter_mut()
 			.for_each(|p| p.disallow_variable_time_computations());
-		Ok(Self {
+		Self {
 			par: sk.par.clone(),
 			c,
-		})
+		}
 	}
 }
 
@@ -50,28 +50,32 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 		pt: &Plaintext,
 		rng: &mut R,
 	) -> Result<Ciphertext> {
-		#[allow(unused_mut)]
 		let mut ct = self.c.clone();
-
 		while ct.level != pt.level {
 			ct.mod_switch_to_next_level();
 		}
 
 		let ctx = self.par.ctx_at_level(ct.level)?;
-		let u = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
-				.map_err(Error::MathError)?,
-		);
-		let e1 = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
-				.map_err(Error::MathError)?,
-		);
-		let e2 = Zeroizing::new(
-			Poly::small(ctx, Representation::Ntt, self.par.variance, rng)
-				.map_err(Error::MathError)?,
-		);
+		let u = Zeroizing::new(Poly::small(
+			ctx,
+			Representation::Ntt,
+			self.par.variance,
+			rng,
+		)?);
+		let e1 = Zeroizing::new(Poly::small(
+			ctx,
+			Representation::Ntt,
+			self.par.variance,
+			rng,
+		)?);
+		let e2 = Zeroizing::new(Poly::small(
+			ctx,
+			Representation::Ntt,
+			self.par.variance,
+			rng,
+		)?);
 
-		let m = Zeroizing::new(pt.to_poly()?);
+		let m = Zeroizing::new(pt.to_poly());
 		let mut c0 = u.as_ref() * &ct.c[0];
 		c0 += &e1;
 		c0 += &m;
@@ -146,7 +150,7 @@ mod tests {
 		let mut rng = thread_rng();
 		let params = Arc::new(BfvParameters::default(1, 8));
 		let sk = SecretKey::random(&params, &mut rng);
-		let pk = PublicKey::new(&sk, &mut rng)?;
+		let pk = PublicKey::new(&sk, &mut rng);
 		assert_eq!(pk.par, params);
 		assert_eq!(
 			sk.try_decrypt(&pk.c)?,
@@ -165,10 +169,10 @@ mod tests {
 			for level in 0..params.max_level() {
 				for _ in 0..20 {
 					let sk = SecretKey::random(&params, &mut rng);
-					let pk = PublicKey::new(&sk, &mut rng)?;
+					let pk = PublicKey::new(&sk, &mut rng);
 
 					let pt = Plaintext::try_encode(
-						&params.plaintext.random_vec(params.degree(), &mut rng) as &[u64],
+						&params.plaintext.random_vec(params.degree(), &mut rng),
 						Encoding::poly_at_level(level),
 						&params,
 					)?;
@@ -192,7 +196,7 @@ mod tests {
 			Arc::new(BfvParameters::default(6, 8)),
 		] {
 			let sk = SecretKey::random(&params, &mut rng);
-			let pk = PublicKey::new(&sk, &mut thread_rng())?;
+			let pk = PublicKey::new(&sk, &mut rng);
 			let bytes = pk.to_bytes();
 			assert_eq!(pk, PublicKey::from_bytes(&bytes, &params)?);
 		}

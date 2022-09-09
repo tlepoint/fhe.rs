@@ -53,11 +53,11 @@ impl SecretKey {
 	/// noise.
 	pub unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize> {
 		let plaintext = Zeroizing::new(self.try_decrypt(ct)?);
-		let m = Zeroizing::new(plaintext.to_poly()?);
+		let m = Zeroizing::new(plaintext.to_poly());
 
 		// Let's create a secret key with the ciphertext context
 		let mut s = Zeroizing::new(Poly::try_convert_from(
-			&self.coeffs as &[i64],
+			self.coeffs.as_ref(),
 			ct.c[0].ctx(),
 			false,
 			Representation::PowerBasis,
@@ -96,12 +96,7 @@ impl SecretKey {
 		p: &Poly,
 		rng: &mut R,
 	) -> Result<Ciphertext> {
-		if p.representation() != &Representation::Ntt {
-			return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
-				p.representation().clone(),
-				Representation::Ntt,
-			)));
-		}
+		assert_eq!(p.representation(), &Representation::Ntt);
 
 		let level = self.par.level_of_ctx(p.ctx())?;
 
@@ -110,7 +105,7 @@ impl SecretKey {
 
 		// Let's create a secret key with the ciphertext context
 		let mut s = Zeroizing::new(Poly::try_convert_from(
-			&self.coeffs as &[i64],
+			self.coeffs.as_ref(),
 			p.ctx(),
 			false,
 			Representation::PowerBasis,
@@ -153,7 +148,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
 		rng: &mut R,
 	) -> Result<Ciphertext> {
 		assert_eq!(self.par, pt.par);
-		let m = Zeroizing::new(pt.to_poly()?);
+		let m = Zeroizing::new(pt.to_poly());
 		self.encrypt_poly(m.as_ref(), rng)
 	}
 }
@@ -169,7 +164,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 		} else {
 			// Let's create a secret key with the ciphertext context
 			let mut s = Zeroizing::new(Poly::try_convert_from(
-				&self.coeffs as &[i64],
+				self.coeffs.as_ref(),
 				ct.c[0].ctx(),
 				false,
 				Representation::PowerBasis,
@@ -203,12 +198,8 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 			q.reduce_vec(&mut w);
 			self.par.plaintext.reduce_vec(&mut w);
 
-			let mut poly = Poly::try_convert_from(
-				&w as &[u64],
-				ct.c[0].ctx(),
-				false,
-				Representation::PowerBasis,
-			)?;
+			let mut poly =
+				Poly::try_convert_from(&w, ct.c[0].ctx(), false, Representation::PowerBasis)?;
 			poly.change_representation(Representation::Ntt);
 
 			let pt = Plaintext {
@@ -257,7 +248,7 @@ mod tests {
 					let sk = SecretKey::random(&params, &mut rng);
 
 					let pt = Plaintext::try_encode(
-						&params.plaintext.random_vec(params.degree(), &mut rng) as &[u64],
+						&params.plaintext.random_vec(params.degree(), &mut rng),
 						Encoding::poly_at_level(level),
 						&params,
 					)?;
