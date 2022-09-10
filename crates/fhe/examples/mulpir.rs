@@ -1,3 +1,11 @@
+// Implementation of MulPIR using the `fhe` crate.
+//
+// SealPIR is a Private Information Retrieval scheme that enables a client to
+// retrieve a row from a database without revealing the index to the server.
+// SealPIR is described in <https://eprint.iacr.org/2019/1483>.
+// We use the same parameters as in the paper to enable an apple-to-apple
+// comparison.
+
 mod util;
 
 use console::style;
@@ -41,16 +49,27 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let degree = 8192;
 	let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
 	let moduli_sizes = [50, 55, 55];
+
+	// Compute what is the maximum byte-length of an element to fit within one
+	// ciphertext. Each coefficient of the ciphertext polynomial can contain
+	// floor(log2(plaintext_modulus)) bits.
 	let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
 
+	// This executable is a command line tool which enables to specify different
+	// database and element sizes.
 	let args: Vec<String> = env::args().skip(1).collect();
 
+	// Print the help if requested.
 	if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
 		print_notice_and_exit(max_element_size, None)
 	}
 
-	let mut database_size = 1 << 21;
+	// Use the default values from <https://eprint.iacr.org/2019/1483.pdf>.
+	let mut database_size = 1 << 20;
 	let mut elements_size = 288;
+
+	// Update the database size and/or element size depending on the arguments
+	// provided.
 	for arg in &args {
 		if arg.starts_with("--database_size") {
 			let a: Vec<&str> = arg.rsplit('=').collect();
@@ -87,8 +106,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 		)
 	}
 
+	// The parameters are within bound, let's go! Let's first display some
+	// information about the database.
 	println!("# MulPIR with fhe.rs");
-
 	println!(
 		"database of {}",
 		HumanBytes((database_size * elements_size) as u64)
@@ -96,12 +116,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 	println!("\tdatabase_size = {}", database_size);
 	println!("\telements_size = {}", elements_size);
 
-	// Generation of a random database
+	// Generation of a random database.
 	let database = timeit!("Database generation", {
 		generate_database(database_size, elements_size)
 	});
 
-	// Tower of parameters
+	// Let's generate the BFV parameters structure.
 	let params = timeit!(
 		"Parameters generation",
 		Arc::new(
@@ -114,12 +134,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 		)
 	);
 
-	// Database preprocessing on the server side
+	// Proprocess the database on the server side: the database will be reshaped
+	// so as to pack as many values as possible in every row so that it fits in one
+	// ciphertext, and each element will be encoded as a polynomial in Ntt
+	// representation.
 	let (preprocessed_database, (dim1, dim2)) = timeit!("Database preprocessing", {
 		encode_database(&database, params.clone(), 1)
 	});
 
-	// Client setup
+	// Client setup: the client generates a secret key, an evaluation key for
+	// the server will which enable to obliviously expand a ciphertext up to (dim1 +
+	// dim2) values, i.e. with expansion level ceil(log2(dim1 + dim2)), and a
+	// relinearization key.
 	let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
 		let sk = bfv::SecretKey::random(&params, &mut OsRng);
 		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
@@ -141,7 +167,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 		HumanBytes(rk_serialized.len() as u64)
 	);
 
-	// Server setup
+	// Server setup: the server receives the evaluation and relinearization keys and
+	// deserializes them.
 	let (ek_expansion, rk) = timeit!("Server setup", {
 		(
 			bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?,
@@ -149,7 +176,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 		)
 	});
 
-	// Client query
+	// Client query: when the client wants to retrieve the `index`-th row of the
+	// original database, it first computes to which row it corresponds in the
+	// original database, and then encrypt a selection vector with 0 everywhere,
+	// except at two indices i and (dim1 + j) such that `query_index = i * dim 2 +
+	// j` where it sets the value (2^level)^(-1) modulo the plaintext space.
+	// It then encodes this vector as a `polynomial` and encrypt the plaintext.
+	// The ciphertext is set at level `1`, which means that one of the three moduli
+	// has been dropped already; the reason is that the expansion will happen at
+	// level 0 (with all three moduli) and then one of the moduli will be dropped
+	// to reduce the noise.
 	let index = (thread_rng().next_u64() as usize) % database_size;
 	let query = timeit!("Client query", {
 		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
@@ -169,7 +205,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 	println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
-	// Server response
+	// Server response: The server receives the query, and after deserializing it,
+	// performs the following steps:
+	// 1- It expands the query ciphertext into `dim1 + dim2` ciphertexts.
+	//    If the client created the query correctly, the server will have obtained
+	//    `dim1 + dim2` ciphertexts all encrypting `0`, expect the `i`th and
+	//    `dim1 + j`th ones encrypting `1`.
+	// 2- It computes the inner product of the first `dim1` ciphertexts with the
+	//    columns if the database viewed as a dim1 * dim2 matrix.
+	// 3- It then multiplies the column of ciphertexts with the next `dim2`
+	//    ciphertexts obtained after expansion of the query, then relinearize and
+	//    modulus switch to the latest modulus to optimize communication.
+	// The operation is done `5` times to compute an average response time.
 	let response = timeit_n!("Server response", 5, {
 		let start = std::time::Instant::now();
 		let query = bfv::Ciphertext::from_bytes(&query, &params)?;
@@ -193,7 +240,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 	});
 	println!("📄 Response: {}", HumanBytes(response.len() as u64));
 
-	// Client processing
+	// Client processing: Upon reception of the response, the client decrypts.
+	// Finally, it outputs the plaintext bytes, offset by the correct value
+	// (remember the database was reshaped to maximize how many elements) were
+	// embedded in a single ciphertext.
 	let answer = timeit!("Client answer", {
 		let response = bfv::Ciphertext::from_bytes(&response, &params).unwrap();
 
