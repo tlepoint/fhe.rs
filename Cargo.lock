@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "criterion",
  "crypto-bigint",
@@ -319,14 +319,14 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "rand",
 ]
 
 [[package]]
 name = "fhe-util"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "itertools",
  "num-bigint-dig",

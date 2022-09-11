@@ -1,7 +1,7 @@
 [package]
 name = "fhe-math"
 description = "Mathematical utilities for the fhe.rs library"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/tlepoint/fhe.rs"
@@ -10,8 +10,8 @@ repository = "https://github.com/tlepoint/fhe.rs"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-fhe-traits = { version = "^0.1.0-beta.2", path = "../fhe-traits" }
-fhe-util = { version = "^0.1.0-beta.2", path = "../fhe-util" }
+fhe-traits = { version = "^0.1.0-beta.3", path = "../fhe-traits" }
+fhe-util = { version = "^0.1.0-beta.3", path = "../fhe-util" }
 
 crypto-bigint = "0.4.8"
 itertools = "0.10.3"

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+Fix a few bugs, remove the need of using nightly, and make some backward-incompatible changes:
+- public key generation doesn't return a `Result` anymore
+- modify the API to take as input the random number generator.
+
+Additionally, we added more documentation.
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 8 commits contributed to the release over the course of 4 calendar days.
+ - 4 days passed between releases.
+ - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 7 unique issues were worked on: [#123](https://github.com/tlepoint/fhe.rs/issues/123), [#127](https://github.com/tlepoint/fhe.rs/issues/127), [#130](https://github.com/tlepoint/fhe.rs/issues/130), [#132](https://github.com/tlepoint/fhe.rs/issues/132), [#133](https://github.com/tlepoint/fhe.rs/issues/133), [#134](https://github.com/tlepoint/fhe.rs/issues/134), [#135](https://github.com/tlepoint/fhe.rs/issues/135)
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **[#123](https://github.com/tlepoint/fhe.rs/issues/123)**
+    - RGSW mistakenly appeared to depend on a feature; fixes #122. ([`739d4ce`](https://github.com/tlepoint/fhe.rs/commit/739d4ced784ee4aea20c57f3e042361aab7d5517))
+ * **[#127](https://github.com/tlepoint/fhe.rs/issues/127)**
+    - Computes correctly the number of bits in the plaintext; fixes #126 ([`432586c`](https://github.com/tlepoint/fhe.rs/commit/432586cecf83a0808cf987882c472acbf1330a36))
+ * **[#130](https://github.com/tlepoint/fhe.rs/issues/130)**
+    - Remove some nightly features, see #117 ([`6361fa3`](https://github.com/tlepoint/fhe.rs/commit/6361fa3ce322b16551cfe4856a49e3933d85c872))
+ * **[#132](https://github.com/tlepoint/fhe.rs/issues/132)**
+    - Remove the nightly features, except for code coverage and formatting ([`b573138`](https://github.com/tlepoint/fhe.rs/commit/b573138d682e69c3553c2e4ae4a1b7f7a65dbe5d))
+ * **[#133](https://github.com/tlepoint/fhe.rs/issues/133)**
+    - Explicitely specify the RNG everytime randomness is involved. Fixes #128 ([`8aafe43`](https://github.com/tlepoint/fhe.rs/commit/8aafe4396d0b771e6aa25257c7daa61c109eb367))
+ * **[#134](https://github.com/tlepoint/fhe.rs/issues/134)**
+    - Remove unnecessary casting by defining more conversions ([`f7cddb3`](https://github.com/tlepoint/fhe.rs/commit/f7cddb358f2ce28483944f99e223c07ae41b0c1c))
+ * **[#135](https://github.com/tlepoint/fhe.rs/issues/135)**
+    - Starting better documentation ([`13a633c`](https://github.com/tlepoint/fhe.rs/commit/13a633c0f288d27da15548942a061540365aec10))
+ * **Uncategorized**
+    - Bump all version to beta.3 ([`fc63e4e`](https://github.com/tlepoint/fhe.rs/commit/fc63e4ea6acbb3e9dda83a65cafdf63a081836f2))
+</details>
+
 ## 0.1.0-beta.2 (2022-09-07)
 
 This release fixes a bug that did not allow to decrypt a modulo-switched ciphertext correctly.
@@ -13,7 +54,7 @@ This release fixes a bug that did not allow to decrypt a modulo-switched ciphert
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' where seen in commit messages
 
@@ -24,6 +65,7 @@ This release fixes a bug that did not allow to decrypt a modulo-switched ciphert
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release fhe v0.1.0-beta.2 ([`d13c33c`](https://github.com/tlepoint/fhe.rs/commit/d13c33caf2850753ed9ef556c41cfaf73700ecd1))
     - Remove forgotten cfg(not(feature ([`2e247f2`](https://github.com/tlepoint/fhe.rs/commit/2e247f235bbe632459259f6ca74a637a2f765187))
 </details>
 
