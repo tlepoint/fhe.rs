@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.0-beta.3 (2022-09-11)
 
 Fix a few bugs, remove the need of using nightly, and make some backward-incompatible changes by modifying the API to take as input the random number generator.
 
@@ -31,7 +31,7 @@ Fix a few bugs, remove the need of using nightly, and make some backward-incompa
  * **[#133](https://github.com/tlepoint/fhe.rs/issues/133)**
     - Explicitely specify the RNG everytime randomness is involved. Fixes #128 ([`8aafe43`](https://github.com/tlepoint/fhe.rs/commit/8aafe4396d0b771e6aa25257c7daa61c109eb367))
  * **Uncategorized**
-    - Bump all version to beta.3 ([`fc63e4e`](https://github.com/tlepoint/fhe.rs/commit/fc63e4ea6acbb3e9dda83a65cafdf63a081836f2))
+    - Bump all version to beta.3 ([`b300590`](https://github.com/tlepoint/fhe.rs/commit/b3005904a62d1e39c1dde908054f24d1d96e8547))
 </details>
 
 ## 0.1.0-beta.1 (2022-09-07)
