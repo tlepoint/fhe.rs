@@ -31,8 +31,8 @@ To install, add the following to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.2"
-fhe-traits = "0.1.0-beta.1"
+fhe = "0.1.0-beta.3"
+fhe-traits = "0.1.0-beta.3"
 ```
 
 ## Minimum supported version / toolchain

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+Fix a few bugs, remove the need of using nightly, and make some backward-incompatible changes by modifying the API to take as input the random number generator.
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release over the course of 2 calendar days.
+ - 4 days passed between releases.
+ - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 1 unique issue was worked on: [#133](https://github.com/tlepoint/fhe.rs/issues/133)
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **[#133](https://github.com/tlepoint/fhe.rs/issues/133)**
+    - Explicitely specify the RNG everytime randomness is involved. Fixes #128 ([`8aafe43`](https://github.com/tlepoint/fhe.rs/commit/8aafe4396d0b771e6aa25257c7daa61c109eb367))
+ * **Uncategorized**
+    - Bump all version to beta.3 ([`fc63e4e`](https://github.com/tlepoint/fhe.rs/commit/fc63e4ea6acbb3e9dda83a65cafdf63a081836f2))
+</details>
+
 ## 0.1.0-beta.1 (2022-09-07)
 
 Bump pre-release version to match that of `fhe`.
@@ -13,7 +38,7 @@ Bump pre-release version to match that of `fhe`.
 
 <csr-read-only-do-not-edit/>
 
- - 3 commits contributed to the release.
+ - 4 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 1 unique issue was worked on: [#121](https://github.com/tlepoint/fhe.rs/issues/121)
 
@@ -26,6 +51,7 @@ Bump pre-release version to match that of `fhe`.
  * **[#121](https://github.com/tlepoint/fhe.rs/issues/121)**
     - Remove features, remove utilities crate, bump versions ([`570943a`](https://github.com/tlepoint/fhe.rs/commit/570943ae1822888a2ccb27412619ab3355b3ea3a))
  * **Uncategorized**
+    - Release fhe-traits v0.1.0-beta.1 ([`bd1094d`](https://github.com/tlepoint/fhe.rs/commit/bd1094d726dc76c777e5916731eec7128c3fb9c7))
     - Add changelog entry ([`f32c4eb`](https://github.com/tlepoint/fhe.rs/commit/f32c4eba1f1f254d0162008919a0088282cc521e))
     - Adjusting changelogs prior to release of fhe-traits v0.1.0-beta.1 ([`3f9506e`](https://github.com/tlepoint/fhe.rs/commit/3f9506ea81277db1fa4da6e3e501061ef6456e4c))
 </details>

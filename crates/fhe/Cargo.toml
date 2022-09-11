@@ -11,9 +11,9 @@ homepage = "https://fhe.rs/"
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-fhe-math = { version = "^0.1.0-beta.2", path = "../fhe-math" }
-fhe-traits = { version = "^0.1.0-beta.2", path = "../fhe-traits" }
-fhe-util = { version = "^0.1.0-beta.2", path = "../fhe-util" }
+fhe-math = { version = "^0.1.0-beta.3", path = "../fhe-math" }
+fhe-traits = { version = "^0.1.0-beta.3", path = "../fhe-traits" }
+fhe-util = { version = "^0.1.0-beta.3", path = "../fhe-util" }
 
 itertools = "0.10.3"
 num-bigint = "0.4.3"
