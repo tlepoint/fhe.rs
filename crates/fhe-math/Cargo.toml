@@ -27,7 +27,7 @@ zeroize = "1.5.7"
 sha2 = "0.10.5"
 
 [dev-dependencies]
-criterion = "0.3.6"
+criterion = "0.4.0"
 proptest = "1.0.0"
 
 [[bench]]
