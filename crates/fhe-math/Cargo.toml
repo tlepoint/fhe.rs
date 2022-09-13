@@ -14,7 +14,7 @@ fhe-traits = { version = "^0.1.0-beta.3", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.3", path = "../fhe-util" }
 
 crypto-bigint = "0.4.8"
-itertools = "0.10.3"
+itertools = "0.10.4"
 ndarray = "0.15.6"
 num-bigint = "0.4.3"
 num-bigint-dig = "0.8.1"
