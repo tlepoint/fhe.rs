@@ -32,7 +32,7 @@ indicatif = "0.17.1"
 itertools = "0.10.5"
 ndarray = "0.15.6"
 rand = "0.8.5"
-console = "0.15.1"
+console = "0.15.2"
 
 [[bench]]
 name = "bfv"
