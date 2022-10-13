@@ -1,14 +1,15 @@
 [package]
 name = "fhe-traits"
 description = "Traits for the fhe.rs library"
-version = "0.1.0-beta.3"
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/tlepoint/fhe.rs"
-homepage = "https://fhe.rs/"
+authors.workspace = true
+documentation.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+version.workspace = true
 
 [lib]
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-rand = "0.8.5"
+rand.workspace = true
