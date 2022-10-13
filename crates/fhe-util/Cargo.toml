@@ -4,6 +4,7 @@ description = "Utilities for the fhe.rs library"
 authors.workspace = true
 documentation.workspace = true
 edition.workspace = true
+license-file.workspace = true
 repository.workspace = true
 version.workspace = true
 
