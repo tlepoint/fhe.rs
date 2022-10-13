@@ -13,7 +13,7 @@ bench = false  # Disable default bench (we use criterion)
 fhe-traits = { version = "^0.1.0-beta.3", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.3", path = "../fhe-util" }
 
-crypto-bigint = "0.4.8"
+crypto-bigint = "0.4.9"
 itertools = "0.10.5"
 ndarray = "0.15.6"
 num-bigint = "0.4.3"
