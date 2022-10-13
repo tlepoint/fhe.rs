@@ -12,7 +12,7 @@ mod u256;
 use rand::{CryptoRng, RngCore};
 pub use u256::U256;
 
-use num_bigint::{prime::probably_prime, BigUint, ModInverse};
+use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
 use std::{mem::size_of, panic::UnwindSafe};
 
