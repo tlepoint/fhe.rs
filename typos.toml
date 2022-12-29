@@ -1,3 +1,6 @@
 [type.md]
 extend-glob = ["CHANGELOG.md"]
 check-file = false
+
+[default.extend-words]
+Encrypter = "Encrypter"
