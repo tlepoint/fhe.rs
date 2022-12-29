@@ -63,8 +63,7 @@ impl SubstitutionExponent {
 		let mask = ctx.degree - 1;
 		let power_bitrev = (0..ctx.degree)
 			.map(|_| {
-				let r =
-					((power & mask).reverse_bits() >> (ctx.degree.leading_zeros() + 1)) as usize;
+				let r = (power & mask).reverse_bits() >> (ctx.degree.leading_zeros() + 1);
 				power += exponent;
 				r
 			})
@@ -368,8 +367,8 @@ impl Poly {
 				for j in 0..self.ctx.degree {
 					izip!(
 						self.ctx.q.iter(),
-						q.coefficients.slice_mut(s![.., (power & mask) as usize]),
-						self.coefficients.slice(s![.., j as usize])
+						q.coefficients.slice_mut(s![.., power & mask]),
+						self.coefficients.slice(s![.., j])
 					)
 					.for_each(|(qi, qij, pij)| {
 						if power & self.ctx.degree != 0 {

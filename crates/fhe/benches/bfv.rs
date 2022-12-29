@@ -200,7 +200,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 				}
 				group.bench_function(
 					BenchmarkId::new(
-						format!("expand_{}", i),
+						format!("expand_{i}"),
 						format!("n={}/log(q)={}", par.degree(), q),
 					),
 					|b| {

@@ -155,7 +155,7 @@ impl EvaluationKey {
 	/// ciphertext does not have size 2. The output is a vector of `size`
 	/// ciphertexts.
 	pub fn expands(&self, ct: &Ciphertext, size: usize) -> Result<Vec<Ciphertext>> {
-		let level = ilog2(size.next_power_of_two() as u64) as usize;
+		let level = ilog2(size.next_power_of_two() as u64);
 		if ct.c.len() != 2 {
 			Err(Error::DefaultError(
 				"The ciphertext is not of size 2".to_string(),
@@ -807,14 +807,14 @@ mod tests {
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-					.enable_expansion(ilog2(params.degree() as u64) as usize)?
+					.enable_expansion(ilog2(params.degree() as u64))?
 					.build(&mut rng)?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_expansion(ilog2(params.degree() as u64) as usize)?
+					.enable_expansion(ilog2(params.degree() as u64))?
 					.build(&mut rng)?;
 				let proto = LeveledEvaluationKeyProto::from(&ek);
 				assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
@@ -850,14 +850,14 @@ mod tests {
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-					.enable_expansion(ilog2(params.degree() as u64) as usize)?
+					.enable_expansion(ilog2(params.degree() as u64))?
 					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
 				let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
 					.enable_inner_sum()?
-					.enable_expansion(ilog2(params.degree() as u64) as usize)?
+					.enable_expansion(ilog2(params.degree() as u64))?
 					.build(&mut rng)?;
 				let bytes = ek.to_bytes();
 				assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);

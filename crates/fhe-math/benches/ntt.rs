@@ -16,22 +16,22 @@ pub fn ntt_benchmark(c: &mut Criterion) {
 			let op = NttOperator::new(&Arc::new(q), *vector_size).unwrap();
 
 			group.bench_function(
-				BenchmarkId::new("forward", format!("{}/{}", vector_size, p_nbits)),
+				BenchmarkId::new("forward", format!("{vector_size}/{p_nbits}")),
 				|b| b.iter(|| op.forward(&mut a)),
 			);
 
 			group.bench_function(
-				BenchmarkId::new("forward_vt", format!("{}/{}", vector_size, p_nbits)),
+				BenchmarkId::new("forward_vt", format!("{vector_size}/{p_nbits}")),
 				|b| b.iter(|| unsafe { op.forward_vt(a.as_mut_ptr()) }),
 			);
 
 			group.bench_function(
-				BenchmarkId::new("backward", format!("{}/{}", vector_size, p_nbits)),
+				BenchmarkId::new("backward", format!("{vector_size}/{p_nbits}")),
 				|b| b.iter(|| op.backward(&mut a)),
 			);
 
 			group.bench_function(
-				BenchmarkId::new("backward_vt", format!("{}/{}", vector_size, p_nbits)),
+				BenchmarkId::new("backward_vt", format!("{vector_size}/{p_nbits}")),
 				|b| b.iter(|| unsafe { op.backward_vt(a.as_mut_ptr()) }),
 			);
 		}

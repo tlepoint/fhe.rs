@@ -12,7 +12,7 @@ pub(crate) enum EncodingEnum {
 
 impl Display for EncodingEnum {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{:?}", self)
+		write!(f, "{self:?}")
 	}
 }
 
@@ -69,7 +69,7 @@ impl From<Encoding> for String {
 
 impl From<&Encoding> for String {
 	fn from(e: &Encoding) -> Self {
-		format!("{:?}", e)
+		format!("{e:?}")
 	}
 }
 

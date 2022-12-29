@@ -48,7 +48,7 @@ impl fmt::Display for DisplayDuration {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		let duration_ns = self.0.as_nanos();
 		if duration_ns < 1_000_u128 {
-			write!(f, "{} ns", duration_ns)
+			write!(f, "{duration_ns} ns")
 		} else if duration_ns < 1_000_000_u128 {
 			write!(f, "{} μs", (duration_ns + 500) / 1_000)
 		} else {
@@ -94,14 +94,11 @@ pub fn encode_database(
 		number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
 	let number_rows =
 		(database.len() + number_elements_per_plaintext - 1) / number_elements_per_plaintext;
-	println!("number_rows = {}", number_rows);
-	println!(
-		"number_elements_per_plaintext = {}",
-		number_elements_per_plaintext
-	);
+	println!("number_rows = {number_rows}");
+	println!("number_elements_per_plaintext = {number_elements_per_plaintext}");
 	let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
 	let dimension_2 = (number_rows + dimension_1 - 1) / dimension_1;
-	println!("dimensions = {} {}", dimension_1, dimension_2);
+	println!("dimensions = {dimension_1} {dimension_2}");
 	println!("dimension = {}", dimension_1 * dimension_2);
 	let mut preprocessed_database =
 		vec![

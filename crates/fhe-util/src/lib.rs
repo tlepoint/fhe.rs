@@ -48,7 +48,7 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
 
 	let number_bits = 4 * variance;
 	let mask_add = ((u64::MAX >> (64 - number_bits)) >> (2 * variance)) as u128;
-	let mask_sub = (mask_add << (2 * variance)) as u128;
+	let mask_sub = mask_add << (2 * variance);
 
 	let mut current_pool = 0u128;
 	let mut current_pool_nbits = 0;
