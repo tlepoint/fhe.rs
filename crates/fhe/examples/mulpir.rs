@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		} else {
 			print_notice_and_exit(
 				max_element_size,
-				Some(format!("Unrecognized command: {}", arg)),
+				Some(format!("Unrecognized command: {arg}")),
 			)
 		}
 	}
@@ -113,8 +113,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 		"database of {}",
 		HumanBytes((database_size * elements_size) as u64)
 	);
-	println!("\tdatabase_size = {}", database_size);
-	println!("\telements_size = {}", elements_size);
+	println!("\tdatabase_size = {database_size}");
+	println!("\telements_size = {elements_size}");
 
 	// Generation of a random database.
 	let database = timeit!("Database generation", {
@@ -149,9 +149,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
 		let sk = bfv::SecretKey::random(&params, &mut OsRng);
 		let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
-		println!("level = {}", level);
+		println!("level = {level}");
 		let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
-			.enable_expansion(level as usize)?
+			.enable_expansion(level)?
 			.build(&mut thread_rng())?;
 		let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1, &mut thread_rng())?;
 		let ek_expansion_serialized = ek_expansion.to_bytes();

@@ -64,7 +64,7 @@ impl Context {
 				}
 			}
 			let bitrev = (0..degree)
-				.map(|j| (j.reverse_bits() >> (degree.leading_zeros() + 1)) as usize)
+				.map(|j| j.reverse_bits() >> (degree.leading_zeros() + 1))
 				.collect_vec();
 
 			let mut inv_last_qi_mod_qj = vec![];

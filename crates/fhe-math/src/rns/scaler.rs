@@ -128,7 +128,7 @@ impl RnsScaler {
 				})
 				.into_iter()
 				.min()
-				.unwrap() as usize,
+				.unwrap(),
 			127,
 		);
 		// Finally, define theta_garner_i = from.garner_i / product, also scaled by
@@ -299,8 +299,8 @@ impl RnsScaler {
 			// Let's subtract v * theta_gamma to sum_theta_omega.
 			let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
 			let vt_lo_hi = ((v as u64) as u128) * (self.theta_gamma_hi as u128);
-			let vt_hi_lo = ((v >> 64) as u128) * (self.theta_gamma_lo as u128);
-			let vt_hi_hi = ((v >> 64) as u128) * (self.theta_gamma_hi as u128);
+			let vt_hi_lo = (v >> 64) * (self.theta_gamma_lo as u128);
+			let vt_hi_hi = (v >> 64) * (self.theta_gamma_hi as u128);
 			let vt_mi =
 				(vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
 			let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
