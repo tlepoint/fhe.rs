@@ -11,7 +11,7 @@ version = "0.1.0-beta.4"
 license-file = "LICENSE"
 
 [workspace.dependencies]
-console = "0.15.3"
+console = "0.15.4"
 criterion = "0.4.0"
 crypto-bigint = "0.4.9"
 indicatif = "0.17.2"
