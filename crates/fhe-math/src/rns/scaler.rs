@@ -40,7 +40,8 @@ impl ScalingFactor {
 	}
 }
 
-/// Scaler in RNS basis.
+/// Scaler for a RNS context.
+/// This is a helper struct to perform RNS scaling.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RnsScaler {
 	from: Arc<RnsContext>,
@@ -126,7 +127,6 @@ impl RnsScaler {
 							((*qi as u128) * (from.moduli_u64.len() as u128)).next_power_of_two(),
 						)
 				})
-				.into_iter()
 				.min()
 				.unwrap(),
 			127,
