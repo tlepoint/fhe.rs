@@ -12,8 +12,8 @@ use std::sync::Arc;
 /// blanket implementation <https://github.com/rust-lang/rust/issues/50133#issuecomment-488512355>.
 pub trait TryConvertFrom<T>
 where
-	Self: Sized,
+    Self: Sized,
 {
-	/// Attempt to convert the `value` with a specific parameter.
-	fn try_convert_from(value: T, par: &Arc<BfvParameters>) -> Result<Self>;
+    /// Attempt to convert the `value` with a specific parameter.
+    fn try_convert_from(value: T, par: &Arc<BfvParameters>) -> Result<Self>;
 }

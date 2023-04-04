@@ -2,210 +2,210 @@ use std::ops::Mul;
 
 use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_traits::{
-	DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
+    DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
 use protobuf::{Message, MessageField};
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::{
-	bfv::proto::bfv::{
-		KeySwitchingKey as KeySwitchingKeyProto, RGSWCiphertext as RGSWCiphertextProto,
-	},
-	Error, Result,
+    bfv::proto::bfv::{
+        KeySwitchingKey as KeySwitchingKeyProto, RGSWCiphertext as RGSWCiphertextProto,
+    },
+    Error, Result,
 };
 
 use super::{
-	keys::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, Ciphertext, Plaintext, SecretKey,
+    keys::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, Ciphertext, Plaintext, SecretKey,
 };
 
 /// A RGSW ciphertext encrypting a plaintext.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RGSWCiphertext {
-	ksk0: KeySwitchingKey,
-	ksk1: KeySwitchingKey,
+    ksk0: KeySwitchingKey,
+    ksk1: KeySwitchingKey,
 }
 
 impl FheParametrized for RGSWCiphertext {
-	type Parameters = BfvParameters;
+    type Parameters = BfvParameters;
 }
 
 impl From<&RGSWCiphertext> for RGSWCiphertextProto {
-	fn from(ct: &RGSWCiphertext) -> Self {
-		let mut proto = RGSWCiphertextProto::new();
-		proto.ksk0 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk0));
-		proto.ksk1 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk1));
-		proto
-	}
+    fn from(ct: &RGSWCiphertext) -> Self {
+        let mut proto = RGSWCiphertextProto::new();
+        proto.ksk0 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk0));
+        proto.ksk1 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk1));
+        proto
+    }
 }
 
 impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
-	fn try_convert_from(
-		value: &RGSWCiphertextProto,
-		par: &std::sync::Arc<BfvParameters>,
-	) -> Result<Self> {
-		if value.ksk0.is_none() || value.ksk1.is_none() {
-			return Err(Error::SerializationError);
-		}
+    fn try_convert_from(
+        value: &RGSWCiphertextProto,
+        par: &std::sync::Arc<BfvParameters>,
+    ) -> Result<Self> {
+        if value.ksk0.is_none() || value.ksk1.is_none() {
+            return Err(Error::SerializationError);
+        }
 
-		let ksk0 = KeySwitchingKey::try_convert_from(value.ksk0.as_ref().unwrap(), par)?;
-		let ksk1 = KeySwitchingKey::try_convert_from(value.ksk1.as_ref().unwrap(), par)?;
-		if ksk0.ksk_level != ksk0.ciphertext_level
-			|| ksk0.ciphertext_level != ksk1.ciphertext_level
-			|| ksk1.ciphertext_level != ksk1.ksk_level
-		{
-			return Err(Error::SerializationError);
-		}
+        let ksk0 = KeySwitchingKey::try_convert_from(value.ksk0.as_ref().unwrap(), par)?;
+        let ksk1 = KeySwitchingKey::try_convert_from(value.ksk1.as_ref().unwrap(), par)?;
+        if ksk0.ksk_level != ksk0.ciphertext_level
+            || ksk0.ciphertext_level != ksk1.ciphertext_level
+            || ksk1.ciphertext_level != ksk1.ksk_level
+        {
+            return Err(Error::SerializationError);
+        }
 
-		Ok(Self { ksk0, ksk1 })
-	}
+        Ok(Self { ksk0, ksk1 })
+    }
 }
 
 impl DeserializeParametrized for RGSWCiphertext {
-	type Error = Error;
+    type Error = Error;
 
-	fn from_bytes(bytes: &[u8], par: &std::sync::Arc<Self::Parameters>) -> Result<Self> {
-		let proto =
-			RGSWCiphertextProto::parse_from_bytes(bytes).map_err(|_| Error::SerializationError)?;
-		RGSWCiphertext::try_convert_from(&proto, par)
-	}
+    fn from_bytes(bytes: &[u8], par: &std::sync::Arc<Self::Parameters>) -> Result<Self> {
+        let proto =
+            RGSWCiphertextProto::parse_from_bytes(bytes).map_err(|_| Error::SerializationError)?;
+        RGSWCiphertext::try_convert_from(&proto, par)
+    }
 }
 
 impl Serialize for RGSWCiphertext {
-	fn to_bytes(&self) -> Vec<u8> {
-		RGSWCiphertextProto::from(self).write_to_bytes().unwrap()
-	}
+    fn to_bytes(&self) -> Vec<u8> {
+        RGSWCiphertextProto::from(self).write_to_bytes().unwrap()
+    }
 }
 
 impl FheCiphertext for RGSWCiphertext {}
 
 impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
-	type Error = Error;
+    type Error = Error;
 
-	fn try_encrypt<R: RngCore + CryptoRng>(
-		&self,
-		pt: &Plaintext,
-		rng: &mut R,
-	) -> Result<RGSWCiphertext> {
-		let level = pt.level;
-		let ctx = self.par.ctx_at_level(level)?;
+    fn try_encrypt<R: RngCore + CryptoRng>(
+        &self,
+        pt: &Plaintext,
+        rng: &mut R,
+    ) -> Result<RGSWCiphertext> {
+        let level = pt.level;
+        let ctx = self.par.ctx_at_level(level)?;
 
-		let mut m = Zeroizing::new(pt.poly_ntt.clone());
-		let mut m_s = Zeroizing::new(Poly::try_convert_from(
-			self.coeffs.as_ref(),
-			ctx,
-			false,
-			Representation::PowerBasis,
-		)?);
-		m_s.change_representation(Representation::Ntt);
-		*m_s.as_mut() *= m.as_ref();
-		m_s.change_representation(Representation::PowerBasis);
-		m.change_representation(Representation::PowerBasis);
+        let mut m = Zeroizing::new(pt.poly_ntt.clone());
+        let mut m_s = Zeroizing::new(Poly::try_convert_from(
+            self.coeffs.as_ref(),
+            ctx,
+            false,
+            Representation::PowerBasis,
+        )?);
+        m_s.change_representation(Representation::Ntt);
+        *m_s.as_mut() *= m.as_ref();
+        m_s.change_representation(Representation::PowerBasis);
+        m.change_representation(Representation::PowerBasis);
 
-		let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level, rng)?;
-		let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level, rng)?;
+        let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level, rng)?;
+        let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level, rng)?;
 
-		Ok(RGSWCiphertext { ksk0, ksk1 })
-	}
+        Ok(RGSWCiphertext { ksk0, ksk1 })
+    }
 }
 
 impl Mul<&RGSWCiphertext> for &Ciphertext {
-	type Output = Ciphertext;
+    type Output = Ciphertext;
 
-	fn mul(self, rhs: &RGSWCiphertext) -> Self::Output {
-		assert_eq!(
-			self.par, rhs.ksk0.par,
-			"Ciphertext and RGSWCiphertext must have the same parameters"
-		);
-		assert_eq!(
-			self.level, rhs.ksk0.ciphertext_level,
-			"Ciphertext and RGSWCiphertext must have the same level"
-		);
-		assert_eq!(self.c.len(), 2, "Ciphertext must have two parts");
+    fn mul(self, rhs: &RGSWCiphertext) -> Self::Output {
+        assert_eq!(
+            self.par, rhs.ksk0.par,
+            "Ciphertext and RGSWCiphertext must have the same parameters"
+        );
+        assert_eq!(
+            self.level, rhs.ksk0.ciphertext_level,
+            "Ciphertext and RGSWCiphertext must have the same level"
+        );
+        assert_eq!(self.c.len(), 2, "Ciphertext must have two parts");
 
-		let mut ct0 = self.c[0].clone();
-		let mut ct1 = self.c[1].clone();
-		ct0.change_representation(Representation::PowerBasis);
-		ct1.change_representation(Representation::PowerBasis);
+        let mut ct0 = self.c[0].clone();
+        let mut ct1 = self.c[1].clone();
+        ct0.change_representation(Representation::PowerBasis);
+        ct1.change_representation(Representation::PowerBasis);
 
-		let (c0, c1) = rhs.ksk0.key_switch(&ct0).unwrap();
-		let (c0p, c1p) = rhs.ksk1.key_switch(&ct1).unwrap();
+        let (c0, c1) = rhs.ksk0.key_switch(&ct0).unwrap();
+        let (c0p, c1p) = rhs.ksk1.key_switch(&ct1).unwrap();
 
-		Ciphertext {
-			par: self.par.clone(),
-			seed: None,
-			c: vec![&c0 + &c0p, &c1 + &c1p],
-			level: self.level,
-		}
-	}
+        Ciphertext {
+            par: self.par.clone(),
+            seed: None,
+            c: vec![&c0 + &c0p, &c1 + &c1p],
+            level: self.level,
+        }
+    }
 }
 
 impl Mul<&Ciphertext> for &RGSWCiphertext {
-	type Output = Ciphertext;
+    type Output = Ciphertext;
 
-	fn mul(self, rhs: &Ciphertext) -> Self::Output {
-		rhs * self
-	}
+    fn mul(self, rhs: &Ciphertext) -> Self::Output {
+        rhs * self
+    }
 }
 
 #[cfg(test)]
 mod tests {
-	use std::{error::Error, sync::Arc};
+    use std::{error::Error, sync::Arc};
 
-	use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
-	use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
-	use rand::thread_rng;
+    use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
+    use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+    use rand::thread_rng;
 
-	use super::RGSWCiphertext;
+    use super::RGSWCiphertext;
 
-	#[test]
-	fn external_product() -> Result<(), Box<dyn Error>> {
-		let mut rng = thread_rng();
-		for params in [
-			Arc::new(BfvParameters::default(2, 8)),
-			Arc::new(BfvParameters::default(8, 8)),
-		] {
-			let sk = SecretKey::random(&params, &mut rng);
-			let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
-			let v2 = params.plaintext.random_vec(params.degree(), &mut rng);
+    #[test]
+    fn external_product() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+        for params in [
+            Arc::new(BfvParameters::default(2, 8)),
+            Arc::new(BfvParameters::default(8, 8)),
+        ] {
+            let sk = SecretKey::random(&params, &mut rng);
+            let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v2 = params.plaintext.random_vec(params.degree(), &mut rng);
 
-			let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &params)?;
-			let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &params)?;
+            let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &params)?;
+            let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &params)?;
 
-			let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
-			let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
-			let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2, &mut rng)?;
+            let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
+            let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
+            let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2, &mut rng)?;
 
-			let product = &ct1 * &ct2;
-			let expected = sk.try_decrypt(&product)?;
+            let product = &ct1 * &ct2;
+            let expected = sk.try_decrypt(&product)?;
 
-			let ct3 = &ct1 * &ct2_rgsw;
-			let ct4 = &ct2_rgsw * &ct1;
+            let ct3 = &ct1 * &ct2_rgsw;
+            let ct4 = &ct2_rgsw * &ct1;
 
-			println!("Noise 1: {:?}", unsafe { sk.measure_noise(&ct3) });
-			println!("Noise 2: {:?}", unsafe { sk.measure_noise(&ct4) });
-			assert_eq!(expected, sk.try_decrypt(&ct3)?);
-			assert_eq!(expected, sk.try_decrypt(&ct4)?);
-		}
-		Ok(())
-	}
+            println!("Noise 1: {:?}", unsafe { sk.measure_noise(&ct3) });
+            println!("Noise 2: {:?}", unsafe { sk.measure_noise(&ct4) });
+            assert_eq!(expected, sk.try_decrypt(&ct3)?);
+            assert_eq!(expected, sk.try_decrypt(&ct4)?);
+        }
+        Ok(())
+    }
 
-	#[test]
-	fn serialize() -> Result<(), Box<dyn Error>> {
-		let mut rng = thread_rng();
-		for params in [
-			Arc::new(BfvParameters::default(6, 8)),
-			Arc::new(BfvParameters::default(5, 8)),
-		] {
-			let sk = SecretKey::random(&params, &mut rng);
-			let v = params.plaintext.random_vec(params.degree(), &mut rng);
-			let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-			let ct: RGSWCiphertext = sk.try_encrypt(&pt, &mut rng)?;
+    #[test]
+    fn serialize() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+        for params in [
+            Arc::new(BfvParameters::default(6, 8)),
+            Arc::new(BfvParameters::default(5, 8)),
+        ] {
+            let sk = SecretKey::random(&params, &mut rng);
+            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
+            let ct: RGSWCiphertext = sk.try_encrypt(&pt, &mut rng)?;
 
-			let bytes = ct.to_bytes();
-			assert_eq!(RGSWCiphertext::from_bytes(&bytes, &params)?, ct);
-		}
+            let bytes = ct.to_bytes();
+            assert_eq!(RGSWCiphertext::from_bytes(&bytes, &params)?, ct);
+        }
 
-		Ok(())
-	}
+        Ok(())
+    }
 }
