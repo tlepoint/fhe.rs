@@ -44,67 +44,11 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
     exit(0);
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn run_example(database_size: usize, elements_size: usize) -> Result<(), Box<dyn Error>> {
     // We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
-    let degree = 8192;
+    let degree = 1 << 17;
     let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
     let moduli_sizes = [50, 55, 55];
-
-    // Compute what is the maximum byte-length of an element to fit within one
-    // ciphertext. Each coefficient of the ciphertext polynomial can contain
-    // floor(log2(plaintext_modulus)) bits.
-    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
-
-    // This executable is a command line tool which enables to specify different
-    // database and element sizes.
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    // Print the help if requested.
-    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        print_notice_and_exit(max_element_size, None)
-    }
-
-    // Use the default values from <https://eprint.iacr.org/2019/1483.pdf>.
-    let mut database_size = 1 << 20;
-    let mut elements_size = 288;
-
-    // Update the database size and/or element size depending on the arguments
-    // provided.
-    for arg in &args {
-        if arg.starts_with("--database_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--database_size` command".to_string()),
-                )
-            } else {
-                database_size = a[0].parse::<usize>().unwrap()
-            }
-        } else if arg.starts_with("--element_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--element_size` command".to_string()),
-                )
-            } else {
-                elements_size = a[0].parse::<usize>().unwrap()
-            }
-        } else {
-            print_notice_and_exit(
-                max_element_size,
-                Some(format!("Unrecognized command: {arg}")),
-            )
-        }
-    }
-
-    if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
-        print_notice_and_exit(
-            max_element_size,
-            Some("Element or database sizes out of bound".to_string()),
-        )
-    }
 
     // The parameters are within bound, let's go! Let's first display some
     // information about the database.
@@ -267,4 +211,68 @@ fn main() -> Result<(), Box<dyn Error>> {
     assert_eq!(&database[index], &answer);
 
     Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // TODO: duplicated code
+    // We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
+    let degree = 1 << 17;
+    let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
+
+    // Compute what is the maximum byte-length of an element to fit within one
+    // ciphertext. Each coefficient of the ciphertext polynomial can contain
+    // floor(log2(plaintext_modulus)) bits.
+    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
+
+    // Use the default values from <https://eprint.iacr.org/2019/1483.pdf>.
+    let mut database_size = 1 << 10;
+    let mut elements_size = 288;
+
+    // This executable is a command line tool which enables to specify different
+    // database and element sizes.
+    let args: Vec<String> = env::args().skip(1).collect();
+
+    // Print the help if requested.
+    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
+        print_notice_and_exit(max_element_size, None)
+    }
+
+    if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
+        print_notice_and_exit(
+            max_element_size,
+            Some("Element or database sizes out of bound".to_string()),
+        )
+    }
+
+    // Update the database size and/or element size depending on the arguments
+    // provided.
+    for arg in &args {
+        if arg.starts_with("--database_size") {
+            let a: Vec<&str> = arg.rsplit('=').collect();
+            if a.len() != 2 || a[0].parse::<usize>().is_err() {
+                print_notice_and_exit(
+                    max_element_size,
+                    Some("Invalid `--database_size` command".to_string()),
+                )
+            } else {
+                database_size = a[0].parse::<usize>().unwrap()
+            }
+        } else if arg.starts_with("--element_size") {
+            let a: Vec<&str> = arg.rsplit('=').collect();
+            if a.len() != 2 || a[0].parse::<usize>().is_err() {
+                print_notice_and_exit(
+                    max_element_size,
+                    Some("Invalid `--element_size` command".to_string()),
+                )
+            } else {
+                elements_size = a[0].parse::<usize>().unwrap()
+            }
+        } else {
+            print_notice_and_exit(
+                max_element_size,
+                Some(format!("Unrecognized command: {arg}")),
+            )
+        }
+    }
+    run_example(database_size, elements_size)
 }
