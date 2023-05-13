@@ -28,9 +28,33 @@ pub mod timeit {
     }
 
     #[allow(unused_macros)]
+    macro_rules! timeit_and_return_n {
+        ($name:expr, $loops:expr, $code:expr) => {{
+            use util::DisplayDuration;
+            let start = std::time::Instant::now();
+
+            #[allow(clippy::reversed_empty_ranges)]
+            for _ in 1..$loops {
+                let _ = $code;
+            }
+            let result = $code;
+            let duration = start.elapsed() / $loops;
+            println!("⏱  {}: {}", $name, DisplayDuration(duration));
+            (result, duration.as_nanos())
+        }};
+    }
+
+    #[allow(unused_macros)]
     macro_rules! timeit {
         ($name:expr, $code:expr) => {{
             timeit_n!($name, 1, $code)
+        }};
+    }
+
+    #[allow(unused_macros)]
+    macro_rules! timeit_and_return {
+        ($name:expr, $code:expr) => {{
+            timeit_and_return_n!($name, 1, $code)
         }};
     }
 
@@ -38,6 +62,10 @@ pub mod timeit {
     pub(crate) use timeit;
     #[allow(unused_imports)]
     pub(crate) use timeit_n;
+    #[allow(unused_imports)]
+    pub(crate) use timeit_and_return;
+    #[allow(unused_imports)]
+    pub(crate) use timeit_and_return_n;
 }
 
 /// Utility struct for displaying human-readable duration of the form "10.5 ms",

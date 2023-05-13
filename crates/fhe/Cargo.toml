@@ -26,6 +26,7 @@ zeroize_derive.workspace = true
 ndarray.workspace = true
 protobuf.workspace = true
 thiserror.workspace = true
+csv = "1.2.1"
 
 [dev-dependencies]
 criterion.workspace = true
@@ -34,6 +35,10 @@ itertools.workspace = true
 ndarray.workspace = true
 rand.workspace = true
 console.workspace = true
+
+# [[bin]]
+# name = "mulpir_test"
+# dependencies = ["mulpir"]
 
 [[bench]]
 name = "bfv"
@@ -49,6 +54,8 @@ harness = false
 
 [[example]]
 name = "mulpir"
+# path = "examples/mulpir.rs"
+# crate-type = ["cdylib"]
 
 [[example]]
 name = "sealpir"

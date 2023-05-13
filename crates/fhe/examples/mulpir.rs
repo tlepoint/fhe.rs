@@ -13,13 +13,14 @@ use fhe::bfv;
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
+
 use fhe_util::{ilog2, inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{rngs::OsRng, thread_rng, RngCore};
-use std::{env, error::Error, process::exit, sync::Arc};
+use std::{error::Error, process::exit, sync::Arc};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
-    timeit::{timeit, timeit_n},
+    timeit::{timeit, timeit_and_return, timeit_and_return_n, timeit_n},
 };
 
 fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
@@ -44,11 +45,27 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
     exit(0);
 }
 
-fn run_example(database_size: usize, elements_size: usize) -> Result<(), Box<dyn Error>> {
+fn run_example(
+    database_size: usize,
+    elements_size: usize,
+    mut writer: csv::Writer<std::fs::File>,
+) -> Result<(), Box<dyn Error>> {
     // We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
-    let degree = 1 << 17;
+    let degree = 1 << 14;
     let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
     let moduli_sizes = [50, 55, 55];
+
+    // Compute what is the maximum byte-length of an element to fit within one
+    // ciphertext. Each coefficient of the ciphertext polynomial can contain
+    // floor(log2(plaintext_modulus)) bits.
+    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
+
+    if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
+        print_notice_and_exit(
+            max_element_size,
+            Some("Element or database sizes out of bound".to_string()),
+        )
+    }
 
     // The parameters are within bound, let's go! Let's first display some
     // information about the database.
@@ -131,7 +148,7 @@ fn run_example(database_size: usize, elements_size: usize) -> Result<(), Box<dyn
     // level 0 (with all three moduli) and then one of the moduli will be dropped
     // to reduce the noise.
     let index = (thread_rng().next_u64() as usize) % database_size;
-    let query = timeit!("Client query", {
+    let (query, query_construction_time) = timeit_and_return!("Client query", {
         let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
         let query_index = index
             / number_elements_per_plaintext(
@@ -161,7 +178,7 @@ fn run_example(database_size: usize, elements_size: usize) -> Result<(), Box<dyn
     //    ciphertexts obtained after expansion of the query, then relinearize and
     //    modulus switch to the latest modulus to optimize communication.
     // The operation is done `5` times to compute an average response time.
-    let response = timeit_n!("Server response", 5, {
+    let (response, response_time) = timeit_and_return_n!("Server response", 5, {
         let start = std::time::Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
         let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
@@ -209,70 +226,36 @@ fn run_example(database_size: usize, elements_size: usize) -> Result<(), Box<dyn
     });
 
     assert_eq!(&database[index], &answer);
+    writer.write_record(&[
+        database_size.to_string(),
+        elements_size.to_string(),
+        degree.to_string(),
+        query.len().to_string(),
+        query_construction_time.to_string(),
+        response_time.to_string(),
+        response.len().to_string(),
+    ])?;
 
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO: duplicated code
-    // We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
-    let degree = 1 << 17;
-    let plaintext_modulus: u64 = (1 << 20) + (1 << 19) + (1 << 17) + (1 << 16) + (1 << 14) + 1;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open("mulpir_stats.csv")
+        .unwrap();
+    let mut writer = csv::Writer::from_writer(file);
 
-    // Compute what is the maximum byte-length of an element to fit within one
-    // ciphertext. Each coefficient of the ciphertext polynomial can contain
-    // floor(log2(plaintext_modulus)) bits.
-    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
-
-    // Use the default values from <https://eprint.iacr.org/2019/1483.pdf>.
-    let mut database_size = 1 << 10;
-    let mut elements_size = 288;
-
-    // This executable is a command line tool which enables to specify different
-    // database and element sizes.
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    // Print the help if requested.
-    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        print_notice_and_exit(max_element_size, None)
-    }
-
-    if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
-        print_notice_and_exit(
-            max_element_size,
-            Some("Element or database sizes out of bound".to_string()),
-        )
-    }
-
-    // Update the database size and/or element size depending on the arguments
-    // provided.
-    for arg in &args {
-        if arg.starts_with("--database_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--database_size` command".to_string()),
-                )
-            } else {
-                database_size = a[0].parse::<usize>().unwrap()
-            }
-        } else if arg.starts_with("--element_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--element_size` command".to_string()),
-                )
-            } else {
-                elements_size = a[0].parse::<usize>().unwrap()
-            }
-        } else {
-            print_notice_and_exit(
-                max_element_size,
-                Some(format!("Unrecognized command: {arg}")),
-            )
-        }
-    }
-    run_example(database_size, elements_size)
+    writer.write_record(&[
+        "database_size",
+        "elements_size",
+        "degree",
+        "query_size",
+        "query_construction_time",
+        "response_time",
+        "response_size",
+    ])?;
+    run_example(1000, 28800, writer)
 }
