@@ -48,7 +48,7 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 fn run_example(
     database_size: usize,
     elements_size: usize,
-    mut writer: csv::Writer<std::fs::File>,
+    writer: &mut csv::Writer<std::fs::File>,
 ) -> Result<(), Box<dyn Error>> {
     // We use the parameters reported in Table 1 of https://eprint.iacr.org/2019/1483.pdf.
     let degree = 1 << 14;
@@ -248,7 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .unwrap();
     let mut writer = csv::Writer::from_writer(file);
 
-    writer.write_record(&[
+    writer.write_record(&mut[
         "database_size",
         "elements_size",
         "degree",
@@ -257,5 +257,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         "response_time",
         "response_size",
     ])?;
-    run_example(1000, 28800, writer)
+    run_example(1000, 18800, &mut writer);
+    run_example(1000, 28800, &mut writer);
+    run_example(2000, 18800, &mut writer);
+    run_example(2000, 28800, &mut writer);
+    Ok(())
 }
