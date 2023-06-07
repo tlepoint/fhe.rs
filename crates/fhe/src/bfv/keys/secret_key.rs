@@ -1,7 +1,7 @@
 //! Secret keys for the BFV encryption scheme
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
-use bincode::{deserialize, Result as OtherResult};
+
 use fhe_math::{
     rq::{traits::TryConvertFrom, Poly, Representation},
     zq::Modulus,
@@ -74,6 +74,37 @@ impl SecretKey {
         secret_key
     }
 
+    /// Read a [`SecretKey`] from a file.
+    pub fn read_key(file_name: String) -> Self {
+        // read the secret key par from a file
+        let par_file = file_name.clone() + ".par";
+
+        let mut file = File::open(par_file).unwrap();
+        let mut par_bytes = Vec::new();
+        file.read_to_end(&mut par_bytes).unwrap();
+
+        let par = Arc::new(BfvParameters::try_deserialize(&par_bytes).unwrap());
+
+        let coeff_file = file_name.clone() + ".coeff";
+
+        let mut file = File::open(coeff_file).unwrap();
+        let mut coeff_bytes = Vec::new();
+        file.read_to_end(&mut coeff_bytes).unwrap();
+
+        let coeff_bytes_as_i64: &[i64] = unsafe {
+            // Convert the &[u8] to a byte slice by transmuting the reference type
+            std::slice::from_raw_parts(
+                coeff_bytes.as_ptr() as *const i64,
+                coeff_bytes.len() / std::mem::size_of::<i64>(),
+            )
+        };
+
+        let coeffs = coeff_bytes_as_i64.to_vec();
+
+        let secret_key = Self::new(coeffs, &par);
+
+        secret_key
+    }
     /// Generate a random [`SecretKey`].
     pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
@@ -285,8 +316,19 @@ mod tests {
     fn keygen_and_write() {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
-        let sk = SecretKey::random_write_key(&params, &mut rng, &mut "key.bin".to_string());
+        let sk: SecretKey = SecretKey::random_write_key(&params, &mut rng, &mut "key".to_string());
         assert_eq!(sk.par, params);
+    }
+
+    #[test]
+    fn keygen_write_and_read() {
+        let mut rng = thread_rng();
+        let params = Arc::new(BfvParameters::default(1, 8));
+        let sk: SecretKey = SecretKey::random_write_key(&params, &mut rng, &mut "key".to_string());
+
+        let sk_read = SecretKey::read_key("key".to_string());
+
+        assert_eq!(sk, sk_read);
     }
 
     #[test]
