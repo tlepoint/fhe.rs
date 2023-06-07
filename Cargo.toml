@@ -3,7 +3,7 @@
 members = ["crates/*"]
 
 [workspace.package]
-authors = ["Tancrède Lepoint"]
+authors = ["Tancrède Lepoint, Shankar Subramanian"]
 documentation = "https://fhe.rs"
 edition = "2021"
 repository = "https://github.com/tlepoint/fhe.rs"
