@@ -46,15 +46,91 @@ impl SecretKey {
         rng: &mut R,
         file_name: &mut String,
     ) -> Self {
-        let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
+        let secret_key = Self::random(par, rng);
+
+        let key_file = file_name.clone() + ".key";
+
+        // Serialize the secret key into a JSON string
+        let json = Self::to_bytes(&secret_key);
+
+        // Write the JSON to a file
+        let mut file = File::create(key_file).expect("Failed to create file");
+        file.write_all(&json).expect("Failed to write to file");
+
+        secret_key
+    }
+
+    /// Derive a random [`SecretKey`] and write it to a file.
+    pub fn derive_and_write_to_file<R: RngCore + CryptoRng>(
+        par: &Arc<BfvParameters>,
+        rng: &mut R,
+        der_key: &String,
+        file_name: &mut String,
+    ) -> Self {
+        let secret_key = Self::derive(par, rng, der_key);
+
+        let key_file = file_name.clone() + ".key";
+
+        // Serialize the secret key into a JSON string
+        let json = Self::to_bytes(&secret_key);
+
+        // Write the JSON to a file
+        let mut file = File::create(key_file).expect("Failed to create file");
+        file.write_all(&json).expect("Failed to write to file");
+
+        secret_key
+    }
+
+    /// Read a [`SecretKey`] from a file.
+    pub fn read_from_file(file_name: String) -> Self {
+        // read the secret key par from a file
+        let key_file = file_name.clone() + ".key";
+
+        // Read the JSON from the file
+        let mut file = File::open(key_file).expect("Failed to open file");
+        let mut json = String::new();
+        file.read_to_string(&mut json)
+            .expect("Failed to read from file");
+
+        let secret_key = Self::try_from_bytes(json.as_bytes()).unwrap();
+
+        secret_key
+    }
+
+    /// Generate a random [`SecretKey`].
+    pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
+        let s_coefficients = sample_vec_cbd(par.degree(), par.variance, Some(rng), None).unwrap();
+
         let secret_key = Self::new(s_coefficients, par);
 
-        let par_file = file_name.clone() + ".key";
+        secret_key
+    }
 
-        let binding = secret_key.par.to_bytes();
-        let par_bytes = binding.as_slice();
+    /// Derives a [`SecretKey`] using an input.
+    pub fn derive<R: RngCore + CryptoRng>(
+        par: &Arc<BfvParameters>,
+        rng: &mut R,
+        der_key: &String,
+    ) -> Self {
+        let s_coefficients =
+            sample_vec_cbd(par.degree(), par.variance, Some(rng), Some(der_key)).unwrap();
 
-        let binding = secret_key.coeffs.to_vec();
+        let secret_key = Self::new(s_coefficients, par);
+
+        secret_key
+    }
+
+    /// Generate a [`SecretKey`] from its coefficients.
+    pub(crate) fn new(coeffs: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
+        Self {
+            par: par.clone(),
+            coeffs: coeffs.into_boxed_slice(),
+        }
+    }
+
+    /// Serializes the [`SecretKey`] into a byte vector.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let binding = self.coeffs.to_vec();
         let coeffs_bytes = binding.as_slice();
 
         let coeffs_bytes_as_u8: &[u8] = unsafe {
@@ -65,38 +141,26 @@ impl SecretKey {
         };
 
         let serial_sk = Data {
-            par: par_bytes.to_vec(),
+            par: self.par.to_bytes(),
             coeffs: coeffs_bytes_as_u8.to_vec(),
         };
 
         let json = serde_json::to_string(&serial_sk).expect("Failed to serialize to JSON");
 
-        let mut file = File::create(par_file).unwrap();
-        file.write_all(json.as_bytes()).unwrap();
-
-        secret_key
+        json.as_bytes().to_vec()
     }
 
-    /// Read a [`SecretKey`] from a file.
-    pub fn read_from_file(file_name: String) -> Self {
-        // read the secret key par from a file
-        let par_file = file_name.clone() + ".key";
-
-        // Read the JSON from the file
-        let mut file = File::open(par_file).expect("Failed to open file");
-        let mut json = String::new();
-        file.read_to_string(&mut json)
-            .expect("Failed to read from file");
-
+    /// Deserializes the [`SecretKey`] from a byte vector.
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self> {
         // Parse the JSON back into a Data object
         let parsed_data: Data =
-            serde_json::from_str(&json).expect("Failed to parse JSON into Data object");
+            serde_json::from_slice(&bytes).expect("Failed to parse JSON into Data object");
 
         // Access the individual data sets
         let par_bytes = parsed_data.par;
         let coeffs_bytes = parsed_data.coeffs;
 
-        let par = Arc::new(BfvParameters::try_deserialize(&par_bytes).unwrap());
+        let par = Arc::new(BfvParameters::try_deserialize(&par_bytes)?);
         let coeffs_bytes_as_i64: &[i64] = unsafe {
             // Convert the &[u8] to a byte slice by transmuting the reference type
             std::slice::from_raw_parts(
@@ -109,23 +173,7 @@ impl SecretKey {
 
         let secret_key = Self::new(coeffs, &par);
 
-        secret_key
-    }
-
-    /// Generate a random [`SecretKey`].
-    pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
-        let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
-        let secret_key = Self::new(s_coefficients, par);
-
-        secret_key
-    }
-
-    /// Generate a [`SecretKey`] from its coefficients.
-    pub(crate) fn new(coeffs: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
-        Self {
-            par: par.clone(),
-            coeffs: coeffs.into_boxed_slice(),
-        }
+        Ok(secret_key)
     }
 
     /// Measure the noise in a [`Ciphertext`].
@@ -324,18 +372,38 @@ mod tests {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
         let sk: SecretKey =
-            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "key".to_string());
+            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "alice".to_string());
         assert_eq!(sk.par, params);
     }
 
     #[test]
-    fn keygen_write_and_read() {
+    fn keygen_random_write_and_read() {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
         let sk: SecretKey =
-            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "key".to_string());
+            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "alice".to_string());
 
-        let sk_read = SecretKey::read_from_file("key".to_string());
+        let sk_read = SecretKey::read_from_file("alice".to_string());
+
+        assert_eq!(sk, sk_read);
+    }
+
+    #[test]
+    fn keygen_derive_write_and_read() {
+        let mut rng = thread_rng();
+        let der_key: String =
+            "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f".to_string();
+
+        let params = Arc::new(BfvParameters::default(1, 8));
+
+        let sk = SecretKey::derive_and_write_to_file(
+            &params,
+            &mut rng,
+            &der_key,
+            &mut "alice".to_string(),
+        );
+
+        let sk_read = SecretKey::read_from_file("alice".to_string());
 
         assert_eq!(sk, sk_read);
     }
