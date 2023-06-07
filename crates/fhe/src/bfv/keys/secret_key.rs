@@ -12,7 +12,6 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
-use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -25,7 +24,7 @@ pub struct SecretKey {
     pub(crate) coeffs: Box<[i64]>,
 }
 
-#[derive(Debug, SerdeSerialize, SerdeDeserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct Data {
     par: Vec<u8>,
     coeffs: Vec<u8>,
