@@ -13,6 +13,7 @@ itertools.workspace = true
 num-bigint-dig = { workspace = true, features = ["prime"] }
 num-traits.workspace = true
 rand.workspace = true
+tiny-keccak = { version = "2.0.2", features = ["shake"] }
 
 [dev-dependencies]
 proptest.workspace = true
