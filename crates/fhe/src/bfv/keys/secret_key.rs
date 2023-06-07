@@ -1,19 +1,21 @@
 //! Secret keys for the BFV encryption scheme
-
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
 use fhe_math::{
     rq::{traits::TryConvertFrom, Poly, Representation},
     zq::Modulus,
 };
-use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
+use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized, Serialize};
 use fhe_util::sample_vec_cbd;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::fs::File;
+use std::io::{Write, Read};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
 
 /// Secret key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -31,10 +33,35 @@ impl Zeroize for SecretKey {
 impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
-    /// Generate a random [`SecretKey`].
-    pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
+
+    /// Generate a random [`SecretKey`] and write it to a file.
+    pub fn random_write<R: RngCore + CryptoRng>(
+        par: &Arc<BfvParameters>,
+        rng: &mut R,
+        file_name: &mut String,
+    ) -> Self {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
-        Self::new(s_coefficients, par)
+        let secret_key = Self::new(s_coefficients, par);
+
+        // write the secret key to a file
+        let mut file = File::create(file_name).unwrap();
+
+        let binding = secret_key.par.to_bytes();
+        let par_bytes = binding.as_slice();
+        file.write_all(par_bytes).unwrap();
+
+        secret_key
+    }
+
+    /// Generate a random [`SecretKey`].
+    pub fn random<R: RngCore + CryptoRng>(
+        par: &Arc<BfvParameters>,
+        rng: &mut R
+    ) -> Self {
+        let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
+        let secret_key = Self::new(s_coefficients, par);
+
+        secret_key
     }
 
     /// Generate a [`SecretKey`] from its coefficients.
@@ -234,6 +261,14 @@ mod tests {
             // Check that this is a small polynomial
             assert!((*ci).abs() <= 2 * sk.par.variance as i64)
         })
+    }
+
+    #[test]
+    fn keygen_and_write() {
+        let mut rng = thread_rng();
+        let params = Arc::new(BfvParameters::default(1, 8));
+        let sk = SecretKey::random_write(&params, &mut rng, &mut "key.bin".to_string());
+        assert_eq!(sk.par, params);
     }
 
     #[test]
