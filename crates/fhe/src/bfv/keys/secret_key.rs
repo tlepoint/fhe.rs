@@ -12,6 +12,7 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -24,6 +25,12 @@ pub struct SecretKey {
     pub(crate) coeffs: Box<[i64]>,
 }
 
+#[derive(Debug, SerdeSerialize, SerdeDeserialize)]
+struct Data {
+    par: Vec<u8>,
+    coeffs: Vec<u8>,
+}
+
 impl Zeroize for SecretKey {
     fn zeroize(&mut self) {
         self.coeffs.zeroize();
@@ -34,7 +41,7 @@ impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
     /// Generate a random [`SecretKey`] and write it to a file.
-    pub fn random_write_key<R: RngCore + CryptoRng>(
+    pub fn random_and_write_to_file<R: RngCore + CryptoRng>(
         par: &Arc<BfvParameters>,
         rng: &mut R,
         file_name: &mut String,
@@ -42,69 +49,69 @@ impl SecretKey {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
         let secret_key = Self::new(s_coefficients, par);
 
-        // write the secret key par to a file
-
-        let par_file = file_name.clone() + ".par";
-
-        let mut file = File::create(par_file).unwrap();
+        let par_file = file_name.clone() + ".key";
 
         let binding = secret_key.par.to_bytes();
         let par_bytes = binding.as_slice();
-        file.write_all(par_bytes).unwrap();
-
-        // write the coefficients to a file
-
-        let coeff_file = file_name.clone() + ".coeff";
-
-        let mut file = File::create(coeff_file).unwrap();
 
         let binding = secret_key.coeffs.to_vec();
-        let coeff_bytes = binding.as_slice();
+        let coeffs_bytes = binding.as_slice();
 
-        let coeff_bytes_as_u8: &[u8] = unsafe {
-            // Convert the &[i64] to a byte slice by transmuting the reference type
+        let coeffs_bytes_as_u8: &[u8] = unsafe {
             std::slice::from_raw_parts(
-                coeff_bytes.as_ptr() as *const u8,
-                coeff_bytes.len() * std::mem::size_of::<i64>(),
+                coeffs_bytes.as_ptr() as *const u8,
+                coeffs_bytes.len() * std::mem::size_of::<i64>(),
             )
         };
 
-        file.write_all(coeff_bytes_as_u8).unwrap();
+        let serial_sk = Data {
+            par: par_bytes.to_vec(),
+            coeffs: coeffs_bytes_as_u8.to_vec(),
+        };
+
+        let json = serde_json::to_string(&serial_sk).expect("Failed to serialize to JSON");
+
+        let mut file = File::create(par_file).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
 
         secret_key
     }
 
     /// Read a [`SecretKey`] from a file.
-    pub fn read_key(file_name: String) -> Self {
+    pub fn read_from_file(file_name: String) -> Self {
         // read the secret key par from a file
-        let par_file = file_name.clone() + ".par";
+        let par_file = file_name.clone() + ".key";
 
-        let mut file = File::open(par_file).unwrap();
-        let mut par_bytes = Vec::new();
-        file.read_to_end(&mut par_bytes).unwrap();
+        // Read the JSON from the file
+        let mut file = File::open(par_file).expect("Failed to open file");
+        let mut json = String::new();
+        file.read_to_string(&mut json)
+            .expect("Failed to read from file");
+
+        // Parse the JSON back into a Data object
+        let parsed_data: Data =
+            serde_json::from_str(&json).expect("Failed to parse JSON into Data object");
+
+        // Access the individual data sets
+        let par_bytes = parsed_data.par;
+        let coeffs_bytes = parsed_data.coeffs;
 
         let par = Arc::new(BfvParameters::try_deserialize(&par_bytes).unwrap());
-
-        let coeff_file = file_name.clone() + ".coeff";
-
-        let mut file = File::open(coeff_file).unwrap();
-        let mut coeff_bytes = Vec::new();
-        file.read_to_end(&mut coeff_bytes).unwrap();
-
-        let coeff_bytes_as_i64: &[i64] = unsafe {
+        let coeffs_bytes_as_i64: &[i64] = unsafe {
             // Convert the &[u8] to a byte slice by transmuting the reference type
             std::slice::from_raw_parts(
-                coeff_bytes.as_ptr() as *const i64,
-                coeff_bytes.len() / std::mem::size_of::<i64>(),
+                coeffs_bytes.as_ptr() as *const i64,
+                coeffs_bytes.len() / std::mem::size_of::<i64>(),
             )
         };
 
-        let coeffs = coeff_bytes_as_i64.to_vec();
+        let coeffs = coeffs_bytes_as_i64.to_vec();
 
         let secret_key = Self::new(coeffs, &par);
 
         secret_key
     }
+
     /// Generate a random [`SecretKey`].
     pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
@@ -316,7 +323,8 @@ mod tests {
     fn keygen_and_write() {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
-        let sk: SecretKey = SecretKey::random_write_key(&params, &mut rng, &mut "key".to_string());
+        let sk: SecretKey =
+            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "key".to_string());
         assert_eq!(sk.par, params);
     }
 
@@ -324,9 +332,10 @@ mod tests {
     fn keygen_write_and_read() {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
-        let sk: SecretKey = SecretKey::random_write_key(&params, &mut rng, &mut "key".to_string());
+        let sk: SecretKey =
+            SecretKey::random_and_write_to_file(&params, &mut rng, &mut "key".to_string());
 
-        let sk_read = SecretKey::read_key("key".to_string());
+        let sk_read = SecretKey::read_from_file("key".to_string());
 
         assert_eq!(sk, sk_read);
     }
