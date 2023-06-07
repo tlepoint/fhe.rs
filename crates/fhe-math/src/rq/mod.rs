@@ -277,7 +277,7 @@ impl Poly {
             ))
         } else {
             let coeffs = Zeroizing::new(
-                sample_vec_cbd(ctx.degree, variance, rng)
+                sample_vec_cbd(ctx.degree, variance, Some(rng), None)
                     .map_err(|e| Error::Default(e.to_string()))?,
             );
             let mut p = Poly::try_convert_from(

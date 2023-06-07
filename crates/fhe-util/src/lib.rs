@@ -15,6 +15,7 @@ pub use u256::U256;
 use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
 use std::{mem::size_of, panic::UnwindSafe};
+use tiny_keccak::{Hasher, Shake};
 
 /// Define catch_unwind to silence the panic in unit tests.
 pub fn catch_unwind<F, R>(f: F) -> std::thread::Result<R>
@@ -38,10 +39,38 @@ pub fn is_prime(p: u64) -> bool {
 pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     vector_size: usize,
     variance: usize,
-    rng: &mut R,
+    rng: Option<&mut R>,
+    der_key: Option<&String>,
 ) -> Result<Vec<i64>, &'static str> {
     if !(1..=16).contains(&variance) {
         return Err("The variance should be between 1 and 16");
+    }
+
+    // if der_key is None, then use_random = true, else use_random = false
+    let use_random = der_key.is_none();
+
+    // find if random or derived key, and if random then use rng to generate key as an array of u128.
+    // if derived key, then use the der_key to generate key as an array of u128 by hashing the der_key. The generated keys should be of size vector_size
+
+    let mut key = vec![0u128; vector_size];
+
+    if use_random {
+        let rng = rng.unwrap();
+        for i in 0..vector_size {
+            key[i] = rng.next_u64() as u128;
+        }
+    } else {
+        let der_key = der_key.unwrap();
+        let der_key = key_chunk(der_key, vector_size); // Split the input key into vector_size chunks
+
+        for i in 0..vector_size {
+            let mut hasher = Shake::v128();
+            let chunk = &der_key[i];
+            let mut output = [0u8; 16]; // Array to store the output of the hash function
+            hasher.update(chunk.as_bytes());
+            hasher.finalize(&mut output);
+            key[i] = u128::from_le_bytes(output); // Convert the output to u128
+        }
     }
 
     let mut out = Vec::with_capacity(vector_size);
@@ -53,9 +82,9 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     let mut current_pool = 0u128;
     let mut current_pool_nbits = 0;
 
-    for _ in 0..vector_size {
+    for i in 0..vector_size {
         if current_pool_nbits < number_bits {
-            current_pool |= (rng.next_u64() as u128) << current_pool_nbits;
+            current_pool |= key[i] << current_pool_nbits;
             current_pool_nbits += 64;
         }
         debug_assert!(current_pool_nbits >= number_bits);
@@ -68,6 +97,18 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     }
 
     Ok(out)
+}
+
+fn key_chunk(key: &str, num_chunks: usize) -> Vec<String> {
+    let chunk_size = key.len() / num_chunks;
+    let mut chunks = Vec::with_capacity(num_chunks);
+    for i in 0..num_chunks {
+        let start = i * chunk_size;
+        let end = (i + 1) * chunk_size;
+        let chunk = key[start..end].to_owned();
+        chunks.push(chunk);
+    }
+    chunks
 }
 
 /// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
@@ -269,17 +310,17 @@ mod tests {
 
     #[test]
     fn sample_cbd() {
-        assert!(sample_vec_cbd(10, 0, &mut thread_rng()).is_err());
-        assert!(sample_vec_cbd(10, 17, &mut thread_rng()).is_err());
+        assert!(sample_vec_cbd(10, 0, Some(&mut thread_rng()), None).is_err());
+        assert!(sample_vec_cbd(10, 17, Some(&mut thread_rng()), None).is_err());
 
         for var in 1..=16 {
             for size in 0..=100 {
-                let v = sample_vec_cbd(size, var, &mut thread_rng()).unwrap();
+                let v = sample_vec_cbd(size, var, Some(&mut thread_rng()), None).unwrap();
                 assert_eq!(v.len(), size);
             }
 
             // Verifies that the min, max are in absolute value smaller than 2 * var
-            let v = sample_vec_cbd(100000, var, &mut thread_rng()).unwrap();
+            let v = sample_vec_cbd(100000, var, Some(&mut thread_rng()), None).unwrap();
             assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * var as i64);
 
             // Verifies that the variance is correct. We could probably refine the bound
