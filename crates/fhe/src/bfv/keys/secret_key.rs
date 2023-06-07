@@ -1,21 +1,21 @@
 //! Secret keys for the BFV encryption scheme
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::{Error, Result};
+use bincode::{deserialize, Result as OtherResult};
 use fhe_math::{
     rq::{traits::TryConvertFrom, Poly, Representation},
     zq::Modulus,
 };
-use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized, Serialize};
+use fhe_traits::{Deserialize, FheDecrypter, FheEncrypter, FheParametrized, Serialize};
 use fhe_util::sample_vec_cbd;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::fs::File;
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
-
 
 /// Secret key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -33,9 +33,8 @@ impl Zeroize for SecretKey {
 impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
-
     /// Generate a random [`SecretKey`] and write it to a file.
-    pub fn random_write<R: RngCore + CryptoRng>(
+    pub fn random_write_key<R: RngCore + CryptoRng>(
         par: &Arc<BfvParameters>,
         rng: &mut R,
         file_name: &mut String,
@@ -43,21 +42,40 @@ impl SecretKey {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
         let secret_key = Self::new(s_coefficients, par);
 
-        // write the secret key to a file
-        let mut file = File::create(file_name).unwrap();
+        // write the secret key par to a file
+
+        let par_file = file_name.clone() + ".par";
+
+        let mut file = File::create(par_file).unwrap();
 
         let binding = secret_key.par.to_bytes();
         let par_bytes = binding.as_slice();
         file.write_all(par_bytes).unwrap();
 
+        // write the coefficients to a file
+
+        let coeff_file = file_name.clone() + ".coeff";
+
+        let mut file = File::create(coeff_file).unwrap();
+
+        let binding = secret_key.coeffs.to_vec();
+        let coeff_bytes = binding.as_slice();
+
+        let coeff_bytes_as_u8: &[u8] = unsafe {
+            // Convert the &[i64] to a byte slice by transmuting the reference type
+            std::slice::from_raw_parts(
+                coeff_bytes.as_ptr() as *const u8,
+                coeff_bytes.len() * std::mem::size_of::<i64>(),
+            )
+        };
+
+        file.write_all(coeff_bytes_as_u8).unwrap();
+
         secret_key
     }
 
     /// Generate a random [`SecretKey`].
-    pub fn random<R: RngCore + CryptoRng>(
-        par: &Arc<BfvParameters>,
-        rng: &mut R
-    ) -> Self {
+    pub fn random<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Self {
         let s_coefficients = sample_vec_cbd(par.degree(), par.variance, rng).unwrap();
         let secret_key = Self::new(s_coefficients, par);
 
@@ -267,7 +285,7 @@ mod tests {
     fn keygen_and_write() {
         let mut rng = thread_rng();
         let params = Arc::new(BfvParameters::default(1, 8));
-        let sk = SecretKey::random_write(&params, &mut rng, &mut "key.bin".to_string());
+        let sk = SecretKey::random_write_key(&params, &mut rng, &mut "key.bin".to_string());
         assert_eq!(sk.par, params);
     }
 
