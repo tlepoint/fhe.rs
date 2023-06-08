@@ -13,7 +13,7 @@ bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
 fhe-traits = { version = "^0.1.0-beta.4", path = "../fhe-traits" }
-fhe-util = { version = "^0.1.0-beta.4", path = "../fhe-util" }
+fhe-util = { version = "^0.1.0-beta.5", path = "../fhe-util" }
 
 crypto-bigint.workspace = true
 itertools.workspace = true
