@@ -12,10 +12,10 @@ license-file = "LICENSE"
 
 [workspace.dependencies]
 console = "0.15.7"
-criterion = "0.4.0"
+criterion = "0.5.1"
 crypto-bigint = "0.5.2"
 indicatif = "0.17.5"
-itertools = "0.10.5"
+itertools = "0.11.0"
 ndarray = "0.15.6"
 num-bigint = "0.4.3"
 num-bigint-dig = "0.8.3"

@@ -48,16 +48,11 @@ impl RnsContext {
         if moduli_u64.is_empty() {
             Err(Error::Default("The list of moduli is empty".to_string()))
         } else {
-            let mut moduli = Vec::with_capacity(moduli_u64.len());
-            let mut q_tilde = Vec::with_capacity(moduli_u64.len());
-            let mut q_tilde_shoup = Vec::with_capacity(moduli_u64.len());
-            let mut q_star = Vec::with_capacity(moduli_u64.len());
-            let mut garner = Vec::with_capacity(moduli_u64.len());
             let mut product = BigUint::one();
             let mut product_dig = BigUintDig::one();
 
             for i in 0..moduli_u64.len() {
-                // Return None if the moduli are not coprime.
+                // Return an error if the moduli are not coprime.
                 for j in 0..moduli_u64.len() {
                     if i != j {
                         let (d, _, _) = BigUintDig::from(moduli_u64[i])
@@ -71,6 +66,12 @@ impl RnsContext {
                 product *= &BigUint::from(moduli_u64[i]);
                 product_dig *= &BigUintDig::from(moduli_u64[i]);
             }
+
+            let mut moduli = Vec::with_capacity(moduli_u64.len());
+            let mut q_tilde = Vec::with_capacity(moduli_u64.len());
+            let mut q_tilde_shoup = Vec::with_capacity(moduli_u64.len());
+            let mut q_star = Vec::with_capacity(moduli_u64.len());
+            let mut garner = Vec::with_capacity(moduli_u64.len());
 
             for modulus in moduli_u64 {
                 moduli.push(Modulus::new(*modulus)?);
