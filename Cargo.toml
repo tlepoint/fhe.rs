@@ -1,6 +1,7 @@
 # Recommended method in https://matklad.github.io/2021/08/22/large-rust-workspaces.html
 [workspace]
 members = ["crates/*"]
+resolver = "2"
 
 [workspace.package]
 authors = ["Tancrède Lepoint"]

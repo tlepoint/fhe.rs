@@ -1,30 +1,40 @@
-# Changelog
 
-All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## 0.1.0-beta.4 (2023-10-13)
-
-Bump dependencies versions and use workspace dependencies introduced in Rust 1.64.
-
-## 0.1.0-beta.3 (2022-09-11)
-
-Fix a few bugs, remove the need of using nightly, and make some backward-incompatible changes:
-- public key generation doesn't return a `Result` anymore
-- modify the API to take as input the random number generator.
-
-Additionally, we added more documentation.
+## v0.1.0-beta.5 (2023-09-05)
 
 ### Commit Statistics
 
 <csr-read-only-do-not-edit/>
 
- - 8 commits contributed to the release over the course of 4 calendar days.
- - 4 days passed between releases.
+ - 3 commits contributed to the release over the course of 250 calendar days.
+ - 327 days passed between releases.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
- - 7 unique issues were worked on: [#123](https://github.com/tlepoint/fhe.rs/issues/123), [#127](https://github.com/tlepoint/fhe.rs/issues/127), [#130](https://github.com/tlepoint/fhe.rs/issues/130), [#132](https://github.com/tlepoint/fhe.rs/issues/132), [#133](https://github.com/tlepoint/fhe.rs/issues/133), [#134](https://github.com/tlepoint/fhe.rs/issues/134), [#135](https://github.com/tlepoint/fhe.rs/issues/135)
+ - 2 unique issues were worked on: [#157](https://github.com/tlepoint/fhe.rs/issues/157), [#170](https://github.com/tlepoint/fhe.rs/issues/170)
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **[#157](https://github.com/tlepoint/fhe.rs/issues/157)**
+    - Fix clippy warnings. Fixes #154 ([`3d1d9e8`](https://github.com/tlepoint/fhe.rs/commit/3d1d9e8e28853e468dfe974253834d9c242fd0a5))
+ * **[#170](https://github.com/tlepoint/fhe.rs/issues/170)**
+    - Change tabs into space, optimize ntt operator constructor ([`393316f`](https://github.com/tlepoint/fhe.rs/commit/393316ffe1d02efe70e26310ff04318b2e185e87))
+ * **Uncategorized**
+    - Change concrete to tfhe ([`33146f7`](https://github.com/tlepoint/fhe.rs/commit/33146f77acdc64b7c5a32494d1bd575b6bc9910f))
+</details>
+
+## v0.1.0-beta.4 (2022-10-13)
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 20 commits contributed to the release over the course of 36 calendar days.
+ - 36 days passed between releases.
+ - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 18 unique issues were worked on: [#123](https://github.com/tlepoint/fhe.rs/issues/123), [#127](https://github.com/tlepoint/fhe.rs/issues/127), [#130](https://github.com/tlepoint/fhe.rs/issues/130), [#132](https://github.com/tlepoint/fhe.rs/issues/132), [#133](https://github.com/tlepoint/fhe.rs/issues/133), [#134](https://github.com/tlepoint/fhe.rs/issues/134), [#135](https://github.com/tlepoint/fhe.rs/issues/135), [#136](https://github.com/tlepoint/fhe.rs/issues/136), [#138](https://github.com/tlepoint/fhe.rs/issues/138), [#139](https://github.com/tlepoint/fhe.rs/issues/139), [#140](https://github.com/tlepoint/fhe.rs/issues/140), [#141](https://github.com/tlepoint/fhe.rs/issues/141), [#143](https://github.com/tlepoint/fhe.rs/issues/143), [#144](https://github.com/tlepoint/fhe.rs/issues/144), [#145](https://github.com/tlepoint/fhe.rs/issues/145), [#146](https://github.com/tlepoint/fhe.rs/issues/146), [#147](https://github.com/tlepoint/fhe.rs/issues/147), [#149](https://github.com/tlepoint/fhe.rs/issues/149)
 
 ### Commit Details
 
@@ -46,13 +56,34 @@ Additionally, we added more documentation.
     - Remove unnecessary casting by defining more conversions ([`f7cddb3`](https://github.com/tlepoint/fhe.rs/commit/f7cddb358f2ce28483944f99e223c07ae41b0c1c))
  * **[#135](https://github.com/tlepoint/fhe.rs/issues/135)**
     - Starting better documentation ([`13a633c`](https://github.com/tlepoint/fhe.rs/commit/13a633c0f288d27da15548942a061540365aec10))
+ * **[#136](https://github.com/tlepoint/fhe.rs/issues/136)**
+    - Add comments to SealPIR and MulPIR ([`f374841`](https://github.com/tlepoint/fhe.rs/commit/f374841f5d9d0bf2ce43fb0c4043d341edf68564))
+ * **[#138](https://github.com/tlepoint/fhe.rs/issues/138)**
+    - Bump criterion from 0.3.6 to 0.4.0 ([`db4daf2`](https://github.com/tlepoint/fhe.rs/commit/db4daf29375497bb4331443da86fd520fd71cac8))
+ * **[#139](https://github.com/tlepoint/fhe.rs/issues/139)**
+    - Bump itertools from 0.10.3 to 0.10.4 ([`75d51b3`](https://github.com/tlepoint/fhe.rs/commit/75d51b3cb1c86fa1603f5e1cd9dc1f3f5859554d))
+ * **[#140](https://github.com/tlepoint/fhe.rs/issues/140)**
+    - Bump thiserror from 1.0.34 to 1.0.35 ([`195303e`](https://github.com/tlepoint/fhe.rs/commit/195303e93689c20ea6a282e6855762b74145fc59))
+ * **[#141](https://github.com/tlepoint/fhe.rs/issues/141)**
+    - Bump indicatif from 0.17.0 to 0.17.1 ([`02f0674`](https://github.com/tlepoint/fhe.rs/commit/02f0674fb24ee8f3c6129bddbe91edae0a9d7808))
+ * **[#143](https://github.com/tlepoint/fhe.rs/issues/143)**
+    - Bump itertools from 0.10.4 to 0.10.5 ([`72ea4f3`](https://github.com/tlepoint/fhe.rs/commit/72ea4f36256e37e435611e4c28918baeb6e23eae))
+ * **[#144](https://github.com/tlepoint/fhe.rs/issues/144)**
+    - Bump protobuf from 3.1.0 to 3.2.0 ([`992e8f7`](https://github.com/tlepoint/fhe.rs/commit/992e8f72b42779e96c9cb7828f510a771524aa46))
+ * **[#145](https://github.com/tlepoint/fhe.rs/issues/145)**
+    - Bump thiserror from 1.0.35 to 1.0.36 ([`2750800`](https://github.com/tlepoint/fhe.rs/commit/27508002ea516d9ba41d0aa756bec7347f8404b2))
+ * **[#146](https://github.com/tlepoint/fhe.rs/issues/146)**
+    - Bump thiserror from 1.0.36 to 1.0.37 ([`c0022fb`](https://github.com/tlepoint/fhe.rs/commit/c0022fb24bdb191f5ebfe6a2dce31fe6d5b34523))
+ * **[#147](https://github.com/tlepoint/fhe.rs/issues/147)**
+    - Bump console from 0.15.1 to 0.15.2 ([`a344fab`](https://github.com/tlepoint/fhe.rs/commit/a344fabf2382dbabca7368cb32b44907735481fc))
+ * **[#149](https://github.com/tlepoint/fhe.rs/issues/149)**
+    - Use workspace dependencies et versions + Release 0.1.0-beta4 ([`a0287ba`](https://github.com/tlepoint/fhe.rs/commit/a0287ba3842fcf19b45fd380c56ba7b5e52a387b))
  * **Uncategorized**
-    - Bump all version to beta.3 ([`b300590`](https://github.com/tlepoint/fhe.rs/commit/b3005904a62d1e39c1dde908054f24d1d96e8547))
+    - Release fhe-traits v0.1.0-beta.3, fhe-util v0.1.0-beta.3, fhe-math v0.1.0-beta.3, fhe v0.1.0-beta.3 ([`c031c0e`](https://github.com/tlepoint/fhe.rs/commit/c031c0eca3a354e7d1e016dc7da2fba27f061f08))
+    - Bump all version to beta.3 ([`913f84d`](https://github.com/tlepoint/fhe.rs/commit/913f84d9f510602283716a5ff310215734337956))
 </details>
 
-## 0.1.0-beta.2 (2022-09-07)
-
-This release fixes a bug that did not allow to decrypt a modulo-switched ciphertext correctly.
+## v0.1.0-beta.2 (2022-09-07)
 
 ### Commit Statistics
 
@@ -60,7 +91,7 @@ This release fixes a bug that did not allow to decrypt a modulo-switched ciphert
 
  - 2 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
- - 0 issues like '(#ID)' where seen in commit messages
+ - 0 issues like '(#ID)' were seen in commit messages
 
 ### Commit Details
 
@@ -73,9 +104,7 @@ This release fixes a bug that did not allow to decrypt a modulo-switched ciphert
     - Remove forgotten cfg(not(feature ([`2e247f2`](https://github.com/tlepoint/fhe.rs/commit/2e247f235bbe632459259f6ca74a637a2f765187))
 </details>
 
-## 0.1.0-beta.1 (2022-09-07)
-
-First version of the `fhe` crate, that includes the BFV cryptosystem.
+## v0.1.0-beta.1 (2022-09-07)
 
 ### Commit Statistics
 
@@ -112,8 +141,4 @@ First version of the `fhe` crate, that includes the BFV cryptosystem.
     - Update changelog ([`85a00a1`](https://github.com/tlepoint/fhe.rs/commit/85a00a1b8113e4dc8b1d4e9d19fc6c354fb6ae0e))
     - Switch version to a pre-release number ([`cd8d3b2`](https://github.com/tlepoint/fhe.rs/commit/cd8d3b2d383367239436adcc2508bdbe816b9981))
 </details>
-
-## 0.0.0 (2023-09-06)
-
-Reserve the name for the `fhe` project.
 

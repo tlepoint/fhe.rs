@@ -14,7 +14,7 @@ The library features:
 > `fhe.rs` is a beta library, and **should be considered unstable with potential breaking API changes until version 1.0.0 is released!**
 
 > **Note**
-> This library is not related to the `concrete` ecosystems (Zama's fully homomorphic encryption in Rust), available at [concrete.rs](https://concrete.rs).
+> This library is **not** related to the `tfhe-rs` library (a.k.a. `concrete`), Zama's fully homomorphic encryption in Rust, available at [tfhe.rs](https://github.com/zama-ai/tfhe-rs).
 
 ## fhe.rs crates
 
@@ -31,8 +31,8 @@ To install, add the following to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.4"
-fhe-traits = "0.1.0-beta.4"
+fhe = "0.1.0-beta.5"
+fhe-traits = "0.1.0-beta.5"
 ```
 
 ## Minimum supported version / toolchain
