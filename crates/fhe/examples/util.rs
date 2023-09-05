@@ -63,6 +63,7 @@ impl fmt::Display for DisplayDuration {
 /// Generate a database of elements of the form [i || 0...0] where i is the 4B
 /// little endian encoding of the index. When the element size is less than 4B,
 /// the encoding is truncated.
+#[allow(dead_code)]
 pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<u8>> {
     assert!(elements_size > 0 && database_size > 0);
     let mut database = vec![vec![0u8; elements_size]; database_size];
@@ -73,6 +74,7 @@ pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<
     database
 }
 
+#[allow(dead_code)]
 pub fn number_elements_per_plaintext(
     degree: usize,
     plaintext_nbits: usize,
@@ -81,6 +83,7 @@ pub fn number_elements_per_plaintext(
     (plaintext_nbits * degree) / (elements_size * 8)
 }
 
+#[allow(dead_code)]
 pub fn encode_database(
     database: &Vec<Vec<u8>>,
     par: Arc<bfv::BfvParameters>,
