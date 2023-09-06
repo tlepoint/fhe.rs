@@ -132,14 +132,14 @@ mod tests {
     };
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use rand::thread_rng;
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
     #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(3, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(3, 8),
         ] {
             for _ in 0..30 {
                 let sk = SecretKey::random(&params, &mut rng);
@@ -188,8 +188,8 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(4, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(4, 8),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let gk = GaloisKey::new(&sk, 9, 0, 0, &mut rng)?;

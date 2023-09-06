@@ -161,14 +161,14 @@ mod tests {
     use fhe_traits::{FheEncoder, FheEncrypter};
     use itertools::{izip, Itertools};
     use rand::thread_rng;
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
     #[test]
     fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(1, 8)),
-            Arc::new(BfvParameters::default(2, 16)),
+            BfvParameters::default_arc(1, 8),
+            BfvParameters::default_arc(2, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             for size in 1..128 {

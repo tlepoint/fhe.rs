@@ -125,14 +125,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Let's generate the BFV parameters structure.
     let params = timeit!(
         "Parameters generation",
-        Arc::new(
-            bfv::BfvParametersBuilder::new()
-                .set_degree(degree)
-                .set_plaintext_modulus(plaintext_modulus)
-                .set_moduli_sizes(&moduli_sizes)
-                .build()
-                .unwrap()
-        )
+        bfv::BfvParametersBuilder::new()
+            .set_degree(degree)
+            .set_plaintext_modulus(plaintext_modulus)
+            .set_moduli_sizes(&moduli_sizes)
+            .build_arc()
+            .unwrap()
     );
 
     // Proprocess the database on the server side: the database will be reshaped

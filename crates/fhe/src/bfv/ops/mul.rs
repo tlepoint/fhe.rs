@@ -251,14 +251,14 @@ mod tests {
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use num_bigint::BigUint;
     use rand::{rngs::OsRng, thread_rng};
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
     use super::Multiplicator;
 
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = Arc::new(BfvParameters::default(3, 8));
+        let par = BfvParameters::default_arc(3, 8);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn mul_at_level() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = Arc::new(BfvParameters::default(3, 8));
+        let par = BfvParameters::default_arc(3, 8);
         for _ in 0..15 {
             for level in 0..2 {
                 let values = par.plaintext.random_vec(par.degree(), &mut rng);
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn mul_no_relin() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = Arc::new(BfvParameters::default(6, 8));
+        let par = BfvParameters::default_arc(6, 8);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -363,7 +363,7 @@ mod tests {
         // Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
         let mut rng = thread_rng();
-        let par = Arc::new(BfvParameters::default(3, 8));
+        let par = BfvParameters::default_arc(3, 8);
         let mut extended_basis = par.moduli().to_vec();
         extended_basis
             .push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());

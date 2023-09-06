@@ -26,6 +26,7 @@ zeroize_derive.workspace = true
 ndarray.workspace = true
 protobuf.workspace = true
 thiserror.workspace = true
+doc-comment = "0.3.3"
 
 [dev-dependencies]
 criterion.workspace = true

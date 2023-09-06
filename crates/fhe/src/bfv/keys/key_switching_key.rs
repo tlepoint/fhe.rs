@@ -280,14 +280,14 @@ mod tests {
     };
     use num_bigint::BigUint;
     use rand::thread_rng;
-    use std::{error::Error, sync::Arc};
+    use std::error::Error;
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(3, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(3, 8),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let ctx = params.ctx_at_level(0)?;
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn key_switch() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        for params in [Arc::new(BfvParameters::default(6, 8))] {
+        for params in [BfvParameters::default_arc(6, 8)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
                 let ctx = params.ctx_at_level(0)?;
@@ -340,8 +340,8 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(3, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(3, 8),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let ctx = params.ctx_at_level(0)?;
