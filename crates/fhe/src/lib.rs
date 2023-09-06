@@ -7,3 +7,8 @@ mod errors;
 
 pub mod bfv;
 pub use errors::{Error, ParametersError, Result};
+
+// Test the source code included in the README.
+#[macro_use]
+extern crate doc_comment;
+doctest!("../README.md");

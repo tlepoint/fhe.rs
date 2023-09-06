@@ -189,14 +189,14 @@ impl BfvParameters {
                 2 * *n as u64,
                 u64::MAX >> (64 - plaintext_nbits),
             ) {
-                params.push(Arc::new(
+                params.push(
                     BfvParametersBuilder::new()
                         .set_degree(*n as usize)
                         .set_plaintext_modulus(plaintext_modulus)
                         .set_moduli(moduli)
-                        .build()
+                        .build_arc()
                         .unwrap(),
-                ))
+                )
             }
         }
 
@@ -204,7 +204,7 @@ impl BfvParameters {
     }
 
     #[cfg(test)]
-    pub fn default(num_moduli: usize, degree: usize) -> Self {
+    pub fn default_arc(num_moduli: usize, degree: usize) -> Arc<Self> {
         if !degree.is_power_of_two() || degree < 8 {
             panic!("Invalid degree");
         }
@@ -212,7 +212,7 @@ impl BfvParameters {
             .set_degree(degree)
             .set_plaintext_modulus(1153)
             .set_moduli_sizes(&vec![62usize; num_moduli])
-            .build()
+            .build_arc()
             .unwrap()
     }
 }
@@ -305,6 +305,11 @@ impl BfvParametersBuilder {
         }
 
         Ok(moduli)
+    }
+
+    /// Build a new `BfvParameters` inside an `Arc`.
+    pub fn build_arc(&self) -> Result<Arc<BfvParameters>> {
+        self.build().map(Arc::new)
     }
 
     /// Build a new `BfvParameters`.
@@ -597,11 +602,11 @@ mod tests {
 
     #[test]
     fn default() {
-        let params = BfvParameters::default(1, 8);
+        let params = BfvParameters::default_arc(1, 8);
         assert_eq!(params.moduli.len(), 1);
         assert_eq!(params.degree(), 8);
 
-        let params = BfvParameters::default(2, 16);
+        let params = BfvParameters::default_arc(2, 16);
         assert_eq!(params.moduli.len(), 2);
         assert_eq!(params.degree(), 16);
     }

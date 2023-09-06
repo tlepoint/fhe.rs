@@ -494,12 +494,12 @@ mod tests {
     use fhe_util::ilog2;
     use itertools::izip;
     use rand::thread_rng;
-    use std::{cmp::min, error::Error, sync::Arc};
+    use std::{cmp::min, error::Error};
 
     #[test]
     fn builder() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let params = Arc::new(BfvParameters::default(6, 8));
+        let params = BfvParameters::default_arc(6, 8);
         let sk = SecretKey::random(&params, &mut rng);
 
         let max_level = params.max_level();
@@ -582,8 +582,8 @@ mod tests {
     fn inner_sum() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(5, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(5, 8),
         ] {
             for _ in 0..25 {
                 for ciphertext_level in 0..=params.max_level() {
@@ -626,8 +626,8 @@ mod tests {
     fn row_rotation() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(5, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(5, 8),
         ] {
             for _ in 0..50 {
                 for ciphertext_level in 0..=params.max_level() {
@@ -671,8 +671,8 @@ mod tests {
     fn column_rotation() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(5, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(5, 8),
         ] {
             let row_size = params.degree() >> 1;
             for _ in 0..50 {
@@ -728,8 +728,8 @@ mod tests {
     fn expansion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(5, 8)),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(5, 8),
         ] {
             let log_degree = 64 - 1 - params.degree().leading_zeros();
             for _ in 0..15 {
@@ -784,9 +784,9 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(1, 8)),
-            Arc::new(BfvParameters::default(6, 8)),
-            Arc::new(BfvParameters::default(5, 8)),
+            BfvParameters::default_arc(1, 8),
+            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(5, 8),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
 
@@ -830,8 +830,8 @@ mod tests {
     fn serialize() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            Arc::new(BfvParameters::default(1, 8)),
-            Arc::new(BfvParameters::default(6, 8)),
+            BfvParameters::default_arc(1, 8),
+            BfvParameters::default_arc(6, 8),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
 

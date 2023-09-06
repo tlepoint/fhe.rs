@@ -16,7 +16,7 @@ use fhe_traits::{
 use fhe_util::{ilog2, inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{rngs::OsRng, thread_rng, RngCore};
-use std::{env, error::Error, process::exit, sync::Arc};
+use std::{env, error::Error, process::exit};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
     timeit::{timeit, timeit_n},
@@ -124,14 +124,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Let's generate the BFV parameters structure.
     let params = timeit!(
         "Parameters generation",
-        Arc::new(
-            bfv::BfvParametersBuilder::new()
-                .set_degree(degree)
-                .set_plaintext_modulus(plaintext_modulus)
-                .set_moduli_sizes(&moduli_sizes)
-                .build()
-                .unwrap()
-        )
+        bfv::BfvParametersBuilder::new()
+            .set_degree(degree)
+            .set_plaintext_modulus(plaintext_modulus)
+            .set_moduli_sizes(&moduli_sizes)
+            .build_arc()
+            .unwrap()
     );
 
     // Proprocess the database on the server side: the database will be reshaped
