@@ -10,7 +10,6 @@ use crate::{Error, Result};
 use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use fhe_util::ilog2;
 use protobuf::Message;
 use rand::{CryptoRng, RngCore};
 use std::collections::{HashMap, HashSet};
@@ -155,7 +154,7 @@ impl EvaluationKey {
     /// ciphertext does not have size 2. The output is a vector of `size`
     /// ciphertexts.
     pub fn expands(&self, ct: &Ciphertext, size: usize) -> Result<Vec<Ciphertext>> {
-        let level = ilog2(size.next_power_of_two() as u64);
+        let level = size.next_power_of_two().ilog2() as usize;
         if ct.c.len() != 2 {
             Err(Error::DefaultError(
                 "The ciphertext is not of size 2".to_string(),
@@ -367,7 +366,7 @@ impl EvaluationKeyBuilder {
             gk: HashMap::default(),
             par: self.sk.par.clone(),
             rot_to_gk_exponent: self.rot_to_gk_exponent.clone(),
-            monomials: Vec::with_capacity(ilog2(self.sk.par.degree() as u64)),
+            monomials: Vec::with_capacity(self.sk.par.degree().ilog2() as usize),
             ciphertext_level: self.ciphertext_level,
             evaluation_key_level: self.evaluation_key_level,
         };
@@ -393,7 +392,7 @@ impl EvaluationKeyBuilder {
         }
 
         let ciphertext_ctx = self.sk.par.ctx_at_level(self.ciphertext_level)?;
-        for l in 0..ilog2(self.sk.par.degree() as u64) {
+        for l in 0..self.sk.par.degree().ilog2() {
             let mut monomial = vec![0i64; self.sk.par.degree()];
             monomial[self.sk.par.degree() - (1 << l)] = -1;
             let mut monomial = Poly::try_convert_from(
@@ -455,8 +454,8 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
         }
 
         let ciphertext_ctx = par.ctx_at_level(value.ciphertext_level as usize)?;
-        let mut monomials = Vec::with_capacity(ilog2(par.degree() as u64));
-        for l in 0..ilog2(par.degree() as u64) {
+        let mut monomials = Vec::with_capacity(par.degree().ilog2() as usize);
+        for l in 0..par.degree().ilog2() {
             let mut monomial = vec![0i64; par.degree()];
             monomial[par.degree() - (1 << l)] = -1;
             let mut monomial = Poly::try_convert_from(
@@ -491,7 +490,6 @@ mod tests {
     use fhe_traits::{
         DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
     };
-    use fhe_util::ilog2;
     use itertools::izip;
     use rand::thread_rng;
     use std::{cmp::min, error::Error};
@@ -810,14 +808,14 @@ mod tests {
                 assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
                 let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_expansion(ilog2(params.degree() as u64))?
+                    .enable_expansion(params.degree().ilog2() as usize)?
                     .build(&mut rng)?;
                 let proto = LeveledEvaluationKeyProto::from(&ek);
                 assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
                 let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
                     .enable_inner_sum()?
-                    .enable_expansion(ilog2(params.degree() as u64))?
+                    .enable_expansion(params.degree().ilog2() as usize)?
                     .build(&mut rng)?;
                 let proto = LeveledEvaluationKeyProto::from(&ek);
                 assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
@@ -853,14 +851,14 @@ mod tests {
                 assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
                 let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_expansion(ilog2(params.degree() as u64))?
+                    .enable_expansion(params.degree().ilog2() as usize)?
                     .build(&mut rng)?;
                 let bytes = ek.to_bytes();
                 assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);
 
                 let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
                     .enable_inner_sum()?
-                    .enable_expansion(ilog2(params.degree() as u64))?
+                    .enable_expansion(params.degree().ilog2() as usize)?
                     .build(&mut rng)?;
                 let bytes = ek.to_bytes();
                 assert_eq!(ek, EvaluationKey::from_bytes(&bytes, &params)?);

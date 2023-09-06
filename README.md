@@ -37,7 +37,7 @@ fhe-traits = "0.1.0-beta.5"
 
 ## Minimum supported version / toolchain
 
-Rust **1.64** or newer.
+Rust **1.67** or newer.
 
 ## ⚠️ Security / Stability
 

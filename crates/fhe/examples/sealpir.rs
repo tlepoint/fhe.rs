@@ -15,7 +15,7 @@ use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
 };
-use fhe_util::{div_ceil, ilog2, inverse, transcode_bidirectional, transcode_to_bytes};
+use fhe_util::{div_ceil, inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, RngCore};
@@ -49,13 +49,13 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let degree = 4096usize;
-    let plaintext_modulus = 2056193;
+    let plaintext_modulus = 2056193u64;
     let moduli_sizes = [36, 36, 37];
 
     // Compute what is the maximum byte-length of an element to fit within one
     // ciphertext. Each coefficient of the ciphertext polynomial can contain
     // floor(log2(plaintext_modulus)) bits.
-    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
+    let max_element_size = ((plaintext_modulus.ilog2() as usize) * degree) / 8;
 
     // This executable is a command line tool which enables to specify different
     // database and element sizes.
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // dim2) values, i.e. with expansion level ceil(log2(dim1 + dim2)).
     let (sk, ek_expansion_serialized) = timeit!("Client setup", {
         let sk = bfv::SecretKey::random(&params, &mut OsRng);
-        let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
+        let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("expansion_level = {level}");
         let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
             .enable_expansion(level)?
@@ -176,11 +176,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // to reduce the noise.
     let index = (thread_rng().next_u64() as usize) % database_size;
     let query = timeit!("Client query", {
-        let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
+        let level = (dim1 + dim2).next_power_of_two().ilog2();
         let query_index = index
             / number_elements_per_plaintext(
                 params.degree(),
-                ilog2(plaintext_modulus),
+                plaintext_modulus.ilog2() as usize,
                 elements_size,
             );
         let mut pt = vec![0u64; dim1 + dim2];
@@ -229,17 +229,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map(|c| {
                 let mut pt_values = Vec::with_capacity(div_ceil(
                     2 * (params.degree() * (64 - params.moduli()[0].leading_zeros() as usize)),
-                    ilog2(plaintext_modulus),
+                    plaintext_modulus.ilog2() as usize,
                 ));
                 pt_values.append(&mut transcode_bidirectional(
                     c.get(0).unwrap().coefficients().as_slice().unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
-                    ilog2(plaintext_modulus),
+                    plaintext_modulus.ilog2() as usize,
                 ));
                 pt_values.append(&mut transcode_bidirectional(
                     c.get(1).unwrap().coefficients().as_slice().unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
-                    ilog2(plaintext_modulus),
+                    plaintext_modulus.ilog2() as usize,
                 ));
                 unsafe {
                     Ok(bfv::PlaintextVec::try_encode_vt(
@@ -287,17 +287,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect_vec();
         let expect_ncoefficients = div_ceil(
             params.degree() * (64 - params.moduli()[0].leading_zeros() as usize),
-            ilog2(plaintext_modulus),
+            plaintext_modulus.ilog2() as usize,
         );
         assert!(decrypted_vec.len() >= 2 * expect_ncoefficients);
         let mut poly0 = transcode_bidirectional(
             &decrypted_vec[..expect_ncoefficients],
-            ilog2(plaintext_modulus),
+            plaintext_modulus.ilog2() as usize,
             64 - params.moduli()[0].leading_zeros() as usize,
         );
         let mut poly1 = transcode_bidirectional(
             &decrypted_vec[expect_ncoefficients..2 * expect_ncoefficients],
-            ilog2(plaintext_modulus),
+            plaintext_modulus.ilog2() as usize,
             64 - params.moduli()[0].leading_zeros() as usize,
         );
         assert!(poly0.len() >= params.degree());
@@ -316,11 +316,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let pt = sk.try_decrypt(&ct).unwrap();
         let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
-        let plaintext = transcode_to_bytes(&pt, ilog2(plaintext_modulus));
+        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
         let offset = index
             % number_elements_per_plaintext(
                 params.degree(),
-                ilog2(plaintext_modulus),
+                plaintext_modulus.ilog2() as usize,
                 elements_size,
             );
 

@@ -6,7 +6,7 @@ use fhe::bfv::{
 use fhe_math::rns::{RnsContext, ScalingFactor};
 use fhe_math::zq::primes::generate_prime;
 use fhe_traits::{FheEncoder, FheEncrypter};
-use fhe_util::{div_ceil, ilog2};
+use fhe_util::div_ceil;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{rngs::OsRng, thread_rng};
@@ -29,7 +29,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
                     .unwrap()
                     .enable_column_rotation(1)
                     .unwrap()
-                    .enable_expansion(ilog2(par.degree() as u64))
+                    .enable_expansion(par.degree().ilog2() as usize)
                     .unwrap()
                     .build(&mut rng)
                     .unwrap(),
@@ -194,7 +194,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
                 },
             );
 
-            for i in 1..=ilog2(par.degree() as u64) {
+            for i in 1..=par.degree().ilog2() {
                 if par.degree() > 2048 && i > 4 {
                     continue; // Skip slow benchmarks
                 }

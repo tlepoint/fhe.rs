@@ -2,7 +2,7 @@
 
 use fhe::bfv;
 use fhe_traits::FheEncoder;
-use fhe_util::{ilog2, transcode_from_bytes};
+use fhe_util::transcode_from_bytes;
 use std::{cmp::min, fmt, sync::Arc, time::Duration};
 
 /// Macros to time code and display a human-readable duration.
@@ -65,7 +65,7 @@ impl fmt::Display for DisplayDuration {
 /// the encoding is truncated.
 #[allow(dead_code)]
 pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<u8>> {
-    assert!(elements_size > 0 && database_size > 0);
+    assert!(database_size > 0 && elements_size > 0);
     let mut database = vec![vec![0u8; elements_size]; database_size];
     for (i, element) in database.iter_mut().enumerate() {
         element[..min(4, elements_size)]
@@ -92,7 +92,7 @@ pub fn encode_database(
     assert!(!database.is_empty());
 
     let elements_size = database[0].len();
-    let plaintext_nbits = ilog2(par.plaintext());
+    let plaintext_nbits = par.plaintext().ilog2() as usize;
     let number_elements_per_plaintext =
         number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
     let number_rows =

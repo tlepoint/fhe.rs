@@ -14,7 +14,7 @@ pub use u256::U256;
 
 use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
-use std::{mem::size_of, panic::UnwindSafe};
+use std::panic::UnwindSafe;
 
 /// Define catch_unwind to silence the panic in unit tests.
 pub fn catch_unwind<F, R>(f: F) -> std::thread::Result<R>
@@ -72,8 +72,7 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
 
 /// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
 pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
-    assert!(nbits <= 64);
-    assert!(nbits > 0);
+    assert!(0 < nbits && nbits <= 64);
 
     let mask = (u64::MAX >> (64 - nbits)) as u128;
     let nbytes = div_ceil(a.len() * nbits, 8);
@@ -108,8 +107,7 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
 
 /// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
 pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
-    assert!(nbits <= 64);
-    assert!(nbits > 0);
+    assert!(0 < nbits && nbits <= 64);
     let mask = (u64::MAX >> (64 - nbits)) as u128;
 
     let nelements = div_ceil(b.len() * 8, nbits);
@@ -143,10 +141,9 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
 /// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
 /// of `output_nbits`-bit numbers.
 pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
-    assert!(input_nbits <= 64);
-    assert!(output_nbits <= 64);
-    assert!(input_nbits > 0);
-    assert!(output_nbits > 0);
+    assert!(0 < input_nbits && input_nbits <= 64);
+    assert!(0 < output_nbits && output_nbits <= 64);
+
     let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
     let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
     let output_size = div_ceil(a.len() * input_nbits, output_nbits);
@@ -187,16 +184,6 @@ pub fn inverse(a: u64, p: u64) -> Option<u64> {
     a.mod_inverse(p)?.to_u64()
 }
 
-/// Returns the number of bits b such that 2^b <= value
-/// to simulate the `.ilog2()` function from <https://github.com/rust-lang/rust/issues/70887>.
-/// Panics when `value` is 0.
-pub fn ilog2<T: PrimInt>(value: T) -> usize {
-    assert!(value > T::zero());
-    // For this, we compute sizeof(T) - 1 - value.leading_zeros(). Indeed, when 2^b
-    // <= value < 2^(b+1), then value.leading_zeros() = sizeof(T) - (b + 1).
-    size_of::<T>() * 8 - 1 - value.leading_zeros() as usize
-}
-
 /// Returns the ceil of a divided by b, to simulate the
 /// `.div_ceil()` function from <https://github.com/rust-lang/rust/issues/88581>.
 /// Panics when `b` is 0.
@@ -220,7 +207,7 @@ mod tests {
     use itertools::Itertools;
     use rand::{thread_rng, RngCore};
 
-    use crate::{div_ceil, ilog2, variance};
+    use crate::{div_ceil, variance};
 
     use super::{
         inverse, is_prime, sample_vec_cbd, transcode_bidirectional, transcode_from_bytes,
@@ -242,19 +229,6 @@ mod tests {
         assert!(!is_prime(8));
         assert!(!is_prime(9));
         assert!(!is_prime(4611686018326724607));
-    }
-
-    #[test]
-    fn ilog2_is_correct() {
-        assert_eq!(ilog2(1), 0);
-        assert_eq!(ilog2(2), 1);
-        assert_eq!(ilog2(3), 1);
-        assert_eq!(ilog2(4), 2);
-        for i in 2..=110 {
-            assert_eq!(ilog2(1u128 << i), i);
-            assert_eq!(ilog2((1u128 << i) + 1), i);
-            assert_eq!(ilog2((1u128 << (i + 1)) - 1), i);
-        }
     }
 
     #[test]
@@ -295,7 +269,7 @@ mod tests {
 
         for size in 1..=100 {
             let input = (0..size).map(|_| rng.next_u64()).collect_vec();
-            for input_nbits in 1..63 {
+            for input_nbits in 1usize..63 {
                 let masked_input = input
                     .iter()
                     .map(|i| (*i) & (u64::MAX >> (64 - input_nbits)))
