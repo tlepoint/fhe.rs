@@ -31,30 +31,32 @@ pub struct Ciphertext {
 
 impl Ciphertext {
     /// Modulo switch the ciphertext to the last level.
-    pub fn mod_switch_to_last_level(&mut self) {
+    pub fn mod_switch_to_last_level(&mut self) -> Result<()> {
         self.level = self.par.max_level();
-        let last_ctx = self.par.ctx_at_level(self.level).unwrap();
+        let last_ctx = self.par.ctx_at_level(self.level)?;
         self.seed = None;
-        self.c.iter_mut().for_each(|ci| {
+        for ci in self.c.iter_mut() {
             if ci.ctx() != last_ctx {
                 ci.change_representation(Representation::PowerBasis);
-                assert!(ci.mod_switch_down_to(last_ctx).is_ok());
+                ci.mod_switch_down_to(last_ctx)?;
                 ci.change_representation(Representation::Ntt);
             }
-        });
+        }
+        Ok(())
     }
 
     /// Modulo switch the ciphertext to the next level.
-    pub fn mod_switch_to_next_level(&mut self) {
+    pub fn mod_switch_to_next_level(&mut self) -> Result<()> {
         if self.level < self.par.max_level() {
             self.seed = None;
-            self.c.iter_mut().for_each(|ci| {
+            for ci in self.c.iter_mut() {
                 ci.change_representation(Representation::PowerBasis);
-                assert!(ci.mod_switch_down_next().is_ok());
+                ci.mod_switch_down_next()?;
                 ci.change_representation(Representation::Ntt);
-            });
+            }
             self.level += 1
         }
+        Ok(())
     }
 
     /// Create a ciphertext from a vector of polynomials.
@@ -262,7 +264,7 @@ mod tests {
             );
             assert_eq!(ct3.level, 0);
 
-            ct3.mod_switch_to_last_level();
+            ct3.mod_switch_to_last_level()?;
 
             let c0 = ct3.get(0).unwrap();
             let c1 = ct3.get(1).unwrap();
@@ -290,7 +292,7 @@ mod tests {
             let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
             assert_eq!(ct.level, 0);
-            ct.mod_switch_to_last_level();
+            ct.mod_switch_to_last_level()?;
             assert_eq!(ct.level, params.max_level());
 
             let decrypted = sk.try_decrypt(&ct)?;

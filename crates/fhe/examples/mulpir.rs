@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some("Invalid `--database_size` command".to_string()),
                 )
             } else {
-                database_size = a[0].parse::<usize>().unwrap()
+                database_size = a[0].parse::<usize>()?
             }
         } else if arg.starts_with("--element_size") {
             let a: Vec<&str> = arg.rsplit('=').collect();
@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some("Invalid `--element_size` command".to_string()),
                 )
             } else {
-                elements_size = a[0].parse::<usize>().unwrap()
+                elements_size = a[0].parse::<usize>()?
             }
         } else {
             print_notice_and_exit(
@@ -128,8 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .set_degree(degree)
             .set_plaintext_modulus(plaintext_modulus)
             .set_moduli_sizes(&moduli_sizes)
-            .build_arc()
-            .unwrap()
+            .build_arc()?
     );
 
     // Proprocess the database on the server side: the database will be reshaped
@@ -233,7 +232,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             out += &(&dot_product_mod_switch(i, &preprocessed_database)? * ci)
         }
         rk.relinearizes(&mut out)?;
-        out.mod_switch_to_last_level();
+        out.mod_switch_to_last_level()?;
         out.to_bytes()
     });
     println!("📄 Response: {}", HumanBytes(response.len() as u64));
@@ -243,10 +242,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // (remember the database was reshaped to maximize how many elements) were
     // embedded in a single ciphertext.
     let answer = timeit!("Client answer", {
-        let response = bfv::Ciphertext::from_bytes(&response, &params).unwrap();
+        let response = bfv::Ciphertext::from_bytes(&response, &params)?;
 
-        let pt = sk.try_decrypt(&response).unwrap();
-        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
+        let pt = sk.try_decrypt(&response)?;
+        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
         let plaintext = transcode_to_bytes(&pt, ilog2(plaintext_modulus));
         let offset = index
             % number_elements_per_plaintext(

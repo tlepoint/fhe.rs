@@ -96,6 +96,11 @@ impl Context {
         }
     }
 
+    /// Creates a context in an `Arc`.
+    pub fn new_arc(moduli: &[u64], degree: usize) -> Result<Arc<Self>> {
+        Self::new(moduli, degree).map(Arc::new)
+    }
+
     /// Returns the modulus as a BigUint.
     pub fn modulus(&self) -> &BigUint {
         self.rns.modulus()

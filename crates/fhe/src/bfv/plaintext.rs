@@ -280,18 +280,18 @@ mod tests {
 
         let plaintext = Plaintext::try_encode(&a, Encoding::simd(), &params);
         assert!(plaintext.is_ok());
-        let b = Vec::<u64>::try_decode(&plaintext.unwrap(), Encoding::simd())?;
+        let b = Vec::<u64>::try_decode(&plaintext?, Encoding::simd())?;
         assert_eq!(b, a);
 
         let a = unsafe { params.plaintext.center_vec_vt(&a) };
         let plaintext = Plaintext::try_encode(&a, Encoding::poly(), &params);
         assert!(plaintext.is_ok());
-        let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::poly())?;
+        let b = Vec::<i64>::try_decode(&plaintext?, Encoding::poly())?;
         assert_eq!(b, a);
 
         let plaintext = Plaintext::try_encode(&a, Encoding::simd(), &params);
         assert!(plaintext.is_ok());
-        let b = Vec::<i64>::try_decode(&plaintext.unwrap(), Encoding::simd())?;
+        let b = Vec::<i64>::try_decode(&plaintext?, Encoding::simd())?;
         assert_eq!(b, a);
 
         Ok(())

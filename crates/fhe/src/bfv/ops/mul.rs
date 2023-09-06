@@ -229,7 +229,7 @@ impl Multiplicator {
         };
 
         if self.mod_switch {
-            c.mod_switch_to_next_level();
+            c.mod_switch_to_next_level()?;
         } else {
             c.c.iter_mut()
                 .for_each(|p| p.change_representation(Representation::Ntt));

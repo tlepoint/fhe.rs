@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some("Invalid `--database_size` command".to_string()),
                 )
             } else {
-                database_size = a[0].parse::<usize>().unwrap()
+                database_size = a[0].parse::<usize>()?
             }
         } else if arg.starts_with("--element_size") {
             let a: Vec<&str> = arg.rsplit('=').collect();
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Some("Invalid `--element_size` command".to_string()),
                 )
             } else {
-                elements_size = a[0].parse::<usize>().unwrap()
+                elements_size = a[0].parse::<usize>()?
             }
         } else {
             print_notice_and_exit(
@@ -129,8 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .set_degree(degree)
             .set_plaintext_modulus(plaintext_modulus)
             .set_moduli_sizes(&moduli_sizes)
-            .build_arc()
-            .unwrap()
+            .build_arc()?
     );
 
     // Proprocess the database on the server side: the database will be reshaped
@@ -209,8 +208,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // The operation is done `5` times to compute an average response time.
     let responses: Vec<Vec<u8>> = timeit_n!("Server response", 5, {
         let start = std::time::Instant::now();
-        let query = bfv::Ciphertext::from_bytes(&query, &params);
-        let query = query.unwrap();
+        let query = bfv::Ciphertext::from_bytes(&query, &params)?;
         let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
         println!("Expand: {}", DisplayDuration(start.elapsed()));
 
@@ -218,7 +216,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dot_product_mod_switch = move |i, database: &[bfv::Plaintext]| {
             let column = database.iter().skip(i).step_by(dim2);
             let mut c = bfv::dot_product_scalar(query_vec.iter(), column)?;
-            c.mod_switch_to_last_level();
+            c.mod_switch_to_last_level()?;
             Ok(c)
         };
 
@@ -259,7 +257,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     expanded_query[dim1..].iter(),
                     fold.iter().map(|pts| pts.get(i).unwrap()),
                 )?;
-                outi.mod_switch_to_last_level();
+                outi.mod_switch_to_last_level()?;
                 Ok(outi.to_bytes())
             })
             .collect::<fhe::Result<Vec<Vec<u8>>>>()?
@@ -281,7 +279,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect_vec();
         let decrypted_pt = responses
             .iter()
-            .map(|r| sk.try_decrypt(r).unwrap())
+            .flat_map(|r| sk.try_decrypt(r))
             .collect_vec();
         let decrypted_vec = decrypted_pt
             .iter()
@@ -317,7 +315,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         )?;
 
         let pt = sk.try_decrypt(&ct).unwrap();
-        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2)).unwrap();
+        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
         let plaintext = transcode_to_bytes(&pt, ilog2(plaintext_modulus));
         let offset = index
             % number_elements_per_plaintext(

@@ -52,7 +52,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
     ) -> Result<Ciphertext> {
         let mut ct = self.c.clone();
         while ct.level != pt.level {
-            ct.mod_switch_to_next_level();
+            ct.mod_switch_to_next_level()?;
         }
 
         let ctx = self.par.ctx_at_level(ct.level)?;
