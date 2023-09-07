@@ -13,7 +13,7 @@ use fhe::bfv;
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
-use fhe_util::{ilog2, inverse, transcode_to_bytes};
+use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{rngs::OsRng, thread_rng, RngCore};
 use std::{env, error::Error, process::exit};
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Compute what is the maximum byte-length of an element to fit within one
     // ciphertext. Each coefficient of the ciphertext polynomial can contain
     // floor(log2(plaintext_modulus)) bits.
-    let max_element_size = (ilog2(plaintext_modulus) * degree) / 8;
+    let max_element_size = ((plaintext_modulus.ilog2() as usize) * degree) / 8;
 
     // This executable is a command line tool which enables to specify different
     // database and element sizes.
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // relinearization key.
     let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
         let sk = bfv::SecretKey::random(&params, &mut OsRng);
-        let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
+        let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("level = {level}");
         let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
             .enable_expansion(level)?
@@ -185,11 +185,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // to reduce the noise.
     let index = (thread_rng().next_u64() as usize) % database_size;
     let query = timeit!("Client query", {
-        let level = ilog2((dim1 + dim2).next_power_of_two() as u64);
+        let level = (dim1 + dim2).next_power_of_two().ilog2();
         let query_index = index
             / number_elements_per_plaintext(
                 params.degree(),
-                ilog2(plaintext_modulus),
+                plaintext_modulus.ilog2() as usize,
                 elements_size,
             );
         let mut pt = vec![0u64; dim1 + dim2];
@@ -246,11 +246,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let pt = sk.try_decrypt(&response)?;
         let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
-        let plaintext = transcode_to_bytes(&pt, ilog2(plaintext_modulus));
+        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
         let offset = index
             % number_elements_per_plaintext(
                 params.degree(),
-                ilog2(plaintext_modulus),
+                plaintext_modulus.ilog2() as usize,
                 elements_size,
             );
 

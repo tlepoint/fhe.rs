@@ -4,7 +4,7 @@
 
 use super::RnsContext;
 use crypto_bigint::U192;
-use fhe_util::{div_ceil, ilog2, U256};
+use fhe_util::{div_ceil, U256};
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
@@ -123,9 +123,9 @@ impl RnsScaler {
                 .iter()
                 .map(|qi| {
                     192 - 1
-                        - ilog2(
-                            ((*qi as u128) * (from.moduli_u64.len() as u128)).next_power_of_two(),
-                        )
+                        - ((*qi as u128) * (from.moduli_u64.len() as u128))
+                            .next_power_of_two()
+                            .ilog2()
                 })
                 .min()
                 .unwrap(),
@@ -160,7 +160,7 @@ impl RnsScaler {
             theta_omega_sign: theta_omega_sign.into_boxed_slice(),
             theta_garner_lo: theta_garner_lo.into_boxed_slice(),
             theta_garner_hi: theta_garner_hi.into_boxed_slice(),
-            theta_garner_shift,
+            theta_garner_shift: theta_garner_shift as usize,
         }
     }
 
