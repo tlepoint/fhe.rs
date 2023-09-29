@@ -15,7 +15,7 @@ use crate::{Error, Result};
 /// participate in the "Protocol 3: KeySwitch" protocol detailed in Multiparty BFV (p7).
 ///
 /// Note: it appears the MBFV paper assumes the output key is split into the same number of parties
-/// as the input key?
+/// as the input key.
 pub struct SecretKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The original input ciphertext
@@ -266,8 +266,7 @@ mod tests {
 
                     // Use it to encrypt a random polynomial ct1
                     let pt1 = Plaintext::try_encode(
-                        &[1u64],
-                        // &par.plaintext.random_vec(par.degree(), &mut rng),
+                        &par.plaintext.random_vec(par.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &par,
                     )
