@@ -54,6 +54,7 @@ impl PublicKeyShare {
         // Create p0_i share
         let mut p0_share = -crp.clone();
         p0_share.disallow_variable_time_computations();
+        p0_share.change_representation(Representation::Ntt);
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
 
