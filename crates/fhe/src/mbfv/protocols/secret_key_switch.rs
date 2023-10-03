@@ -82,14 +82,12 @@ impl SecretKeySwitchShare {
     }
 }
 
-impl Aggregate for SecretKeySwitchShare {
-    type Output = Ciphertext;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<SecretKeySwitchShare> for Ciphertext {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = SecretKeySwitchShare>,
     {
-        let mut shares = shares.into_iter();
+        let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let mut h = share.h_share;
         for sh in shares {
@@ -128,15 +126,13 @@ impl DecryptionShare {
     }
 }
 
-impl Aggregate for DecryptionShare {
-    type Output = Plaintext;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<DecryptionShare> for Plaintext {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = DecryptionShare>,
     {
-        let sks_shares = shares.into_iter().map(|s| s.sks_share);
-        let ct = SecretKeySwitchShare::aggregate(sks_shares)?;
+        let sks_shares = iter.into_iter().map(|s| s.sks_share);
+        let ct = Ciphertext::from_shares(sks_shares)?;
         let par = ct.par;
 
         // Note: during SKS, c[1]*sk has already been added to c[0].
@@ -182,8 +178,8 @@ mod tests {
     use rand::thread_rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Plaintext, SecretKey},
-        mbfv::{protocols::PublicKeyShare, Aggregate},
+        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        mbfv::{protocols::PublicKeyShare, Aggregate, AggregateIter},
     };
 
     use super::*;
@@ -216,9 +212,11 @@ mod tests {
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
                     }
-                    let public_key =
-                        PublicKeyShare::aggregate(parties.iter().map(|p| p.pk_share.clone()))
-                            .unwrap();
+                    let public_key: PublicKey = parties
+                        .iter()
+                        .map(|p| p.pk_share.clone())
+                        .aggregate()
+                        .unwrap();
 
                     // Use it to encrypt a random polynomial
                     let pt1 = Plaintext::try_encode(
@@ -232,8 +230,8 @@ mod tests {
                     // Parties perform a collective decryption
                     let decryption_shares = parties
                         .iter()
-                        .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng).unwrap());
-                    let pt2 = DecryptionShare::aggregate(decryption_shares).unwrap();
+                        .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng));
+                    let pt2 = Plaintext::from_shares(decryption_shares).unwrap();
 
                     assert_eq!(pt1, pt2);
                 }
@@ -263,8 +261,7 @@ mod tests {
                     }
 
                     let public_key =
-                        PublicKeyShare::aggregate(parties.iter().map(|p| p.pk_share.clone()))
-                            .unwrap();
+                        PublicKey::from_shares(parties.iter().map(|p| p.pk_share.clone())).unwrap();
 
                     // Use it to encrypt a random polynomial ct1
                     let pt1 = Plaintext::try_encode(
@@ -283,7 +280,7 @@ mod tests {
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         out_parties.push(Party { sk_share, pk_share })
                     }
-                    let skss: Vec<SecretKeySwitchShare> = parties
+                    let ct2 = parties
                         .iter()
                         .zip(out_parties.iter())
                         .map(|(ip, op)| {
@@ -293,17 +290,18 @@ mod tests {
                                 ct1.clone(),
                                 &mut rng,
                             )
-                            .unwrap()
                         })
-                        .collect();
-                    let ct2 = Arc::new(SecretKeySwitchShare::aggregate(skss).unwrap());
+                        .aggregate()
+                        .unwrap();
+                    let ct2 = Arc::new(ct2);
 
                     // The second set of parties then does a collective decryption
-                    let decryption_shares = out_parties
+                    let pt2 = out_parties
                         .iter()
-                        .map(|p| DecryptionShare::new(&p.sk_share, &ct2, &mut rng).unwrap());
+                        .map(|p| DecryptionShare::new(&p.sk_share, &ct2, &mut rng))
+                        .aggregate()
+                        .unwrap();
 
-                    let pt2 = DecryptionShare::aggregate(decryption_shares).unwrap();
                     assert_eq!(pt1, pt2);
                 }
             }
@@ -331,9 +329,11 @@ mod tests {
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
                     }
-                    let public_key =
-                        PublicKeyShare::aggregate(parties.iter().map(|p| p.pk_share.clone()))
-                            .unwrap();
+                    let public_key: PublicKey = parties
+                        .iter()
+                        .map(|p| p.pk_share.clone())
+                        .aggregate()
+                        .unwrap();
 
                     // Parties encrypt two plaintexts
                     let a = par.plaintext.random_vec(par.degree(), &mut rng);
@@ -352,10 +352,11 @@ mod tests {
                     let ct = Arc::new(&ct_a + &ct_b);
 
                     // Parties perform a collective decryption
-                    let decryption_shares = parties
+                    let pt = parties
                         .iter()
-                        .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng).unwrap());
-                    let pt = DecryptionShare::aggregate(decryption_shares).unwrap();
+                        .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng))
+                        .aggregate()
+                        .unwrap();
 
                     assert_eq!(
                         Vec::<u64>::try_decode(&pt, Encoding::poly_at_level(level)).unwrap(),

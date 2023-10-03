@@ -82,14 +82,12 @@ impl PublicKeySwitchShare {
     }
 }
 
-impl Aggregate for PublicKeySwitchShare {
-    type Output = Ciphertext;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<PublicKeySwitchShare> for Ciphertext {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = PublicKeySwitchShare>,
     {
-        let mut shares = shares.into_iter();
+        let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let mut h0 = share.h0_share;
         let mut h1 = share.h1_share;
@@ -114,7 +112,7 @@ mod tests {
 
     use crate::{
         bfv::{BfvParameters, Encoding, Plaintext, SecretKey},
-        mbfv::{protocols::PublicKeyShare, Aggregate},
+        mbfv::{aggregator::AggregateIter, protocols::PublicKeyShare},
     };
 
     use super::*;
@@ -147,9 +145,11 @@ mod tests {
                         parties.push(Party { sk_share, pk_share })
                     }
 
-                    let public_key =
-                        PublicKeyShare::aggregate(parties.iter().map(|p| p.pk_share.clone()))
-                            .unwrap();
+                    let public_key: PublicKey = parties
+                        .iter()
+                        .map(|p| p.pk_share.clone())
+                        .aggregate()
+                        .unwrap();
 
                     // Use it to encrypt a random polynomial ct1
                     let pt1 = Plaintext::try_encode(
@@ -163,10 +163,11 @@ mod tests {
                     // Key switch ct1 to a new keypair
                     let sk_out = SecretKey::random(&par, &mut rng);
                     let pk_out = PublicKey::new(&sk_out, &mut rng);
-                    let pkss = parties.iter().map(|p| {
-                        PublicKeySwitchShare::new(&p.sk_share, &pk_out, &ct1, &mut rng).unwrap()
-                    });
-                    let ct2 = PublicKeySwitchShare::aggregate(pkss).unwrap();
+                    let ct2 = parties
+                        .iter()
+                        .map(|p| PublicKeySwitchShare::new(&p.sk_share, &pk_out, &ct1, &mut rng))
+                        .aggregate()
+                        .unwrap();
 
                     let pt2 = sk_out.try_decrypt(&ct2).unwrap();
                     assert_eq!(pt1, pt2);

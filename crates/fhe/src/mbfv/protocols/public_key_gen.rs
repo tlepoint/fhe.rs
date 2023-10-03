@@ -62,14 +62,12 @@ impl PublicKeyShare {
     }
 }
 
-impl Aggregate for PublicKeyShare {
-    type Output = PublicKey;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<PublicKeyShare> for PublicKey {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = PublicKeyShare>,
     {
-        let mut shares = shares.into_iter();
+        let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let mut p0 = share.p0_share;
         for sh in shares {
@@ -117,7 +115,7 @@ mod tests {
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         pk_shares.push(pk_share);
                     }
-                    let public_key = PublicKeyShare::aggregate(pk_shares).unwrap();
+                    let public_key = PublicKey::from_shares(pk_shares).unwrap();
 
                     // Use it to encrypt a random polynomial
                     let pt = Plaintext::try_encode(

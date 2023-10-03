@@ -43,9 +43,7 @@ pub struct RelinKeyShare<R: Round = R1> {
     pub(crate) par: Arc<BfvParameters>,
     pub(crate) h0: Box<[Poly]>,
     pub(crate) h1: Box<[Poly]>,
-    // This is a hack to get this done quickly. The `Aggregate` pattern
-    // doesn't really work for this protocol, it should be revised.
-    last_round: Option<Box<RelinKeyShare<R1Aggregated>>>,
+    last_round: Option<Arc<RelinKeyShare<R1Aggregated>>>,
     _phantom_data: PhantomData<R>,
 }
 
@@ -85,7 +83,7 @@ impl<'a, 'b> RelinKeyGenerator<'a, 'b> {
     /// Generate shares for round 2
     pub fn round_2<R: RngCore + CryptoRng>(
         &self,
-        r1: &RelinKeyShare<R1Aggregated>,
+        r1: &Arc<RelinKeyShare<R1Aggregated>>,
         rng: &mut R,
     ) -> Result<RelinKeyShare<R2>> {
         <RelinKeyShare<R2>>::new(self.sk_share, &self.u, r1, rng)
@@ -188,14 +186,12 @@ impl RelinKeyShare<R1> {
     }
 }
 
-impl Aggregate for RelinKeyShare<R1> {
-    type Output = RelinKeyShare<R1Aggregated>;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<RelinKeyShare<R1>> for RelinKeyShare<R1Aggregated> {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = RelinKeyShare<R1>>,
     {
-        let mut shares = shares.into_iter();
+        let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let mut h0 = share.h0;
         let mut h1 = share.h1;
@@ -218,7 +214,7 @@ impl RelinKeyShare<R2> {
     fn new<R: RngCore + CryptoRng>(
         sk_share: &SecretKey,
         u: &Zeroizing<Poly>,
-        r1: &RelinKeyShare<R1Aggregated>,
+        r1: &Arc<RelinKeyShare<R1Aggregated>>,
         rng: &mut R,
     ) -> Result<Self> {
         let par = sk_share.par.clone();
@@ -228,7 +224,7 @@ impl RelinKeyShare<R2> {
             par,
             h0,
             h1,
-            last_round: Some(Box::new(r1.clone())),
+            last_round: Some(Arc::clone(r1)),
             _phantom_data: PhantomData,
         })
     }
@@ -299,14 +295,12 @@ impl RelinKeyShare<R2> {
     }
 }
 
-impl Aggregate for RelinKeyShare<R2> {
-    type Output = RelinearizationKey;
-
-    fn aggregate<I>(shares: I) -> Result<Self::Output>
+impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
+    fn from_shares<T>(iter: T) -> Result<Self>
     where
-        I: IntoIterator<Item = Self>,
+        T: IntoIterator<Item = RelinKeyShare<R2>>,
     {
-        let mut shares = shares.into_iter();
+        let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let par = share.par.clone();
         let ctx = par.ctx_at_level(0)?.clone();
@@ -331,7 +325,7 @@ impl Aggregate for RelinKeyShare<R2> {
             c0.change_representation(Representation::NttShoup);
         });
 
-        let mut c1 = r1.h1;
+        let mut c1 = r1.h1.clone();
         c1.iter_mut().for_each(|c1| {
             c1.change_representation(Representation::NttShoup);
         });
@@ -365,8 +359,11 @@ mod tests {
     use rand::thread_rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Multiplicator, Plaintext},
-        mbfv::protocols::{DecryptionShare, PublicKeyShare},
+        bfv::{BfvParameters, Encoding, Multiplicator, Plaintext, PublicKey},
+        mbfv::{
+            protocols::{DecryptionShare, PublicKeyShare},
+            AggregateIter,
+        },
     };
 
     const NUM_PARTIES: usize = 5;
@@ -401,6 +398,7 @@ mod tests {
                     party_sks.push(sk_share);
                 }
 
+                // TODO figure out why this doesn't work with larger coefficients
                 let crp_pk = Poly::small(
                     par.ctx_at_level(level).unwrap(),
                     Representation::Ntt,
@@ -408,12 +406,6 @@ mod tests {
                     &mut rng,
                 )
                 .unwrap();
-                // TODO why doesn't this work?
-                // let crp_pk = Poly::random(
-                //     par.ctx_at_level(level).unwrap(),
-                //     Representation::Ntt,
-                //     &mut rng,
-                // );
                 (0..NUM_PARTIES).for_each(|i| {
                     let pk_share =
                         PublicKeyShare::new(&party_sks[i], crp_pk.clone(), &mut rng).unwrap();
@@ -424,21 +416,23 @@ mod tests {
                 });
 
                 // Aggregate pk shares into public key
-                let public_key = PublicKeyShare::aggregate(party_pks).unwrap();
+                let public_key = PublicKey::from_shares(party_pks).unwrap();
 
                 // Aggregate rlk r1 shares
-                let rlk_r1 = RelinKeyShare::aggregate(
-                    party_rlks.iter().map(|g| g.round_1(&mut rng).unwrap()),
-                )
-                .unwrap();
-
-                // Aggregate rlk r2 shares into relin key
-                let rlk = <RelinKeyShare<R2>>::aggregate(
+                let rlk_r1 = Arc::new(
                     party_rlks
                         .iter()
-                        .map(|g| g.round_2(&rlk_r1, &mut rng).unwrap()),
-                )
-                .unwrap();
+                        .map(|g| g.round_1(&mut rng))
+                        .aggregate()
+                        .unwrap(),
+                );
+
+                // Aggregate rlk r2 shares into relin key
+                let rlk = party_rlks
+                    .iter()
+                    .map(|g| g.round_2(&rlk_r1, &mut rng))
+                    .aggregate()
+                    .unwrap();
 
                 // Create a couple random encrypted polynomials
                 let v1 = par.plaintext.random_vec(par.degree(), &mut rng);
@@ -457,10 +451,12 @@ mod tests {
                 assert_eq!(ct.c.len(), 2);
 
                 // Parties perform a collective decryption
-                let decryption_shares = party_sks
+                let pt = party_sks
                     .iter()
-                    .map(|s| DecryptionShare::new(s, &ct, &mut rng).unwrap());
-                let pt = DecryptionShare::aggregate(decryption_shares).unwrap();
+                    .map(|s| DecryptionShare::new(s, &ct, &mut rng))
+                    .aggregate()
+                    .unwrap();
+
                 let mut expected = v1.clone();
                 par.plaintext.mul_vec(&mut expected, &v2);
                 assert_eq!(
