@@ -1,14 +1,12 @@
 //! Public keys for the BFV encryption scheme
 
 use crate::bfv::traits::TryConvertFrom;
-use crate::bfv::{
-    proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto},
-    BfvParameters, Ciphertext, Encoding, Plaintext,
-};
+use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext};
+use crate::proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto};
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
-use protobuf::{Message, MessageField};
+use prost::Message;
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -99,15 +97,15 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
 
 impl From<&PublicKey> for PublicKeyProto {
     fn from(pk: &PublicKey) -> Self {
-        let mut proto = PublicKeyProto::new();
-        proto.c = MessageField::some(CiphertextProto::from(&pk.c));
-        proto
+        PublicKeyProto {
+            c: Some(CiphertextProto::from(&pk.c)),
+        }
     }
 }
 
 impl Serialize for PublicKey {
     fn to_bytes(&self) -> Vec<u8> {
-        PublicKeyProto::from(self).write_to_bytes().unwrap()
+        PublicKeyProto::from(self).encode_to_vec()
     }
 }
 
@@ -115,8 +113,8 @@ impl DeserializeParametrized for PublicKey {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
-        let proto =
-            PublicKeyProto::parse_from_bytes(bytes).map_err(|_| Error::SerializationError)?;
+        let proto: PublicKeyProto =
+            Message::decode(bytes).map_err(|_| Error::SerializationError)?;
         if proto.c.is_some() {
             let mut c = Ciphertext::try_convert_from(&proto.c.unwrap(), par)?;
             if c.level != 0 {

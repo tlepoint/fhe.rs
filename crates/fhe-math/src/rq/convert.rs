@@ -2,13 +2,12 @@
 
 use super::{traits::TryConvertFrom, Context, Poly, Representation};
 use crate::{
-    proto::rq::{rq, Rq},
+    proto::rq::{Representation as RepresentationProto, Rq},
     Error, Result,
 };
 use itertools::{izip, Itertools};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
-use protobuf::EnumOrUnknown;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -16,16 +15,16 @@ impl From<&Poly> for Rq {
     fn from(p: &Poly) -> Self {
         assert!(!p.has_lazy_coefficients);
 
-        let mut proto = Rq::new();
+        let mut proto = Rq::default();
         match p.representation {
             Representation::PowerBasis => {
-                proto.representation = EnumOrUnknown::new(rq::Representation::POWERBASIS);
+                proto.representation = RepresentationProto::Powerbasis as i32;
             }
             Representation::Ntt => {
-                proto.representation = EnumOrUnknown::new(rq::Representation::NTT);
+                proto.representation = RepresentationProto::Ntt as i32;
             }
             Representation::NttShoup => {
-                proto.representation = EnumOrUnknown::new(rq::Representation::NTTSHOUP);
+                proto.representation = RepresentationProto::Nttshoup as i32;
             }
         }
         let mut serialization_length = 0;
@@ -149,11 +148,14 @@ impl TryConvertFrom<&Rq> for Poly {
     where
         R: Into<Option<Representation>>,
     {
-        let repr = value.representation.enum_value_or_default();
+        let repr = value
+            .representation
+            .try_into()
+            .map_err(|_| Error::Default("Invalid representation".to_string()))?;
         let representation_from_proto = match repr {
-            rq::Representation::POWERBASIS => Representation::PowerBasis,
-            rq::Representation::NTT => Representation::Ntt,
-            rq::Representation::NTTSHOUP => Representation::NttShoup,
+            RepresentationProto::Powerbasis => Representation::PowerBasis,
+            RepresentationProto::Ntt => Representation::Ntt,
+            RepresentationProto::Nttshoup => Representation::NttShoup,
             _ => return Err(Error::Default("Unknown representation".to_string())),
         };
 

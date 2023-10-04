@@ -1,14 +1,13 @@
 //! Ciphertext type in the BFV encryption scheme.
 
-use crate::bfv::{
-    parameters::BfvParameters, proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom,
-};
+use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
+use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{
     DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
 };
-use protobuf::Message;
+use prost::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
@@ -105,13 +104,13 @@ impl FheParametrized for Ciphertext {
 
 impl Serialize for Ciphertext {
     fn to_bytes(&self) -> Vec<u8> {
-        CiphertextProto::from(self).write_to_bytes().unwrap()
+        CiphertextProto::from(self).encode_to_vec()
     }
 }
 
 impl DeserializeParametrized for Ciphertext {
     fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
-        if let Ok(ctp) = CiphertextProto::parse_from_bytes(bytes) {
+        if let Ok(ctp) = Message::decode(bytes) {
             Ciphertext::try_convert_from(&ctp, par)
         } else {
             Err(Error::SerializationError)
@@ -136,7 +135,7 @@ impl Ciphertext {
 /// Conversions from and to protobuf.
 impl From<&Ciphertext> for CiphertextProto {
     fn from(ct: &Ciphertext) -> Self {
-        let mut proto = CiphertextProto::new();
+        let mut proto = CiphertextProto::default();
         for i in 0..ct.c.len() - 1 {
             proto.c.push(ct.c[i].to_bytes())
         }
@@ -195,9 +194,9 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 #[cfg(test)]
 mod tests {
     use crate::bfv::{
-        proto::bfv::Ciphertext as CiphertextProto, traits::TryConvertFrom, BfvParameters,
-        Ciphertext, Encoding, Plaintext, SecretKey,
+        traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
     };
+    use crate::proto::bfv::Ciphertext as CiphertextProto;
     use fhe_traits::FheDecrypter;
     use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
     use rand::thread_rng;

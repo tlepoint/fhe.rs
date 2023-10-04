@@ -3,19 +3,16 @@
 use std::sync::Arc;
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::bfv::{
-    proto::bfv::{
-        KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
-    },
-    traits::TryConvertFrom,
-    BfvParameters, Ciphertext, SecretKey,
+use crate::bfv::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::proto::bfv::{
+    KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
 use crate::{Error, Result};
 use fhe_math::rq::{
     switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
 };
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use protobuf::{Message, MessageField};
+use prost::Message;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -114,19 +111,15 @@ impl RelinearizationKey {
 
 impl From<&RelinearizationKey> for RelinearizationKeyProto {
     fn from(value: &RelinearizationKey) -> Self {
-        let mut rk = RelinearizationKeyProto::new();
-        rk.ksk = MessageField::some(KeySwitchingKeyProto::from(&value.ksk));
-        rk
+        RelinearizationKeyProto {
+            ksk: Some(KeySwitchingKeyProto::from(&value.ksk)),
+        }
     }
 }
 
 impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
     fn try_convert_from(value: &RelinearizationKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-        if par.moduli.len() == 1 {
-            Err(Error::DefaultError(
-                "Invalid parameters for a relinearization key".to_string(),
-            ))
-        } else if value.ksk.is_some() {
+        if value.ksk.is_some() {
             Ok(RelinearizationKey {
                 ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
             })
@@ -138,9 +131,7 @@ impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
 
 impl Serialize for RelinearizationKey {
     fn to_bytes(&self) -> Vec<u8> {
-        RelinearizationKeyProto::from(self)
-            .write_to_bytes()
-            .unwrap()
+        RelinearizationKeyProto::from(self).encode_to_vec()
     }
 }
 
@@ -152,7 +143,7 @@ impl DeserializeParametrized for RelinearizationKey {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
-        let rk = RelinearizationKeyProto::parse_from_bytes(bytes);
+        let rk = Message::decode(bytes);
         if let Ok(rk) = rk {
             RelinearizationKey::try_convert_from(&rk, par)
         } else {
@@ -164,10 +155,8 @@ impl DeserializeParametrized for RelinearizationKey {
 #[cfg(test)]
 mod tests {
     use super::RelinearizationKey;
-    use crate::bfv::{
-        proto::bfv::RelinearizationKey as RelinearizationKeyProto, traits::TryConvertFrom,
-        BfvParameters, Ciphertext, Encoding, SecretKey,
-    };
+    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, SecretKey};
+    use crate::proto::bfv::RelinearizationKey as RelinearizationKeyProto;
     use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
     use fhe_traits::{FheDecoder, FheDecrypter};
     use rand::thread_rng;
@@ -231,8 +220,8 @@ mod tests {
     fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [BfvParameters::default_arc(5, 8)] {
-            for ciphertext_level in 0..3 {
-                for key_level in 0..ciphertext_level {
+            for ciphertext_level in 0..params.max_level() {
+                for key_level in 0..=ciphertext_level {
                     for _ in 0..10 {
                         let sk = SecretKey::random(&params, &mut rng);
                         let rk = RelinearizationKey::new_leveled(
