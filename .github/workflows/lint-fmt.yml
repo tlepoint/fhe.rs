@@ -23,7 +23,6 @@ jobs:
           toolchain: nightly
           override: true
           components: rustfmt
-      - run: rustup component add rustfmt
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -43,7 +42,7 @@ jobs:
           toolchain: stable
           override: true
           components: clippy
-      - run: rustup component add clippy
+      - uses: arduino/setup-protoc@v2
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
