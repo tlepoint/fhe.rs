@@ -5,7 +5,6 @@ use fhe_math::{
     rq::{scaler::Scaler, Context, Representation},
     zq::primes::generate_prime,
 };
-use fhe_util::div_ceil;
 use num_bigint::BigUint;
 
 use crate::{
@@ -106,7 +105,7 @@ impl Multiplicator {
         let modulus_size = rk.ksk.par.moduli_sizes()[..ctx.moduli().len()]
             .iter()
             .sum::<usize>();
-        let n_moduli = div_ceil(modulus_size + 60, 62);
+        let n_moduli = (modulus_size + 60).div_ceil(62);
 
         let mut extended_basis = Vec::with_capacity(ctx.moduli().len() + n_moduli);
         extended_basis.append(&mut ctx.moduli().to_vec());
