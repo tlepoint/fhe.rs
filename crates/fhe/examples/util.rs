@@ -30,7 +30,11 @@ pub mod timeit {
     #[allow(unused_macros)]
     macro_rules! timeit {
         ($name:expr, $code:expr) => {{
-            timeit_n!($name, 1, $code)
+            use util::DisplayDuration;
+            let start = std::time::Instant::now();
+            let r = $code;
+            println!("⏱  {}: {}", $name, DisplayDuration(start.elapsed()));
+            r
         }};
     }
 

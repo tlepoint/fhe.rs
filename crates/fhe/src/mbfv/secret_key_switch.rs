@@ -1,21 +1,27 @@
 use std::sync::Arc;
 
-use fhe_math::rq::traits::TryConvertFrom;
-use fhe_math::rq::{Poly, Representation};
-use fhe_math::zq::Modulus;
+use fhe_math::{
+    rq::{traits::TryConvertFrom, Poly, Representation},
+    zq::Modulus,
+};
 use itertools::Itertools;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
-use crate::mbfv::Aggregate;
 use crate::{Error, Result};
 
-/// Each party uses the `SecretKeySwitchShare` to generate their share of the new ciphertext and
-/// participate in the "Protocol 3: KeySwitch" protocol detailed in Multiparty BFV (p7).
+use super::Aggregate;
+
+/// A party's share in the secret key switch protocol.
 ///
-/// Note: it appears the MBFV paper assumes the output key is split into the same number of parties
-/// as the input key.
+/// Each party uses the `SecretKeySwitchShare` to generate their share of the new ciphertext and
+/// participate in the "Protocol 3: KeySwitch" protocol detailed in [Multiparty
+/// BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the
+/// shares into a [`Ciphertext`].
+///
+/// Note: this protocol assumes the output key is split into the same number of parties as the
+/// input key, and is likely only useful for niche scenarios.
 pub struct SecretKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The original input ciphertext
@@ -29,8 +35,8 @@ impl SecretKeySwitchShare {
     ///
     /// 1. *Private input*: BFV input secret key share
     /// 2. *Private input*: BFV output secret key share
-    /// 3. *Public input*: Ciphertext
-    /// 4. *Public input*: TODO: variance of the ciphertext noise
+    /// 3. *Public input*: Input ciphertext to keyswitch
+    // 4. *Public input*: TODO: variance of the ciphertext noise
     pub fn new<R: RngCore + CryptoRng>(
         sk_input_share: &SecretKey,
         sk_output_share: &SecretKey,
@@ -101,19 +107,22 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
     }
 }
 
-/// Each party uses the `DecryptionShare` to generate their share of the decrypted ciphertext.
+/// A party's share in the decryption protocol.
 ///
-/// This is the same thing as the `SecretKeySwitchShare` protocol, just with an output key of zero.
+/// Each party uses the `DecryptionShare` to generate their share of the plaintext output. Note
+/// that this is a special case of the "Protocol 3: KeySwitch" protocol detailed in [Multiparty
+/// BFV](https://eprint.iacr.org/2020/304.pdf) (p7), using an output key of zero. Use the
+/// [`Aggregate`] impl to combine the shares into a [`Plaintext`].
 pub struct DecryptionShare {
     pub(crate) sks_share: SecretKeySwitchShare,
 }
 
 impl DecryptionShare {
-    /// Participate in a new Decryption protocol (i.e. KeySwitch protocol with a zero output key).
+    /// Participate in a new Decryption protocol.
     ///
     /// 1. *Private input*: BFV input secret key share
-    /// 3. *Public input*: Ciphertext
-    /// 4. *Public input*: TODO: variance of the ciphertext noise
+    /// 3. *Public input*: Ciphertext to decrypt
+    // 4. *Public input*: TODO: variance of the ciphertext noise
     pub fn new<R: RngCore + CryptoRng>(
         sk_input_share: &SecretKey,
         ct: &Arc<Ciphertext>,
@@ -173,13 +182,12 @@ impl Aggregate<DecryptionShare> for Plaintext {
 mod tests {
     use std::sync::Arc;
 
-    use fhe_math::rq::{Poly, Representation};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
     use rand::thread_rng;
 
     use crate::{
         bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
-        mbfv::{protocols::PublicKeyShare, Aggregate, AggregateIter},
+        mbfv::{Aggregate, AggregateIter, CommonRandomPoly, PublicKeyShare},
     };
 
     use super::*;
@@ -200,8 +208,7 @@ mod tests {
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
-                    let crp =
-                        Poly::random(par.ctx_at_level(0).unwrap(), Representation::Ntt, &mut rng);
+                    let crp = CommonRandomPoly::new(&par, &mut rng).unwrap();
 
                     let mut parties: Vec<Party> = vec![];
 
@@ -248,8 +255,7 @@ mod tests {
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
-                    let crp =
-                        Poly::random(par.ctx_at_level(0).unwrap(), Representation::Ntt, &mut rng);
+                    let crp = CommonRandomPoly::new(&par, &mut rng).unwrap();
 
                     // Parties collectively generate public key
                     let mut parties: Vec<Party> = vec![];
@@ -317,8 +323,7 @@ mod tests {
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
-                    let crp =
-                        Poly::random(par.ctx_at_level(0).unwrap(), Representation::Ntt, &mut rng);
+                    let crp = CommonRandomPoly::new(&par, &mut rng).unwrap();
 
                     let mut parties: Vec<Party> = vec![];
 
