@@ -2,7 +2,6 @@ use std::{cmp::min, sync::Arc};
 
 use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
 use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
-use fhe_util::div_ceil;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
@@ -47,7 +46,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
             return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
         }
         let ctx = par.ctx_at_level(encoding.level)?;
-        let num_plaintexts = div_ceil(value.len(), par.degree());
+        let num_plaintexts = value.len().div_ceil(par.degree());
 
         Ok(PlaintextVec(
             (0..num_plaintexts)
@@ -91,7 +90,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
             return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
         }
         let ctx = par.ctx_at_level(encoding.level)?;
-        let num_plaintexts = div_ceil(value.len(), par.degree());
+        let num_plaintexts = value.len().div_ceil(par.degree());
 
         Ok(PlaintextVec(
             (0..num_plaintexts)

@@ -15,7 +15,7 @@ use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
 };
-use fhe_util::{div_ceil, inverse, transcode_bidirectional, transcode_to_bytes};
+use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, RngCore};
@@ -227,10 +227,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let fold = dot_products
             .iter()
             .map(|c| {
-                let mut pt_values = Vec::with_capacity(div_ceil(
-                    2 * (params.degree() * (64 - params.moduli()[0].leading_zeros() as usize)),
-                    plaintext_modulus.ilog2() as usize,
-                ));
+                let mut pt_values = Vec::with_capacity(
+                    2 * (params.degree() * (64 - params.moduli()[0].leading_zeros() as usize))
+                        .div_ceil(plaintext_modulus.ilog2() as usize),
+                );
                 pt_values.append(&mut transcode_bidirectional(
                     c.get(0).unwrap().coefficients().as_slice().unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
@@ -285,10 +285,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .iter()
             .flat_map(|pt| Vec::<u64>::try_decode(pt, bfv::Encoding::poly_at_level(2)).unwrap())
             .collect_vec();
-        let expect_ncoefficients = div_ceil(
-            params.degree() * (64 - params.moduli()[0].leading_zeros() as usize),
-            plaintext_modulus.ilog2() as usize,
-        );
+        let expect_ncoefficients = (params.degree()
+            * (64 - params.moduli()[0].leading_zeros() as usize))
+            .div_ceil(plaintext_modulus.ilog2() as usize);
         assert!(decrypted_vec.len() >= 2 * expect_ncoefficients);
         let mut poly0 = transcode_bidirectional(
             &decrypted_vec[..expect_ncoefficients],
