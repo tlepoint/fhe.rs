@@ -4,7 +4,7 @@
 
 use super::RnsContext;
 use crypto_bigint::U192;
-use fhe_util::U256;
+use ethnum::u256;
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
@@ -270,7 +270,8 @@ impl RnsScaler {
         let mut w_sign = false;
         let mut w = 0u128;
         if !self.scaling_factor.is_one {
-            let mut sum_theta_omega = U256::zero();
+            let mut sum_theta_omega = u256::ZERO;
+            let u64_max = u64::MAX as u128;
             for (thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
                 self.theta_omega_lo.iter(),
                 self.theta_omega_hi.iter(),
@@ -280,19 +281,11 @@ impl RnsScaler {
                 let lo = (*ri as u128) * (*thetao_lo as u128);
                 let hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
                 if *thetao_sign {
-                    sum_theta_omega.wrapping_sub_assign(U256::from([
-                        lo as u64,
-                        hi as u64,
-                        (hi >> 64) as u64,
-                        0,
-                    ]));
+                    sum_theta_omega = sum_theta_omega
+                        .wrapping_sub(u256::from_words(hi >> 64, (lo & u64_max) | (hi << 64)))
                 } else {
-                    sum_theta_omega.wrapping_add_assign(U256::from([
-                        lo as u64,
-                        hi as u64,
-                        (hi >> 64) as u64,
-                        0,
-                    ]));
+                    sum_theta_omega = sum_theta_omega
+                        .wrapping_add(u256::from_words(hi >> 64, (lo & u64_max) | (hi << 64)))
                 }
             }
 
@@ -305,29 +298,25 @@ impl RnsScaler {
                 (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
             let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
             if self.theta_gamma_sign {
-                sum_theta_omega.wrapping_add_assign(U256::from([
-                    vt_lo_lo as u64,
-                    vt_mi as u64,
-                    vt_hi as u64,
-                    0,
-                ]))
+                sum_theta_omega = sum_theta_omega.wrapping_add(u256::from_words(
+                    vt_hi,
+                    (vt_lo_lo & u64_max) | (vt_mi << 64),
+                ))
             } else {
-                sum_theta_omega.wrapping_sub_assign(U256::from([
-                    vt_lo_lo as u64,
-                    vt_mi as u64,
-                    vt_hi as u64,
-                    0,
-                ]))
+                sum_theta_omega = sum_theta_omega.wrapping_sub(u256::from_words(
+                    vt_hi,
+                    (vt_lo_lo & u64_max) | (vt_mi << 64),
+                ))
             }
 
-            // Let's compute w = round(sum_theta_omega / 2^127).
-            w_sign = sum_theta_omega.msb() > 0;
+            // Let's compute w = round(sum_theta_omega / 2^(192)).
+            w_sign = (sum_theta_omega >> (63 + 128)) > u256::ZERO;
 
             if w_sign {
-                w = u128::from(&((!sum_theta_omega) >> 126)) + 1;
+                w = ((!sum_theta_omega) >> 126isize).as_u128() + 1;
                 w /= 2;
             } else {
-                w = u128::from(&(sum_theta_omega >> 126));
+                w = (sum_theta_omega >> 126isize).as_u128();
                 w = w.div_ceil(2)
             }
         }

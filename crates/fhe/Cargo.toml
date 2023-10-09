@@ -12,9 +12,9 @@ version.workspace = true
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-fhe-math = { version = "^0.1.0-beta.5", path = "../fhe-math" }
-fhe-traits = { version = "^0.1.0-beta.5", path = "../fhe-traits" }
-fhe-util = { version = "^0.1.0-beta.5", path = "../fhe-util" }
+fhe-math = { version = "^0.1.0-beta.6", path = "../fhe-math" }
+fhe-traits = { version = "^0.1.0-beta.6", path = "../fhe-traits" }
+fhe-util = { version = "^0.1.0-beta.6", path = "../fhe-util" }
 
 itertools.workspace = true
 num-bigint.workspace = true

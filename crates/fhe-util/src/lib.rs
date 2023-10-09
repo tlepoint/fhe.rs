@@ -5,12 +5,9 @@
 //! Utilities for the fhe.rs library.
 
 #[cfg(test)]
-#[macro_use]
 extern crate proptest;
 
-mod u256;
 use rand::{CryptoRng, RngCore};
-pub use u256::U256;
 
 use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
