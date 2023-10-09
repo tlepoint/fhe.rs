@@ -336,7 +336,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "fhe"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 dependencies = [
  "console",
  "criterion",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 dependencies = [
  "criterion",
  "crypto-bigint",
@@ -383,14 +383,14 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 dependencies = [
  "rand",
 ]
 
 [[package]]
 name = "fhe-util"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 dependencies = [
  "itertools 0.11.0",
  "num-bigint-dig",
@@ -678,9 +678,9 @@ dependencies = [
 
 [[package]]
 name = "num-traits"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f30b0abd723be7e2ffca1272140fac1a2f084c77ec3e123c192b66af1ee9e6c2"
+checksum = "39e3200413f237f41ab11ad6d161bc7239c84dcb631773ccd7de3dfe4b5c267c"
 dependencies = [
  "autocfg",
  "libm",
