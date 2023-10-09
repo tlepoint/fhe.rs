@@ -16,6 +16,7 @@ fhe-traits = { version = "^0.1.0-beta.6", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.6", path = "../fhe-util" }
 
 crypto-bigint.workspace = true
+ethnum.workspace = true
 itertools.workspace = true
 ndarray.workspace = true
 num-bigint.workspace = true

@@ -329,6 +329,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ethnum"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c8ff382b2fa527fb7fb06eeebfc5bbb3f17e3cc6b9d70b006c41daa8824adac"
+
+[[package]]
 name = "fastrand"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -364,6 +370,7 @@ version = "0.1.0-beta.6"
 dependencies = [
  "criterion",
  "crypto-bigint",
+ "ethnum",
  "fhe-traits",
  "fhe-util",
  "itertools 0.11.0",
