@@ -48,6 +48,7 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    println!("env!(\"OUT_DIR\") = {}", env!("OUT_DIR"));
     let degree = 4096usize;
     let plaintext_modulus = 2056193u64;
     let moduli_sizes = [36, 36, 37];
