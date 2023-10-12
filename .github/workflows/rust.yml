@@ -27,7 +27,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: arduino/setup-protoc@v2
       - uses: actions-rs/cargo@v1
         with:
           command: check
@@ -45,7 +44,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: arduino/setup-protoc@v2
       - uses: actions-rs/cargo@v1
         with:
           command: test
@@ -63,7 +61,6 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-      - uses: arduino/setup-protoc@v2
       - uses: actions-rs/cargo@v1
         with:
           command: test
