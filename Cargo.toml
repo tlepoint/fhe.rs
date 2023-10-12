@@ -8,7 +8,7 @@ authors = ["Tancrède Lepoint"]
 documentation = "https://fhe.rs"
 edition = "2021"
 repository = "https://github.com/tlepoint/fhe.rs"
-version = "0.1.0-beta.6"
+version = "0.1.0-beta.7"
 license-file = "LICENSE"
 
 [workspace.dependencies]
