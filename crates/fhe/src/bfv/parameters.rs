@@ -3,9 +3,10 @@
 use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
+    ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
     rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
-    zq::{ntt::NttOperator, primes::generate_prime, Modulus},
+    zq::{primes::generate_prime, Modulus},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;

@@ -1,21 +1,8 @@
-//! Number-Theoretic Transform in ZZ_q.
-
-use super::Modulus;
-use fhe_util::is_prime;
+use crate::zq::Modulus;
 use itertools::Itertools;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::iter::successors;
-
-/// Returns whether a modulus p is prime and supports the Number Theoretic
-/// Transform of size n.
-///
-/// Aborts if n is not a power of 2 that is >= 8.
-pub fn supports_ntt(p: u64, n: usize) -> bool {
-    assert!(n >= 8 && n.is_power_of_two());
-
-    p % ((n as u64) << 1) == 1 && is_prime(p)
-}
 
 /// Number-Theoretic Transform operator.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +25,7 @@ impl NttOperator {
     /// Returns None if the modulus does not support the NTT for this specific
     /// size.
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
-        if !supports_ntt(p.p, size) {
+        if !super::supports_ntt(p.p, size) {
             None
         } else {
             let size_inv = p.inv(size as u64)?;
@@ -179,7 +166,7 @@ impl NttOperator {
     /// This function assumes that a_ptr points to at least `size` elements.
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
-    pub unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
+    pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
         let mut l = self.size >> 1;
         let mut m = 1;
         let mut k = 1;
@@ -363,7 +350,7 @@ impl NttOperator {
     ///
     /// Aborts if p is not prime or n is not a power of 2 that is >= 8.
     fn primitive_root(n: usize, p: &Modulus) -> u64 {
-        debug_assert!(supports_ntt(p.p, n));
+        debug_assert!(super::supports_ntt(p.p, n));
 
         let lambda = (p.p - 1) / (2 * n as u64);
 
@@ -385,100 +372,10 @@ impl NttOperator {
     /// Aborts if a >= p in debug mode.
     fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
         debug_assert!(a < p.p);
-        debug_assert!(supports_ntt(p.p, n >> 1)); // TODO: This is not exactly the right condition here.
+        debug_assert!(super::supports_ntt(p.p, n >> 1)); // TODO: This is not exactly the right condition here.
 
         // A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
         // for all prime p dividing n.
         (p.pow(a, n as u64) == 1) && (p.pow(a, (n / 2) as u64) != 1)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rand::thread_rng;
-
-    use super::{supports_ntt, NttOperator};
-    use crate::zq::Modulus;
-
-    #[test]
-    fn constructor() {
-        for size in [8, 1024] {
-            for p in [1153, 4611686018326724609] {
-                let q = Modulus::new(p).unwrap();
-                let supports_ntt = supports_ntt(p, size);
-
-                let op = NttOperator::new(&q, size);
-
-                if supports_ntt {
-                    assert!(op.is_some());
-                } else {
-                    assert!(op.is_none());
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn bijection() {
-        let ntests = 100;
-        let mut rng = thread_rng();
-
-        for size in [8, 1024] {
-            for p in [1153, 4611686018326724609] {
-                let q = Modulus::new(p).unwrap();
-
-                if supports_ntt(p, size) {
-                    let op = NttOperator::new(&q, size).unwrap();
-
-                    for _ in 0..ntests {
-                        let mut a = q.random_vec(size, &mut rng);
-                        let a_clone = a.clone();
-                        let mut b = a.clone();
-
-                        op.forward(&mut a);
-                        assert_ne!(a, a_clone);
-
-                        unsafe { op.forward_vt(b.as_mut_ptr()) }
-                        assert_eq!(a, b);
-
-                        op.backward(&mut a);
-                        assert_eq!(a, a_clone);
-
-                        unsafe { op.backward_vt(b.as_mut_ptr()) }
-                        assert_eq!(a, b);
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn forward_lazy() {
-        let ntests = 100;
-        let mut rng = thread_rng();
-
-        for size in [8, 1024] {
-            for p in [1153, 4611686018326724609] {
-                let q = Modulus::new(p).unwrap();
-
-                if supports_ntt(p, size) {
-                    let op = NttOperator::new(&q, size).unwrap();
-
-                    for _ in 0..ntests {
-                        let mut a = q.random_vec(size, &mut rng);
-                        let mut a_lazy = a.clone();
-
-                        op.forward(&mut a);
-
-                        unsafe {
-                            op.forward_vt_lazy(a_lazy.as_mut_ptr());
-                            q.reduce_vec(&mut a_lazy);
-                        }
-
-                        assert_eq!(a, a_lazy);
-                    }
-                }
-            }
-        }
     }
 }
