@@ -3,8 +3,7 @@
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
 use super::RnsContext;
-use crypto_bigint::U192;
-use ethnum::u256;
+use ethnum::{u256, U256};
 use itertools::{izip, Itertools};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
@@ -246,24 +245,19 @@ impl RnsScaler {
         debug_assert!(starting_index + out.len() <= self.to.moduli_u64.len());
 
         // First, let's compute the inner product of the rests with theta_omega.
-        let mut sum_theta_garner = U192::ZERO;
+        let mut sum_theta_garner = u256::ZERO;
         for (thetag_lo, thetag_hi, ri) in izip!(
             self.theta_garner_lo.iter(),
             self.theta_garner_hi.iter(),
             rests
         ) {
-            let lo = (*ri as u128) * (*thetag_lo as u128);
-            let hi = (*ri as u128) * (*thetag_hi as u128) + (lo >> 64);
-            sum_theta_garner = sum_theta_garner.wrapping_add(&U192::from_words([
-                lo as u64,
-                hi as u64,
-                (hi >> 64) as u64,
-            ]));
+            sum_theta_garner = sum_theta_garner.wrapping_add(
+                U256::from(*ri) * U256::from((*thetag_lo as u128) | ((*thetag_hi as u128) << 64)),
+            );
         }
         // Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
         sum_theta_garner >>= self.theta_garner_shift - 1;
-        let v = <[u64; 3]>::from(sum_theta_garner);
-        let v = ((v[0] as u128) | ((v[1] as u128) << 64)).div_ceil(2);
+        let v = sum_theta_garner.as_u128().div_ceil(2);
 
         // If the scaling factor is not 1, compute the inner product with the
         // theta_omega
@@ -271,42 +265,28 @@ impl RnsScaler {
         let mut w = 0u128;
         if !self.scaling_factor.is_one {
             let mut sum_theta_omega = u256::ZERO;
-            let u64_max = u64::MAX as u128;
             for (thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
                 self.theta_omega_lo.iter(),
                 self.theta_omega_hi.iter(),
                 self.theta_omega_sign.iter(),
                 rests
             ) {
-                let lo = (*ri as u128) * (*thetao_lo as u128);
-                let hi = (*ri as u128) * (*thetao_hi as u128) + (lo >> 64);
+                let product = U256::from(*ri)
+                    * U256::from((*thetao_lo as u128) | ((*thetao_hi as u128) << 64));
                 if *thetao_sign {
-                    sum_theta_omega = sum_theta_omega
-                        .wrapping_sub(u256::from_words(hi >> 64, (lo & u64_max) | (hi << 64)))
+                    sum_theta_omega = sum_theta_omega.wrapping_sub(product);
                 } else {
-                    sum_theta_omega = sum_theta_omega
-                        .wrapping_add(u256::from_words(hi >> 64, (lo & u64_max) | (hi << 64)))
+                    sum_theta_omega = sum_theta_omega.wrapping_add(product);
                 }
             }
 
             // Let's subtract v * theta_gamma to sum_theta_omega.
-            let vt_lo_lo = ((v as u64) as u128) * (self.theta_gamma_lo as u128);
-            let vt_lo_hi = ((v as u64) as u128) * (self.theta_gamma_hi as u128);
-            let vt_hi_lo = (v >> 64) * (self.theta_gamma_lo as u128);
-            let vt_hi_hi = (v >> 64) * (self.theta_gamma_hi as u128);
-            let vt_mi =
-                (vt_lo_lo >> 64) + ((vt_lo_hi as u64) as u128) + ((vt_hi_lo as u64) as u128);
-            let vt_hi = (vt_lo_hi >> 64) + (vt_mi >> 64) + ((vt_hi_hi as u64) as u128);
+            let v_theta_gamma = U256::from(v)
+                * U256::from((self.theta_gamma_lo as u128) | ((self.theta_gamma_hi as u128) << 64));
             if self.theta_gamma_sign {
-                sum_theta_omega = sum_theta_omega.wrapping_add(u256::from_words(
-                    vt_hi,
-                    (vt_lo_lo & u64_max) | (vt_mi << 64),
-                ))
+                sum_theta_omega = sum_theta_omega.wrapping_add(v_theta_gamma);
             } else {
-                sum_theta_omega = sum_theta_omega.wrapping_sub(u256::from_words(
-                    vt_hi,
-                    (vt_lo_lo & u64_max) | (vt_mi << 64),
-                ))
+                sum_theta_omega = sum_theta_omega.wrapping_sub(v_theta_gamma);
             }
 
             // Let's compute w = round(sum_theta_omega / 2^(192)).
