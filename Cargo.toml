@@ -14,7 +14,6 @@ license-file = "LICENSE"
 [workspace.dependencies]
 console = "0.15.7"
 criterion = "0.5.1"
-crypto-bigint = "0.5.3"
 doc-comment = "0.3.3"
 ethnum = "1.4.0"
 indicatif = "0.17.7"

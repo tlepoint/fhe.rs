@@ -7,6 +7,7 @@
 mod errors;
 mod proto;
 
+pub mod ntt;
 pub mod rns;
 pub mod rq;
 pub mod zq;
