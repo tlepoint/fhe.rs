@@ -603,6 +603,7 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
+    #[cfg(any(target_os = "macos", target_feature = "avx2"))]
     const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
@@ -612,6 +613,12 @@ impl Modulus {
         } else {
             x
         }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
+    #[inline]
+    const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
+        Self::reduce1(x, p)
     }
 
     /// Lazy modular reduction of a in constant time.
