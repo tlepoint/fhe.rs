@@ -160,7 +160,7 @@ impl RelinKeyShare<R1> {
 
                 let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
 
-                let mut h = a.poly.clone();
+                let mut h = -a.poly.clone();
                 h.disallow_variable_time_computations();
                 h.change_representation(Representation::Ntt);
                 h *= u.as_ref();
@@ -371,7 +371,6 @@ mod sealed {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fhe_math::rq::{Poly, Representation};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
     use rand::thread_rng;
 
@@ -386,7 +385,7 @@ mod tests {
     fn relinearization_works() {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(1, 8),
+            BfvParameters::default_arc(3, 8),
             BfvParameters::default_arc(6, 8),
         ] {
             // Just support level 0 for now.
@@ -403,16 +402,7 @@ mod tests {
                     let sk_share = SecretKey::random(&par, &mut rng);
                     party_sks.push(sk_share);
                 }
-                // TODO figure out why this doesn't work with larger coefficients
-                let crp_pk = CommonRandomPoly {
-                    poly: Poly::small(
-                        par.ctx_at_level(level).unwrap(),
-                        Representation::Ntt,
-                        par.variance,
-                        &mut rng,
-                    )
-                    .unwrap(),
-                };
+                let crp_pk = CommonRandomPoly::new(&par, &mut rng).unwrap();
                 (0..NUM_PARTIES).for_each(|i| {
                     let pk_share =
                         PublicKeyShare::new(&party_sks[i], crp_pk.clone(), &mut rng).unwrap();
