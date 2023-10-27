@@ -55,6 +55,7 @@ impl PublicKeyShare {
         p0_share.change_representation(Representation::Ntt);
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
+        unsafe { p0_share.allow_variable_time_computations() }
 
         Ok(Self { par, crp, p0_share })
     }

@@ -76,6 +76,11 @@ impl PublicKeySwitchShare {
         h1 *= u.as_ref();
         h1 += e1.as_ref();
 
+        unsafe {
+            h0.allow_variable_time_computations();
+            h1.allow_variable_time_computations();
+        }
+
         Ok(Self {
             par,
             c0: ct.c[0].clone(),
