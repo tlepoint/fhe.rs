@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut num_voters = 1000;
     let mut num_parties = 10;
 
-    // Update the database size and/or element size depending on the arguments
+    // Update the number of voters and/or number of parties depending on the arguments
     // provided.
     for arg in &args {
         if arg.starts_with("--num_voters") {

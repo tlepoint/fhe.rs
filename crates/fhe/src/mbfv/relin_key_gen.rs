@@ -361,13 +361,6 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
     }
 }
 
-mod sealed {
-    pub trait Sealed {}
-    impl Sealed for super::R1 {}
-    impl Sealed for super::R1Aggregated {}
-    impl Sealed for super::R2 {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
