@@ -20,8 +20,8 @@ impl CommonRandomPoly {
 
     /// Generate a new random CRP vector.
     ///
-    /// The size of the vector is equal to the number of ciphertext moduli, as required for the
-    /// relinearization key generation protocol.
+    /// The size of the vector is equal to the number of ciphertext moduli, as
+    /// required for the relinearization key generation protocol.
     pub fn new_vec<R: RngCore + CryptoRng>(
         par: &Arc<BfvParameters>,
         rng: &mut R,

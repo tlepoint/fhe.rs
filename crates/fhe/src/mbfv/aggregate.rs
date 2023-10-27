@@ -22,9 +22,9 @@ where
 
 /// Perform aggregation directly on an iterator of shares.
 ///
-/// This trait exists for convenience; the `aggregate` method is analagous to
-/// [`Iterator::collect`], but the trait bound required is [`Aggregate`] rather than
-/// [`FromIterator`].
+/// This trait exists for convenience; the `aggregate` method is analogous to
+/// [`Iterator::collect`], but the trait bound required is [`Aggregate`] rather
+/// than [`FromIterator`].
 pub trait AggregateIter {
     /// The type of share being aggregated.
     type Share;

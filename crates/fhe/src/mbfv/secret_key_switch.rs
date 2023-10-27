@@ -15,13 +15,13 @@ use super::Aggregate;
 
 /// A party's share in the secret key switch protocol.
 ///
-/// Each party uses the `SecretKeySwitchShare` to generate their share of the new ciphertext and
-/// participate in the "Protocol 3: KeySwitch" protocol detailed in [Multiparty
-/// BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the
+/// Each party uses the `SecretKeySwitchShare` to generate their share of the
+/// new ciphertext and participate in the "Protocol 3: KeySwitch" protocol
+/// detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the
 /// shares into a [`Ciphertext`].
 ///
-/// Note: this protocol assumes the output key is split into the same number of parties as the
-/// input key, and is likely only useful for niche scenarios.
+/// Note: this protocol assumes the output key is split into the same number of
+/// parties as the input key, and is likely only useful for niche scenarios.
 pub struct SecretKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The original input ciphertext
@@ -109,9 +109,9 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
 
 /// A party's share in the decryption protocol.
 ///
-/// Each party uses the `DecryptionShare` to generate their share of the plaintext output. Note
-/// that this is a special case of the "Protocol 3: KeySwitch" protocol detailed in [Multiparty
-/// BFV](https://eprint.iacr.org/2020/304.pdf) (p7), using an output key of zero. Use the
+/// Each party uses the `DecryptionShare` to generate their share of the
+/// plaintext output. Note that this is a special case of the "Protocol 3:
+/// KeySwitch" protocol detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7), using an output key of zero. Use the
 /// [`Aggregate`] impl to combine the shares into a [`Plaintext`].
 pub struct DecryptionShare {
     pub(crate) sks_share: SecretKeySwitchShare,

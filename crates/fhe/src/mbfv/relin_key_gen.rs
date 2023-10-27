@@ -26,9 +26,9 @@ pub struct RelinKeyShare<R: Round = R1> {
 
 /// A builder for creating relinearization key generation shares per party.
 ///
-/// Each party uses the `RelinKeyGenerator` to generate their shares and participate in the
-/// "Protocol 2: RelinKeyGen" protocol detailed in [Multiparty
-/// BFV](https://eprint.iacr.org/2020/304.pdf) (p6). The shares need to be aggregated between
+/// Each party uses the `RelinKeyGenerator` to generate their shares and
+/// participate in the "Protocol 2: RelinKeyGen" protocol detailed in
+/// [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p6). The shares need to be aggregated between
 /// rounds:
 ///
 /// ```rust
@@ -38,8 +38,8 @@ pub struct RelinKeyShare<R: Round = R1> {
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let parameters = BfvParametersBuilder::new()
-///         .set_degree(2048)
-///         .set_moduli(&[0x3fffffff000001])
+///         .set_degree(4096)
+///         .set_moduli(&[0xffffee001, 0xffffc4001, 0x1ffffe0001])
 ///         .set_plaintext_modulus(1 << 10)
 ///         .build_arc()?;
 ///

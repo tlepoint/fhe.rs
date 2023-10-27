@@ -13,8 +13,8 @@ use super::Aggregate;
 
 /// A party's share in the public key switch protocol.
 ///
-/// Each party uses the `PublicKeySwitchShare` to generate their share of the new ciphertext and
-/// participate in the "Protocol 4: PubKeySwitch" protocol detailed in as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the shares into a [`Ciphertext`].
+/// Each party uses the `PublicKeySwitchShare` to generate their share of the
+/// new ciphertext and participate in the "Protocol 4: PubKeySwitch" protocol detailed in as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the shares into a [`Ciphertext`].
 pub struct PublicKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The first component of the input ciphertext

@@ -25,10 +25,11 @@ impl PublicKeyShare {
     /// 1. *Private input*: BFV secret key share
     /// 2. *Public input*: common random polynomial
     //
-    // Implementation note: This is largely the same approach taken by fhe.rs, a symmetric
-    // encryption of zero, the difference being that the crp is used instead of a random poly.
-    // Might be possible to just pass a valid seed to each party and basically take the
-    // SecretKey::try_encrypt implementation, but with the hardcoded seed.
+    // Implementation note: This is largely the same approach taken by fhe.rs, a
+    // symmetric encryption of zero, the difference being that the crp is used
+    // instead of a random poly. Might be possible to just pass a valid seed to
+    // each party and basically take the SecretKey::try_encrypt implementation,
+    // but with the hardcoded seed.
     pub fn new<R: RngCore + CryptoRng>(
         sk_share: &SecretKey,
         crp: CommonRandomPoly,
@@ -90,8 +91,9 @@ mod tests {
     const NUM_PARTIES: usize = 11;
 
     #[test]
-    // This just makes sure the public key creation is successful, and arbitrary encryptions
-    // complete without error. See a full encrypt->decrypt test in `secret_key_switch`.
+    // This just makes sure the public key creation is successful, and arbitrary
+    // encryptions complete without error. See a full encrypt->decrypt test in
+    // `secret_key_switch`.
     fn protocol_creates_valid_pk() {
         let mut rng = thread_rng();
         for par in [

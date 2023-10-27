@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let plaintext_modulus: u64 = 4096;
     let moduli = vec![0xffffee001, 0xffffc4001, 0x1ffffe0001];
 
-    // This executable is a command line tool which enables to specify voter/election worker sizes.
+    // This executable is a command line tool which enables to specify
+    // voter/election worker sizes.
     let args: Vec<String> = env::args().skip(1).collect();
 
     // Print the help if requested.
@@ -50,8 +51,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut num_voters = 1000;
     let mut num_parties = 10;
 
-    // Update the number of voters and/or number of parties depending on the arguments
-    // provided.
+    // Update the number of voters and/or number of parties depending on the
+    // arguments provided.
     for arg in &args {
         if arg.starts_with("--num_voters") {
             let a: Vec<&str> = arg.rsplit('=').collect();
@@ -93,7 +94,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     let crp = CommonRandomPoly::new(&params, &mut thread_rng())?;
 
-    // Party setup: each party generates a secret key and shares of a collective public key.
+    // Party setup: each party generates a secret key and shares of a collective
+    // public key.
     struct Party {
         sk_share: SecretKey,
         pk_share: PublicKeyShare,
@@ -105,8 +107,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         parties.push(Party { sk_share, pk_share });
     });
 
-    // Aggregation: this could be one of the parties or a separate entity. Or the parties can
-    // aggregate cooperatively, in a tree-like fashion.
+    // Aggregation: this could be one of the parties or a separate entity. Or the
+    // parties can aggregate cooperatively, in a tree-like fashion.
     let pk = timeit!("Public key aggregation", {
         let pk: PublicKey = parties.iter().map(|p| p.pk_share.clone()).aggregate()?;
         pk
@@ -128,7 +130,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         _i += 1;
     });
 
-    // Computing the tally: this can be done by anyone (party, aggregator, separate computing entity).
+    // Computing the tally: this can be done by anyone (party, aggregator, separate
+    // computing entity).
     let tally = timeit!("Vote tallying", {
         let mut sum = Ciphertext::zero(&params);
         for ct in &votes_encrypted {
@@ -137,9 +140,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         Arc::new(sum)
     });
 
-    // The result of a vote is typically public, so in this scenario the parties can perform a
-    // collective decryption. If instead the result of the computation should be kept private,
-    // the parties could collectively perform a keyswitch to a different public key.
+    // The result of a vote is typically public, so in this scenario the parties can
+    // perform a collective decryption. If instead the result of the computation
+    // should be kept private, the parties could collectively perform a
+    // keyswitch to a different public key.
     let mut decryption_shares = Vec::with_capacity(num_parties);
     let mut _i = 0;
     timeit_n!("Decryption (per party)", num_parties as u32, {
@@ -148,7 +152,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         _i += 1;
     });
 
-    // Again, an aggregating party aggregates the decryption shares to produce the decrypted plaintext.
+    // Again, an aggregating party aggregates the decryption shares to produce the
+    // decrypted plaintext.
     let tally_pt = timeit!("Decryption share aggregation", {
         let pt: Plaintext = decryption_shares.into_iter().aggregate()?;
         pt
