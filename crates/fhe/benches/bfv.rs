@@ -6,7 +6,6 @@ use fhe::bfv::{
 use fhe_math::rns::{RnsContext, ScalingFactor};
 use fhe_math::zq::primes::generate_prime;
 use fhe_traits::{FheEncoder, FheEncrypter};
-use fhe_util::div_ceil;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{rngs::OsRng, thread_rng};
@@ -249,7 +248,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
             );
 
             // Second multiplication option.
-            let nmoduli = div_ceil(q, 62);
+            let nmoduli = q.div_ceil(62);
             let mut extended_basis = par.moduli().to_vec();
             let mut upper_bound = u64::MAX >> 2;
             while extended_basis.len() != nmoduli + par.moduli().len() {

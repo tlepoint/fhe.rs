@@ -1,19 +1,16 @@
 use std::ops::Mul;
 
+use crate::proto::bfv::{
+    KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RGSWCiphertextProto,
+};
+use crate::{Error, Result};
 use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_traits::{
     DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
-use protobuf::{Message, MessageField};
+use prost::Message;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
-
-use crate::{
-    bfv::proto::bfv::{
-        KeySwitchingKey as KeySwitchingKeyProto, RGSWCiphertext as RGSWCiphertextProto,
-    },
-    Error, Result,
-};
 
 use super::{
     keys::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, Ciphertext, Plaintext, SecretKey,
@@ -32,10 +29,10 @@ impl FheParametrized for RGSWCiphertext {
 
 impl From<&RGSWCiphertext> for RGSWCiphertextProto {
     fn from(ct: &RGSWCiphertext) -> Self {
-        let mut proto = RGSWCiphertextProto::new();
-        proto.ksk0 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk0));
-        proto.ksk1 = MessageField::some(KeySwitchingKeyProto::from(&ct.ksk1));
-        proto
+        RGSWCiphertextProto {
+            ksk0: Some(KeySwitchingKeyProto::from(&ct.ksk0)),
+            ksk1: Some(KeySwitchingKeyProto::from(&ct.ksk1)),
+        }
     }
 }
 
@@ -65,15 +62,14 @@ impl DeserializeParametrized for RGSWCiphertext {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &std::sync::Arc<Self::Parameters>) -> Result<Self> {
-        let proto =
-            RGSWCiphertextProto::parse_from_bytes(bytes).map_err(|_| Error::SerializationError)?;
+        let proto = Message::decode(bytes).map_err(|_| Error::SerializationError)?;
         RGSWCiphertext::try_convert_from(&proto, par)
     }
 }
 
 impl Serialize for RGSWCiphertext {
     fn to_bytes(&self) -> Vec<u8> {
-        RGSWCiphertextProto::from(self).write_to_bytes().unwrap()
+        RGSWCiphertextProto::from(self).encode_to_vec()
     }
 }
 

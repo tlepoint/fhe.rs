@@ -1,17 +1,13 @@
 //! Galois keys for the BFV encryption scheme
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::bfv::{
-    proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto},
-    traits::TryConvertFrom,
-    BfvParameters, Ciphertext, SecretKey,
-};
+use crate::bfv::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
 use crate::{Error, Result};
 use fhe_math::rq::{
     switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
     SubstitutionExponent,
 };
-use protobuf::MessageField;
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -96,20 +92,16 @@ impl GaloisKey {
 
 impl From<&GaloisKey> for GaloisKeyProto {
     fn from(value: &GaloisKey) -> Self {
-        let mut gk = GaloisKeyProto::new();
-        gk.exponent = value.element.exponent as u32;
-        gk.ksk = MessageField::some(KeySwitchingKeyProto::from(&value.ksk));
-        gk
+        GaloisKeyProto {
+            exponent: value.element.exponent as u32,
+            ksk: Some(KeySwitchingKeyProto::from(&value.ksk)),
+        }
     }
 }
 
 impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
     fn try_convert_from(value: &GaloisKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-        if par.moduli.len() == 1 {
-            Err(Error::DefaultError(
-                "Invalid parameters for a relinearization key".to_string(),
-            ))
-        } else if value.ksk.is_some() {
+        if value.ksk.is_some() {
             let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
 
             let ctx = par.ctx_at_level(ksk.ciphertext_level)?;
@@ -126,10 +118,8 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 #[cfg(test)]
 mod tests {
     use super::GaloisKey;
-    use crate::bfv::{
-        proto::bfv::GaloisKey as GaloisKeyProto, traits::TryConvertFrom, BfvParameters, Encoding,
-        Plaintext, SecretKey,
-    };
+    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::proto::bfv::GaloisKey as GaloisKeyProto;
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use rand::thread_rng;
     use std::error::Error;

@@ -31,13 +31,13 @@ To install, add the following to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.5"
-fhe-traits = "0.1.0-beta.5"
+fhe = "0.1.0-beta.7"
+fhe-traits = "0.1.0-beta.7"
 ```
 
 ## Minimum supported version / toolchain
 
-Rust **1.67** or newer.
+Rust **1.73** or newer.
 
 ## ⚠️ Security / Stability
 

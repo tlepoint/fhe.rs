@@ -9,7 +9,6 @@ mod ops;
 mod parameters;
 mod plaintext;
 mod plaintext_vec;
-mod proto;
 mod rgsw_ciphertext;
 
 pub mod traits;

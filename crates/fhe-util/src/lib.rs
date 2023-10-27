@@ -5,12 +5,9 @@
 //! Utilities for the fhe.rs library.
 
 #[cfg(test)]
-#[macro_use]
 extern crate proptest;
 
-mod u256;
 use rand::{CryptoRng, RngCore};
-pub use u256::U256;
 
 use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
@@ -75,7 +72,7 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
     assert!(0 < nbits && nbits <= 64);
 
     let mask = (u64::MAX >> (64 - nbits)) as u128;
-    let nbytes = div_ceil(a.len() * nbits, 8);
+    let nbytes = (a.len() * nbits).div_ceil(8);
     let mut out = Vec::with_capacity(nbytes);
 
     let mut current_index = 0;
@@ -110,7 +107,7 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
     assert!(0 < nbits && nbits <= 64);
     let mask = (u64::MAX >> (64 - nbits)) as u128;
 
-    let nelements = div_ceil(b.len() * 8, nbits);
+    let nelements = (b.len() * 8).div_ceil(nbits);
     let mut out = Vec::with_capacity(nelements);
 
     let mut current_value = 0u128;
@@ -146,7 +143,7 @@ pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usiz
 
     let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
     let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
-    let output_size = div_ceil(a.len() * input_nbits, output_nbits);
+    let output_size = (a.len() * input_nbits).div_ceil(output_nbits);
     let mut out = Vec::with_capacity(output_size);
 
     let mut current_index = 0;
@@ -184,14 +181,6 @@ pub fn inverse(a: u64, p: u64) -> Option<u64> {
     a.mod_inverse(p)?.to_u64()
 }
 
-/// Returns the ceil of a divided by b, to simulate the
-/// `.div_ceil()` function from <https://github.com/rust-lang/rust/issues/88581>.
-/// Panics when `b` is 0.
-pub fn div_ceil<T: PrimInt>(a: T, b: T) -> T {
-    assert!(b > T::zero());
-    (a + b - T::one()) / b
-}
-
 /// Compute the sample variance of a list of values.
 /// Panics if the length of value is < 2.
 pub fn variance<T: PrimInt>(values: &[T]) -> f64 {
@@ -207,7 +196,7 @@ mod tests {
     use itertools::Itertools;
     use rand::{thread_rng, RngCore};
 
-    use crate::{div_ceil, variance};
+    use crate::variance;
 
     use super::{
         inverse, is_prime, sample_vec_cbd, transcode_bidirectional, transcode_from_bytes,
@@ -229,16 +218,6 @@ mod tests {
         assert!(!is_prime(8));
         assert!(!is_prime(9));
         assert!(!is_prime(4611686018326724607));
-    }
-
-    #[test]
-    fn div_ceil_is_correct() {
-        for _ in 0..100 {
-            let a = (thread_rng().next_u32() >> 1) as usize;
-            assert_eq!(div_ceil(a, 1), a);
-            assert_eq!(div_ceil(a, 2), (a >> 1) + (a & 1));
-            assert_eq!(div_ceil(a, 8), (a + 7) / 8);
-        }
     }
 
     #[test]

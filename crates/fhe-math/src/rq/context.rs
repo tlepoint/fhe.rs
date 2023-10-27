@@ -2,11 +2,7 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use std::{fmt::Debug, sync::Arc};
 
-use crate::{
-    rns::RnsContext,
-    zq::{ntt::NttOperator, Modulus},
-    Error, Result,
-};
+use crate::{ntt::NttOperator, rns::RnsContext, zq::Modulus, Error, Result};
 
 /// Struct that holds the context associated with elements in rq.
 #[derive(Default, Clone, PartialEq, Eq)]
@@ -161,7 +157,8 @@ impl Context {
 mod tests {
     use std::{error::Error, sync::Arc};
 
-    use crate::{rq::Context, zq::ntt::supports_ntt};
+    use crate::ntt::supports_ntt;
+    use crate::rq::Context;
 
     const MODULI: &[u64; 5] = &[
         1153,

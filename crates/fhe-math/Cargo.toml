@@ -7,26 +7,30 @@ edition.workspace = true
 license-file.workspace = true
 repository.workspace = true
 version.workspace = true
+rust-version.workspace = true
 
 [lib]
 bench = false  # Disable default bench (we use criterion)
 
 [dependencies]
-fhe-traits = { version = "^0.1.0-beta.5", path = "../fhe-traits" }
-fhe-util = { version = "^0.1.0-beta.5", path = "../fhe-util" }
+fhe-traits = { version = "^0.1.0-beta.7", path = "../fhe-traits" }
+fhe-util = { version = "^0.1.0-beta.7", path = "../fhe-util" }
 
-crypto-bigint.workspace = true
+ethnum.workspace = true
 itertools.workspace = true
 ndarray.workspace = true
 num-bigint.workspace = true
 num-bigint-dig.workspace = true
 num-traits.workspace = true
-protobuf.workspace = true
+prost.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 sha2.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

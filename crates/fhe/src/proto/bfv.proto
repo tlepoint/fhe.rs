@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package fhers;
+package fhers.bfv;
 
 message Ciphertext {
     repeated bytes c = 1;
@@ -19,6 +19,7 @@ message KeySwitchingKey {
     bytes seed = 3;
     uint32 ciphertext_level = 4;
     uint32 ksk_level = 5;
+    uint32 log_base = 6;
 }
 
 message RelinearizationKey {

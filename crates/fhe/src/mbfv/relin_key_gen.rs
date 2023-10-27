@@ -81,7 +81,11 @@ impl<'a, 'b> RelinKeyGenerator<'a, 'b> {
     ) -> Result<Self> {
         let par = sk_share.par.clone();
         let ctx = par.ctx_at_level(0)?;
-        if crp.len() != ctx.moduli().len() {
+        if ctx.moduli().len() == 1 {
+            Err(Error::DefaultError(
+                "These parameters do not support key switching".to_string(),
+            ))
+        } else if crp.len() != ctx.moduli().len() {
             Err(Error::DefaultError(
                 "The size of the CRP polynomial vector must equal the number of ciphertext moduli."
                     .to_string(),
@@ -356,6 +360,7 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
             ctx_ciphertext: ctx.clone(),
             ksk_level: 0,
             ctx_ksk: ctx.clone(),
+            log_base: 0,
         };
         Ok(RelinearizationKey { ksk })
     }

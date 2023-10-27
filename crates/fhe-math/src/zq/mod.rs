@@ -2,7 +2,6 @@
 
 //! Ring operations for moduli up to 62 bits.
 
-pub mod ntt;
 pub mod primes;
 
 use crate::errors::{Error, Result};
@@ -15,7 +14,7 @@ use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
-    p: u64,
+    pub(crate) p: u64,
     nbits: usize,
     barrett_hi: u64,
     barrett_lo: u64,
@@ -579,7 +578,7 @@ impl Modulus {
 
     /// Return x mod p in constant time.
     /// Aborts if x >= 2 * p in debug mode.
-    const fn reduce1(x: u64, p: u64) -> u64 {
+    pub(crate) const fn reduce1(x: u64, p: u64) -> u64 {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
@@ -603,7 +602,8 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
-    const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
+    #[cfg(any(target_os = "macos", target_feature = "avx2"))]
+    pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
@@ -612,6 +612,12 @@ impl Modulus {
         } else {
             x
         }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
+    #[inline]
+    pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
+        Self::reduce1(x, p)
     }
 
     /// Lazy modular reduction of a in constant time.

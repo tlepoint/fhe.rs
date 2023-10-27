@@ -1,16 +1,12 @@
 //! Leveled evaluation keys for the BFV encryption scheme.
 
-use crate::bfv::{
-    keys::GaloisKey,
-    proto::bfv::{EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto},
-    traits::TryConvertFrom,
-    BfvParameters, Ciphertext, SecretKey,
-};
+use crate::bfv::{keys::GaloisKey, traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::proto::bfv::{EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto};
 use crate::{Error, Result};
 use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
-use protobuf::Message;
+use prost::Message;
 use rand::{CryptoRng, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -44,19 +40,15 @@ impl EvaluationKey {
     /// Reports whether the evaluation key enables to compute an homomorphic
     /// inner sums.
     pub fn supports_inner_sum(&self) -> bool {
-        if self.evaluation_key_level == self.par.moduli().len() {
-            false
-        } else {
-            let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
-            let mut i = 1;
-            while i < self.par.degree() / 2 {
-                ret &= self
-                    .gk
-                    .contains_key(self.rot_to_gk_exponent.get(&i).unwrap());
-                i *= 2
-            }
-            ret
+        let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
+        let mut i = 1;
+        while i < self.par.degree() / 2 {
+            ret &= self
+                .gk
+                .contains_key(self.rot_to_gk_exponent.get(&i).unwrap());
+            i *= 2
         }
+        ret
     }
 
     /// Computes the homomorphic inner sum.
@@ -88,11 +80,7 @@ impl EvaluationKey {
     /// Reports whether the evaluation key enables to rotate the rows of the
     /// plaintext.
     pub fn supports_row_rotation(&self) -> bool {
-        if self.evaluation_key_level == self.par.moduli().len() {
-            false
-        } else {
-            self.gk.contains_key(&(self.par.degree() * 2 - 1))
-        }
+        self.gk.contains_key(&(self.par.degree() * 2 - 1))
     }
 
     /// Homomorphically rotate the rows of the plaintext
@@ -110,9 +98,7 @@ impl EvaluationKey {
     /// Reports whether the evaluation key enables to rotate the columns of the
     /// plaintext.
     pub fn supports_column_rotation_by(&self, i: usize) -> bool {
-        if self.evaluation_key_level == self.par.moduli().len() {
-            false
-        } else if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
+        if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
             self.gk.contains_key(exp)
         } else {
             false
@@ -206,8 +192,7 @@ impl FheParametrized for EvaluationKey {
 
 impl Serialize for EvaluationKey {
     fn to_bytes(&self) -> Vec<u8> {
-        let ekp = EvaluationKeyProto::from(self);
-        ekp.write_to_bytes().unwrap()
+        EvaluationKeyProto::from(self).encode_to_vec()
     }
 }
 
@@ -215,7 +200,7 @@ impl DeserializeParametrized for EvaluationKey {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
-        let gkp = EvaluationKeyProto::parse_from_bytes(bytes);
+        let gkp = Message::decode(bytes);
         if let Ok(gkp) = gkp {
             EvaluationKey::try_convert_from(&gkp, par)
         } else {
@@ -289,18 +274,7 @@ impl EvaluationKeyBuilder {
     /// Allow expansion by this evaluation key.
     #[allow(unused_must_use)]
     pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self> {
-        if self
-            .sk
-            .par
-            .ctx_at_level(self.evaluation_key_level)?
-            .moduli()
-            .len()
-            == 1
-        {
-            Err(Error::DefaultError(
-                "Not enough moduli to enable expansion".to_string(),
-            ))
-        } else if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
+        if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
             Err(Error::DefaultError("Invalid level 2".to_string()))
         } else {
             self.expansion_level = level;
@@ -311,41 +285,15 @@ impl EvaluationKeyBuilder {
     /// Allow this evaluation key to compute homomorphic inner sums.
     #[allow(unused_must_use)]
     pub fn enable_inner_sum(&mut self) -> Result<&mut Self> {
-        if self
-            .sk
-            .par
-            .ctx_at_level(self.evaluation_key_level)?
-            .moduli()
-            .len()
-            == 1
-        {
-            Err(Error::DefaultError(
-                "Not enough moduli to enable relinearization".to_string(),
-            ))
-        } else {
-            self.inner_sum = true;
-            Ok(self)
-        }
+        self.inner_sum = true;
+        Ok(self)
     }
 
     /// Allow this evaluation key to homomorphically rotate the plaintext rows.
     #[allow(unused_must_use)]
     pub fn enable_row_rotation(&mut self) -> Result<&mut Self> {
-        if self
-            .sk
-            .par
-            .ctx_at_level(self.evaluation_key_level)?
-            .moduli()
-            .len()
-            == 1
-        {
-            Err(Error::DefaultError(
-                "Not enough moduli to enable relinearization".to_string(),
-            ))
-        } else {
-            self.row_rotation = true;
-            Ok(self)
-        }
+        self.row_rotation = true;
+        Ok(self)
     }
 
     /// Allow this evaluation key to homomorphically rotate the plaintext
@@ -425,7 +373,7 @@ impl EvaluationKeyBuilder {
 
 impl From<&EvaluationKey> for EvaluationKeyProto {
     fn from(ek: &EvaluationKey) -> Self {
-        let mut proto = EvaluationKeyProto::new();
+        let mut proto = EvaluationKeyProto::default();
         for (_, gk) in ek.gk.iter() {
             proto.gk.push(GaloisKeyProto::from(gk))
         }
@@ -483,10 +431,8 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 #[cfg(test)]
 mod tests {
     use super::{EvaluationKey, EvaluationKeyBuilder};
-    use crate::bfv::{
-        proto::bfv::EvaluationKey as LeveledEvaluationKeyProto, traits::TryConvertFrom,
-        BfvParameters, Encoding, Plaintext, SecretKey,
-    };
+    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::proto::bfv::EvaluationKey as LeveledEvaluationKeyProto;
     use fhe_traits::{
         DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
     };
@@ -502,7 +448,7 @@ mod tests {
 
         let max_level = params.max_level();
         for ciphertext_level in 0..=max_level {
-            for evaluation_key_level in 0..=min(max_level - 1, ciphertext_level) {
+            for evaluation_key_level in 0..=min(max_level, ciphertext_level) {
                 let mut builder =
                     EvaluationKeyBuilder::new_leveled(&sk, ciphertext_level, evaluation_key_level)?;
 
@@ -556,15 +502,6 @@ mod tests {
                 assert!(!ek.supports_column_rotation_by(params.degree() / 2 - 1));
             }
         }
-
-        let mut builder =
-            EvaluationKeyBuilder::new_leveled(&sk, params.max_level(), params.max_level())?;
-        let e = builder.enable_inner_sum();
-        assert!(e.is_err());
-        assert_eq!(
-            e.unwrap_err(),
-            crate::Error::DefaultError("Not enough moduli to enable relinearization".to_string())
-        );
 
         let e = EvaluationKeyBuilder::new_leveled(&sk, 0, 1);
         assert!(e.is_err());
@@ -676,9 +613,7 @@ mod tests {
             for _ in 0..50 {
                 for i in 1..row_size {
                     for ciphertext_level in 0..=params.max_level() {
-                        for evaluation_key_level in
-                            0..=min(params.max_level() - 1, ciphertext_level)
-                        {
+                        for evaluation_key_level in 0..=min(params.max_level(), ciphertext_level) {
                             let sk = SecretKey::random(&params, &mut rng);
                             let ek = EvaluationKeyBuilder::new_leveled(
                                 &sk,
@@ -733,9 +668,7 @@ mod tests {
             for _ in 0..15 {
                 for i in 1..1 + log_degree as usize {
                     for ciphertext_level in 0..=params.max_level() {
-                        for evaluation_key_level in
-                            0..=min(params.max_level() - 1, ciphertext_level)
-                        {
+                        for evaluation_key_level in 0..=min(params.max_level(), ciphertext_level) {
                             let sk = SecretKey::random(&params, &mut rng);
                             let ek = EvaluationKeyBuilder::new_leveled(
                                 &sk,
@@ -793,33 +726,31 @@ mod tests {
             let proto = LeveledEvaluationKeyProto::from(&ek);
             assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-            if params.moduli.len() > 1 {
-                let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_row_rotation()?
-                    .build(&mut rng)?;
+            let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
+                .enable_row_rotation()?
+                .build(&mut rng)?;
 
-                let proto = LeveledEvaluationKeyProto::from(&ek);
-                assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+            let proto = LeveledEvaluationKeyProto::from(&ek);
+            assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-                let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_inner_sum()?
-                    .build(&mut rng)?;
-                let proto = LeveledEvaluationKeyProto::from(&ek);
-                assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+            let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
+                .enable_inner_sum()?
+                .build(&mut rng)?;
+            let proto = LeveledEvaluationKeyProto::from(&ek);
+            assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-                let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_expansion(params.degree().ilog2() as usize)?
-                    .build(&mut rng)?;
-                let proto = LeveledEvaluationKeyProto::from(&ek);
-                assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
+            let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
+                .enable_expansion(params.degree().ilog2() as usize)?
+                .build(&mut rng)?;
+            let proto = LeveledEvaluationKeyProto::from(&ek);
+            assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
 
-                let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
-                    .enable_inner_sum()?
-                    .enable_expansion(params.degree().ilog2() as usize)?
-                    .build(&mut rng)?;
-                let proto = LeveledEvaluationKeyProto::from(&ek);
-                assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
-            }
+            let ek = EvaluationKeyBuilder::new_leveled(&sk, 0, 0)?
+                .enable_inner_sum()?
+                .enable_expansion(params.degree().ilog2() as usize)?
+                .build(&mut rng)?;
+            let proto = LeveledEvaluationKeyProto::from(&ek);
+            assert_eq!(ek, EvaluationKey::try_convert_from(&proto, &params)?);
         }
         Ok(())
     }

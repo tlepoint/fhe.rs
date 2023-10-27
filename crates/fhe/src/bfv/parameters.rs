@@ -1,18 +1,18 @@
 //! Create parameters for the BFV encryption scheme
 
-use crate::bfv::proto::bfv::Parameters;
+use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
+    ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
     rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
-    zq::{ntt::NttOperator, primes::generate_prime, Modulus},
+    zq::{primes::generate_prime, Modulus},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
-use fhe_util::div_ceil;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
-use protobuf::Message;
+use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -405,7 +405,7 @@ impl BfvParametersBuilder {
             // For the first multiplication, we want to extend to a context that
             // is ~60 bits larger.
             let modulus_size = moduli_sizes[..moduli_sizes.len() - i].iter().sum::<usize>();
-            let n_moduli = div_ceil(modulus_size + 60, 62);
+            let n_moduli = (modulus_size + 60).div_ceil(62);
             let mut mul_1_moduli = vec![];
             mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
             mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
@@ -457,27 +457,25 @@ impl BfvParametersBuilder {
 
 impl Serialize for BfvParameters {
     fn to_bytes(&self) -> Vec<u8> {
-        let mut params = Parameters::new();
-        params.degree = self.polynomial_degree as u32;
-        params.plaintext = self.plaintext_modulus;
-        params.moduli = self.moduli.to_vec();
-        params.variance = self.variance as u32;
-        params.write_to_bytes().unwrap()
+        Parameters {
+            degree: self.polynomial_degree as u32,
+            plaintext: self.plaintext_modulus,
+            moduli: self.moduli.to_vec(),
+            variance: self.variance as u32,
+        }
+        .encode_to_vec()
     }
 }
 
 impl Deserialize for BfvParameters {
     fn try_deserialize(bytes: &[u8]) -> Result<Self> {
-        if let Ok(params) = Parameters::parse_from_bytes(bytes) {
-            BfvParametersBuilder::new()
-                .set_degree(params.degree as usize)
-                .set_plaintext_modulus(params.plaintext)
-                .set_moduli(&params.moduli)
-                .set_variance(params.variance as usize)
-                .build()
-        } else {
-            Err(Error::SerializationError)
-        }
+        let params: Parameters = Message::decode(bytes).map_err(|_| Error::SerializationError)?;
+        BfvParametersBuilder::new()
+            .set_degree(params.degree as usize)
+            .set_plaintext_modulus(params.plaintext)
+            .set_moduli(&params.moduli)
+            .set_variance(params.variance as usize)
+            .build()
     }
     type Error = Error;
 }
