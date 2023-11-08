@@ -10,7 +10,7 @@ version.workspace = true
 rust-version.workspace = true
 
 [lib]
-bench = false  # Disable default bench (we use criterion)
+bench = false # Disable default bench (we use criterion)
 
 [dependencies]
 fhe-math = { version = "^0.1.0-beta.7", path = "../fhe-math" }
@@ -60,3 +60,6 @@ name = "sealpir"
 
 [[example]]
 name = "util"
+
+[[example]]
+name = "voting"
