@@ -41,12 +41,14 @@ impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
         value: &RGSWCiphertextProto,
         par: &std::sync::Arc<BfvParameters>,
     ) -> Result<Self> {
-        if value.ksk0.is_none() || value.ksk1.is_none() {
-            return Err(Error::SerializationError);
-        }
-
-        let ksk0 = KeySwitchingKey::try_convert_from(value.ksk0.as_ref().unwrap(), par)?;
-        let ksk1 = KeySwitchingKey::try_convert_from(value.ksk1.as_ref().unwrap(), par)?;
+        let ksk0 = KeySwitchingKey::try_convert_from(
+            value.ksk0.as_ref().ok_or(Error::SerializationError)?,
+            par,
+        )?;
+        let ksk1 = KeySwitchingKey::try_convert_from(
+            value.ksk1.as_ref().ok_or(Error::SerializationError)?,
+            par,
+        )?;
         if ksk0.ksk_level != ksk0.ciphertext_level
             || ksk0.ciphertext_level != ksk1.ciphertext_level
             || ksk1.ciphertext_level != ksk1.ksk_level

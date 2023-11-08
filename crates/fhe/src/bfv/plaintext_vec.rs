@@ -59,7 +59,10 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            par.op.as_ref().unwrap().backward_vt(v.as_mut_ptr());
+                            par.op
+                                .as_ref()
+                                .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
+                                .backward_vt(v.as_mut_ptr());
                         }
                     };
 
@@ -103,7 +106,10 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            par.op.as_ref().unwrap().backward(&mut v);
+                            par.op
+                                .as_ref()
+                                .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
+                                .backward(&mut v);
                         }
                     };
 

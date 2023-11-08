@@ -48,7 +48,6 @@ fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("env!(\"OUT_DIR\") = {}", env!("OUT_DIR"));
     let degree = 4096usize;
     let plaintext_modulus = 2056193u64;
     let moduli_sizes = [36, 36, 37];
@@ -185,7 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 elements_size,
             );
         let mut pt = vec![0u64; dim1 + dim2];
-        let inv = inverse(1 << level, plaintext_modulus).unwrap();
+        let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
         let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
