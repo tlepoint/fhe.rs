@@ -17,6 +17,7 @@ fhe-math = { version = "^0.1.0-beta.7", path = "../fhe-math" }
 fhe-traits = { version = "^0.1.0-beta.7", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.7", path = "../fhe-util" }
 
+doc-comment.workspace = true
 itertools.workspace = true
 num-bigint.workspace = true
 num-traits.workspace = true
@@ -27,7 +28,6 @@ zeroize.workspace = true
 zeroize_derive.workspace = true
 ndarray.workspace = true
 thiserror.workspace = true
-doc-comment = "0.3.3"
 
 [build-dependencies]
 prost-build.workspace = true

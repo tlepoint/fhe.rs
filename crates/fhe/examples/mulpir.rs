@@ -16,7 +16,7 @@ use fhe_traits::{
 use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{rngs::OsRng, thread_rng, RngCore};
-use std::{env, error::Error, process::exit};
+use std::{env, error::Error, process::exit, time::Instant};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
     timeit::{timeit, timeit_n},
@@ -193,7 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 elements_size,
             );
         let mut pt = vec![0u64; dim1 + dim2];
-        let inv = inverse(1 << level, plaintext_modulus).unwrap();
+        let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
         let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    modulus switch to the latest modulus to optimize communication.
     // The operation is done `5` times to compute an average response time.
     let response = timeit_n!("Server response", 5, {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
         let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
         println!("Expand: {:?}", start.elapsed());

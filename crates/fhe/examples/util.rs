@@ -12,12 +12,10 @@ pub mod timeit {
         ($name:expr, $loops:expr, $code:expr) => {{
             use util::DisplayDuration;
             let start = std::time::Instant::now();
-
-            #[allow(clippy::reversed_empty_ranges)]
+            let r = $code;
             for _ in 1..$loops {
                 let _ = $code;
             }
-            let r = $code;
             println!(
                 "⏱  {}: {}",
                 $name,

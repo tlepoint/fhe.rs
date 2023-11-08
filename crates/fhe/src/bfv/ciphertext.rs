@@ -161,23 +161,22 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
         let ctx = par.ctx_at_level(value.level as usize)?;
 
-        let mut seed = None;
-
         let mut c = Vec::with_capacity(value.c.len() + 1);
         for cip in &value.c {
             c.push(Poly::from_bytes(cip, ctx)?)
         }
 
+        let mut seed = None;
         if !value.seed.is_empty() {
-            let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
-            if try_seed.is_err() {
-                return Err(Error::MathError(fhe_math::Error::InvalidSeedSize(
-                    value.seed.len(),
-                    <ChaCha8Rng as SeedableRng>::Seed::default().len(),
-                )));
-            }
-            seed = try_seed.ok();
-            let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, seed.unwrap());
+            let try_seed = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone())
+                .map_err(|_| {
+                    Error::MathError(fhe_math::Error::InvalidSeedSize(
+                        value.seed.len(),
+                        <ChaCha8Rng as SeedableRng>::Seed::default().len(),
+                    ))
+                })?;
+            seed = Some(try_seed);
+            let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, try_seed);
             unsafe { c1.allow_variable_time_computations() }
             c.push(c1)
         }
