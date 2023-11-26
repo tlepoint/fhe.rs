@@ -15,6 +15,11 @@ impl From<&Poly> for Rq {
     fn from(p: &Poly) -> Self {
         assert!(!p.has_lazy_coefficients);
 
+        let mut q = p.clone();
+        if p.representation != Representation::PowerBasis {
+            q.change_representation(Representation::PowerBasis);
+        }
+
         let mut proto = Rq::default();
         match p.representation {
             Representation::PowerBasis => {
@@ -34,7 +39,7 @@ impl From<&Poly> for Rq {
             .for_each(|qi| serialization_length += qi.serialization_length(p.ctx.degree));
         let mut serialization = Vec::with_capacity(serialization_length);
 
-        izip!(p.coefficients.outer_iter(), p.ctx.q.iter())
+        izip!(q.coefficients.outer_iter(), p.ctx.q.iter())
             .for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
         proto.coefficients = serialization;
         proto.degree = p.ctx.degree as u32;
@@ -180,17 +185,24 @@ impl TryConvertFrom<&Rq> for Poly {
             return Err(Error::Default("Invalid coefficients".to_string()));
         }
 
-        let mut coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
+        let mut power_basis_coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
         let mut index = 0;
         for i in 0..ctx.q.len() {
             let qi = &ctx.q[i];
             let size = qi.serialization_length(degree);
             let mut v = qi.deserialize_vec(&value.coefficients[index..index + size]);
-            coefficients.append(&mut v);
+            power_basis_coefficients.append(&mut v);
             index += size;
         }
 
-        Poly::try_convert_from(coefficients, ctx, variable_time, representation_from_proto)
+        let mut p = Poly::try_convert_from(
+            power_basis_coefficients,
+            ctx,
+            variable_time,
+            Representation::PowerBasis,
+        )?;
+        p.change_representation(representation_from_proto);
+        Ok(p)
     }
 }
 
