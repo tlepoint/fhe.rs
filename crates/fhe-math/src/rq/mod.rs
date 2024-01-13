@@ -608,23 +608,31 @@ mod tests {
             BigUint::zero(),
             BigUint::zero(),
             BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
+            BigUint::zero(),
         ];
 
         for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::zero(&ctx, Representation::PowerBasis);
             let q = Poly::zero(&ctx, Representation::Ntt);
             assert_ne!(p, q);
-            assert_eq!(Vec::<u64>::from(&p), &[0; 8]);
-            assert_eq!(Vec::<u64>::from(&q), &[0; 8]);
+            assert_eq!(Vec::<u64>::from(&p), &[0; 16]);
+            assert_eq!(Vec::<u64>::from(&q), &[0; 16]);
         }
 
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::zero(&ctx, Representation::PowerBasis);
         let q = Poly::zero(&ctx, Representation::Ntt);
         assert_ne!(p, q);
-        assert_eq!(Vec::<u64>::from(&p), [0; 8 * MODULI.len()]);
-        assert_eq!(Vec::<u64>::from(&q), [0; 8 * MODULI.len()]);
+        assert_eq!(Vec::<u64>::from(&p), [0; 16 * MODULI.len()]);
+        assert_eq!(Vec::<u64>::from(&q), [0; 16 * MODULI.len()]);
         assert_eq!(Vec::<BigUint>::from(&p), reference);
         assert_eq!(Vec::<BigUint>::from(&q), reference);
 
@@ -634,12 +642,12 @@ mod tests {
     #[test]
     fn ctx() -> Result<(), Box<dyn Error>> {
         for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::zero(&ctx, Representation::PowerBasis);
             assert_eq!(p.ctx(), &ctx);
         }
 
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::zero(&ctx, Representation::PowerBasis);
         assert_eq!(p.ctx(), &ctx);
 
@@ -654,13 +662,13 @@ mod tests {
             thread_rng().fill(&mut seed);
 
             for modulus in MODULI {
-                let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+                let ctx = Arc::new(Context::new(&[*modulus], 16)?);
                 let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
                 let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
                 assert_eq!(p, q);
             }
 
-            let ctx = Arc::new(Context::new(MODULI, 8)?);
+            let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
             let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
             assert_eq!(p, q);
@@ -681,13 +689,13 @@ mod tests {
         let mut rng = thread_rng();
         for _ in 0..50 {
             for modulus in MODULI {
-                let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+                let ctx = Arc::new(Context::new(&[*modulus], 16)?);
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let p_coefficients = Vec::<u64>::from(&p);
                 assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
             }
 
-            let ctx = Arc::new(Context::new(MODULI, 8)?);
+            let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
             let p_coefficients = Vec::<u64>::from(&p);
             assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
@@ -699,13 +707,13 @@ mod tests {
     fn modulus() -> Result<(), Box<dyn Error>> {
         for modulus in MODULI {
             let modulus_biguint = BigUint::from(*modulus);
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             assert_eq!(ctx.modulus(), &modulus_biguint)
         }
 
         let mut modulus_biguint = BigUint::one();
         MODULI.iter().for_each(|m| modulus_biguint *= *m);
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         assert_eq!(ctx.modulus(), &modulus_biguint);
 
         Ok(())
@@ -715,7 +723,7 @@ mod tests {
     fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
             assert!(!p.allow_variable_time_computations);
 
@@ -729,7 +737,7 @@ mod tests {
             assert!(!p.allow_variable_time_computations);
         }
 
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
         assert!(!p.allow_variable_time_computations);
 
@@ -765,7 +773,7 @@ mod tests {
     #[test]
     fn change_representation() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
         assert_eq!(p.representation, Representation::default());
@@ -809,7 +817,7 @@ mod tests {
     #[test]
     fn override_representation() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         let mut p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
         assert_eq!(p.representation(), &p.representation);
@@ -843,7 +851,7 @@ mod tests {
     fn small() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let q = Modulus::new(*modulus).unwrap();
 
             let e = Poly::small(&ctx, Representation::PowerBasis, 0, &mut rng);
@@ -871,11 +879,11 @@ mod tests {
         // Generate a very large polynomial to check the variance (here equal to 8).
         let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 18)?);
         let q = Modulus::new(4611686018326724609).unwrap();
-        let p = Poly::small(&ctx, Representation::PowerBasis, 8, &mut thread_rng())?;
+        let p = Poly::small(&ctx, Representation::PowerBasis, 16, &mut thread_rng())?;
         let coefficients = p.coefficients().to_slice().unwrap();
         let v = unsafe { q.center_vec_vt(coefficients) };
-        assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 16);
-        assert_eq!(variance(&v).round(), 8.0);
+        assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 32);
+        assert_eq!(variance(&v).round(), 16.0);
 
         Ok(())
     }
@@ -884,7 +892,7 @@ mod tests {
     fn substitute() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 8)?);
+            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
             let mut p_ntt = p.clone();
             p_ntt.change_representation(Representation::Ntt);
@@ -910,9 +918,9 @@ mod tests {
 
             // Substitution by 3
             let mut q = p.substitute(&SubstitutionExponent::new(&ctx, 3)?)?;
-            let mut v = vec![0u64; 8];
-            for i in 0..8 {
-                v[(3 * i) % 8] = if ((3 * i) / 8) & 1 == 1 && p_coeffs[i] > 0 {
+            let mut v = vec![0u64; 16];
+            for i in 0..16 {
+                v[(3 * i) % 16] = if ((3 * i) / 16) & 1 == 1 && p_coeffs[i] > 0 {
                     *modulus - p_coeffs[i]
                 } else {
                     p_coeffs[i]
@@ -948,7 +956,7 @@ mod tests {
             );
         }
 
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
         let mut p_ntt = p.clone();
         p_ntt.change_representation(Representation::Ntt);
@@ -980,7 +988,7 @@ mod tests {
     fn mod_switch_down_next() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         for _ in 0..ntests {
             // If the polynomial has incorrect representation, an error is returned
@@ -1026,8 +1034,8 @@ mod tests {
     fn mod_switch_down_to() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
-        let ctx1 = Arc::new(Context::new(MODULI, 8)?);
-        let ctx2 = Arc::new(Context::new(&MODULI[..2], 8)?);
+        let ctx1 = Arc::new(Context::new(MODULI, 16)?);
+        let ctx2 = Arc::new(Context::new(&MODULI[..2], 16)?);
 
         for _ in 0..ntests {
             let mut p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
@@ -1052,8 +1060,8 @@ mod tests {
     fn mod_switch_to() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
-        let ctx1 = Arc::new(Context::new(&MODULI[..2], 8)?);
-        let ctx2 = Arc::new(Context::new(&MODULI[3..], 8)?);
+        let ctx1 = Arc::new(Context::new(&MODULI[..2], 16)?);
+        let ctx2 = Arc::new(Context::new(&MODULI[3..], 16)?);
         let switcher = Switcher::new(&ctx1, &ctx2)?;
         for _ in 0..ntests {
             let p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
@@ -1076,7 +1084,7 @@ mod tests {
     #[test]
     fn mul_x_power() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let ctx = Arc::new(Context::new(MODULI, 8)?);
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
         let e = Poly::random(&ctx, Representation::Ntt, &mut rng).multiply_inverse_power_of_x(1);
         assert!(e.is_err());
         assert_eq!(

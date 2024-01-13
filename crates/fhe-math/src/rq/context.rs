@@ -172,7 +172,7 @@ mod tests {
     fn context_constructor() {
         for modulus in MODULI {
             // modulus is = 1 modulo 2 * 8
-            assert!(Context::new(&[*modulus], 8).is_ok());
+            assert!(Context::new(&[*modulus], 16).is_ok());
 
             if supports_ntt(*modulus, 128) {
                 assert!(Context::new(&[*modulus], 128).is_ok());
@@ -182,7 +182,7 @@ mod tests {
         }
 
         // All moduli in MODULI are = 1 modulo 2 * 8
-        assert!(Context::new(MODULI, 8).is_ok());
+        assert!(Context::new(MODULI, 16).is_ok());
 
         // This should fail since 1153 != 1 moduli 2 * 128
         assert!(Context::new(MODULI, 128).is_err());
@@ -191,10 +191,10 @@ mod tests {
     #[test]
     fn next_context() -> Result<(), Box<dyn Error>> {
         // A context should have a children pointing to a context with one less modulus.
-        let context = Arc::new(Context::new(MODULI, 8)?);
+        let context = Arc::new(Context::new(MODULI, 16)?);
         assert_eq!(
             context.next_context,
-            Some(Arc::new(Context::new(&MODULI[..MODULI.len() - 1], 8)?))
+            Some(Arc::new(Context::new(&MODULI[..MODULI.len() - 1], 16)?))
         );
 
         // We can go down the chain of the MODULI.len() - 1 context's.
@@ -212,13 +212,13 @@ mod tests {
     #[test]
     fn niterations_to() -> Result<(), Box<dyn Error>> {
         // A context should have a children pointing to a context with one less modulus.
-        let context = Arc::new(Context::new(MODULI, 8)?);
+        let context = Arc::new(Context::new(MODULI, 16)?);
 
         assert_eq!(context.niterations_to(&context).ok(), Some(0));
 
         assert_eq!(
             context
-                .niterations_to(&Arc::new(Context::new(&MODULI[1..], 8)?))
+                .niterations_to(&Arc::new(Context::new(&MODULI[1..], 16)?))
                 .err(),
             Some(crate::Error::InvalidContext)
         );
@@ -226,7 +226,7 @@ mod tests {
         for i in 1..MODULI.len() {
             assert_eq!(
                 context
-                    .niterations_to(&Arc::new(Context::new(&MODULI[..MODULI.len() - i], 8)?))
+                    .niterations_to(&Arc::new(Context::new(&MODULI[..MODULI.len() - i], 16)?))
                     .ok(),
                 Some(i)
             );
