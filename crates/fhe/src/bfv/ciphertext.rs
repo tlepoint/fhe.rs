@@ -205,8 +205,8 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -226,8 +226,8 @@ mod tests {
     fn serialize() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -243,8 +243,8 @@ mod tests {
     fn new() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -281,8 +281,8 @@ mod tests {
     fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v = params.plaintext.random_vec(params.degree(), &mut rng);

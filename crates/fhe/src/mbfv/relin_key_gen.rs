@@ -383,8 +383,8 @@ mod tests {
     fn relinearization_works() {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(3, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(3, 16),
+            BfvParameters::default_arc(6, 32),
         ] {
             // Just support level 0 for now.
             let level = 0;

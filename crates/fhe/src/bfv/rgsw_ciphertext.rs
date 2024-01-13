@@ -160,8 +160,8 @@ mod tests {
     fn external_product() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(2, 8),
-            BfvParameters::default_arc(8, 8),
+            BfvParameters::default_arc(2, 16),
+            BfvParameters::default_arc(8, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -192,8 +192,8 @@ mod tests {
     fn serialize() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(6, 8),
-            BfvParameters::default_arc(5, 8),
+            BfvParameters::default_arc(6, 16),
+            BfvParameters::default_arc(5, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let v = params.plaintext.random_vec(params.degree(), &mut rng);

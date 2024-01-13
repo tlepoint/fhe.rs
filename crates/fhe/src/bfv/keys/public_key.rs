@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn keygen() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let params = BfvParameters::default_arc(1, 8);
+        let params = BfvParameters::default_arc(1, 16);
         let sk = SecretKey::random(&params, &mut rng);
         let pk = PublicKey::new(&sk, &mut rng);
         assert_eq!(pk.par, params);
@@ -161,8 +161,8 @@ mod tests {
     fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             for level in 0..params.max_level() {
                 for _ in 0..20 {
@@ -190,8 +190,8 @@ mod tests {
     fn test_serialize() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let pk = PublicKey::new(&sk, &mut rng);

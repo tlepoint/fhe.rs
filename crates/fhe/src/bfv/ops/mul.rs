@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = BfvParameters::default_arc(3, 8);
+        let par = BfvParameters::default_arc(3, 16);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn mul_at_level() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = BfvParameters::default_arc(3, 8);
+        let par = BfvParameters::default_arc(3, 16);
         for _ in 0..15 {
             for level in 0..2 {
                 let values = par.plaintext.random_vec(par.degree(), &mut rng);
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn mul_no_relin() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = BfvParameters::default_arc(6, 8);
+        let par = BfvParameters::default_arc(6, 16);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -362,7 +362,7 @@ mod tests {
         // Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
         let mut rng = thread_rng();
-        let par = BfvParameters::default_arc(3, 8);
+        let par = BfvParameters::default_arc(3, 16);
         let mut extended_basis = par.moduli().to_vec();
         extended_basis
             .push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());

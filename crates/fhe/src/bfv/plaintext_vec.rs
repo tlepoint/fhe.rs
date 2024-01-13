@@ -142,7 +142,7 @@ mod tests {
         let mut rng = thread_rng();
         for _ in 0..20 {
             for i in 1..5 {
-                let params = BfvParameters::default_arc(1, 8);
+                let params = BfvParameters::default_arc(1, 16);
                 let a = params.plaintext.random_vec(params.degree() * i, &mut rng);
 
                 let plaintexts = PlaintextVec::try_encode(&a, Encoding::poly_at_level(0), &params)?;
