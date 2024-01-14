@@ -502,7 +502,7 @@ mod tests {
             let b = Vec::<u64>::from(&q);
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
-                m.add_vec(&mut a[i *16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
+                m.add_vec(&mut a[i * 16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
             }
             let r = &p + &q;
             assert_eq!(r.representation, Representation::PowerBasis);

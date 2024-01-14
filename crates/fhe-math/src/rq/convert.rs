@@ -522,8 +522,8 @@ mod tests {
             assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
             assert!(Poly::try_convert_from(&[0i64], &ctx, false, Representation::Ntt).is_err());
             assert_eq!(
-                 Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::Ntt)?,
-                 Poly::zero(&ctx, Representation::Ntt)
+                Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::Ntt)?,
+                Poly::zero(&ctx, Representation::Ntt)
             );
             assert!(Poly::try_convert_from(&[0i64; 16], &ctx, false, Representation::Ntt).is_err());
             assert!(Poly::try_convert_from(
