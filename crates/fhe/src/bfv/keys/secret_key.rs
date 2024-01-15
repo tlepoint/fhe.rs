@@ -175,12 +175,16 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let mut c = Zeroizing::new(ct.c[0].clone());
             c.disallow_variable_time_computations();
 
+            // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
+            // s^k is computed on-the-fly
             for i in 1..ct.c.len() {
                 let mut cis = Zeroizing::new(ct.c[i].clone());
                 cis.disallow_variable_time_computations();
                 *cis.as_mut() *= si.as_ref();
                 *c.as_mut() += &cis;
-                *si.as_mut() *= s.as_ref();
+                if i + 1 < ct.c.len() {
+                    *si.as_mut() *= s.as_ref();
+                }
             }
             c.change_representation(Representation::PowerBasis);
 
