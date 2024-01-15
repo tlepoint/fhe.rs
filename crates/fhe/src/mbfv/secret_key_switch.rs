@@ -203,8 +203,8 @@ mod tests {
     fn encrypt_decrypt() {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -250,8 +250,8 @@ mod tests {
     fn encrypt_keyswitch_decrypt() {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -318,8 +318,8 @@ mod tests {
     fn collective_keys_enable_homomorphic_addition() {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {

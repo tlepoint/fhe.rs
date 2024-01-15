@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn constructor() {
-        for size in [8, 1024] {
+        for size in [32, 1024] {
             for p in [1153, 4611686018326724609] {
                 let q = Modulus::new(p).unwrap();
                 let supports_ntt = supports_ntt(p, size);
@@ -45,7 +45,7 @@ mod tests {
         let ntests = 100;
         let mut rng = thread_rng();
 
-        for size in [8, 1024] {
+        for size in [32, 1024] {
             for p in [1153, 4611686018326724609] {
                 let q = Modulus::new(p).unwrap();
 
@@ -79,7 +79,7 @@ mod tests {
         let ntests = 100;
         let mut rng = thread_rng();
 
-        for size in [8, 1024] {
+        for size in [32, 1024] {
             for p in [1153, 4611686018326724609] {
                 let q = Modulus::new(p).unwrap();
 

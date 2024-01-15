@@ -290,8 +290,8 @@ mod tests {
         let mut rng = thread_rng();
 
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let zero = Ciphertext::zero(&params);
             for _ in 0..50 {
@@ -329,8 +329,8 @@ mod tests {
         let mut rng = thread_rng();
 
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             for _ in 0..50 {
                 let a = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -378,8 +378,8 @@ mod tests {
     fn sub() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             let zero = Ciphertext::zero(&params);
             for _ in 0..50 {
@@ -424,8 +424,8 @@ mod tests {
     fn sub_scalar() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             for _ in 0..50 {
                 let a = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -475,8 +475,8 @@ mod tests {
     fn neg() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             for _ in 0..50 {
                 let a = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -508,8 +508,8 @@ mod tests {
         let mut rng = thread_rng();
 
         for params in [
-            BfvParameters::default_arc(1, 8),
-            BfvParameters::default_arc(6, 8),
+            BfvParameters::default_arc(1, 16),
+            BfvParameters::default_arc(6, 16),
         ] {
             for _ in 0..50 {
                 let a = params.plaintext.random_vec(params.degree(), &mut rng);
@@ -563,8 +563,8 @@ mod tests {
     fn mul() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for par in [
-            BfvParameters::default_arc(2, 8),
-            BfvParameters::default_arc(8, 8),
+            BfvParameters::default_arc(2, 16),
+            BfvParameters::default_arc(8, 16),
         ] {
             for _ in 0..1 {
                 // We will encode `values` in an Simd format, and check that the product is
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn square() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        let par = BfvParameters::default_arc(6, 8);
+        let par = BfvParameters::default_arc(6, 16);
         for _ in 0..20 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.

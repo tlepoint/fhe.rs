@@ -128,8 +128,8 @@ mod tests {
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(6, 8),
-            BfvParameters::default_arc(3, 8),
+            BfvParameters::default_arc(6, 16),
+            BfvParameters::default_arc(3, 16),
         ] {
             for _ in 0..30 {
                 let sk = SecretKey::random(&params, &mut rng);
@@ -178,8 +178,8 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(6, 8),
-            BfvParameters::default_arc(4, 8),
+            BfvParameters::default_arc(6, 16),
+            BfvParameters::default_arc(4, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let gk = GaloisKey::new(&sk, 9, 0, 0, &mut rng)?;

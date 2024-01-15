@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        for params in [BfvParameters::default_arc(6, 8)] {
+        for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
@@ -210,7 +210,7 @@ mod tests {
                 println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
                 let pt = sk.try_decrypt(&ct)?;
                 let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
-                assert_eq!(w, &[0u64; 8]);
+                assert_eq!(w, &[0u64; 16]);
             }
         }
         Ok(())
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        for params in [BfvParameters::default_arc(5, 8)] {
+        for params in [BfvParameters::default_arc(5, 16)] {
             for ciphertext_level in 0..params.max_level() {
                 for key_level in 0..=ciphertext_level {
                     for _ in 0..10 {
@@ -271,7 +271,7 @@ mod tests {
                         println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
                         let pt = sk.try_decrypt(&ct)?;
                         let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
-                        assert_eq!(w, &[0u64; 8]);
+                        assert_eq!(w, &[0u64; 16]);
                     }
                 }
             }
@@ -283,8 +283,8 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
-            BfvParameters::default_arc(6, 8),
-            BfvParameters::default_arc(3, 8),
+            BfvParameters::default_arc(6, 16),
+            BfvParameters::default_arc(3, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;

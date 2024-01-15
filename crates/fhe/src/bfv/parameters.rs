@@ -590,8 +590,8 @@ mod tests {
     // 	assert_eq!(params.ciphertext_moduli, vec![1153]);
     // 	assert_eq!(params.moduli(), vec![1153]);
     // 	assert_eq!(params.plaintext_modulus, 2);
-    // 	assert_eq!(params.polynomial_degree, 8);
-    // 	assert_eq!(params.degree(), 8);
+    // 	assert_eq!(params.polynomial_degree, 16);
+    // 	assert_eq!(params.degree(), 16);
     // 	assert_eq!(params.variance, 1);
     // 	assert!(params.op.is_none());
 
@@ -600,9 +600,9 @@ mod tests {
 
     #[test]
     fn default() {
-        let params = BfvParameters::default_arc(1, 8);
+        let params = BfvParameters::default_arc(1, 16);
         assert_eq!(params.moduli.len(), 1);
-        assert_eq!(params.degree(), 8);
+        assert_eq!(params.degree(), 16);
 
         let params = BfvParameters::default_arc(2, 16);
         assert_eq!(params.moduli.len(), 2);
@@ -612,31 +612,31 @@ mod tests {
     #[test]
     fn ciphertext_moduli() -> Result<(), Box<dyn Error>> {
         let params = BfvParametersBuilder::new()
-            .set_degree(8)
+            .set_degree(16)
             .set_plaintext_modulus(2)
             .set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
             .build()?;
         assert_eq!(
             params.moduli.to_vec(),
             &[
-                4611686018427387761,
                 4611686018427387617,
-                4611686018427387409,
+                4611686018427387329,
+                4611686018427387073,
                 2305843009213693921,
-                1152921504606846577,
+                1152921504606845473,
                 2017
             ]
         );
 
         let params = BfvParametersBuilder::new()
-            .set_degree(8)
+            .set_degree(16)
             .set_plaintext_modulus(2)
             .set_moduli(&[
-                4611686018427387761,
                 4611686018427387617,
-                4611686018427387409,
+                4611686018427387329,
+                4611686018427387073,
                 2305843009213693921,
-                1152921504606846577,
+                1152921504606845473,
                 2017,
             ])
             .build()?;
@@ -648,7 +648,7 @@ mod tests {
     #[test]
     fn serialize() -> Result<(), Box<dyn Error>> {
         let params = BfvParametersBuilder::new()
-            .set_degree(8)
+            .set_degree(16)
             .set_plaintext_modulus(2)
             .set_moduli_sizes(&[62, 62, 62, 61, 60, 11])
             .set_variance(4)
