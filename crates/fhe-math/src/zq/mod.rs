@@ -11,6 +11,13 @@ use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
 
+/// cond ? on_true : on_false
+const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
+    let mask = -(cond as i64) as u64;
+    let diff = on_true ^ on_false;
+    (diff & mask) ^ on_false
+}
+
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modulus {
@@ -582,14 +589,7 @@ impl Modulus {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
-        let (y, _) = x.overflowing_sub(p);
-        let xp = x ^ p;
-        let yp = y ^ p;
-        let xy = xp ^ yp;
-        let xxy = x ^ xy;
-        let xxy = xxy >> 63;
-        let (c, _) = xxy.overflowing_sub(1);
-        let r = (c & y) | ((!c) & x);
+        let r = const_time_cond_select(x, x.wrapping_sub(p), x < p);
 
         debug_assert!(r == x % p);
 

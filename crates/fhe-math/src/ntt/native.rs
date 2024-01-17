@@ -270,7 +270,7 @@ impl NttOperator {
     const fn reduce3(&self, a: u64) -> u64 {
         debug_assert!(a < 4 * self.p.p);
 
-        let y = Modulus::reduce1(a, 2 * self.p.p);
+        let y = Modulus::reduce1(a, self.p_twice);
         Modulus::reduce1(y, self.p.p)
     }
 
@@ -280,7 +280,7 @@ impl NttOperator {
     const unsafe fn reduce3_vt(&self, a: u64) -> u64 {
         debug_assert!(a < 4 * self.p.p);
 
-        let y = Modulus::reduce1_vt(a, 2 * self.p.p);
+        let y = Modulus::reduce1_vt(a, self.p_twice);
         Modulus::reduce1_vt(y, self.p.p)
     }
 
