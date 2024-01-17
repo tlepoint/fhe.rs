@@ -12,7 +12,7 @@ use num_traits::cast::ToPrimitive;
 use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
 
 /// cond ? on_true : on_false
-pub const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
+const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
     let mask = -(cond as i64) as u64;
     let diff = on_true ^ on_false;
     (diff & mask) ^ on_false
