@@ -9,7 +9,7 @@ documentation = "https://fhe.rs"
 edition = "2021"
 repository = "https://github.com/tlepoint/fhe.rs"
 version = "0.1.0-beta.8"
-license-file = "LICENSE"
+license = "MIT"
 rust-version = "1.73"
 
 [workspace.dependencies]
