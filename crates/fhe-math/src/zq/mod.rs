@@ -723,7 +723,6 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
     use super::{primes, Modulus};
-    use fhe_util::catch_unwind;
     use itertools::{izip, Itertools};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
@@ -763,69 +762,91 @@ mod tests {
         }
 
         #[test]
-        fn neg(p in valid_moduli(), mut a: u64,  mut q: u64) {
+        fn neg(p in valid_moduli(), mut a: u64) {
             a = p.reduce(a);
             prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
             unsafe { prop_assert_eq!(p.neg_vt(a), (p.modulus() - a) % p.modulus()) }
 
-            q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
-            prop_assert!(catch_unwind(|| p.neg(q)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.neg(p.modulus())).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.neg(p.modulus() + 1)).is_err());
+            }
         }
 
         #[test]
-        fn add(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+        fn add(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
             unsafe { prop_assert_eq!(p.add_vt(a, b), (a + b) % p.modulus()) }
 
-            q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
-            prop_assert!(catch_unwind(|| p.add(q, a)).is_err());
-            prop_assert!(catch_unwind(|| p.add(a, q)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.add(p.modulus(), a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(a, p.modulus())).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(p.modulus() + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(a, p.modulus() + 1)).is_err());
+            }
         }
 
         #[test]
-        fn sub(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+        fn sub(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
             unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + p.modulus() - b) % p.modulus()) }
 
-            q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
-            prop_assert!(catch_unwind(|| p.sub(q, a)).is_err());
-            prop_assert!(catch_unwind(|| p.sub(a, q)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.sub(p.modulus(), a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(a, p.modulus())).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(p.modulus() + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(a, p.modulus() + 1)).is_err());
+            }
         }
 
         #[test]
-        fn mul(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+        fn mul(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
             unsafe { prop_assert_eq!(p.mul_vt(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
-            q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
-            prop_assert!(catch_unwind(|| p.mul(q, a)).is_err());
-            prop_assert!(catch_unwind(|| p.mul(a, q)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.mul(p.modulus(), a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(a, p.modulus())).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(p.modulus() + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(a, p.modulus() + 1)).is_err());
+            }
         }
 
         #[test]
-        fn mul_shoup(p in valid_moduli(), mut a: u64, mut b: u64, mut q: u64) {
+        fn mul_shoup(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
-            q = (q % (u64::MAX - p.modulus())) + 1 + p.modulus(); // q > p
 
             // Compute shoup representation
             let b_shoup = p.shoup(b);
-            prop_assert!(catch_unwind(|| p.shoup(q)).is_err());
+
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.shoup(p.modulus())).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.shoup(p.modulus() + 1)).is_err());
+            }
 
             // Check that the multiplication yields the expected result
             prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
             unsafe { prop_assert_eq!(p.mul_shoup_vt(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
             // Check that the multiplication with incorrect b_shoup panics in debug mode
-            prop_assert!(catch_unwind(|| p.mul_shoup(a, q, b_shoup)).is_err());
-            prop_assume!(a != b);
-            prop_assert!(catch_unwind(|| p.mul_shoup(a, a, b_shoup)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, p.modulus(), b_shoup)).is_err());
+                prop_assume!(a != b);
+                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, a, b_shoup)).is_err());
+            }
         }
 
         #[test]
@@ -1012,10 +1033,13 @@ mod tests {
             assert_eq!(q.mul_opt(p - 1, 1), p - 1);
             assert_eq!(q.mul_opt(p - 1, 2 % p), p - 2);
 
-            assert!(catch_unwind(|| q.mul_opt(p, 1)).is_err());
-            assert!(catch_unwind(|| q.mul_opt(p << 1, 1)).is_err());
-            assert!(catch_unwind(|| q.mul_opt(0, p)).is_err());
-            assert!(catch_unwind(|| q.mul_opt(0, p << 1)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                assert!(std::panic::catch_unwind(|| q.mul_opt(p, 1)).is_err());
+                assert!(std::panic::catch_unwind(|| q.mul_opt(p << 1, 1)).is_err());
+                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p)).is_err());
+                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p << 1)).is_err());
+            }
 
             for _ in 0..ntests {
                 let a = rng.next_u64() % p;
@@ -1043,10 +1067,13 @@ mod tests {
             assert_eq!(q.pow(1, p - 2), 1);
             assert_eq!(q.pow(1, p - 1), 1);
 
-            assert!(catch_unwind(|| q.pow(p, 1)).is_err());
-            assert!(catch_unwind(|| q.pow(p << 1, 1)).is_err());
-            assert!(catch_unwind(|| q.pow(0, p)).is_err());
-            assert!(catch_unwind(|| q.pow(0, p << 1)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                assert!(std::panic::catch_unwind(|| q.pow(p, 1)).is_err());
+                assert!(std::panic::catch_unwind(|| q.pow(p << 1, 1)).is_err());
+                assert!(std::panic::catch_unwind(|| q.pow(0, p)).is_err());
+                assert!(std::panic::catch_unwind(|| q.pow(0, p << 1)).is_err());
+            }
 
             for _ in 0..ntests {
                 let a = rng.next_u64() % p;
@@ -1075,8 +1102,11 @@ mod tests {
             assert_eq!(q.inv(1).unwrap(), 1);
             assert_eq!(q.inv(p - 1).unwrap(), p - 1);
 
-            assert!(catch_unwind(|| q.inv(p)).is_err());
-            assert!(catch_unwind(|| q.inv(p << 1)).is_err());
+            #[cfg(debug_assertions)]
+            {
+                assert!(std::panic::catch_unwind(|| q.inv(p)).is_err());
+                assert!(std::panic::catch_unwind(|| q.inv(p << 1)).is_err());
+            }
 
             for _ in 0..ntests {
                 let a = rng.next_u64() % p;
