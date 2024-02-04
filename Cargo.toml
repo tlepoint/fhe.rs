@@ -13,6 +13,7 @@ license = "MIT"
 rust-version = "1.73"
 
 [workspace.dependencies]
+concrete-ntt = "^0.1.1"
 console = "^0.15.8"
 criterion = "^0.5.1"
 doc-comment = "^0.3.3"

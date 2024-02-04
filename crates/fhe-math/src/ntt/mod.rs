@@ -3,6 +3,13 @@
 use fhe_util::is_prime;
 
 mod native;
+
+#[cfg(any(feature = "concrete-ntt", feature = "concrete-ntt-nightly"))]
+mod concrete;
+
+#[cfg(any(feature = "concrete-ntt", feature = "concrete-ntt-nightly"))]
+pub use concrete::NttOperator;
+#[cfg(not(any(feature = "concrete-ntt", feature = "concrete-ntt-nightly")))]
 pub use native::NttOperator;
 
 /// Returns whether a modulus p is prime and supports the Number Theoretic
