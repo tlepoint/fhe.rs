@@ -24,26 +24,14 @@ impl AddAssign<&Poly> for Poly {
             "Incompatible representations"
         );
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        }
+        izip!(
+            self.coefficients.outer_iter_mut(),
+            p.coefficients.outer_iter(),
+            self.ctx.q.iter()
+        )
+        .for_each(|(mut v1, v2, qi)| {
+            qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+        });
     }
 }
 
@@ -77,26 +65,14 @@ impl SubAssign<&Poly> for Poly {
             "Incompatible representations"
         );
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        }
+        izip!(
+            self.coefficients.outer_iter_mut(),
+            p.coefficients.outer_iter(),
+            self.ctx.q.iter()
+        )
+        .for_each(|(mut v1, v2, qi)| {
+            qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+        });
     }
 }
 
@@ -130,62 +106,32 @@ impl MulAssign<&Poly> for Poly {
             );
         }
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
 
         match p.representation {
             Representation::Ntt => {
-                if self.allow_variable_time_computations {
-                    unsafe {
-                        izip!(
-                            self.coefficients.outer_iter_mut(),
-                            p.coefficients.outer_iter(),
-                            self.ctx.q.iter()
-                        )
-                        .for_each(|(mut v1, v2, qi)| {
-                            qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap());
-                        });
-                    }
-                } else {
-                    izip!(
-                        self.coefficients.outer_iter_mut(),
-                        p.coefficients.outer_iter(),
-                        self.ctx.q.iter()
-                    )
-                    .for_each(|(mut v1, v2, qi)| {
-                        qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-                    });
-                }
+                izip!(
+                    self.coefficients.outer_iter_mut(),
+                    p.coefficients.outer_iter(),
+                    self.ctx.q.iter()
+                )
+                .for_each(|(mut v1, v2, qi)| {
+                    qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                });
             }
             Representation::NttShoup => {
-                if self.allow_variable_time_computations {
-                    izip!(
-                        self.coefficients.outer_iter_mut(),
-                        p.coefficients.outer_iter(),
-                        p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-                        self.ctx.q.iter()
+                izip!(
+                    self.coefficients.outer_iter_mut(),
+                    p.coefficients.outer_iter(),
+                    p.coefficients_shoup.as_ref().unwrap().outer_iter(),
+                    self.ctx.q.iter()
+                )
+                .for_each(|(mut v1, v2, v2_shoup, qi)| {
+                    qi.mul_shoup_vec(
+                        v1.as_slice_mut().unwrap(),
+                        v2.as_slice().unwrap(),
+                        v2_shoup.as_slice().unwrap(),
                     )
-                    .for_each(|(mut v1, v2, v2_shoup, qi)| unsafe {
-                        qi.mul_shoup_vec_vt(
-                            v1.as_slice_mut().unwrap(),
-                            v2.as_slice().unwrap(),
-                            v2_shoup.as_slice().unwrap(),
-                        )
-                    });
-                } else {
-                    izip!(
-                        self.coefficients.outer_iter_mut(),
-                        p.coefficients.outer_iter(),
-                        p.coefficients_shoup.as_ref().unwrap().outer_iter(),
-                        self.ctx.q.iter()
-                    )
-                    .for_each(|(mut v1, v2, v2_shoup, qi)| {
-                        qi.mul_shoup_vec(
-                            v1.as_slice_mut().unwrap(),
-                            v2.as_slice().unwrap(),
-                            v2_shoup.as_slice().unwrap(),
-                        )
-                    });
-                }
+                });
                 self.has_lazy_coefficients = false
             }
             _ => {
@@ -201,32 +147,18 @@ impl MulAssign<&BigUint> for Poly {
         let mut q = Poly::try_convert_from(
             v.as_ref() as &[BigUint],
             &self.ctx,
-            self.allow_variable_time_computations,
             self.representation.clone(),
         )
         .unwrap();
         q.change_representation(Representation::Ntt);
-        if self.allow_variable_time_computations {
-            unsafe {
-                izip!(
-                    self.coefficients.outer_iter_mut(),
-                    q.coefficients.outer_iter(),
-                    self.ctx.q.iter()
-                )
-                .for_each(|(mut v1, v2, qi)| {
-                    qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-                });
-            }
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                q.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        }
+        izip!(
+            self.coefficients.outer_iter_mut(),
+            q.coefficients.outer_iter(),
+            self.ctx.q.iter()
+        )
+        .for_each(|(mut v1, v2, qi)| {
+            qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+        });
     }
 }
 
@@ -280,13 +212,8 @@ impl Neg for &Poly {
     fn neg(self) -> Poly {
         assert!(!self.has_lazy_coefficients);
         let mut out = self.clone();
-        if self.allow_variable_time_computations {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
+        izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
+            .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
         out
     }
 }
@@ -296,13 +223,8 @@ impl Neg for Poly {
 
     fn neg(mut self) -> Poly {
         assert!(!self.has_lazy_coefficients);
-        if self.allow_variable_time_computations {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
+        izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
+            .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
         self
     }
 }
@@ -403,14 +325,8 @@ where
                     let qj = &*q_ptr.offset(j);
                     *num_acc_ptr.offset(j) += 1;
                     if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
-                        if p_first.allow_variable_time_computations {
-                            for i in j * degree..(j + 1) * degree {
-                                *acc_ptr.offset(i) = qj.reduce_u128_vt(*acc_ptr.offset(i)) as u128;
-                            }
-                        } else {
-                            for i in j * degree..(j + 1) * degree {
-                                *acc_ptr.offset(i) = qj.reduce_u128(*acc_ptr.offset(i)) as u128;
-                            }
+                        for i in j * degree..(j + 1) * degree {
+                            *acc_ptr.offset(i) = qj.reduce_u128(*acc_ptr.offset(i)) as u128;
                         }
                         *num_acc_ptr.offset(j) = 1;
                     }
@@ -436,19 +352,12 @@ where
         p_first.ctx.q.iter()
     )
     .for_each(|(mut coeffsj, accj, m)| {
-        if p_first.allow_variable_time_computations {
-            izip!(coeffsj.iter_mut(), accj.iter())
-                .for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
-        } else {
-            izip!(coeffsj.iter_mut(), accj.iter())
-                .for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
-        }
+        izip!(coeffsj.iter_mut(), accj.iter()).for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
     });
 
     Ok(Poly {
         ctx: p_first.ctx.clone(),
         representation: Representation::Ntt,
-        allow_variable_time_computations: p_first.allow_variable_time_computations,
         coefficients: coeffs,
         coefficients_shoup: None,
         has_lazy_coefficients: false,

@@ -343,13 +343,8 @@ impl EvaluationKeyBuilder {
         for l in 0..self.sk.par.degree().ilog2() {
             let mut monomial = vec![0i64; self.sk.par.degree()];
             monomial[self.sk.par.degree() - (1 << l)] = -1;
-            let mut monomial = Poly::try_convert_from(
-                &monomial,
-                ciphertext_ctx,
-                true,
-                Representation::PowerBasis,
-            )?;
-            unsafe { monomial.allow_variable_time_computations() }
+            let mut monomial =
+                Poly::try_convert_from(&monomial, ciphertext_ctx, Representation::PowerBasis)?;
             monomial.change_representation(Representation::NttShoup);
             ek.monomials.push(monomial);
         }
@@ -406,13 +401,8 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
         for l in 0..par.degree().ilog2() {
             let mut monomial = vec![0i64; par.degree()];
             monomial[par.degree() - (1 << l)] = -1;
-            let mut monomial = Poly::try_convert_from(
-                &monomial,
-                ciphertext_ctx,
-                true,
-                Representation::PowerBasis,
-            )?;
-            unsafe { monomial.allow_variable_time_computations() }
+            let mut monomial =
+                Poly::try_convert_from(&monomial, ciphertext_ctx, Representation::PowerBasis)?;
             monomial.change_representation(Representation::NttShoup);
             monomials.push(monomial);
         }

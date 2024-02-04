@@ -176,8 +176,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
                     ))
                 })?;
             seed = Some(try_seed);
-            let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, try_seed);
-            unsafe { c1.allow_variable_time_computations() }
+            let c1 = Poly::random_from_seed(ctx, Representation::Ntt, try_seed);
             c.push(c1)
         }
 

@@ -92,7 +92,6 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         let mut m_s = Zeroizing::new(Poly::try_convert_from(
             self.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         m_s.change_representation(Representation::Ntt);

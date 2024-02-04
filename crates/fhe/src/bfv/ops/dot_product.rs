@@ -134,15 +134,10 @@ where
                 ctx.moduli_operators()
             ) {
                 for (outij_coeff, accij_coeff) in izip!(outij.iter_mut(), accij.iter()) {
-                    unsafe { *outij_coeff = q.reduce_u128_vt(*accij_coeff) }
+                    *outij_coeff = q.reduce_u128(*accij_coeff)
                 }
             }
-            c.push(Poly::try_convert_from(
-                coeffs,
-                ctx,
-                true,
-                Representation::Ntt,
-            )?)
+            c.push(Poly::try_convert_from(coeffs, ctx, Representation::Ntt)?)
         }
 
         Ok(Ciphertext {

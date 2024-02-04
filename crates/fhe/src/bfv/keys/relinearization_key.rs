@@ -58,7 +58,6 @@ impl RelinearizationKey {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk.coeffs.as_ref(),
             ctx_ciphertext,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -171,13 +170,9 @@ mod tests {
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
                 let ctx = params.ctx_at_level(0)?;
-                let mut s = Poly::try_convert_from(
-                    sk.coeffs.as_ref(),
-                    ctx,
-                    false,
-                    Representation::PowerBasis,
-                )
-                .map_err(crate::Error::MathError)?;
+                let mut s =
+                    Poly::try_convert_from(sk.coeffs.as_ref(), ctx, Representation::PowerBasis)
+                        .map_err(crate::Error::MathError)?;
                 s.change_representation(Representation::Ntt);
                 let s2 = &s * &s;
 
@@ -235,7 +230,6 @@ mod tests {
                         let mut s = Poly::try_convert_from(
                             sk.coeffs.as_ref(),
                             ctx,
-                            false,
                             Representation::PowerBasis,
                         )
                         .map_err(crate::Error::MathError)?;

@@ -64,17 +64,6 @@ impl Modulus {
         Self::reduce1(a + b, self.p)
     }
 
-    /// Performs the modular addition of a and b in variable time.
-    /// Aborts if a >= p or b >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being added.
-    pub const unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
-        debug_assert!(a < self.p && b < self.p);
-        Self::reduce1_vt(a + b, self.p)
-    }
-
     /// Performs the modular subtraction of a and b in constant time.
     /// Aborts if a >= p or b >= p in debug mode.
     pub const fn sub(&self, a: u64, b: u64) -> u64 {
@@ -82,33 +71,11 @@ impl Modulus {
         Self::reduce1(a + self.p - b, self.p)
     }
 
-    /// Performs the modular subtraction of a and b in constant time.
-    /// Aborts if a >= p or b >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being subtracted.
-    const unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
-        debug_assert!(a < self.p && b < self.p);
-        Self::reduce1_vt(a + self.p - b, self.p)
-    }
-
     /// Performs the modular multiplication of a and b in constant time.
     /// Aborts if a >= p or b >= p in debug mode.
     pub const fn mul(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         self.reduce_u128((a as u128) * (b as u128))
-    }
-
-    /// Performs the modular multiplication of a and b in constant time.
-    /// Aborts if a >= p or b >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being multiplied.
-    const unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
-        debug_assert!(a < self.p && b < self.p);
-        Self::reduce1_vt(self.lazy_reduce_u128((a as u128) * (b as u128)), self.p)
     }
 
     /// Optimized modular multiplication of a and b in constant time.
@@ -121,36 +88,12 @@ impl Modulus {
         self.reduce_opt_u128((a as u128) * (b as u128))
     }
 
-    /// Optimized modular multiplication of a and b in variable time.
-    /// Aborts if a >= p or b >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being multiplied.
-    const unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
-        debug_assert!(self.supports_opt);
-        debug_assert!(a < self.p && b < self.p);
-
-        self.reduce_opt_u128_vt((a as u128) * (b as u128))
-    }
-
     /// Modular negation in constant time.
     ///
     /// Aborts if a >= p in debug mode.
     pub const fn neg(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
         Self::reduce1(self.p - a, self.p)
-    }
-
-    /// Modular negation in variable time.
-    /// Aborts if a >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being negated.
-    const unsafe fn neg_vt(&self, a: u64) -> u64 {
-        debug_assert!(a < self.p);
-        Self::reduce1_vt(self.p - a, self.p)
     }
 
     /// Compute the Shoup representation of a.
@@ -167,16 +110,6 @@ impl Modulus {
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
     pub const fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
         Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
-    }
-
-    /// Shoup multiplication of a and b in variable time.
-    /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being multiplied.
-    const unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
-        Self::reduce1_vt(self.lazy_mul_shoup(a, b, b_shoup), self.p)
     }
 
     /// Lazy Shoup multiplication of a and b in constant time.
@@ -205,49 +138,6 @@ impl Modulus {
         izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
     }
 
-    /// Modular addition of vectors in place in variable time.
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being added.
-    pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-        let n = a.len();
-        debug_assert_eq!(n, b.len());
-
-        let p = self.p;
-        macro_rules! add_at {
-            ($idx:expr) => {
-                *a.get_unchecked_mut($idx) =
-                    Self::reduce1_vt(*a.get_unchecked_mut($idx) + *b.get_unchecked($idx), p);
-            };
-        }
-
-        if n % 16 == 0 {
-            for i in 0..n / 16 {
-                add_at!(16 * i);
-                add_at!(16 * i + 1);
-                add_at!(16 * i + 2);
-                add_at!(16 * i + 3);
-                add_at!(16 * i + 4);
-                add_at!(16 * i + 5);
-                add_at!(16 * i + 6);
-                add_at!(16 * i + 7);
-                add_at!(16 * i + 8);
-                add_at!(16 * i + 9);
-                add_at!(16 * i + 10);
-                add_at!(16 * i + 11);
-                add_at!(16 * i + 12);
-                add_at!(16 * i + 13);
-                add_at!(16 * i + 14);
-                add_at!(16 * i + 15);
-            }
-        } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi));
-        }
-    }
-
     /// Modular subtraction of vectors in place in constant time.
     ///
     /// Aborts if a and b differ in size, and if any of their values is >= p in
@@ -256,49 +146,6 @@ impl Modulus {
         debug_assert_eq!(a.len(), b.len());
 
         izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
-    }
-
-    /// Modular subtraction of vectors in place in variable time.
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being subtracted.
-    pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-        let n = a.len();
-        debug_assert_eq!(n, b.len());
-
-        let p = self.p;
-        macro_rules! sub_at {
-            ($idx:expr) => {
-                *a.get_unchecked_mut($idx) =
-                    Self::reduce1_vt(p + *a.get_unchecked_mut($idx) - *b.get_unchecked($idx), p);
-            };
-        }
-
-        if n % 16 == 0 {
-            for i in 0..n / 16 {
-                sub_at!(16 * i);
-                sub_at!(16 * i + 1);
-                sub_at!(16 * i + 2);
-                sub_at!(16 * i + 3);
-                sub_at!(16 * i + 4);
-                sub_at!(16 * i + 5);
-                sub_at!(16 * i + 6);
-                sub_at!(16 * i + 7);
-                sub_at!(16 * i + 8);
-                sub_at!(16 * i + 9);
-                sub_at!(16 * i + 10);
-                sub_at!(16 * i + 11);
-                sub_at!(16 * i + 12);
-                sub_at!(16 * i + 13);
-                sub_at!(16 * i + 14);
-                sub_at!(16 * i + 15);
-            }
-        } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi));
-        }
     }
 
     /// Modular multiplication of vectors in place in constant time.
@@ -324,35 +171,6 @@ impl Modulus {
             .for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup));
     }
 
-    /// Modular scalar multiplication of vectors in place in variable time.
-    /// Aborts if any of the values in a is >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being multiplied.
-    pub unsafe fn scalar_mul_vec_vt(&self, a: &mut [u64], b: u64) {
-        let b_shoup = self.shoup(b);
-        a.iter_mut()
-            .for_each(|ai| *ai = self.mul_shoup_vt(*ai, b, b_shoup));
-    }
-
-    /// Modular multiplication of vectors in place in variable time.
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being subtracted.
-    pub unsafe fn mul_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-        debug_assert_eq!(a.len(), b.len());
-
-        if self.supports_opt {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt_vt(*ai, *bi));
-        } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_vt(*ai, *bi));
-        }
-    }
-
     /// Compute the Shoup representation of a vector.
     ///
     /// Aborts if any of the values of the vector is >= p in debug mode.
@@ -371,22 +189,6 @@ impl Modulus {
 
         izip!(a.iter_mut(), b.iter(), b_shoup.iter())
             .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
-    }
-
-    /// Shoup modular multiplication of vectors in place in variable time.
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being multiplied.
-    pub unsafe fn mul_shoup_vec_vt(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
-        debug_assert_eq!(a.len(), b.len());
-        debug_assert_eq!(a.len(), b_shoup.len());
-        debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
-
-        izip!(a.iter_mut(), b.iter(), b_shoup.iter())
-            .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup_vt(*ai, *bi, *bi_shoup));
     }
 
     /// Reduce a vector in place in constant time.
@@ -419,27 +221,9 @@ impl Modulus {
         a.iter().map(|ai| self.center_vt(*ai)).collect_vec()
     }
 
-    /// Reduce a vector in place in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being reduced.
-    pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
-        a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai));
-    }
-
     /// Modular reduction of a i64 in constant time.
     const fn reduce_i64(&self, a: i64) -> u64 {
         self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
-    }
-
-    /// Modular reduction of a i64 in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being reduced.
-    const unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
-        self.reduce_u128_vt((((self.p as i128) << 64) + (a as i128)) as u128)
     }
 
     /// Reduce a vector in place in constant time.
@@ -447,27 +231,9 @@ impl Modulus {
         a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec()
     }
 
-    /// Reduce a vector in place in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being reduced.
-    pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
-        a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect_vec()
-    }
-
     /// Reduce a vector in constant time.
     pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
         a.iter().map(|ai| self.reduce(*ai)).collect_vec()
-    }
-
-    /// Reduce a vector in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being reduced.
-    pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
-        a.iter().map(|bi| self.reduce_vt(*bi)).collect_vec()
     }
 
     /// Modular negation of a vector in place in constant time.
@@ -475,16 +241,6 @@ impl Modulus {
     /// Aborts if any of the values in the vector is >= p in debug mode.
     pub fn neg_vec(&self, a: &mut [u64]) {
         izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
-    }
-
-    /// Modular negation of a vector in place in variable time.
-    /// Aborts if any of the values in the vector is >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being negated.
-    pub unsafe fn neg_vec_vt(&self, a: &mut [u64]) {
-        izip!(a.iter_mut()).for_each(|ai| *ai = self.neg_vt(*ai));
     }
 
     /// Modular exponentiation in variable time.
@@ -530,27 +286,9 @@ impl Modulus {
         Self::reduce1(self.lazy_reduce_u128(a), self.p)
     }
 
-    /// Modular reduction of a u128 in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being reduced.
-    pub const unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
-        Self::reduce1_vt(self.lazy_reduce_u128(a), self.p)
-    }
-
     /// Modular reduction of a u64 in constant time.
     pub const fn reduce(&self, a: u64) -> u64 {
         Self::reduce1(self.lazy_reduce(a), self.p)
-    }
-
-    /// Modular reduction of a u64 in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being reduced.
-    pub const unsafe fn reduce_vt(&self, a: u64) -> u64 {
-        Self::reduce1_vt(self.lazy_reduce(a), self.p)
     }
 
     /// Optimized modular reduction of a u128 in constant time.
@@ -559,28 +297,9 @@ impl Modulus {
         Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
     }
 
-    /// Optimized modular reduction of a u128 in constant time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being reduced.
-    pub(crate) const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
-        debug_assert!(self.supports_opt);
-        Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p)
-    }
-
     /// Optimized modular reduction of a u64 in constant time.
     pub const fn reduce_opt(&self, a: u64) -> u64 {
         Self::reduce1(self.lazy_reduce_opt(a), self.p)
-    }
-
-    /// Optimized modular reduction of a u64 in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being reduced.
-    pub const unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
-        Self::reduce1_vt(self.lazy_reduce_opt(a), self.p)
     }
 
     /// Return x mod p in constant time.
@@ -594,30 +313,6 @@ impl Modulus {
         debug_assert!(r == x % p);
 
         r
-    }
-
-    /// Return x mod p in variable time.
-    /// Aborts if x >= 2 * p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being reduced.
-    #[cfg(any(target_os = "macos", target_feature = "avx2"))]
-    pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
-        debug_assert!(p >> 63 == 0);
-        debug_assert!(x < 2 * p);
-
-        if x >= p {
-            x - p
-        } else {
-            x
-        }
-    }
-
-    #[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
-    #[inline]
-    pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
-        Self::reduce1(x, p)
     }
 
     /// Lazy modular reduction of a in constant time.
@@ -765,7 +460,6 @@ mod tests {
         fn neg(p in valid_moduli(), mut a: u64) {
             a = p.reduce(a);
             prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
-            unsafe { prop_assert_eq!(p.neg_vt(a), (p.modulus() - a) % p.modulus()) }
 
             #[cfg(debug_assertions)]
             {
@@ -779,7 +473,6 @@ mod tests {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
-            unsafe { prop_assert_eq!(p.add_vt(a, b), (a + b) % p.modulus()) }
 
             #[cfg(debug_assertions)]
             {
@@ -795,7 +488,6 @@ mod tests {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
-            unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + p.modulus() - b) % p.modulus()) }
 
             #[cfg(debug_assertions)]
             {
@@ -811,7 +503,6 @@ mod tests {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.mul_vt(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
             #[cfg(debug_assertions)]
             {
@@ -838,7 +529,6 @@ mod tests {
 
             // Check that the multiplication yields the expected result
             prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.mul_shoup_vt(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
 
             // Check that the multiplication with incorrect b_shoup panics in debug mode
             #[cfg(debug_assertions)]
@@ -852,10 +542,9 @@ mod tests {
         #[test]
         fn reduce(p in valid_moduli(), a: u64) {
             prop_assert_eq!(p.reduce(a), a % p.modulus());
-            unsafe { prop_assert_eq!(p.reduce_vt(a), a % p.modulus()) }
+
             if p.supports_opt {
                 prop_assert_eq!(p.reduce_opt(a), a % p.modulus());
-                unsafe { prop_assert_eq!(p.reduce_opt_vt(a), a % p.modulus()) }
             }
         }
 
@@ -869,18 +558,16 @@ mod tests {
         fn reduce_i64(p in valid_moduli(), a: i64) {
             let b = if a < 0 { p.neg(p.reduce(-a as u64)) } else { p.reduce(a as u64) };
             prop_assert_eq!(p.reduce_i64(a), b);
-            unsafe { prop_assert_eq!(p.reduce_i64_vt(a), b) }
         }
 
         #[test]
         fn reduce_u128(p in valid_moduli(), mut a: u128) {
             prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.reduce_u128_vt(a) as u128, a % (p.modulus() as u128)) }
+
             if p.supports_opt {
                 let p_square = (p.modulus() as u128) * (p.modulus() as u128);
                 a %= p_square;
                 prop_assert_eq!(p.reduce_opt_u128(a) as u128, a % (p.modulus() as u128));
-                unsafe { prop_assert_eq!(p.reduce_opt_u128_vt(a) as u128, a % (p.modulus() as u128)) }
             }
         }
 
@@ -891,9 +578,6 @@ mod tests {
             let c = a.clone();
             p.add_vec(&mut a, &b);
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
-            a = c.clone();
-            unsafe { p.add_vec_vt(&mut a, &b) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
         }
 
         #[test]
@@ -903,9 +587,6 @@ mod tests {
             let c = a.clone();
             p.sub_vec(&mut a, &b);
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
-            a = c.clone();
-            unsafe { p.sub_vec_vt(&mut a, &b) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
         }
 
         #[test]
@@ -914,9 +595,6 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.mul_vec(&mut a, &b);
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
-            a = c.clone();
-            unsafe { p.mul_vec_vt(&mut a, &b); }
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
         }
 
@@ -928,10 +606,6 @@ mod tests {
 
             p.scalar_mul_vec(&mut a, b);
             prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
-
-            a = c.clone();
-            unsafe { p.scalar_mul_vec_vt(&mut a, b) }
-            prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
         }
 
         #[test]
@@ -942,19 +616,12 @@ mod tests {
             let c = a.clone();
             p.mul_shoup_vec(&mut a, &b, &b_shoup);
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
-            a = c.clone();
-            unsafe { p.mul_shoup_vec_vt(&mut a, &b, &b_shoup) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
         }
 
         #[test]
         fn reduce_vec(p in valid_moduli(), a: Vec<u64>) {
             let mut b = a.clone();
             p.reduce_vec(&mut b);
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
-
-            b = a.clone();
-            unsafe { p.reduce_vec_vt(&mut b) }
             prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
         }
 
@@ -970,14 +637,11 @@ mod tests {
         fn reduce_vec_new(p in valid_moduli(), a: Vec<u64>) {
             let b = p.reduce_vec_new(&a);
             prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
-            prop_assert_eq!(p.reduce_vec_new(&a), unsafe { p.reduce_vec_new_vt(&a) });
         }
 
         #[test]
         fn reduce_vec_i64(p in valid_moduli(), a: Vec<i64>) {
             let b = p.reduce_vec_i64(&a);
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
-            let b = unsafe { p.reduce_vec_i64_vt(&a) };
             prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
         }
 
@@ -986,9 +650,6 @@ mod tests {
             p.reduce_vec(&mut a);
             let mut b = a.clone();
             p.neg_vec(&mut b);
-            prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
-            b = a.clone();
-            unsafe { p.neg_vec_vt(&mut b); }
             prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
         }
 

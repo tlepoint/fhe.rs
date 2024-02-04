@@ -13,5 +13,4 @@ message Rq {
     Representation representation = 1;
     uint32 degree = 2;
     bytes coefficients = 3;
-    bool allow_variable_time = 4;
 }

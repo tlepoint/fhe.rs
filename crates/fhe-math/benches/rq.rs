@@ -26,22 +26,14 @@ fn create_group(c: &mut Criterion, name: String) -> BenchmarkGroup<WallTime> {
 }
 
 macro_rules! bench_op {
-    ($c: expr, $name:expr, $op:expr, $vt:expr) => {{
-        let name = if $vt {
-            format!("{}_vt", $name)
-        } else {
-            $name.to_string()
-        };
-        let mut group = create_group($c, name);
+    ($c: expr, $name:expr, $op:expr) => {{
+        let mut group = create_group($c, $name.to_string());
         let mut rng = thread_rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            let mut q = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            if $vt {
-                unsafe { q.allow_variable_time_computations() }
-            }
+            let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
 
             group.bench_function(
                 BenchmarkId::from_parameter(format!("{}/{}", degree, ctx.modulus().bits())),
@@ -54,22 +46,13 @@ macro_rules! bench_op {
 }
 
 macro_rules! bench_op_unary {
-    ($c: expr, $name:expr, $op:expr, $vt:expr) => {{
-        let name = if $vt {
-            format!("{}_vt", $name)
-        } else {
-            $name.to_string()
-        };
-        let mut group = create_group($c, name);
+    ($c: expr, $name:expr, $op:expr) => {{
+        let mut group = create_group($c, $name.to_string());
         let mut rng = thread_rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            let mut q = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            if $vt {
-                unsafe { q.allow_variable_time_computations() }
-            }
 
             group.bench_function(
                 BenchmarkId::from_parameter(format!("{}/{}", degree, ctx.modulus().bits())),
@@ -82,22 +65,14 @@ macro_rules! bench_op_unary {
 }
 
 macro_rules! bench_op_assign {
-    ($c: expr, $name:expr, $op:expr, $vt:expr) => {{
-        let name = if $vt {
-            format!("{}_vt", $name)
-        } else {
-            $name.to_string()
-        };
-        let mut group = create_group($c, name);
+    ($c: expr, $name:expr, $op:expr) => {{
+        let mut group = create_group($c, $name.to_string());
         let mut rng = thread_rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
             let mut p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            let mut q = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            if $vt {
-                unsafe { q.allow_variable_time_computations() }
-            }
+            let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
 
             group.bench_function(
                 BenchmarkId::from_parameter(format!("{}/{}", degree, ctx.modulus().bits())),
@@ -110,15 +85,13 @@ macro_rules! bench_op_assign {
 }
 
 pub fn rq_op_benchmark(c: &mut Criterion) {
-    for vt in [false, true] {
-        bench_op!(c, "rq_add", <&Poly>::add, vt);
-        bench_op_assign!(c, "rq_add_assign", Poly::add_assign, vt);
-        bench_op!(c, "rq_sub", <&Poly>::sub, vt);
-        bench_op_assign!(c, "rq_sub_assign", Poly::sub_assign, vt);
-        bench_op!(c, "rq_mul", <&Poly>::mul, vt);
-        bench_op_assign!(c, "rq_mul_assign", Poly::mul_assign, vt);
-        bench_op_unary!(c, "rq_neg", <&Poly>::neg, vt);
-    }
+    bench_op!(c, "rq_add", <&Poly>::add);
+    bench_op_assign!(c, "rq_add_assign", Poly::add_assign);
+    bench_op!(c, "rq_sub", <&Poly>::sub);
+    bench_op_assign!(c, "rq_sub_assign", Poly::sub_assign);
+    bench_op!(c, "rq_mul", <&Poly>::mul);
+    bench_op_assign!(c, "rq_mul_assign", Poly::mul_assign);
+    bench_op_unary!(c, "rq_neg", <&Poly>::neg);
 }
 
 pub fn rq_dot_product(c: &mut Criterion) {
@@ -235,52 +208,6 @@ pub fn rq_benchmark(c: &mut Criterion) {
                     });
                 },
             );
-
-            p.change_representation(Representation::Ntt);
-            q.change_representation(Representation::Ntt);
-
-            unsafe {
-                q.allow_variable_time_computations();
-                q.change_representation(Representation::NttShoup);
-
-                group.bench_function(
-                    BenchmarkId::new(
-                        "mul_shoup_vt",
-                        format!("{}/{}", degree, ctx.modulus().bits()),
-                    ),
-                    |b| {
-                        b.iter(|| p *= &q);
-                    },
-                );
-
-                p.allow_variable_time_computations();
-
-                group.bench_function(
-                    BenchmarkId::new(
-                        "change_representation/PowerBasis_to_Ntt_vt",
-                        format!("{}/{}", degree, ctx.modulus().bits()),
-                    ),
-                    |b| {
-                        b.iter(|| {
-                            p.override_representation(Representation::PowerBasis);
-                            p.change_representation(Representation::Ntt)
-                        });
-                    },
-                );
-
-                group.bench_function(
-                    BenchmarkId::new(
-                        "change_representation/Ntt_to_PowerBasis_vt",
-                        format!("{}/{}", degree, ctx.modulus().bits()),
-                    ),
-                    |b| {
-                        b.iter(|| {
-                            p.override_representation(Representation::Ntt);
-                            p.change_representation(Representation::PowerBasis)
-                        });
-                    },
-                );
-            }
         }
     }
 

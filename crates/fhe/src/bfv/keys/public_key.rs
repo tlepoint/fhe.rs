@@ -24,11 +24,7 @@ impl PublicKey {
     /// Generate a new [`PublicKey`] from a [`SecretKey`].
     pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Self {
         let zero = Plaintext::zero(Encoding::poly(), &sk.par).unwrap();
-        let mut c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
-        // The polynomials of a public key should not allow for variable time
-        // computation.
-        c.c.iter_mut()
-            .for_each(|p| p.disallow_variable_time_computations());
+        let c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
         Self {
             par: sk.par.clone(),
             c,
@@ -80,12 +76,6 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         let mut c1 = u.as_ref() * &ct.c[1];
         c1 += &e2;
 
-        // It is now safe to enable variable time computations.
-        unsafe {
-            c0.allow_variable_time_computations();
-            c1.allow_variable_time_computations()
-        }
-
         Ok(Ciphertext {
             par: self.par.clone(),
             seed: None,
@@ -116,14 +106,10 @@ impl DeserializeParametrized for PublicKey {
         let proto: PublicKeyProto =
             Message::decode(bytes).map_err(|_| Error::SerializationError)?;
         if proto.c.is_some() {
-            let mut c = Ciphertext::try_convert_from(&proto.c.unwrap(), par)?;
+            let c = Ciphertext::try_convert_from(&proto.c.unwrap(), par)?;
             if c.level != 0 {
                 Err(Error::SerializationError)
             } else {
-                // The polynomials of a public key should not allow for variable time
-                // computation.
-                c.c.iter_mut()
-                    .for_each(|p| p.disallow_variable_time_computations());
                 Ok(Self {
                     par: par.clone(),
                     c,

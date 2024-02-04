@@ -50,8 +50,7 @@ impl Plaintext {
             .plaintext
             .scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
         let ctx = self.par.ctx_at_level(self.level).unwrap();
-        let mut m =
-            Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis).unwrap();
+        let mut m = Poly::try_convert_from(m_v.as_ref(), ctx, Representation::PowerBasis).unwrap();
         m.change_representation(Representation::Ntt);
         m *= &self.par.delta[self.level];
         m
@@ -95,12 +94,7 @@ impl PartialEq for Plaintext {
 
 // Conversions.
 impl TryConvertFrom<&Plaintext> for Poly {
-    fn try_convert_from<R>(
-        pt: &Plaintext,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        _: R,
-    ) -> fhe_math::Result<Self>
+    fn try_convert_from<R>(pt: &Plaintext, ctx: &Arc<Context>, _: R) -> fhe_math::Result<Self>
     where
         R: Into<Option<Representation>>,
     {
@@ -114,12 +108,7 @@ impl TryConvertFrom<&Plaintext> for Poly {
                 "Incompatible contexts".to_string(),
             ))
         } else {
-            Poly::try_convert_from(
-                pt.value.as_ref(),
-                ctx,
-                variable_time,
-                Representation::PowerBasis,
-            )
+            Poly::try_convert_from(pt.value.as_ref(), ctx, Representation::PowerBasis)
         }
     }
 }

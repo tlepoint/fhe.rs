@@ -21,12 +21,7 @@ where
     /// be specified as `None`; this is useful for example when converting from
     /// a value that encodes the representation (e.g., serialization, protobuf,
     /// etc.).
-    fn try_convert_from<R>(
-        value: T,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
+    fn try_convert_from<R>(value: T, ctx: &Arc<Context>, representation: R) -> Result<Self>
     where
         R: Into<Option<Representation>>;
 }

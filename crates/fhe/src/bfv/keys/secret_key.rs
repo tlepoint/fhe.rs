@@ -59,19 +59,14 @@ impl SecretKey {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             self.coeffs.as_ref(),
             ct.c[0].ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
         let mut si = s.clone();
 
-        // Let's disable variable time computations
         let mut c = Zeroizing::new(ct.c[0].clone());
-        c.disallow_variable_time_computations();
-
         for i in 1..ct.c.len() {
             let mut cis = Zeroizing::new(ct.c[i].clone());
-            cis.disallow_variable_time_computations();
             *cis.as_mut() *= si.as_ref();
             *c.as_mut() += &cis;
             *si.as_mut() *= s.as_ref();
@@ -107,24 +102,17 @@ impl SecretKey {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             self.coeffs.as_ref(),
             p.ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
 
-        let mut a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
+        let a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
         let a_s = Zeroizing::new(&a * s.as_ref());
 
         let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance, rng)
             .map_err(Error::MathError)?;
         b -= &a_s;
         b += p;
-
-        // It is now safe to enable variable time computations.
-        unsafe {
-            a.allow_variable_time_computations();
-            b.allow_variable_time_computations()
-        }
 
         Ok(Ciphertext {
             par: self.par.clone(),
@@ -166,20 +154,16 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let mut s = Zeroizing::new(Poly::try_convert_from(
                 self.coeffs.as_ref(),
                 ct.c[0].ctx(),
-                false,
                 Representation::PowerBasis,
             )?);
             s.change_representation(Representation::Ntt);
             let mut si = s.clone();
 
             let mut c = Zeroizing::new(ct.c[0].clone());
-            c.disallow_variable_time_computations();
-
             // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
             // s^k is computed on-the-fly
             for i in 1..ct.c.len() {
                 let mut cis = Zeroizing::new(ct.c[i].clone());
-                cis.disallow_variable_time_computations();
                 *cis.as_mut() *= si.as_ref();
                 *c.as_mut() += &cis;
                 if i + 1 < ct.c.len() {
@@ -202,8 +186,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             q.reduce_vec(&mut w);
             self.par.plaintext.reduce_vec(&mut w);
 
-            let mut poly =
-                Poly::try_convert_from(&w, ct.c[0].ctx(), false, Representation::PowerBasis)?;
+            let mut poly = Poly::try_convert_from(&w, ct.c[0].ctx(), Representation::PowerBasis)?;
             poly.change_representation(Representation::Ntt);
 
             let pt = Plaintext {

@@ -19,7 +19,7 @@ impl DeserializeWithContext for Poly {
 
     fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Self::Error> {
         let rq: Rq = Message::decode(bytes).map_err(|e| Error::Serialization(e.to_string()))?;
-        Poly::try_convert_from(&rq, ctx, false, None)
+        Poly::try_convert_from(&rq, ctx, None)
     }
 }
 

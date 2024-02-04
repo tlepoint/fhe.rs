@@ -82,7 +82,6 @@ pub struct Poly {
     ctx: Arc<Context>,
     representation: Representation,
     has_lazy_coefficients: bool,
-    allow_variable_time_computations: bool,
     coefficients: Array2<u64>,
     coefficients_shoup: Option<Array2<u64>>,
 }
@@ -105,7 +104,6 @@ impl Poly {
         Self {
             ctx: ctx.clone(),
             representation: representation.clone(),
-            allow_variable_time_computations: false,
             has_lazy_coefficients: false,
             coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
             coefficients_shoup: if representation == Representation::NttShoup {
@@ -114,21 +112,6 @@ impl Poly {
                 None
             },
         }
-    }
-
-    /// Enable variable time computations when this polynomial is involved.
-    ///
-    /// # Safety
-    ///
-    /// By default, this is marked as unsafe, but is usually safe when only
-    /// public data is processed.
-    pub unsafe fn allow_variable_time_computations(&mut self) {
-        self.allow_variable_time_computations = true
-    }
-
-    /// Disable variable time computations when this polynomial is involved.
-    pub fn disallow_variable_time_computations(&mut self) {
-        self.allow_variable_time_computations = false
     }
 
     /// Current representation of the polynomial.
@@ -280,12 +263,8 @@ impl Poly {
                 sample_vec_cbd(ctx.degree, variance, rng)
                     .map_err(|e| Error::Default(e.to_string()))?,
             );
-            let mut p = Poly::try_convert_from(
-                coeffs.as_ref() as &[i64],
-                ctx,
-                false,
-                Representation::PowerBasis,
-            )?;
+            let mut p =
+                Poly::try_convert_from(coeffs.as_ref() as &[i64], ctx, Representation::PowerBasis)?;
             if representation != Representation::PowerBasis {
                 p.change_representation(representation);
             }
@@ -300,24 +279,14 @@ impl Poly {
 
     /// Computes the forward Ntt on the coefficients
     fn ntt_forward(&mut self) {
-        if self.allow_variable_time_computations {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
-                .for_each(|(mut v, op)| unsafe { op.forward_vt(v.as_mut_ptr()) });
-        } else {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
-                .for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
-        }
+        izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
+            .for_each(|(mut v, op)| op.forward(v.as_slice_mut().unwrap()));
     }
 
     /// Computes the backward Ntt on the coefficients
     fn ntt_backward(&mut self) {
-        if self.allow_variable_time_computations {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
-                .for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
-        } else {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
-                .for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
-        }
+        izip!(self.coefficients.outer_iter_mut(), self.ctx.ops.iter())
+            .for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
     }
 
     /// Substitute x by x^i in a polynomial.
@@ -326,9 +295,6 @@ impl Poly {
     /// odd integer that is not a multiple of 2 * degree.
     pub fn substitute(&self, i: &SubstitutionExponent) -> Result<Poly> {
         let mut q = Poly::zero(&self.ctx, self.representation.clone());
-        if self.allow_variable_time_computations {
-            unsafe { q.allow_variable_time_computations() }
-        }
         match self.representation {
             Representation::Ntt => {
                 izip!(
@@ -387,11 +353,7 @@ impl Poly {
 
     /// Create a polynomial which can only be multiplied by a polynomial in
     /// NttShoup representation. All other operations may panic.
-    ///
-    /// # Safety
-    /// This operation also creates a polynomial that allows variable time
-    /// operations.
-    pub unsafe fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+    pub fn create_constant_ntt_polynomial_with_lazy_coefficients(
         power_basis_coefficients: &[u64],
         ctx: &Arc<Context>,
     ) -> Self {
@@ -402,13 +364,12 @@ impl Poly {
                     .unwrap()
                     .clone_from_slice(power_basis_coefficients);
                 qi.lazy_reduce_vec(p.as_slice_mut().unwrap());
-                op.forward_vt_lazy(p.as_mut_ptr());
+                op.forward_lazy(p.as_slice_mut().unwrap());
             },
         );
         Self {
             ctx: ctx.clone(),
             representation: Representation::Ntt,
-            allow_variable_time_computations: true,
             coefficients,
             coefficients_shoup: None,
             has_lazy_coefficients: true,
@@ -444,62 +405,32 @@ impl Poly {
         let (mut q_new_polys, mut q_last_poly) =
             self.coefficients.view_mut().split_at(Axis(0), q_len - 1);
 
-        if self.allow_variable_time_computations {
-            unsafe {
-                q_last_poly
-                    .iter_mut()
-                    .for_each(|coeff| *coeff = q_last.add_vt(*coeff, q_last_div_2));
-                izip!(
-                    q_new_polys.outer_iter_mut(),
-                    self.ctx.q.iter(),
-                    self.ctx.inv_last_qi_mod_qj.iter(),
-                    self.ctx.inv_last_qi_mod_qj_shoup.iter(),
-                )
-                .for_each(|(coeffs, qi, inv, inv_shoup)| {
-                    let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2); // Up to qi.modulus()
-                    for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
-                        // (x mod q_last - q_L/2) mod q_i
-                        let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
+        q_last_poly
+            .iter_mut()
+            .for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
+        izip!(
+            q_new_polys.outer_iter_mut(),
+            self.ctx.q.iter(),
+            self.ctx.inv_last_qi_mod_qj.iter(),
+            self.ctx.inv_last_qi_mod_qj_shoup.iter(),
+        )
+        .for_each(|(coeffs, qi, inv, inv_shoup)| {
+            let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2); // Up to qi.modulus()
+            for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
+                // (x mod q_last - q_L/2) mod q_i
+                let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
 
-                        // ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
-                        // = (x - x mod q_last + q_L/2) mod q_i
-                        *coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
+                // ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
+                // = (x - x mod q_last + q_L/2) mod q_i
+                *coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
 
-                        // q_last^{-1} * (x - x mod q_last) mod q_i
-                        *coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
-                    }
-                });
+                // q_last^{-1} * (x - x mod q_last) mod q_i
+                *coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
             }
-        } else {
-            q_last_poly
-                .iter_mut()
-                .for_each(|coeff| *coeff = q_last.add(*coeff, q_last_div_2));
-            izip!(
-                q_new_polys.outer_iter_mut(),
-                self.ctx.q.iter(),
-                self.ctx.inv_last_qi_mod_qj.iter(),
-                self.ctx.inv_last_qi_mod_qj_shoup.iter(),
-            )
-            .for_each(|(coeffs, qi, inv, inv_shoup)| {
-                let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2); // Up to qi.modulus()
-                for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
-                    // (x mod q_last - q_L/2) mod q_i
-                    let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
-
-                    // ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
-                    // = (x - x mod q_last + q_L/2) mod q_i
-                    *coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
-
-                    // q_last^{-1} * (x - x mod q_last) mod q_i
-                    *coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
-                }
-            });
-        }
+        });
 
         // Remove the last row, and update the context.
-        if !self.allow_variable_time_computations {
-            q_last_poly.as_slice_mut().unwrap().zeroize();
-        }
+        q_last_poly.as_slice_mut().unwrap().zeroize();
         self.coefficients.remove_index(Axis(0), q_len - 1);
         self.ctx = next_context.clone();
 
@@ -715,57 +646,6 @@ mod tests {
         MODULI.iter().for_each(|m| modulus_biguint *= *m);
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         assert_eq!(ctx.modulus(), &modulus_biguint);
-
-        Ok(())
-    }
-
-    #[test]
-    fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
-        for modulus in MODULI {
-            let ctx = Arc::new(Context::new(&[*modulus], 16)?);
-            let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
-            assert!(!p.allow_variable_time_computations);
-
-            unsafe { p.allow_variable_time_computations() }
-            assert!(p.allow_variable_time_computations);
-
-            let q = p.clone();
-            assert!(q.allow_variable_time_computations);
-
-            p.disallow_variable_time_computations();
-            assert!(!p.allow_variable_time_computations);
-        }
-
-        let ctx = Arc::new(Context::new(MODULI, 16)?);
-        let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
-        assert!(!p.allow_variable_time_computations);
-
-        unsafe { p.allow_variable_time_computations() }
-        assert!(p.allow_variable_time_computations);
-
-        let q = p.clone();
-        assert!(q.allow_variable_time_computations);
-
-        // Allowing variable time propagates.
-        let mut p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-        unsafe { p.allow_variable_time_computations() }
-        let mut q = Poly::random(&ctx, Representation::Ntt, &mut rng);
-
-        assert!(!q.allow_variable_time_computations);
-        q *= &p;
-        assert!(q.allow_variable_time_computations);
-
-        q.disallow_variable_time_computations();
-        q += &p;
-        assert!(q.allow_variable_time_computations);
-
-        q.disallow_variable_time_computations();
-        q -= &p;
-        assert!(q.allow_variable_time_computations);
-
-        q = -&p;
-        assert!(q.allow_variable_time_computations);
 
         Ok(())
     }

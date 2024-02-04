@@ -150,7 +150,6 @@ impl RelinKeyShare<R1> {
         let s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         let rns = RnsContext::new(&sk_share.par.moduli[..crp.len()])?;
@@ -165,7 +164,6 @@ impl RelinKeyShare<R1> {
                 let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
 
                 let mut h = -a.poly.clone();
-                h.disallow_variable_time_computations();
                 h.change_representation(Representation::Ntt);
                 h *= u.as_ref();
                 h += w_s.as_ref();
@@ -186,7 +184,6 @@ impl RelinKeyShare<R1> {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -195,7 +192,6 @@ impl RelinKeyShare<R1> {
             .iter()
             .map(|a| {
                 let mut h = a.poly.clone();
-                h.disallow_variable_time_computations();
                 h.change_representation(Representation::Ntt);
                 let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
                 h *= s.as_ref();
@@ -261,7 +257,6 @@ impl RelinKeyShare<R2> {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -271,7 +266,6 @@ impl RelinKeyShare<R2> {
                 let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
 
                 let mut h_prime = h.clone();
-                h_prime.disallow_variable_time_computations();
                 h_prime.change_representation(Representation::Ntt);
                 h_prime *= s.as_ref();
 
@@ -293,7 +287,6 @@ impl RelinKeyShare<R2> {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -304,7 +297,6 @@ impl RelinKeyShare<R2> {
             .iter()
             .map(|h| {
                 let mut h_prime = h.clone();
-                h_prime.disallow_variable_time_computations();
                 h_prime.change_representation(Representation::Ntt);
                 let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
                 h_prime *= u_s.as_ref();

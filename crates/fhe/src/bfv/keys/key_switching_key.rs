@@ -114,8 +114,7 @@ impl KeySwitchingKey {
         (0..size).for_each(|_| {
             let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
             rng.fill(&mut seed_i);
-            let mut a = Poly::random_from_seed(ctx, Representation::NttShoup, seed_i);
-            unsafe { a.allow_variable_time_computations() }
+            let a = Poly::random_from_seed(ctx, Representation::NttShoup, seed_i);
             c1.push(a);
         });
         c1
@@ -142,7 +141,6 @@ impl KeySwitchingKey {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk.coeffs.as_ref(),
             c1[0].ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -153,7 +151,6 @@ impl KeySwitchingKey {
             .enumerate()
             .map(|(i, c1i)| {
                 let mut a_s = Zeroizing::new(c1i.clone());
-                a_s.disallow_variable_time_computations();
                 a_s.change_representation(Representation::Ntt);
                 *a_s.as_mut() *= s.as_ref();
                 a_s.change_representation(Representation::PowerBasis);
@@ -166,8 +163,6 @@ impl KeySwitchingKey {
                 let g_i_from = Zeroizing::new(gi * from);
                 b += &g_i_from;
 
-                // It is now safe to enable variable time computations.
-                unsafe { b.allow_variable_time_computations() }
                 b.change_representation(Representation::NttShoup);
                 Ok(b)
             })
@@ -197,7 +192,6 @@ impl KeySwitchingKey {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk.coeffs.as_ref(),
             c1[0].ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -207,7 +201,6 @@ impl KeySwitchingKey {
             .enumerate()
             .map(|(i, c1i)| {
                 let mut a_s = Zeroizing::new(c1i.clone());
-                a_s.disallow_variable_time_computations();
                 a_s.change_representation(Representation::Ntt);
                 *a_s.as_mut() *= s.as_ref();
                 a_s.change_representation(Representation::PowerBasis);
@@ -219,8 +212,6 @@ impl KeySwitchingKey {
                 let power = BigUint::from(1u64 << (i * log_base));
                 b += &(from * &power);
 
-                // It is now safe to enable variable time computations.
-                unsafe { b.allow_variable_time_computations() }
                 b.change_representation(Representation::NttShoup);
                 Ok(b)
             })
@@ -251,12 +242,10 @@ impl KeySwitchingKey {
             self.c0.iter(),
             self.c1.iter()
         ) {
-            let mut c2_i = unsafe {
-                Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                    c2_i_coefficients.as_slice().unwrap(),
-                    &self.ctx_ksk,
-                )
-            };
+            let mut c2_i = Poly::create_constant_ntt_polynomial_with_lazy_coefficients(
+                c2_i_coefficients.as_slice().unwrap(),
+                &self.ctx_ksk,
+            );
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -294,12 +283,10 @@ impl KeySwitchingKey {
         let mut c0 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
         let mut c1 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
         for (c2_i_coefficients, c0_i, c1_i) in izip!(c2i.iter(), self.c0.iter(), self.c1.iter()) {
-            let mut c2_i = unsafe {
-                Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                    c2_i_coefficients.as_slice(),
-                    &self.ctx_ksk,
-                )
-            };
+            let mut c2_i = Poly::create_constant_ntt_polynomial_with_lazy_coefficients(
+                c2_i_coefficients.as_slice(),
+                &self.ctx_ksk,
+            );
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -460,13 +447,9 @@ mod tests {
                 let ctx = params.ctx_at_level(0)?;
                 let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
-                let mut s = Poly::try_convert_from(
-                    sk.coeffs.as_ref(),
-                    ctx,
-                    false,
-                    Representation::PowerBasis,
-                )
-                .map_err(crate::Error::MathError)?;
+                let mut s =
+                    Poly::try_convert_from(sk.coeffs.as_ref(), ctx, Representation::PowerBasis)
+                        .map_err(crate::Error::MathError)?;
                 s.change_representation(Representation::Ntt);
 
                 let mut input = Poly::random(ctx, Representation::PowerBasis, &mut rng);
@@ -498,13 +481,9 @@ mod tests {
                 let ctx = params.ctx_at_level(5)?;
                 let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 5, 5, &mut rng)?;
-                let mut s = Poly::try_convert_from(
-                    sk.coeffs.as_ref(),
-                    ctx,
-                    false,
-                    Representation::PowerBasis,
-                )
-                .map_err(crate::Error::MathError)?;
+                let mut s =
+                    Poly::try_convert_from(sk.coeffs.as_ref(), ctx, Representation::PowerBasis)
+                        .map_err(crate::Error::MathError)?;
                 s.change_representation(Representation::Ntt);
 
                 let mut input = Poly::random(ctx, Representation::PowerBasis, &mut rng);

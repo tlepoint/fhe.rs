@@ -57,14 +57,12 @@ impl SecretKeySwitchShare {
         let mut s_in = Zeroizing::new(Poly::try_convert_from(
             sk_input_share.coeffs.as_ref(),
             ct.c[0].ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s_in.change_representation(Representation::Ntt);
         let mut s_out = Zeroizing::new(Poly::try_convert_from(
             sk_output_share.coeffs.as_ref(),
             ct.c[0].ctx(),
-            false,
             Representation::PowerBasis,
         )?);
         s_out.change_representation(Representation::Ntt);
@@ -80,7 +78,6 @@ impl SecretKeySwitchShare {
 
         // Create h_i share
         let mut h_share = s_in.as_ref() - s_out.as_ref();
-        h_share.disallow_variable_time_computations();
         h_share *= &ct.c[1];
         h_share += e.as_ref();
 
@@ -146,7 +143,6 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         // Note: during SKS, c[1]*sk has already been added to c[0].
         let mut c = Zeroizing::new(ct.c[0].clone());
-        c.disallow_variable_time_computations();
         c.change_representation(Representation::PowerBasis);
 
         // The true decryption part is done during SKS; all that is left is to scale
@@ -162,8 +158,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
         q.reduce_vec(&mut w);
         par.plaintext.reduce_vec(&mut w);
 
-        let mut poly =
-            Poly::try_convert_from(&w, ct.c[0].ctx(), false, Representation::PowerBasis)?;
+        let mut poly = Poly::try_convert_from(&w, ct.c[0].ctx(), Representation::PowerBasis)?;
         poly.change_representation(Representation::Ntt);
 
         let pt = Plaintext {

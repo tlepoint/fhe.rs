@@ -13,8 +13,7 @@ use clap::Parser;
 use fhe::bfv;
 use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use fhe_traits::{
-    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
-    FheEncrypter, Serialize,
+    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
 };
 use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
@@ -180,14 +179,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     64 - params.moduli()[0].leading_zeros() as usize,
                     plaintext_modulus.ilog2() as usize,
                 ));
-                unsafe {
-                    Ok(bfv::PlaintextVec::try_encode_vt(
-                        &pt_values,
-                        bfv::Encoding::poly_at_level(1),
-                        &params,
-                    )?
-                    .0)
-                }
+                Ok(bfv::PlaintextVec::try_encode(
+                    &pt_values,
+                    bfv::Encoding::poly_at_level(1),
+                    &params,
+                )?
+                .0)
             })
             .collect::<fhe::Result<Vec<Vec<bfv::Plaintext>>>>()?;
         (0..fold[0].len())
@@ -246,8 +243,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ctx = Arc::new(Context::new(&params.moduli()[..1], params.degree())?);
         let ct = bfv::Ciphertext::new(
             vec![
-                Poly::try_convert_from(poly0, &ctx, true, Representation::Ntt)?,
-                Poly::try_convert_from(poly1, &ctx, true, Representation::Ntt)?,
+                Poly::try_convert_from(poly0, &ctx, Representation::Ntt)?,
+                Poly::try_convert_from(poly1, &ctx, Representation::Ntt)?,
             ],
             &params,
         )?;

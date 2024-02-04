@@ -158,27 +158,27 @@ impl BfvParameters {
                 0x1ffffffe48001,
             ],
         );
-        n_and_qs.insert(
-            32768,
-            vec![
-                0x7fffffffe90001,
-                0x7fffffffbf0001,
-                0x7fffffffbd0001,
-                0x7fffffffba0001,
-                0x7fffffffaa0001,
-                0x7fffffffa50001,
-                0x7fffffff9f0001,
-                0x7fffffff7e0001,
-                0x7fffffff770001,
-                0x7fffffff380001,
-                0x7fffffff330001,
-                0x7fffffff2d0001,
-                0x7fffffff170001,
-                0x7fffffff150001,
-                0x7ffffffef00001,
-                0xfffffffff70001,
-            ],
-        );
+        // n_and_qs.insert(
+        //     32768,
+        //     vec![
+        //         0x7fffffffe90001,
+        //         0x7fffffffbf0001,
+        //         0x7fffffffbd0001,
+        //         0x7fffffffba0001,
+        //         0x7fffffffaa0001,
+        //         0x7fffffffa50001,
+        //         0x7fffffff9f0001,
+        //         0x7fffffff7e0001,
+        //         0x7fffffff770001,
+        //         0x7fffffff380001,
+        //         0x7fffffff330001,
+        //         0x7fffffff2d0001,
+        //         0x7fffffff170001,
+        //         0x7fffffff150001,
+        //         0x7ffffffef00001,
+        //         0xfffffffff70001,
+        //     ],
+        // );
 
         let mut params = vec![];
 
@@ -384,7 +384,6 @@ impl BfvParametersBuilder {
             let mut p = Poly::try_convert_from(
                 &[rns.lift((&delta_rests).into())],
                 &ctx_i,
-                true,
                 Representation::PowerBasis,
             )?;
             p.change_representation(Representation::NttShoup);

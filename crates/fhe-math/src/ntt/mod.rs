@@ -55,19 +55,12 @@ mod tests {
                     for _ in 0..ntests {
                         let mut a = q.random_vec(size, &mut rng);
                         let a_clone = a.clone();
-                        let mut b = a.clone();
 
                         op.forward(&mut a);
                         assert_ne!(a, a_clone);
 
-                        unsafe { op.forward_vt(b.as_mut_ptr()) }
-                        assert_eq!(a, b);
-
                         op.backward(&mut a);
                         assert_eq!(a, a_clone);
-
-                        unsafe { op.backward_vt(b.as_mut_ptr()) }
-                        assert_eq!(a, b);
                     }
                 }
             }
@@ -91,11 +84,8 @@ mod tests {
                         let mut a_lazy = a.clone();
 
                         op.forward(&mut a);
-
-                        unsafe {
-                            op.forward_vt_lazy(a_lazy.as_mut_ptr());
-                            q.reduce_vec(&mut a_lazy);
-                        }
+                        op.forward_lazy(&mut a_lazy);
+                        q.reduce_vec(&mut a_lazy);
 
                         assert_eq!(a, a_lazy);
                     }

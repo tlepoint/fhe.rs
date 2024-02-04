@@ -53,11 +53,9 @@ impl PublicKeySwitchShare {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
-        s.disallow_variable_time_computations();
 
         let u = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
         // TODO this should be exponential in ciphertext noise!
@@ -65,21 +63,14 @@ impl PublicKeySwitchShare {
         let e1 = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
 
         let mut h0 = pk_ct.c[0].clone();
-        h0.disallow_variable_time_computations();
         h0 *= u.as_ref();
         *s.as_mut() *= &ct.c[1];
         h0 += s.as_ref();
         h0 += e0.as_ref();
 
         let mut h1 = pk_ct.c[1].clone();
-        h1.disallow_variable_time_computations();
         h1 *= u.as_ref();
         h1 += e1.as_ref();
-
-        unsafe {
-            h0.allow_variable_time_computations();
-            h1.allow_variable_time_computations();
-        }
 
         Ok(Self {
             par,

@@ -9,8 +9,6 @@ pub struct Rq {
     pub degree: u32,
     #[prost(bytes = "vec", tag = "3")]
     pub coefficients: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag = "4")]
-    pub allow_variable_time: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

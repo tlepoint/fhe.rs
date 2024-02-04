@@ -40,7 +40,6 @@ impl GaloisKey {
         let s = Zeroizing::new(Poly::try_convert_from(
             sk.coeffs.as_ref(),
             ctx_ciphertext,
-            false,
             Representation::PowerBasis,
         )?);
         let s_sub = Zeroizing::new(s.substitute(&ciphertext_exponent)?);

@@ -42,7 +42,6 @@ impl PublicKeyShare {
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
-            false,
             Representation::PowerBasis,
         )?);
         s.change_representation(Representation::Ntt);
@@ -51,11 +50,9 @@ impl PublicKeyShare {
         let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
         // Create p0_i share
         let mut p0_share = -crp.poly.clone();
-        p0_share.disallow_variable_time_computations();
         p0_share.change_representation(Representation::Ntt);
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
-        unsafe { p0_share.allow_variable_time_computations() }
 
         Ok(Self { par, crp, p0_share })
     }
