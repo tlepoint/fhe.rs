@@ -33,12 +33,15 @@ thiserror.workspace = true
 prost-build.workspace = true
 
 [dev-dependencies]
+clap.workspace = true
+console.workspace = true
 criterion.workspace = true
+env_logger.workspace = true
 indicatif.workspace = true
 itertools.workspace = true
+log.workspace = true
 ndarray.workspace = true
 rand.workspace = true
-console.workspace = true
 
 [[bench]]
 name = "bfv"
@@ -57,9 +60,6 @@ name = "mulpir"
 
 [[example]]
 name = "sealpir"
-
-[[example]]
-name = "util"
 
 [[example]]
 name = "voting"
