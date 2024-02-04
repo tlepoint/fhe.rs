@@ -13,13 +13,16 @@ license = "MIT"
 rust-version = "1.73"
 
 [workspace.dependencies]
+clap = { version = "^4.4.18", features = ["derive"] }
 concrete-ntt = "^0.1.1"
 console = "^0.15.8"
 criterion = "^0.5.1"
 doc-comment = "^0.3.3"
+env_logger = "^0.11.1"
 ethnum = "^1.5.0"
 indicatif = "^0.17.7"
 itertools = "^0.12.1"
+log = "^0.4.20"
 ndarray = "^0.15.6"
 num-bigint = "^0.4.4"
 num-bigint-dig = "^0.8.4"
