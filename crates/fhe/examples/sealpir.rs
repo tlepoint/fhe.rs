@@ -6,9 +6,10 @@
 // We use the same parameters as in Microsoft's public implementation
 // <https://github.com/microsoft/SealPIR> to enable an apple-to-apple comparison.
 
+mod pir;
 mod util;
 
-use console::style;
+use clap::Parser;
 use fhe::bfv;
 use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use fhe_traits::{
@@ -19,92 +20,30 @@ use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, RngCore};
-use std::{env, error::Error, process::exit, sync::Arc};
+use std::{error::Error, sync::Arc};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
     timeit::{timeit, timeit_n},
 };
 
-fn print_notice_and_exit(max_element_size: usize, error: Option<String>) {
-    println!(
-        "{} SealPIR with fhe.rs",
-        style("  overview:").magenta().bold()
-    );
-    println!(
-        "{} sealpir [-h] [--help] [--database_size=<value>] [--element_size=<value>]",
-        style("     usage:").magenta().bold()
-    );
-    println!(
-        "{} {} must be at least 1, and {} must be between 1 and {}",
-        style("constraints:").magenta().bold(),
-        style("database_size").blue(),
-        style("element_size").blue(),
-        max_element_size
-    );
-    if let Some(error) = error {
-        println!("{} {}", style("     error:").red().bold(), error);
-    }
-    exit(0);
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+
     let degree = 4096usize;
     let plaintext_modulus = 2056193u64;
     let moduli_sizes = [36, 36, 37];
+
+    let args = pir::Cli::parse();
+    let database_size = args.database_size;
+    let elements_size = args.element_size;
 
     // Compute what is the maximum byte-length of an element to fit within one
     // ciphertext. Each coefficient of the ciphertext polynomial can contain
     // floor(log2(plaintext_modulus)) bits.
     let max_element_size = ((plaintext_modulus.ilog2() as usize) * degree) / 8;
-
-    // This executable is a command line tool which enables to specify different
-    // database and element sizes.
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    // Print the help if requested.
-    if args.contains(&"-h".to_string()) || args.contains(&"--help".to_string()) {
-        print_notice_and_exit(max_element_size, None)
-    }
-
-    // Use the default values from <https://github.com/microsoft/SealPIR>.
-    let mut database_size = 1 << 16;
-    let mut elements_size = 1024;
-
-    // Update the database size and/or element size depending on the arguments
-    // provided.
-    for arg in &args {
-        if arg.starts_with("--database_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--database_size` command".to_string()),
-                )
-            } else {
-                database_size = a[0].parse::<usize>()?
-            }
-        } else if arg.starts_with("--element_size") {
-            let a: Vec<&str> = arg.rsplit('=').collect();
-            if a.len() != 2 || a[0].parse::<usize>().is_err() {
-                print_notice_and_exit(
-                    max_element_size,
-                    Some("Invalid `--element_size` command".to_string()),
-                )
-            } else {
-                elements_size = a[0].parse::<usize>()?
-            }
-        } else {
-            print_notice_and_exit(
-                max_element_size,
-                Some(format!("Unrecognized command: {arg}")),
-            )
-        }
-    }
     if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
-        print_notice_and_exit(
-            max_element_size,
-            Some("Element or database sizes out of bound".to_string()),
-        )
+        log::error!("Invalid parameters: database_size = {database_size}, elements_size = {elements_size}. The maximum element size if {max_element_size}.");
+        clap::Error::new(clap::error::ErrorKind::InvalidValue).exit();
     }
 
     // The parameters are within bound, let's go! Let's first display some
