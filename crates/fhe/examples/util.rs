@@ -87,7 +87,7 @@ pub fn number_elements_per_plaintext(
 
 #[allow(dead_code)]
 pub fn encode_database(
-    database: &Vec<Vec<u8>>,
+    database: &[Vec<u8>],
     par: Arc<bfv::BfvParameters>,
     level: usize,
 ) -> (Vec<bfv::Plaintext>, (usize, usize)) {
