@@ -13,7 +13,7 @@ license = "MIT"
 rust-version = "1.73"
 
 [workspace.dependencies]
-clap = { version = "^4.5.0", features = ["derive"] }
+clap = { version = "^4.5.1", features = ["derive"] }
 concrete-ntt = "^0.1.1"
 console = "^0.15.8"
 criterion = "^0.5.1"
