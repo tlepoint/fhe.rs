@@ -63,14 +63,14 @@ where
         ));
     }
     let ct_first = ct.clone().next().unwrap();
-    let ctx = ct_first.c[0].ctx();
+    let ctx = ct_first[0].ctx();
 
     if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
-        cti.par != ct_first.par || pti.par != ct_first.par || cti.c.len() != ct_first.c.len()
+        cti.par != ct_first.par || pti.par != ct_first.par || cti.len() != ct_first.len()
     }) {
         return Err(Error::DefaultError("Mismatched parameters".to_string()));
     }
-    if ct.clone().any(|cti| cti.c.len() != ct_first.c.len()) {
+    if ct.clone().any(|cti| cti.len() != ct_first.len()) {
         return Err(Error::DefaultError(
             "Mismatched number of parts in the ciphertexts".to_string(),
         ));
@@ -86,10 +86,10 @@ where
     if count as u128 > *min_of_max {
         // Too many ciphertexts for the optimized method, instead, we call
         // `poly_dot_product`.
-        let c = (0..ct_first.c.len())
+        let c = (0..ct_first.len())
             .map(|i| {
                 poly_dot_product(
-                    ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
+                    ct.clone().map(|cti| unsafe { cti.get_unchecked(i) }),
                     pt.clone().map(|pti| &pti.poly_ntt),
                 )
                 .map_err(Error::MathError)
@@ -103,10 +103,10 @@ where
             level: ct_first.level,
         })
     } else {
-        let mut acc = Array::zeros((ct_first.c.len(), ctx.moduli().len(), ct_first.par.degree()));
+        let mut acc = Array::zeros((ct_first.len(), ctx.moduli().len(), ct_first.par.degree()));
         for (ciphertext, plaintext) in izip!(ct, pt) {
             let pt_coefficients = plaintext.poly_ntt.coefficients();
-            for (mut acci, ci) in izip!(acc.outer_iter_mut(), ciphertext.c.iter()) {
+            for (mut acci, ci) in izip!(acc.outer_iter_mut(), ciphertext.iter()) {
                 let ci_coefficients = ci.coefficients();
                 for (mut accij, cij, pij) in izip!(
                     acci.outer_iter_mut(),
@@ -125,7 +125,7 @@ where
         }
 
         // Reduce
-        let mut c = Vec::with_capacity(ct_first.c.len());
+        let mut c = Vec::with_capacity(ct_first.len());
         for acci in acc.outer_iter() {
             let mut coeffs = Array2::zeros((ctx.moduli().len(), ct_first.par.degree()));
             for (mut outij, accij, q) in izip!(

@@ -158,27 +158,6 @@ impl BfvParameters {
                 0x1ffffffe48001,
             ],
         );
-        n_and_qs.insert(
-            32768,
-            vec![
-                0x7fffffffe90001,
-                0x7fffffffbf0001,
-                0x7fffffffbd0001,
-                0x7fffffffba0001,
-                0x7fffffffaa0001,
-                0x7fffffffa50001,
-                0x7fffffff9f0001,
-                0x7fffffff7e0001,
-                0x7fffffff770001,
-                0x7fffffff380001,
-                0x7fffffff330001,
-                0x7fffffff2d0001,
-                0x7fffffff170001,
-                0x7fffffff150001,
-                0x7ffffffef00001,
-                0xfffffffff70001,
-            ],
-        );
 
         let mut params = vec![];
 
@@ -258,7 +237,7 @@ impl BfvParametersBuilder {
     /// Only one of `set_moduli_sizes` and `set_moduli`
     /// can be specified.
     pub fn set_moduli_sizes(&mut self, sizes: &[usize]) -> &mut Self {
-        self.ciphertext_moduli_sizes = sizes.to_owned();
+        sizes.clone_into(&mut self.ciphertext_moduli_sizes);
         self
     }
 
@@ -266,7 +245,7 @@ impl BfvParametersBuilder {
     /// Only one of `set_moduli_sizes` and `set_moduli`
     /// can be specified.
     pub fn set_moduli(&mut self, moduli: &[u64]) -> &mut Self {
-        self.ciphertext_moduli = moduli.to_owned();
+        moduli.clone_into(&mut self.ciphertext_moduli);
         self
     }
 
@@ -370,7 +349,7 @@ impl BfvParametersBuilder {
         let mut delta_rests = vec![];
         for m in &moduli {
             let q = Modulus::new(*m)?;
-            delta_rests.push(q.inv(q.neg(plaintext_modulus.modulus())).unwrap())
+            delta_rests.push(q.inv(q.neg(*plaintext_modulus)).unwrap())
         }
 
         let mut ctx = Vec::with_capacity(moduli.len());
@@ -390,16 +369,12 @@ impl BfvParametersBuilder {
             p.change_representation(Representation::NttShoup);
             delta.push(p);
 
-            q_mod_t.push(
-                (rns.modulus() % plaintext_modulus.modulus())
-                    .to_u64()
-                    .unwrap(),
-            );
+            q_mod_t.push((rns.modulus() % *plaintext_modulus).to_u64().unwrap());
 
             scalers.push(Scaler::new(
                 &ctx_i,
                 &plaintext_ctx,
-                ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), rns.modulus()),
+                ScalingFactor::new(&BigUint::from(*plaintext_modulus), rns.modulus()),
             )?);
 
             // For the first multiplication, we want to extend to a context that
@@ -414,7 +389,7 @@ impl BfvParametersBuilder {
                 &ctx_i,
                 &mul_1_ctx,
                 ScalingFactor::one(),
-                ScalingFactor::new(&BigUint::from(plaintext_modulus.modulus()), ctx_i.modulus()),
+                ScalingFactor::new(&BigUint::from(*plaintext_modulus), ctx_i.modulus()),
             )?);
 
             ctx.push(ctx_i);
@@ -440,17 +415,17 @@ impl BfvParametersBuilder {
         Ok(BfvParameters {
             polynomial_degree: self.degree,
             plaintext_modulus: self.plaintext,
-            moduli: moduli.into_boxed_slice(),
-            moduli_sizes: moduli_sizes.into_boxed_slice(),
+            moduli: moduli.into(),
+            moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
             ctx,
             op: op.map(Arc::new),
-            delta: delta.into_boxed_slice(),
-            q_mod_t: q_mod_t.into_boxed_slice(),
-            scalers: scalers.into_boxed_slice(),
+            delta: delta.into(),
+            q_mod_t: q_mod_t.into(),
+            scalers: scalers.into(),
             plaintext: plaintext_modulus,
-            mul_params: mul_params.into_boxed_slice(),
-            matrix_reps_index_map: matrix_reps_index_map.into_boxed_slice(),
+            mul_params: mul_params.into(),
+            matrix_reps_index_map: matrix_reps_index_map.into(),
         })
     }
 }

@@ -64,22 +64,22 @@ impl GaloisKey {
     /// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
     pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext> {
         // assert_eq!(ct.par, self.ksk.par);
-        assert_eq!(ct.c.len(), 2);
+        assert_eq!(ct.len(), 2);
 
-        let mut c2 = ct.c[1].substitute(&self.element)?;
+        let mut c2 = ct[1].substitute(&self.element)?;
         c2.change_representation(Representation::PowerBasis);
         let (mut c0, mut c1) = self.ksk.key_switch(&c2)?;
 
-        if c0.ctx() != ct.c[0].ctx() {
+        if c0.ctx() != ct[0].ctx() {
             c0.change_representation(Representation::PowerBasis);
             c1.change_representation(Representation::PowerBasis);
-            c0.mod_switch_down_to(ct.c[0].ctx())?;
-            c1.mod_switch_down_to(ct.c[1].ctx())?;
+            c0.mod_switch_down_to(ct[0].ctx())?;
+            c1.mod_switch_down_to(ct[1].ctx())?;
             c0.change_representation(Representation::Ntt);
             c1.change_representation(Representation::Ntt);
         }
 
-        c0 += &ct.c[0].substitute(&self.element)?;
+        c0 += &ct[0].substitute(&self.element)?;
 
         Ok(Ciphertext {
             par: ct.par.clone(),

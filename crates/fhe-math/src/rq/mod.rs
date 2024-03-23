@@ -11,17 +11,16 @@ mod serialize;
 pub mod scaler;
 pub mod switcher;
 pub mod traits;
-pub use context::Context;
-pub use ops::dot_product;
-use sha2::{Digest, Sha256};
-
 use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
 use crate::{Error, Result};
+pub use context::Context;
 use fhe_util::sample_vec_cbd;
 use itertools::{izip, Itertools};
 use ndarray::{s, Array2, ArrayView2, Axis};
+pub use ops::dot_product;
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -87,6 +86,16 @@ pub struct Poly {
     coefficients_shoup: Option<Array2<u64>>,
 }
 
+// Implements zeroization of polynomials
+impl Zeroize for Poly {
+    fn zeroize(&mut self) {
+        if let Some(coeffs) = self.coefficients.as_slice_mut() {
+            coeffs.zeroize()
+        }
+        self.zeroize_shoup()
+    }
+}
+
 impl AsRef<Poly> for Poly {
     fn as_ref(&self) -> &Poly {
         self
@@ -136,6 +145,17 @@ impl Poly {
         &self.representation
     }
 
+    /// Zeroize the shoup coefficients
+    fn zeroize_shoup(&mut self) {
+        if let Some(coeffs_shoup) = self
+            .coefficients_shoup
+            .as_mut()
+            .and_then(|f| f.as_slice_mut())
+        {
+            coeffs_shoup.zeroize()
+        }
+    }
+
     /// Change the representation of the underlying polynomial.
     pub fn change_representation(&mut self, to: Representation) {
         match self.representation {
@@ -160,12 +180,7 @@ impl Poly {
                 if to != Representation::NttShoup {
                     // We are not sure whether this polynomial was sensitive or not,
                     // so for security, we zeroize the Shoup coefficients.
-                    self.coefficients_shoup
-                        .as_mut()
-                        .unwrap()
-                        .as_slice_mut()
-                        .unwrap()
-                        .zeroize();
+                    self.zeroize_shoup();
                     self.coefficients_shoup = None
                 }
                 match to {
@@ -203,19 +218,15 @@ impl Poly {
     /// Prefer the `change_representation` function to safely modify the
     /// polynomial representation. If the `to` representation is NttShoup, the
     /// coefficients are still computed correctly to avoid being in an unstable
-    /// state. Similarly, if we override a representation which was NttShoup, we
-    /// zeroize the existing Shoup coefficients.
+    /// state. If we override a polynomial with Shoup coefficients, we zeroize
+    /// them.
     pub unsafe fn override_representation(&mut self, to: Representation) {
+        if self.coefficients_shoup.is_some() {
+            self.zeroize_shoup();
+            self.coefficients_shoup = None
+        }
         if to == Representation::NttShoup {
             self.compute_coefficients_shoup()
-        } else if self.coefficients_shoup.is_some() {
-            self.coefficients_shoup
-                .as_mut()
-                .unwrap()
-                .as_slice_mut()
-                .unwrap()
-                .zeroize();
-            self.coefficients_shoup = None
         }
         self.representation = to;
     }
@@ -438,7 +449,7 @@ impl Poly {
 
         let q_len = self.ctx.q.len();
         let q_last = self.ctx.q.last().unwrap();
-        let q_last_div_2 = q_last.modulus() / 2;
+        let q_last_div_2 = (**q_last) / 2;
 
         // Add (q_last - 1) / 2 to change from flooring to rounding
         let (mut q_new_polys, mut q_last_poly) =
@@ -456,14 +467,14 @@ impl Poly {
                     self.ctx.inv_last_qi_mod_qj_shoup.iter(),
                 )
                 .for_each(|(coeffs, qi, inv, inv_shoup)| {
-                    let q_last_div_2_mod_qi = qi.modulus() - qi.reduce_vt(q_last_div_2); // Up to qi.modulus()
+                    let q_last_div_2_mod_qi = **qi - qi.reduce_vt(q_last_div_2); // Up to qi.modulus()
                     for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
                         // (x mod q_last - q_L/2) mod q_i
                         let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
 
                         // ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
                         // = (x - x mod q_last + q_L/2) mod q_i
-                        *coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
+                        *coeff += 3 * (**qi) - tmp; // Up to 4 * qi.modulus()
 
                         // q_last^{-1} * (x - x mod q_last) mod q_i
                         *coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
@@ -481,14 +492,14 @@ impl Poly {
                 self.ctx.inv_last_qi_mod_qj_shoup.iter(),
             )
             .for_each(|(coeffs, qi, inv, inv_shoup)| {
-                let q_last_div_2_mod_qi = qi.modulus() - qi.reduce(q_last_div_2); // Up to qi.modulus()
+                let q_last_div_2_mod_qi = **qi - qi.reduce(q_last_div_2); // Up to qi.modulus()
                 for (coeff, q_last_coeff) in izip!(coeffs, q_last_poly.iter()) {
                     // (x mod q_last - q_L/2) mod q_i
                     let tmp = qi.lazy_reduce(*q_last_coeff) + q_last_div_2_mod_qi; // Up to 3 * qi.modulus()
 
                     // ((x mod q_i) - (x mod q_last) + (q_L/2 mod q_i)) mod q_i
                     // = (x - x mod q_last + q_L/2) mod q_i
-                    *coeff += 3 * qi.modulus() - tmp; // Up to 4 * qi.modulus()
+                    *coeff += 3 * (**qi) - tmp; // Up to 4 * qi.modulus()
 
                     // q_last^{-1} * (x - x mod q_last) mod q_i
                     *coeff = qi.mul_shoup(*coeff, *inv, *inv_shoup);
@@ -564,15 +575,6 @@ impl Poly {
             }
         });
         Ok(())
-    }
-}
-
-impl Zeroize for Poly {
-    fn zeroize(&mut self) {
-        self.coefficients.as_slice_mut().unwrap().zeroize();
-        if let Some(s) = self.coefficients_shoup.as_mut() {
-            s.as_slice_mut().unwrap().zeroize();
-        }
     }
 }
 
@@ -1024,7 +1026,7 @@ mod tests {
                         )
                         .collect_vec()
                 );
-                reference = p_biguint.clone();
+                reference.clone_from(&p_biguint);
             }
         }
         Ok(())

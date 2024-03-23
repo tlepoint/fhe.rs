@@ -315,13 +315,13 @@ impl RnsScaler {
                 let gamma_i = self.gamma.get_unchecked(starting_index + i);
                 let gamma_shoup_i = self.gamma_shoup.get_unchecked(starting_index + i);
 
-                let mut yi = (qi.modulus() * 2
+                let mut yi = (**qi * 2
                     - qi.lazy_mul_shoup(qi.reduce_u128(v), *gamma_i, *gamma_shoup_i))
                     as u128;
 
                 if !self.scaling_factor.is_one {
                     let wi = qi.lazy_reduce_u128(w);
-                    yi += if w_sign { qi.modulus() * 2 - wi } else { wi } as u128;
+                    yi += if w_sign { **qi * 2 - wi } else { wi } as u128;
                 }
 
                 debug_assert!(rests.len() <= omega_i.len());

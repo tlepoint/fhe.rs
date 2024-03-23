@@ -9,7 +9,7 @@ pub use mul::Multiplicator;
 use super::{Ciphertext, Plaintext};
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
-use itertools::{izip, Itertools};
+use itertools::{izip, Itertools as _};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 impl Add<&Ciphertext> for &Ciphertext {
@@ -26,12 +26,12 @@ impl AddAssign<&Ciphertext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Ciphertext) {
         assert_eq!(self.par, rhs.par);
 
-        if self.c.is_empty() {
+        if self.is_empty() {
             *self = rhs.clone()
-        } else if !rhs.c.is_empty() {
+        } else if !rhs.is_empty() {
             assert_eq!(self.level, rhs.level);
-            assert_eq!(self.c.len(), rhs.c.len());
-            izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i += c2i);
+            assert_eq!(self.len(), rhs.len());
+            izip!(self.iter_mut(), rhs.iter()).for_each(|(c1i, c2i)| *c1i += c2i);
             self.seed = None
         }
     }
@@ -58,11 +58,11 @@ impl Add<&Ciphertext> for &Plaintext {
 impl AddAssign<&Plaintext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Plaintext) {
         assert_eq!(self.par, rhs.par);
-        assert!(!self.c.is_empty());
+        assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level);
 
         let poly = rhs.to_poly();
-        self.c[0] += &poly;
+        self[0] += &poly;
         self.seed = None
     }
 }
@@ -81,12 +81,12 @@ impl SubAssign<&Ciphertext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Ciphertext) {
         assert_eq!(self.par, rhs.par);
 
-        if self.c.is_empty() {
+        if self.is_empty() {
             *self = -rhs
-        } else if !rhs.c.is_empty() {
+        } else if !rhs.is_empty() {
             assert_eq!(self.level, rhs.level);
-            assert_eq!(self.c.len(), rhs.c.len());
-            izip!(&mut self.c, &rhs.c).for_each(|(c1i, c2i)| *c1i -= c2i);
+            assert_eq!(self.len(), rhs.len());
+            izip!(self.iter_mut(), rhs.iter()).for_each(|(c1i, c2i)| *c1i -= c2i);
             self.seed = None
         }
     }
@@ -113,7 +113,7 @@ impl Sub<&Ciphertext> for &Plaintext {
 impl SubAssign<&Plaintext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Plaintext) {
         assert_eq!(self.par, rhs.par);
-        assert!(!self.c.is_empty());
+        assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level);
 
         let poly = rhs.to_poly();
@@ -126,7 +126,7 @@ impl Neg for &Ciphertext {
     type Output = Ciphertext;
 
     fn neg(self) -> Ciphertext {
-        let c = self.c.iter().map(|c1i| -c1i).collect_vec();
+        let c = self.iter().map(|c1i| -c1i).collect_vec();
         Ciphertext {
             par: self.par.clone(),
             seed: None,
@@ -140,7 +140,7 @@ impl Neg for Ciphertext {
     type Output = Ciphertext;
 
     fn neg(mut self) -> Ciphertext {
-        self.c.iter_mut().for_each(|c1i| *c1i = -&*c1i);
+        self.iter_mut().for_each(|c1i| *c1i = -&*c1i);
         self.seed = None;
         self
     }
@@ -149,9 +149,9 @@ impl Neg for Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
     fn mul_assign(&mut self, rhs: &Plaintext) {
         assert_eq!(self.par, rhs.par);
-        if !self.c.is_empty() {
+        if !self.is_empty() {
             assert_eq!(self.level, rhs.level);
-            self.c.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
+            self.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
         }
         self.seed = None
     }
@@ -171,7 +171,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
     type Output = Ciphertext;
 
     fn mul(self, rhs: &Ciphertext) -> Ciphertext {
-        if self.c.is_empty() {
+        if self.is_empty() {
             return self.clone();
         }
 
@@ -182,7 +182,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
             // Scale all ciphertexts
             // let mut now = std::time::SystemTime::now();
             let self_c = self
-                .c
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()
@@ -228,13 +227,11 @@ impl Mul<&Ciphertext> for &Ciphertext {
             // Scale all ciphertexts
             // let mut now = std::time::SystemTime::now();
             let self_c = self
-                .c
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()
                 .unwrap();
             let other_c = rhs
-                .c
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()
@@ -536,7 +533,7 @@ mod tests {
                             }
                         }
                         EncodingEnum::Simd => {
-                            c = a.clone();
+                            c.clone_from(&a);
                             params.plaintext.mul_vec(&mut c, &b);
                         }
                     }

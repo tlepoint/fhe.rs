@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .div_ceil(plaintext_modulus.ilog2() as usize),
                 );
                 pt_values.append(&mut transcode_bidirectional(
-                    c.get(0).unwrap().coefficients().as_slice().unwrap(),
+                    c.first().unwrap().coefficients().as_slice().unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
                     plaintext_modulus.ilog2() as usize,
                 ));
@@ -181,20 +181,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                     plaintext_modulus.ilog2() as usize,
                 ));
                 unsafe {
-                    Ok(bfv::PlaintextVec::try_encode_vt(
+                    bfv::PlaintextVec::try_encode_vt(
                         &pt_values,
                         bfv::Encoding::poly_at_level(1),
                         &params,
-                    )?
-                    .0)
+                    )
                 }
             })
-            .collect::<fhe::Result<Vec<Vec<bfv::Plaintext>>>>()?;
+            .collect::<fhe::Result<Vec<bfv::PlaintextVec>>>()?;
         (0..fold[0].len())
             .map(|i| {
                 let mut outi = bfv::dot_product_scalar(
                     expanded_query[dim1..].iter(),
-                    fold.iter().map(|pts| pts.get(i).unwrap()),
+                    fold.iter().map(|pts| &pts[i]),
                 )?;
                 outi.mod_switch_to_last_level()?;
                 Ok(outi.to_bytes())

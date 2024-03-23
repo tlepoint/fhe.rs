@@ -6,22 +6,26 @@ use crate::{
 use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
 use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use std::sync::Arc;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::{Zeroize as _, Zeroizing};
+use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 use super::encoding::EncodingEnum;
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct Plaintext {
     /// The parameters of the underlying BFV encryption scheme.
+    #[zeroize(skip)]
     pub(crate) par: Arc<BfvParameters>,
     /// The value after encoding.
     pub(crate) value: Box<[u64]>,
     /// The encoding of the plaintext, if known
+    #[zeroize(skip)]
     pub(crate) encoding: Option<Encoding>,
     /// The plaintext as a polynomial.
     pub(crate) poly_ntt: Poly,
     /// The level of the plaintext
+    #[zeroize(skip)]
     pub(crate) level: usize,
 }
 
@@ -31,16 +35,6 @@ impl FheParametrized for Plaintext {
 
 impl FhePlaintext for Plaintext {
     type Encoding = Encoding;
-}
-
-// Zeroizing of plaintexts.
-impl ZeroizeOnDrop for Plaintext {}
-
-impl Zeroize for Plaintext {
-    fn zeroize(&mut self) {
-        self.value.zeroize();
-        self.poly_ntt.zeroize();
-    }
 }
 
 impl Plaintext {
@@ -153,7 +147,7 @@ impl<'a> FheEncoder<&'a [u64]> for Plaintext {
             return Err(Error::TooManyValues(value.len(), par.degree()));
         }
         let v = PlaintextVec::try_encode(value, encoding, par)?;
-        Ok(v.0[0].clone())
+        Ok(v[0].clone())
     }
 }
 

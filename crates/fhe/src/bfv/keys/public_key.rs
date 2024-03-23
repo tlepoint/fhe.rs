@@ -27,7 +27,7 @@ impl PublicKey {
         let mut c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
         // The polynomials of a public key should not allow for variable time
         // computation.
-        c.c.iter_mut()
+        c.iter_mut()
             .for_each(|p| p.disallow_variable_time_computations());
         Self {
             par: sk.par.clone(),
@@ -74,10 +74,10 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         )?);
 
         let m = Zeroizing::new(pt.to_poly());
-        let mut c0 = u.as_ref() * &ct.c[0];
+        let mut c0 = u.as_ref() * &ct[0];
         c0 += &e1;
         c0 += &m;
-        let mut c1 = u.as_ref() * &ct.c[1];
+        let mut c1 = u.as_ref() * &ct[1];
         c1 += &e2;
 
         // It is now safe to enable variable time computations.
@@ -122,7 +122,7 @@ impl DeserializeParametrized for PublicKey {
             } else {
                 // The polynomials of a public key should not allow for variable time
                 // computation.
-                c.c.iter_mut()
+                c.iter_mut()
                     .for_each(|p| p.disallow_variable_time_computations());
                 Ok(Self {
                     par: par.clone(),

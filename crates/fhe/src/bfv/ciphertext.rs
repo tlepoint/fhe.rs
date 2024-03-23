@@ -10,6 +10,7 @@ use fhe_traits::{
 use prost::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// A ciphertext encrypting a plaintext.
@@ -28,6 +29,20 @@ pub struct Ciphertext {
     pub(crate) level: usize,
 }
 
+impl Deref for Ciphertext {
+    type Target = [Poly];
+
+    fn deref(&self) -> &Self::Target {
+        &self.c
+    }
+}
+
+impl DerefMut for Ciphertext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.c
+    }
+}
+
 impl Ciphertext {
     /// Modulo switch the ciphertext to the last level.
     pub fn mod_switch_to_last_level(&mut self) -> Result<()> {
@@ -42,6 +57,11 @@ impl Ciphertext {
             }
         }
         Ok(())
+    }
+
+    /// Truncate the underlying vector of polynomials.
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.c.truncate(len)
     }
 
     /// Modulo switch the ciphertext to the next level.
@@ -89,11 +109,6 @@ impl Ciphertext {
             level,
         })
     }
-
-    /// Get the i-th polynomial of the ciphertext.
-    pub fn get(&self, i: usize) -> Option<&Poly> {
-        self.c.get(i)
-    }
 }
 
 impl FheCiphertext for Ciphertext {}
@@ -136,13 +151,13 @@ impl Ciphertext {
 impl From<&Ciphertext> for CiphertextProto {
     fn from(ct: &Ciphertext) -> Self {
         let mut proto = CiphertextProto::default();
-        for i in 0..ct.c.len() - 1 {
-            proto.c.push(ct.c[i].to_bytes())
+        for i in 0..ct.len() - 1 {
+            proto.c.push(ct[i].to_bytes())
         }
         if let Some(seed) = ct.seed {
             proto.seed = seed.to_vec()
         } else {
-            proto.c.push(ct.c[ct.c.len() - 1].to_bytes())
+            proto.c.push(ct[ct.len() - 1].to_bytes())
         }
         proto.level = ct.level as u32;
         proto
@@ -252,9 +267,9 @@ mod tests {
             let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
             let mut ct3 = &ct * &ct;
 
-            let c0 = ct3.get(0).unwrap();
-            let c1 = ct3.get(1).unwrap();
-            let c2 = ct3.get(2).unwrap();
+            let c0 = &ct3[0];
+            let c1 = &ct3[1];
+            let c2 = &ct3[2];
 
             assert_eq!(
                 ct3,
@@ -264,7 +279,7 @@ mod tests {
 
             ct3.mod_switch_to_last_level()?;
 
-            let c0 = ct3.get(0).unwrap();
+            let c0 = ct3.first().unwrap();
             let c1 = ct3.get(1).unwrap();
             let c2 = ct3.get(2).unwrap();
             assert_eq!(
