@@ -4,11 +4,15 @@
 
 pub mod primes;
 
+use std::ops::Deref;
+
 use crate::errors::{Error, Result};
+use derivative::Derivative;
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
+use pulp::Arch;
 use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
 
 /// cond ? on_true : on_false
@@ -19,7 +23,9 @@ const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 
 }
 
 /// Structure encapsulating an integer modulus up to 62 bits.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Derivative)]
+#[derivative(PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Modulus {
     pub(crate) p: u64,
     nbits: usize,
@@ -28,10 +34,21 @@ pub struct Modulus {
     leading_zeros: u32,
     pub(crate) supports_opt: bool,
     distribution: Uniform<u64>,
+    #[derivative(PartialEq = "ignore")]
+    arch: Arch,
 }
 
 // We need to declare Eq manually because of the `Uniform` member.
 impl Eq for Modulus {}
+
+// Override the dereference to return the underlying modulus.
+impl Deref for Modulus {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.p
+    }
+}
 
 impl Modulus {
     /// Create a modulus from an integer of at most 62 bits.
@@ -48,13 +65,9 @@ impl Modulus {
                 leading_zeros: p.leading_zeros(),
                 supports_opt: primes::supports_opt(p),
                 distribution: Uniform::from(0..p),
+                arch: Arch::new(),
             })
         }
-    }
-
-    /// Returns the value of the modulus.
-    pub const fn modulus(&self) -> u64 {
-        self.p
     }
 
     /// Performs the modular addition of a and b in constant time.
@@ -201,8 +214,9 @@ impl Modulus {
     /// debug mode.
     pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-
-        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi));
+        self.arch.dispatch(|| {
+            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi))
+        })
     }
 
     /// Modular addition of vectors in place in variable time.
@@ -225,26 +239,30 @@ impl Modulus {
         }
 
         if n % 16 == 0 {
-            for i in 0..n / 16 {
-                add_at!(16 * i);
-                add_at!(16 * i + 1);
-                add_at!(16 * i + 2);
-                add_at!(16 * i + 3);
-                add_at!(16 * i + 4);
-                add_at!(16 * i + 5);
-                add_at!(16 * i + 6);
-                add_at!(16 * i + 7);
-                add_at!(16 * i + 8);
-                add_at!(16 * i + 9);
-                add_at!(16 * i + 10);
-                add_at!(16 * i + 11);
-                add_at!(16 * i + 12);
-                add_at!(16 * i + 13);
-                add_at!(16 * i + 14);
-                add_at!(16 * i + 15);
-            }
+            self.arch.dispatch(|| {
+                for i in 0..n / 16 {
+                    add_at!(16 * i);
+                    add_at!(16 * i + 1);
+                    add_at!(16 * i + 2);
+                    add_at!(16 * i + 3);
+                    add_at!(16 * i + 4);
+                    add_at!(16 * i + 5);
+                    add_at!(16 * i + 6);
+                    add_at!(16 * i + 7);
+                    add_at!(16 * i + 8);
+                    add_at!(16 * i + 9);
+                    add_at!(16 * i + 10);
+                    add_at!(16 * i + 11);
+                    add_at!(16 * i + 12);
+                    add_at!(16 * i + 13);
+                    add_at!(16 * i + 14);
+                    add_at!(16 * i + 15);
+                }
+            })
         } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi))
+            })
         }
     }
 
@@ -254,8 +272,9 @@ impl Modulus {
     /// debug mode.
     pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-
-        izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi));
+        self.arch.dispatch(|| {
+            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi))
+        })
     }
 
     /// Modular subtraction of vectors in place in variable time.
@@ -278,26 +297,30 @@ impl Modulus {
         }
 
         if n % 16 == 0 {
-            for i in 0..n / 16 {
-                sub_at!(16 * i);
-                sub_at!(16 * i + 1);
-                sub_at!(16 * i + 2);
-                sub_at!(16 * i + 3);
-                sub_at!(16 * i + 4);
-                sub_at!(16 * i + 5);
-                sub_at!(16 * i + 6);
-                sub_at!(16 * i + 7);
-                sub_at!(16 * i + 8);
-                sub_at!(16 * i + 9);
-                sub_at!(16 * i + 10);
-                sub_at!(16 * i + 11);
-                sub_at!(16 * i + 12);
-                sub_at!(16 * i + 13);
-                sub_at!(16 * i + 14);
-                sub_at!(16 * i + 15);
-            }
+            self.arch.dispatch(|| {
+                for i in 0..n / 16 {
+                    sub_at!(16 * i);
+                    sub_at!(16 * i + 1);
+                    sub_at!(16 * i + 2);
+                    sub_at!(16 * i + 3);
+                    sub_at!(16 * i + 4);
+                    sub_at!(16 * i + 5);
+                    sub_at!(16 * i + 6);
+                    sub_at!(16 * i + 7);
+                    sub_at!(16 * i + 8);
+                    sub_at!(16 * i + 9);
+                    sub_at!(16 * i + 10);
+                    sub_at!(16 * i + 11);
+                    sub_at!(16 * i + 12);
+                    sub_at!(16 * i + 13);
+                    sub_at!(16 * i + 14);
+                    sub_at!(16 * i + 15);
+                }
+            })
         } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi))
+            })
         }
     }
 
@@ -309,9 +332,13 @@ impl Modulus {
         debug_assert_eq!(a.len(), b.len());
 
         if self.supports_opt {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi))
+            })
         } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi))
+            })
         }
     }
 
@@ -320,8 +347,10 @@ impl Modulus {
     /// Aborts if any of the values in a is >= p in debug mode.
     pub fn scalar_mul_vec(&self, a: &mut [u64], b: u64) {
         let b_shoup = self.shoup(b);
-        a.iter_mut()
-            .for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup));
+        self.arch.dispatch(|| {
+            a.iter_mut()
+                .for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup))
+        })
     }
 
     /// Modular scalar multiplication of vectors in place in variable time.
@@ -332,8 +361,10 @@ impl Modulus {
     /// about the values being multiplied.
     pub unsafe fn scalar_mul_vec_vt(&self, a: &mut [u64], b: u64) {
         let b_shoup = self.shoup(b);
-        a.iter_mut()
-            .for_each(|ai| *ai = self.mul_shoup_vt(*ai, b, b_shoup));
+        self.arch.dispatch(|| {
+            a.iter_mut()
+                .for_each(|ai| *ai = self.mul_shoup_vt(*ai, b, b_shoup))
+        })
     }
 
     /// Modular multiplication of vectors in place in variable time.
@@ -347,9 +378,13 @@ impl Modulus {
         debug_assert_eq!(a.len(), b.len());
 
         if self.supports_opt {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt_vt(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt_vt(*ai, *bi))
+            })
         } else {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_vt(*ai, *bi));
+            self.arch.dispatch(|| {
+                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_vt(*ai, *bi))
+            })
         }
     }
 
@@ -357,7 +392,8 @@ impl Modulus {
     ///
     /// Aborts if any of the values of the vector is >= p in debug mode.
     pub fn shoup_vec(&self, a: &[u64]) -> Vec<u64> {
-        a.iter().map(|ai| self.shoup(*ai)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.shoup(*ai)).collect_vec())
     }
 
     /// Shoup modular multiplication of vectors in place in constant time.
@@ -369,8 +405,10 @@ impl Modulus {
         debug_assert_eq!(a.len(), b_shoup.len());
         debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
 
-        izip!(a.iter_mut(), b.iter(), b_shoup.iter())
-            .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup));
+        self.arch.dispatch(|| {
+            izip!(a.iter_mut(), b.iter(), b_shoup.iter())
+                .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup))
+        })
     }
 
     /// Shoup modular multiplication of vectors in place in variable time.
@@ -385,13 +423,16 @@ impl Modulus {
         debug_assert_eq!(a.len(), b_shoup.len());
         debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
 
-        izip!(a.iter_mut(), b.iter(), b_shoup.iter())
-            .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup_vt(*ai, *bi, *bi_shoup));
+        self.arch.dispatch(|| {
+            izip!(a.iter_mut(), b.iter(), b_shoup.iter())
+                .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup_vt(*ai, *bi, *bi_shoup))
+        })
     }
 
     /// Reduce a vector in place in constant time.
     pub fn reduce_vec(&self, a: &mut [u64]) {
-        a.iter_mut().for_each(|ai| *ai = self.reduce(*ai));
+        self.arch
+            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.reduce(*ai)))
     }
 
     /// Center a value modulo p as i64 in variable time.
@@ -416,7 +457,8 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being centered.
     pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
-        a.iter().map(|ai| self.center_vt(*ai)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.center_vt(*ai)).collect_vec())
     }
 
     /// Reduce a vector in place in variable time.
@@ -425,7 +467,8 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
     pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
-        a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai));
+        self.arch
+            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.reduce_vt(*ai)))
     }
 
     /// Modular reduction of a i64 in constant time.
@@ -444,7 +487,8 @@ impl Modulus {
 
     /// Reduce a vector in place in constant time.
     pub fn reduce_vec_i64(&self, a: &[i64]) -> Vec<u64> {
-        a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec())
     }
 
     /// Reduce a vector in place in variable time.
@@ -453,12 +497,14 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
     pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
-        a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect())
     }
 
     /// Reduce a vector in constant time.
     pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
-        a.iter().map(|ai| self.reduce(*ai)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.reduce(*ai)).collect())
     }
 
     /// Reduce a vector in variable time.
@@ -467,14 +513,16 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
     pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
-        a.iter().map(|bi| self.reduce_vt(*bi)).collect_vec()
+        self.arch
+            .dispatch(|| a.iter().map(|bi| self.reduce_vt(*bi)).collect())
     }
 
     /// Modular negation of a vector in place in constant time.
     ///
     /// Aborts if any of the values in the vector is >= p in debug mode.
     pub fn neg_vec(&self, a: &mut [u64]) {
-        izip!(a.iter_mut()).for_each(|ai| *ai = self.neg(*ai));
+        self.arch
+            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.neg(*ai)))
     }
 
     /// Modular negation of a vector in place in variable time.
@@ -484,7 +532,8 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being negated.
     pub unsafe fn neg_vec_vt(&self, a: &mut [u64]) {
-        izip!(a.iter_mut()).for_each(|ai| *ai = self.neg_vt(*ai));
+        self.arch
+            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.neg_vt(*ai)))
     }
 
     /// Modular exponentiation in variable time.
@@ -758,19 +807,19 @@ mod tests {
             prop_assume!(p >> 2 >= 2);
             let q = Modulus::new(p >> 2);
             prop_assert!(q.is_ok());
-            prop_assert_eq!(q.unwrap().modulus(), p >> 2);
+            prop_assert_eq!(*q.unwrap(), p >> 2);
         }
 
         #[test]
         fn neg(p in valid_moduli(), mut a: u64) {
             a = p.reduce(a);
-            prop_assert_eq!(p.neg(a), (p.modulus() - a) % p.modulus());
-            unsafe { prop_assert_eq!(p.neg_vt(a), (p.modulus() - a) % p.modulus()) }
+            prop_assert_eq!(p.neg(a), (*p - a) % *p);
+            unsafe { prop_assert_eq!(p.neg_vt(a), (*p - a) % *p) }
 
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.neg(p.modulus())).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.neg(p.modulus() + 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.neg(*p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.neg(*p + 1)).is_err());
             }
         }
 
@@ -778,15 +827,15 @@ mod tests {
         fn add(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
-            prop_assert_eq!(p.add(a, b), (a + b) % p.modulus());
-            unsafe { prop_assert_eq!(p.add_vt(a, b), (a + b) % p.modulus()) }
+            prop_assert_eq!(p.add(a, b), (a + b) % *p);
+            unsafe { prop_assert_eq!(p.add_vt(a, b), (a + b) % *p) }
 
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.add(p.modulus(), a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.add(a, p.modulus())).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.add(p.modulus() + 1, a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.add(a, p.modulus() + 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(*p, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(a, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(*p + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.add(a, *p + 1)).is_err());
             }
         }
 
@@ -794,15 +843,15 @@ mod tests {
         fn sub(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
-            prop_assert_eq!(p.sub(a, b), (a + p.modulus() - b) % p.modulus());
-            unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + p.modulus() - b) % p.modulus()) }
+            prop_assert_eq!(p.sub(a, b), (a + *p - b) % *p);
+            unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + *p - b) % *p) }
 
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.sub(p.modulus(), a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.sub(a, p.modulus())).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.sub(p.modulus() + 1, a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.sub(a, p.modulus() + 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(*p, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(a, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(*p + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.sub(a, *p + 1)).is_err());
             }
         }
 
@@ -810,15 +859,15 @@ mod tests {
         fn mul(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
-            prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.mul_vt(a, b) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
+            prop_assert_eq!(p.mul(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128));
+            unsafe { prop_assert_eq!(p.mul_vt(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128)) }
 
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.mul(p.modulus(), a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.mul(a, p.modulus())).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.mul(p.modulus() + 1, a)).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.mul(a, p.modulus() + 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(*p, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(a, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(*p + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul(a, *p + 1)).is_err());
             }
         }
 
@@ -832,18 +881,18 @@ mod tests {
 
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.shoup(p.modulus())).is_err());
-                prop_assert!(std::panic::catch_unwind(|| p.shoup(p.modulus() + 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.shoup(*p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.shoup(*p + 1)).is_err());
             }
 
             // Check that the multiplication yields the expected result
-            prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.mul_shoup_vt(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (p.modulus() as u128)) }
+            prop_assert_eq!(p.mul_shoup(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (*p as u128));
+            unsafe { prop_assert_eq!(p.mul_shoup_vt(a, b, b_shoup) as u128, ((a as u128) * (b as u128)) % (*p as u128)) }
 
             // Check that the multiplication with incorrect b_shoup panics in debug mode
             #[cfg(debug_assertions)]
             {
-                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, p.modulus(), b_shoup)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, *p, b_shoup)).is_err());
                 prop_assume!(a != b);
                 prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, a, b_shoup)).is_err());
             }
@@ -851,18 +900,18 @@ mod tests {
 
         #[test]
         fn reduce(p in valid_moduli(), a: u64) {
-            prop_assert_eq!(p.reduce(a), a % p.modulus());
-            unsafe { prop_assert_eq!(p.reduce_vt(a), a % p.modulus()) }
+            prop_assert_eq!(p.reduce(a), a % *p);
+            unsafe { prop_assert_eq!(p.reduce_vt(a), a % *p) }
             if p.supports_opt {
-                prop_assert_eq!(p.reduce_opt(a), a % p.modulus());
-                unsafe { prop_assert_eq!(p.reduce_opt_vt(a), a % p.modulus()) }
+                prop_assert_eq!(p.reduce_opt(a), a % *p);
+                unsafe { prop_assert_eq!(p.reduce_opt_vt(a), a % *p) }
             }
         }
 
         #[test]
         fn lazy_reduce(p in valid_moduli(), a: u64) {
-            prop_assert!(p.lazy_reduce(a) < 2 * p.modulus());
-            prop_assert_eq!(p.lazy_reduce(a) % p.modulus(), p.reduce(a));
+            prop_assert!(p.lazy_reduce(a) < 2 * *p);
+            prop_assert_eq!(p.lazy_reduce(a) % *p, p.reduce(a));
         }
 
         #[test]
@@ -874,13 +923,13 @@ mod tests {
 
         #[test]
         fn reduce_u128(p in valid_moduli(), mut a: u128) {
-            prop_assert_eq!(p.reduce_u128(a) as u128, a % (p.modulus() as u128));
-            unsafe { prop_assert_eq!(p.reduce_u128_vt(a) as u128, a % (p.modulus() as u128)) }
+            prop_assert_eq!(p.reduce_u128(a) as u128, a % (*p as u128));
+            unsafe { prop_assert_eq!(p.reduce_u128_vt(a) as u128, a % (*p as u128)) }
             if p.supports_opt {
-                let p_square = (p.modulus() as u128) * (p.modulus() as u128);
+                let p_square = (*p as u128) * (*p as u128);
                 a %= p_square;
-                prop_assert_eq!(p.reduce_opt_u128(a) as u128, a % (p.modulus() as u128));
-                unsafe { prop_assert_eq!(p.reduce_opt_u128_vt(a) as u128, a % (p.modulus() as u128)) }
+                prop_assert_eq!(p.reduce_opt_u128(a) as u128, a % (*p as u128));
+                unsafe { prop_assert_eq!(p.reduce_opt_u128_vt(a) as u128, a % (*p as u128)) }
             }
         }
 
@@ -890,8 +939,8 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.add_vec(&mut a, &b);
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
-            a = c.clone();
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
+            a.clone_from(&c);
             unsafe { p.add_vec_vt(&mut a, &b) }
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
         }
@@ -902,8 +951,8 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.sub_vec(&mut a, &b);
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
-            a = c.clone();
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
+            a.clone_from(&c);
             unsafe { p.sub_vec_vt(&mut a, &b) }
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
         }
@@ -914,8 +963,8 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.mul_vec(&mut a, &b);
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
-            a = c.clone();
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            a.clone_from(&c);
             unsafe { p.mul_vec_vt(&mut a, &b); }
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
         }
@@ -927,9 +976,9 @@ mod tests {
             let c = a.clone();
 
             p.scalar_mul_vec(&mut a, b);
-            prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
+            prop_assert_eq!(a.clone(), c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
 
-            a = c.clone();
+            a.clone_from(&c);
             unsafe { p.scalar_mul_vec_vt(&mut a, b) }
             prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
         }
@@ -941,8 +990,8 @@ mod tests {
             let b_shoup = p.shoup_vec(&b);
             let c = a.clone();
             p.mul_shoup_vec(&mut a, &b, &b_shoup);
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
-            a = c.clone();
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            a.clone_from(&c);
             unsafe { p.mul_shoup_vec_vt(&mut a, &b, &b_shoup) }
             prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
         }
@@ -951,9 +1000,9 @@ mod tests {
         fn reduce_vec(p in valid_moduli(), a: Vec<u64>) {
             let mut b = a.clone();
             p.reduce_vec(&mut b);
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+            prop_assert_eq!(b.clone(), a.iter().map(|ai| p.reduce(*ai)).collect_vec());
 
-            b = a.clone();
+            b.clone_from(&a);
             unsafe { p.reduce_vec_vt(&mut b) }
             prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
         }
@@ -962,8 +1011,8 @@ mod tests {
         fn lazy_reduce_vec(p in valid_moduli(), a: Vec<u64>) {
             let mut b = a.clone();
             p.lazy_reduce_vec(&mut b);
-            prop_assert!(b.iter().all(|bi| *bi < 2 * p.modulus()));
-            prop_assert!(izip!(a, b).all(|(ai, bi)| bi % p.modulus() == ai % p.modulus()));
+            prop_assert!(b.iter().all(|bi| *bi < 2 * *p));
+            prop_assert!(izip!(a, b).all(|(ai, bi)| bi % *p == ai % *p));
         }
 
         #[test]
@@ -986,8 +1035,8 @@ mod tests {
             p.reduce_vec(&mut a);
             let mut b = a.clone();
             p.neg_vec(&mut b);
-            prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
-            b = a.clone();
+            prop_assert_eq!(b.clone(), a.iter().map(|ai| p.neg(*ai)).collect_vec());
+            b.clone_from(&a);
             unsafe { p.neg_vec_vt(&mut b); }
             prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
         }
@@ -1002,7 +1051,7 @@ mod tests {
             let w = p.random_vec(size, &mut rng);
             prop_assert_eq!(w.len(), size);
 
-            if p.modulus().leading_zeros() <= 30 {
+            if (*p).leading_zeros() <= 30 {
                 prop_assert_ne!(v, w); // This will hold with probability at least 2^(-30)
             }
         }

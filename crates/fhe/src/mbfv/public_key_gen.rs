@@ -82,12 +82,15 @@ impl Aggregate<PublicKeyShare> for PublicKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use fhe_traits::{FheEncoder, FheEncrypter};
     use rand::thread_rng;
 
-    use crate::bfv::{BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::{
+        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        mbfv::{Aggregate as _, CommonRandomPoly},
+    };
+
+    use super::PublicKeyShare;
 
     const NUM_PARTIES: usize = 11;
 

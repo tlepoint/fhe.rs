@@ -49,21 +49,21 @@ impl SecretKeySwitchShare {
             ));
         }
         // Note: M-BFV implementation only supports ciphertext of length 2
-        if ct.c.len() != 2 {
-            return Err(Error::TooManyValues(ct.c.len(), 2));
+        if ct.len() != 2 {
+            return Err(Error::TooManyValues(ct.len(), 2));
         }
 
         let par = sk_input_share.par.clone();
         let mut s_in = Zeroizing::new(Poly::try_convert_from(
             sk_input_share.coeffs.as_ref(),
-            ct.c[0].ctx(),
+            ct[0].ctx(),
             false,
             Representation::PowerBasis,
         )?);
         s_in.change_representation(Representation::Ntt);
         let mut s_out = Zeroizing::new(Poly::try_convert_from(
             sk_output_share.coeffs.as_ref(),
-            ct.c[0].ctx(),
+            ct[0].ctx(),
             false,
             Representation::PowerBasis,
         )?);
@@ -72,7 +72,7 @@ impl SecretKeySwitchShare {
         // Sample error
         // TODO this should be exponential in ciphertext noise!
         let e = Zeroizing::new(Poly::small(
-            ct.c[0].ctx(),
+            ct[0].ctx(),
             Representation::Ntt,
             par.variance,
             rng,
@@ -81,7 +81,7 @@ impl SecretKeySwitchShare {
         // Create h_i share
         let mut h_share = s_in.as_ref() - s_out.as_ref();
         h_share.disallow_variable_time_computations();
-        h_share *= &ct.c[1];
+        h_share *= &ct[1];
         h_share += e.as_ref();
 
         Ok(Self { par, ct, h_share })
@@ -100,8 +100,8 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
             h += &sh.h_share;
         }
 
-        let c0 = &share.ct.c[0] + &h;
-        let c1 = share.ct.c[1].clone();
+        let c0 = &share.ct[0] + &h;
+        let c1 = share.ct[1].clone();
 
         Ciphertext::new(vec![c0, c1], &share.par)
     }
@@ -142,32 +142,30 @@ impl Aggregate<DecryptionShare> for Plaintext {
     {
         let sks_shares = iter.into_iter().map(|s| s.sks_share);
         let ct = Ciphertext::from_shares(sks_shares)?;
-        let par = ct.par;
 
         // Note: during SKS, c[1]*sk has already been added to c[0].
-        let mut c = Zeroizing::new(ct.c[0].clone());
+        let mut c = Zeroizing::new(ct[0].clone());
         c.disallow_variable_time_computations();
         c.change_representation(Representation::PowerBasis);
 
         // The true decryption part is done during SKS; all that is left is to scale
-        let d = Zeroizing::new(c.scale(&par.scalers[ct.level])?);
+        let d = Zeroizing::new(c.scale(&ct.par.scalers[ct.level])?);
         let v = Zeroizing::new(
             Vec::<u64>::from(d.as_ref())
                 .iter_mut()
-                .map(|vi| *vi + par.plaintext.modulus())
+                .map(|vi| *vi + *ct.par.plaintext)
                 .collect_vec(),
         );
-        let mut w = v[..par.degree()].to_vec();
-        let q = Modulus::new(par.moduli[0]).map_err(Error::MathError)?;
+        let mut w = v[..ct.par.degree()].to_vec();
+        let q = Modulus::new(ct.par.moduli[0]).map_err(Error::MathError)?;
         q.reduce_vec(&mut w);
-        par.plaintext.reduce_vec(&mut w);
+        ct.par.plaintext.reduce_vec(&mut w);
 
-        let mut poly =
-            Poly::try_convert_from(&w, ct.c[0].ctx(), false, Representation::PowerBasis)?;
+        let mut poly = Poly::try_convert_from(&w, ct[0].ctx(), false, Representation::PowerBasis)?;
         poly.change_representation(Representation::Ntt);
 
         let pt = Plaintext {
-            par: par.clone(),
+            par: ct.par.clone(),
             value: w.into_boxed_slice(),
             encoding: None,
             poly_ntt: poly,
@@ -187,10 +185,11 @@ mod tests {
 
     use crate::{
         bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
-        mbfv::{Aggregate, AggregateIter, CommonRandomPoly, PublicKeyShare},
+        mbfv::{
+            Aggregate, AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare,
+            SecretKeySwitchShare,
+        },
     };
-
-    use super::*;
 
     const NUM_PARTIES: usize = 11;
 

@@ -380,7 +380,7 @@ where
         .ctx
         .q
         .iter()
-        .map(|qi| 1u128 << (2 * qi.modulus().leading_zeros()))
+        .map(|qi| 1u128 << (2 * (*qi).leading_zeros()))
         .collect_vec();
     let max_acc_ptr = max_acc.as_ptr();
 

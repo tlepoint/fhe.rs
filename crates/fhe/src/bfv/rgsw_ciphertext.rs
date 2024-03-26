@@ -119,10 +119,10 @@ impl Mul<&RGSWCiphertext> for &Ciphertext {
             self.level, rhs.ksk0.ciphertext_level,
             "Ciphertext and RGSWCiphertext must have the same level"
         );
-        assert_eq!(self.c.len(), 2, "Ciphertext must have two parts");
+        assert_eq!(self.len(), 2, "Ciphertext must have two parts");
 
-        let mut ct0 = self.c[0].clone();
-        let mut ct1 = self.c[1].clone();
+        let mut ct0 = self[0].clone();
+        let mut ct1 = self[1].clone();
         ct0.change_representation(Representation::PowerBasis);
         ct1.change_representation(Representation::PowerBasis);
 

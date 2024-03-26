@@ -64,14 +64,14 @@ impl PublicKeySwitchShare {
         let e0 = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
         let e1 = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
 
-        let mut h0 = pk_ct.c[0].clone();
+        let mut h0 = pk_ct[0].clone();
         h0.disallow_variable_time_computations();
         h0 *= u.as_ref();
-        *s.as_mut() *= &ct.c[1];
+        *s.as_mut() *= &ct[1];
         h0 += s.as_ref();
         h0 += e0.as_ref();
 
-        let mut h1 = pk_ct.c[1].clone();
+        let mut h1 = pk_ct[1].clone();
         h1.disallow_variable_time_computations();
         h1 *= u.as_ref();
         h1 += e1.as_ref();
@@ -83,7 +83,7 @@ impl PublicKeySwitchShare {
 
         Ok(Self {
             par,
-            c0: ct.c[0].clone(),
+            c0: ct[0].clone(),
             h0_share: h0,
             h1_share: h1,
         })
@@ -118,11 +118,9 @@ mod tests {
     use rand::thread_rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Plaintext, SecretKey},
-        mbfv::{AggregateIter, CommonRandomPoly, PublicKeyShare},
+        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        mbfv::{AggregateIter, CommonRandomPoly, PublicKeyShare, PublicKeySwitchShare},
     };
-
-    use super::*;
 
     const NUM_PARTIES: usize = 11;
 

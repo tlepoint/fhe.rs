@@ -72,7 +72,7 @@ impl RelinearizationKey {
 
     /// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
     pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
-        if ct.c.len() != 3 {
+        if ct.len() != 3 {
             Err(Error::DefaultError(
                 "Only supports relinearization of ciphertext with 3 parts".to_string(),
             ))
@@ -81,24 +81,24 @@ impl RelinearizationKey {
                 "Ciphertext has incorrect level".to_string(),
             ))
         } else {
-            let mut c2 = ct.c[2].clone();
+            let mut c2 = ct[2].clone();
             c2.change_representation(Representation::PowerBasis);
 
             #[allow(unused_mut)]
             let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
 
-            if c0.ctx() != ct.c[0].ctx() {
+            if c0.ctx() != ct[0].ctx() {
                 c0.change_representation(Representation::PowerBasis);
                 c1.change_representation(Representation::PowerBasis);
-                c0.mod_switch_down_to(ct.c[0].ctx())?;
-                c1.mod_switch_down_to(ct.c[1].ctx())?;
+                c0.mod_switch_down_to(ct[0].ctx())?;
+                c1.mod_switch_down_to(ct[1].ctx())?;
                 c0.change_representation(Representation::Ntt);
                 c1.change_representation(Representation::Ntt);
             }
 
-            ct.c[0] += &c0;
-            ct.c[1] += &c1;
-            ct.c.truncate(2);
+            ct[0] += &c0;
+            ct[1] += &c1;
+            ct.truncate(2);
             Ok(())
         }
     }
@@ -193,7 +193,7 @@ mod tests {
 
                 // Relinearize the extended ciphertext!
                 rk.relinearizes(&mut ct)?;
-                assert_eq!(ct.c.len(), 2);
+                assert_eq!(ct.len(), 2);
 
                 // Check that the relinearization by polynomials works the same way
                 c2.change_representation(Representation::PowerBasis);
@@ -254,7 +254,7 @@ mod tests {
 
                         // Relinearize the extended ciphertext!
                         rk.relinearizes(&mut ct)?;
-                        assert_eq!(ct.c.len(), 2);
+                        assert_eq!(ct.len(), 2);
 
                         // Check that the relinearization by polynomials works the same way
                         c2.change_representation(Representation::PowerBasis);

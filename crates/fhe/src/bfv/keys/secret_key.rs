@@ -13,22 +13,16 @@ use num_bigint::BigUint;
 use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::Zeroizing;
+use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 /// Secret key for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SecretKey {
+    #[zeroize(skip)]
     pub(crate) par: Arc<BfvParameters>,
     pub(crate) coeffs: Box<[i64]>,
 }
-
-impl Zeroize for SecretKey {
-    fn zeroize(&mut self) {
-        self.coeffs.zeroize();
-    }
-}
-
-impl ZeroizeOnDrop for SecretKey {}
 
 impl SecretKey {
     /// Generate a random [`SecretKey`].
@@ -40,7 +34,7 @@ impl SecretKey {
     /// Generate a [`SecretKey`] from its coefficients.
     pub(crate) fn new(coeffs: Vec<i64>, par: &Arc<BfvParameters>) -> Self {
         Self {
-            par: par.clone(),
+            par: par.to_owned(),
             coeffs: coeffs.into_boxed_slice(),
         }
     }
@@ -58,7 +52,7 @@ impl SecretKey {
         // Let's create a secret key with the ciphertext context
         let mut s = Zeroizing::new(Poly::try_convert_from(
             self.coeffs.as_ref(),
-            ct.c[0].ctx(),
+            ct[0].ctx(),
             false,
             Representation::PowerBasis,
         )?);
@@ -66,11 +60,11 @@ impl SecretKey {
         let mut si = s.clone();
 
         // Let's disable variable time computations
-        let mut c = Zeroizing::new(ct.c[0].clone());
+        let mut c = Zeroizing::new(ct[0].clone());
         c.disallow_variable_time_computations();
 
-        for i in 1..ct.c.len() {
-            let mut cis = Zeroizing::new(ct.c[i].clone());
+        for i in 1..ct.len() {
+            let mut cis = Zeroizing::new(ct[i].clone());
             cis.disallow_variable_time_computations();
             *cis.as_mut() *= si.as_ref();
             *c.as_mut() += &cis;
@@ -79,7 +73,7 @@ impl SecretKey {
         *c.as_mut() -= &m;
         c.change_representation(Representation::PowerBasis);
 
-        let ciphertext_modulus = ct.c[0].ctx().modulus();
+        let ciphertext_modulus = ct[0].ctx().modulus();
         let mut noise = 0usize;
         for coeff in Vec::<BigUint>::from(c.as_ref()) {
             noise = std::cmp::max(
@@ -165,24 +159,24 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             // Let's create a secret key with the ciphertext context
             let mut s = Zeroizing::new(Poly::try_convert_from(
                 self.coeffs.as_ref(),
-                ct.c[0].ctx(),
+                ct[0].ctx(),
                 false,
                 Representation::PowerBasis,
             )?);
             s.change_representation(Representation::Ntt);
             let mut si = s.clone();
 
-            let mut c = Zeroizing::new(ct.c[0].clone());
+            let mut c = Zeroizing::new(ct[0].clone());
             c.disallow_variable_time_computations();
 
             // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
             // s^k is computed on-the-fly
-            for i in 1..ct.c.len() {
-                let mut cis = Zeroizing::new(ct.c[i].clone());
+            for i in 1..ct.len() {
+                let mut cis = Zeroizing::new(ct[i].clone());
                 cis.disallow_variable_time_computations();
                 *cis.as_mut() *= si.as_ref();
                 *c.as_mut() += &cis;
-                if i + 1 < ct.c.len() {
+                if i + 1 < ct.len() {
                     *si.as_mut() *= s.as_ref();
                 }
             }
@@ -194,7 +188,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let v = Zeroizing::new(
                 Vec::<u64>::from(d.as_ref())
                     .iter_mut()
-                    .map(|vi| *vi + self.par.plaintext.modulus())
+                    .map(|vi| *vi + *self.par.plaintext)
                     .collect_vec(),
             );
             let mut w = v[..self.par.degree()].to_vec();
@@ -203,7 +197,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             self.par.plaintext.reduce_vec(&mut w);
 
             let mut poly =
-                Poly::try_convert_from(&w, ct.c[0].ctx(), false, Representation::PowerBasis)?;
+                Poly::try_convert_from(&w, ct[0].ctx(), false, Representation::PowerBasis)?;
             poly.change_representation(Representation::Ntt);
 
             let pt = Plaintext {

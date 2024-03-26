@@ -141,7 +141,7 @@ impl EvaluationKey {
     /// ciphertexts.
     pub fn expands(&self, ct: &Ciphertext, size: usize) -> Result<Vec<Ciphertext>> {
         let level = size.next_power_of_two().ilog2() as usize;
-        if ct.c.len() != 2 {
+        if ct.len() != 2 {
             Err(Error::DefaultError(
                 "The ciphertext is not of size 2".to_string(),
             ))
@@ -160,8 +160,8 @@ impl EvaluationKey {
                     let sub = gk.relinearize(&out[i])?;
                     if (1 << l) | i < size {
                         out[(1 << l) | i] = &out[i] - &sub;
-                        out[(1 << l) | i].c[0] *= monomial;
-                        out[(1 << l) | i].c[1] *= monomial;
+                        out[(1 << l) | i][0] *= monomial;
+                        out[(1 << l) | i][1] *= monomial;
                     }
                     out[i] += &sub;
                 }

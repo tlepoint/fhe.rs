@@ -1,8 +1,8 @@
-use std::{cmp::min, sync::Arc};
+use std::{cmp::min, ops::Deref, sync::Arc};
 
 use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
 use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     bfv::{BfvParameters, Encoding, Plaintext},
@@ -13,7 +13,16 @@ use super::encoding::EncodingEnum;
 
 /// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
 /// trait, and therefore can be encoded to / decoded from.
-pub struct PlaintextVec(pub Vec<Plaintext>);
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct PlaintextVec(Vec<Plaintext>);
+
+impl Deref for PlaintextVec {
+    type Target = [Plaintext];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl FhePlaintext for PlaintextVec {
     type Encoding = Encoding;
@@ -22,14 +31,6 @@ impl FhePlaintext for PlaintextVec {
 impl FheParametrized for PlaintextVec {
     type Parameters = BfvParameters;
 }
-
-impl Zeroize for PlaintextVec {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
-}
-
-impl ZeroizeOnDrop for PlaintextVec {}
 
 impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
     type Error = Error;
@@ -72,7 +73,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
 
                     Ok(Plaintext {
                         par: par.clone(),
-                        value: v.into_boxed_slice(),
+                        value: v.into(),
                         encoding: Some(encoding.clone()),
                         poly_ntt: poly,
                         level: encoding.level,
@@ -119,7 +120,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
                     Ok(Plaintext {
                         par: par.clone(),
-                        value: v.into_boxed_slice(),
+                        value: v.into(),
                         encoding: Some(encoding.clone()),
                         poly_ntt: poly,
                         level: encoding.level,

@@ -368,13 +368,17 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
     use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
     use rand::thread_rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Multiplicator, Plaintext, PublicKey},
-        mbfv::{AggregateIter, DecryptionShare, PublicKeyShare},
+        bfv::{BfvParameters, Encoding, Multiplicator, Plaintext, PublicKey, SecretKey},
+        mbfv::{
+            Aggregate as _, AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare,
+            RelinKeyGenerator,
+        },
     };
 
     const NUM_PARTIES: usize = 5;
@@ -443,7 +447,7 @@ mod tests {
                     multiplicator.enable_mod_switching().unwrap();
                 }
                 let ct = Arc::new(multiplicator.multiply(&ct1, &ct2).unwrap());
-                assert_eq!(ct.c.len(), 2);
+                assert_eq!(ct.len(), 2);
 
                 // Parties perform a collective decryption
                 let pt = party_sks

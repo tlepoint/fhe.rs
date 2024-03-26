@@ -121,10 +121,7 @@ impl Multiplicator {
             ScalingFactor::one(),
             ScalingFactor::one(),
             &extended_basis,
-            ScalingFactor::new(
-                &BigUint::from(rk.ksk.par.plaintext.modulus()),
-                ctx.modulus(),
-            ),
+            ScalingFactor::new(&BigUint::from(*rk.ksk.par.plaintext), ctx.modulus()),
             rk.ksk.ciphertext_level,
             &rk.ksk.par,
         )?;
@@ -170,17 +167,17 @@ impl Multiplicator {
                 "Ciphertexts are not at expected level".to_string(),
             ));
         }
-        if lhs.c.len() != 2 || rhs.c.len() != 2 {
+        if lhs.len() != 2 || rhs.len() != 2 {
             return Err(Error::DefaultError(
                 "Multiplication can only be performed on ciphertexts of size 2".to_string(),
             ));
         }
 
         // Extend
-        let c00 = lhs.c[0].scale(&self.extender_lhs)?;
-        let c01 = lhs.c[1].scale(&self.extender_lhs)?;
-        let c10 = rhs.c[0].scale(&self.extender_rhs)?;
-        let c11 = rhs.c[1].scale(&self.extender_rhs)?;
+        let c00 = lhs[0].scale(&self.extender_lhs)?;
+        let c01 = lhs[1].scale(&self.extender_lhs)?;
+        let c10 = rhs[0].scale(&self.extender_rhs)?;
+        let c11 = rhs[1].scale(&self.extender_rhs)?;
 
         // Multiply
         let mut c0 = &c00 * &c10;
@@ -230,7 +227,7 @@ impl Multiplicator {
         if self.mod_switch {
             c.mod_switch_to_next_level()?;
         } else {
-            c.c.iter_mut()
+            c.iter_mut()
                 .for_each(|p| p.change_representation(Representation::Ntt));
         }
 
