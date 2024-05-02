@@ -230,12 +230,12 @@ checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
 name = "concrete-ntt"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1167c583765f273205c691a0a8bff23a925aa5bc66f2448031e4a6e518cd64d7"
+checksum = "b4f4643dbd5de069e099122ae6c2bbd3db70d69ffec348dfc228448d635f949e"
 dependencies = [
  "aligned-vec",
- "pulp 0.11.11",
+ "pulp",
 ]
 
 [[package]]
@@ -481,7 +481,7 @@ dependencies = [
  "proptest",
  "prost",
  "prost-build",
- "pulp 0.18.9",
+ "pulp",
  "rand",
  "rand_chacha",
  "sha2",
@@ -976,15 +976,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "193898f59edcf43c26227dcd4c8427f00d99d61e95dcde58dabd49fa291d470e"
 dependencies = [
  "prost",
-]
-
-[[package]]
-name = "pulp"
-version = "0.11.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "866e8018d6397b0717100dd4a7948fc8cbc8c4b8ce3e39e98a0e1e878d3ba925"
-dependencies = [
- "bytemuck",
 ]
 
 [[package]]

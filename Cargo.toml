@@ -14,7 +14,7 @@ rust-version = "1.73"
 
 [workspace.dependencies]
 clap = { version = "^4.5.4", features = ["derive"] }
-concrete-ntt = "^0.1.1"
+concrete-ntt = "^0.1.2"
 console = "^0.15.8"
 criterion = "^0.5.1"
 doc-comment = "^0.3.3"
