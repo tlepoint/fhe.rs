@@ -12,6 +12,7 @@ use ndarray::{s, Array2, Axis};
 use std::sync::Arc;
 
 /// Context extender.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Scaler {
     from: Arc<Context>,

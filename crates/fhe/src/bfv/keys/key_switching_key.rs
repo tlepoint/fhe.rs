@@ -18,6 +18,7 @@ use std::sync::Arc;
 use zeroize::Zeroizing;
 
 /// Key switching key for the BFV encryption scheme.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeySwitchingKey {
     /// The parameters of the underlying BFV encryption scheme.

@@ -15,6 +15,7 @@ use super::{Aggregate, CommonRandomPoly};
 
 /// A party's share in the relinearization key generation protocol.
 /// Use the [`RelinKeyGenerator`] to create these shares.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RelinKeyShare<R: Round = R1> {
     pub(crate) par: Arc<BfvParameters>,

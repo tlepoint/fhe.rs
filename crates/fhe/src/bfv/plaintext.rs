@@ -12,6 +12,7 @@ use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 use super::encoding::EncodingEnum;
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct Plaintext {
     /// The parameters of the underlying BFV encryption scheme.

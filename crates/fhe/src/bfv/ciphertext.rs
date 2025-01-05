@@ -14,6 +14,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// A ciphertext encrypting a plaintext.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ciphertext {
     /// The parameters of the underlying BFV encryption scheme.

@@ -19,6 +19,7 @@ use crate::{
 /// - The basis at which the multiplication will occur;
 /// - The scaling factor after multiplication;
 /// - Whether relinearization should be used.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Multiplicator {
     par: Arc<BfvParameters>,

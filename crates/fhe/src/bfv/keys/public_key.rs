@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 use super::SecretKey;
 
 /// Public key for the BFV encryption scheme.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PublicKey {
     pub(crate) par: Arc<BfvParameters>,

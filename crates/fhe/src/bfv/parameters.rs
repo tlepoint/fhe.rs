@@ -18,6 +18,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Parameters for the BFV encryption scheme.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(PartialEq, Eq)]
 pub struct BfvParameters {
     /// Number of coefficients in a polynomial.
@@ -456,6 +457,7 @@ impl Deserialize for BfvParameters {
 }
 
 /// Multiplication parameters
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Default)]
 pub(crate) struct MultiplicationParameters {
     pub(crate) extender: Scaler,

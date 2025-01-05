@@ -25,6 +25,7 @@ const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Derivative)]
 #[derivative(PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Modulus {
     pub(crate) p: u64,

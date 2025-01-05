@@ -4,12 +4,15 @@
 pub trait Round: sealed::Sealed {}
 
 /// Marks the shares produced in round 1
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct R1;
 /// Marks the aggregated shares from round 1
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct R1Aggregated;
 /// Marks the shares produced in round 2
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct R2;
 

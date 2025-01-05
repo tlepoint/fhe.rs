@@ -22,6 +22,8 @@ use super::Aggregate;
 ///
 /// Note: this protocol assumes the output key is split into the same number of
 /// parties as the input key, and is likely only useful for niche scenarios.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The original input ciphertext
@@ -113,6 +115,8 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
 /// plaintext output. Note that this is a special case of the "Protocol 3:
 /// KeySwitch" protocol detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7), using an output key of zero. Use the
 /// [`Aggregate`] impl to combine the shares into a [`Plaintext`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DecryptionShare {
     pub(crate) sks_share: SecretKeySwitchShare,
 }
