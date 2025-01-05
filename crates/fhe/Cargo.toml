@@ -13,6 +13,7 @@ rust-version.workspace = true
 bench = false # Disable default bench (we use criterion)
 
 [features]
+serde = ["dep:serde", "ndarray/serde", "num-bigint/serde", "rand/serde1", "rand_chacha/serde", "fhe-math/serde"]
 concrete-ntt = ["fhe-math/concrete-ntt"]
 concrete-ntt-nightly = ["fhe-math/concrete-ntt-nightly"]
 
@@ -28,6 +29,7 @@ num-traits.workspace = true
 prost.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+serde = { workspace = true, optional = true }
 zeroize.workspace = true
 zeroize_derive.workspace = true
 ndarray.workspace = true

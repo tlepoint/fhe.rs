@@ -4,6 +4,7 @@ use std::fmt::Display;
 
 use fhe_traits::FhePlaintextEncoding;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum EncodingEnum {
     Poly,
@@ -17,6 +18,7 @@ impl Display for EncodingEnum {
 }
 
 /// An encoding for the plaintext.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Encoding {
     pub(crate) encoding: EncodingEnum,

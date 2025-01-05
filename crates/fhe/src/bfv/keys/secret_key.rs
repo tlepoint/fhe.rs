@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 /// Secret key for the BFV encryption scheme.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SecretKey {
     #[zeroize(skip)]

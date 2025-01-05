@@ -5,6 +5,7 @@ use std::{fmt::Debug, sync::Arc};
 use crate::{ntt::NttOperator, rns::RnsContext, zq::Modulus, Error, Result};
 
 /// Struct that holds the context associated with elements in rq.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct Context {
     pub(crate) moduli: Box<[u64]>,

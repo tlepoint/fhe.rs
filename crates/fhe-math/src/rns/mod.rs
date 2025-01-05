@@ -15,6 +15,7 @@ mod scaler;
 pub use scaler::{RnsScaler, ScalingFactor};
 
 /// Context for a Residue Number System.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct RnsContext {
     moduli_u64: Vec<u64>,

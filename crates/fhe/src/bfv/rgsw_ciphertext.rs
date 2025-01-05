@@ -17,6 +17,7 @@ use super::{
 };
 
 /// A RGSW ciphertext encrypting a plaintext.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct RGSWCiphertext {
     ksk0: KeySwitchingKey,

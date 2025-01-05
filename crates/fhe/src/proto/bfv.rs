@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Ciphertext {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -11,6 +12,7 @@ pub struct Ciphertext {
     pub level: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RgswCiphertext {
     #[prost(message, optional, tag = "1")]
@@ -19,6 +21,7 @@ pub struct RgswCiphertext {
     pub ksk1: ::core::option::Option<KeySwitchingKey>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeySwitchingKey {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -35,12 +38,14 @@ pub struct KeySwitchingKey {
     pub log_base: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelinearizationKey {
     #[prost(message, optional, tag = "1")]
     pub ksk: ::core::option::Option<KeySwitchingKey>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GaloisKey {
     #[prost(message, optional, tag = "1")]
@@ -49,6 +54,7 @@ pub struct GaloisKey {
     pub exponent: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EvaluationKey {
     #[prost(message, repeated, tag = "2")]
@@ -59,6 +65,7 @@ pub struct EvaluationKey {
     pub evaluation_key_level: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Parameters {
     #[prost(uint32, tag = "1")]
@@ -71,6 +78,7 @@ pub struct Parameters {
     pub variance: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublicKey {
     #[prost(message, optional, tag = "1")]

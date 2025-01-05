@@ -11,6 +11,7 @@ use num_traits::{One, ToPrimitive, Zero};
 use std::{cmp::min, sync::Arc};
 
 /// Scaling factor when performing a RNS scaling.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct ScalingFactor {
     numerator: BigUint,
@@ -41,6 +42,7 @@ impl ScalingFactor {
 
 /// Scaler for a RNS context.
 /// This is a helper struct to perform RNS scaling.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RnsScaler {
     from: Arc<RnsContext>,

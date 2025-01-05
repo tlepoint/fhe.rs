@@ -12,6 +12,7 @@ use super::{Aggregate, CommonRandomPoly};
 /// A party's share in public key generation protocol.
 ///
 /// Each party uses the `PublicKeyShare` to generate their share of the public key and participate in the in the "Protocol 1: EncKeyGen", as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p6). Use the [`Aggregate`] impl to combine the shares into a [`PublicKey`].
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PublicKeyShare {
     pub(crate) par: Arc<BfvParameters>,

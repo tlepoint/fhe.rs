@@ -5,6 +5,7 @@ use rand_chacha::ChaCha8Rng;
 use std::iter::successors;
 
 /// Number-Theoretic Transform operator.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
     p: Modulus,

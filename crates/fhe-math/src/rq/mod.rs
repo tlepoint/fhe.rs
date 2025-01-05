@@ -25,6 +25,7 @@ use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Possible representations of the underlying polynomial.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum Representation {
     /// This is the list of coefficients ci, such that the polynomial is c0 + c1
@@ -39,6 +40,7 @@ pub enum Representation {
 }
 
 /// An exponent for a substitution.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SubstitutionExponent {
     /// The value of the exponent.
@@ -76,6 +78,7 @@ impl SubstitutionExponent {
 }
 
 /// Struct that holds a polynomial for a specific context.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Poly {
     ctx: Arc<Context>,

@@ -13,6 +13,7 @@ use super::encoding::EncodingEnum;
 
 /// A wrapper around a vector of plaintext which implements the [`FhePlaintext`]
 /// trait, and therefore can be encoded to / decoded from.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PlaintextVec(Vec<Plaintext>);
 

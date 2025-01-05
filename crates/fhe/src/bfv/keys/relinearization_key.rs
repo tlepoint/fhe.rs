@@ -19,6 +19,7 @@ use zeroize::Zeroizing;
 /// Relinearization key for the BFV encryption scheme.
 /// A relinearization key is a special type of key switching key,
 /// which switch from `s^2` to `s` where `s` is the secret key.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RelinearizationKey {
     pub(crate) ksk: KeySwitchingKey,

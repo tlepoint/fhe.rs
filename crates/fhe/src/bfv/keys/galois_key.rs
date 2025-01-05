@@ -15,6 +15,7 @@ use zeroize::Zeroizing;
 /// Galois key for the BFV encryption scheme.
 /// A Galois key is a special type of key switching key,
 /// which switch from `s(x^i)` to `s(x)` where `s(x)` is the secret key.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct GaloisKey {
     pub(crate) element: SubstitutionExponent,

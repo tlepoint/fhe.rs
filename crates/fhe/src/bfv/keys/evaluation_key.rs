@@ -19,6 +19,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// - row rotation
 /// - oblivious expansion
 /// - inner sum
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct EvaluationKey {
     par: Arc<BfvParameters>,
