@@ -31,7 +31,7 @@ num-bigint.workspace = true
 num-bigint-dig.workspace = true
 num-traits.workspace = true
 prost.workspace = true
-pulp = { git = "https://github.com/zefr0x/pulp.git", branch = "implserde", features = ["serde"] }
+pulp = { git = "https://github.com/ashu-t3/pulp.git", features = ["serde"] }
 rand.workspace = true
 rand_chacha.workspace = true
 thiserror.workspace = true
