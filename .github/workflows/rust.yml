@@ -11,7 +11,7 @@ on:
     paths-ignore:
       - 'README.md'
 
-name: Test and coverage
+name: Test
 
 jobs:
   check:
@@ -47,31 +47,3 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-
-  codecov:
-    name: Code coverage
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: always
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast
-        env:
-          RUSTFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-          RUSTDOCFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-      - uses: actions-rs/grcov@v0.1
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.coverage.outputs.report }}
-          fail_ci_if_error: true
