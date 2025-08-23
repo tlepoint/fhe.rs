@@ -246,11 +246,10 @@ impl KeySwitchingKey {
 
         let mut c0 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
         let mut c1 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
-        for (c2_i_coefficients, c0_i, c1_i) in izip!(
-            p.coefficients().outer_iter(),
-            self.c0.iter(),
-            self.c1.iter()
-        ) {
+        let p_coefficients = p.coefficients();
+        for (c2_i_coefficients, c0_i, c1_i) in
+            izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
+        {
             let mut c2_i = unsafe {
                 Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                     c2_i_coefficients.as_slice().unwrap(),
@@ -296,11 +295,10 @@ impl KeySwitchingKey {
             c1.zeroize();
         }
 
-        for (c2_i_coefficients, c0_i, c1_i) in izip!(
-            p.coefficients().outer_iter(),
-            self.c0.iter(),
-            self.c1.iter()
-        ) {
+        let p_coefficients = p.coefficients();
+        for (c2_i_coefficients, c0_i, c1_i) in
+            izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
+        {
             let mut c2_i = unsafe {
                 Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                     c2_i_coefficients.as_slice().unwrap(),

@@ -21,7 +21,6 @@ fhe-traits = { version = "^0.1.0-beta.8", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.8", path = "../fhe-util" }
 
 tfhe-ntt.workspace = true
-derivative = "^2.2.0"
 ethnum.workspace = true
 fastdiv.workspace = true
 itertools.workspace = true

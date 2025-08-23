@@ -7,7 +7,6 @@ pub mod primes;
 use std::ops::Deref;
 
 use crate::errors::{Error, Result};
-use derivative::Derivative;
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
 use itertools::{izip, Itertools};
 use num_bigint::BigUint;
@@ -23,23 +22,25 @@ const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 
 }
 
 /// Structure encapsulating an integer modulus up to 62 bits.
-#[derive(Derivative)]
-#[derivative(PartialEq)]
 #[derive(Debug, Clone)]
 pub struct Modulus {
     pub(crate) p: u64,
-    nbits: usize,
     barrett_hi: u64,
     barrett_lo: u64,
     leading_zeros: u32,
     pub(crate) supports_opt: bool,
     distribution: Uniform<u64>,
-    #[derivative(PartialEq = "ignore")]
     arch: Arch,
 }
 
 // We need to declare Eq manually because of the `Uniform` member.
 impl Eq for Modulus {}
+
+impl PartialEq for Modulus {
+    fn eq(&self, other: &Self) -> bool {
+        self.p == other.p
+    }
+}
 
 // Override the dereference to return the underlying modulus.
 impl Deref for Modulus {
@@ -59,7 +60,6 @@ impl Modulus {
             let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
             Ok(Self {
                 p,
-                nbits: 64 - p.leading_zeros() as usize,
                 barrett_hi: (barrett >> 64) as u64,
                 barrett_lo: barrett as u64,
                 leading_zeros: p.leading_zeros(),
