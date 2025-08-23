@@ -162,7 +162,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_result = tally_vec[0];
 
     // Show vote result
-    println!("Vote result = {} / {}", tally_result, num_voters);
+    println!("Vote result = {tally_result} / {num_voters}");
 
     let expected_tally = votes.iter().sum();
     assert_eq!(tally_result, expected_tally);
