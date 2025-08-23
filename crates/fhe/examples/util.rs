@@ -3,6 +3,7 @@
 use fhe::bfv;
 use fhe_traits::FheEncoder;
 use fhe_util::transcode_from_bytes;
+use rayon::prelude::*;
 use std::{cmp::min, fmt, sync::Arc, time::Duration};
 
 /// Macros to time code and display a human-readable duration.
@@ -109,18 +110,23 @@ pub fn encode_database(
             bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap();
             dimension_1 * dimension_2
         ];
-    (0..number_rows).for_each(|i| {
-        let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
-        for j in 0..number_elements_per_plaintext {
-            if let Some(pt) = database.get(j + i * number_elements_per_plaintext) {
-                serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
+    preprocessed_database
+        .par_iter_mut()
+        .take(number_rows)
+        .enumerate()
+        .for_each(|(i, slot)| {
+            let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
+            for j in 0..number_elements_per_plaintext {
+                if let Some(pt) = database.get(j + i * number_elements_per_plaintext) {
+                    serialized_plaintext[j * elements_size..(j + 1) * elements_size]
+                        .copy_from_slice(pt)
+                }
             }
-        }
-        let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
-        preprocessed_database[i] =
-            bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
-                .unwrap();
-    });
+            let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
+            *slot =
+                bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
+                    .unwrap();
+        });
     (preprocessed_database, (dimension_1, dimension_2))
 }
 

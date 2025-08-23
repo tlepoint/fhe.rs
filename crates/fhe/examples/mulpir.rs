@@ -17,6 +17,7 @@ use fhe_traits::{
 use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{rngs::OsRng, thread_rng, RngCore};
+use rayon::prelude::*;
 use std::{error::Error, time::Instant};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
@@ -163,10 +164,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 bfv::dot_product_scalar(query_vec.iter(), column)
             };
 
-        let mut out = bfv::Ciphertext::zero(&params);
-        for (i, ci) in expanded_query[dim1..].iter().enumerate() {
-            out += &(&dot_product_mod_switch(i, &preprocessed_database)? * ci)
-        }
+        let partials: fhe::Result<Vec<bfv::Ciphertext>> = expanded_query[dim1..]
+            .par_iter()
+            .enumerate()
+            .map(|(i, ci)| dot_product_mod_switch(i, &preprocessed_database).map(|dp| &dp * ci))
+            .collect();
+        let mut out = partials?
+            .into_iter()
+            .reduce(|mut acc, c| {
+                acc += &c;
+                acc
+            })
+            .unwrap_or_else(|| bfv::Ciphertext::zero(&params));
         rk.relinearizes(&mut out)?;
         out.mod_switch_to_last_level()?;
         out.to_bytes()

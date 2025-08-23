@@ -20,6 +20,7 @@ use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, RngCore};
+use rayon::prelude::*;
 use std::{error::Error, sync::Arc};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
@@ -159,12 +160,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(c)
         };
 
-        let dot_products = (0..dim2)
+        let dot_products: fhe::Result<Vec<bfv::Ciphertext>> = (0..dim2)
+            .into_par_iter()
             .map(|i| dot_product_mod_switch(i, &preprocessed_database))
-            .collect::<fhe::Result<Vec<bfv::Ciphertext>>>()?;
+            .collect();
 
-        let fold = dot_products
-            .iter()
+        let dot_products = dot_products?;
+
+        let fold: fhe::Result<Vec<bfv::PlaintextVec>> = dot_products
+            .par_iter()
             .map(|c| {
                 let mut pt_values = Vec::with_capacity(
                     2 * (params.degree() * (64 - params.moduli()[0].leading_zeros() as usize))
@@ -188,8 +192,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )
                 }
             })
-            .collect::<fhe::Result<Vec<bfv::PlaintextVec>>>()?;
+            .collect();
+
+        let fold = fold?;
+
         (0..fold[0].len())
+            .into_par_iter()
             .map(|i| {
                 let mut outi = bfv::dot_product_scalar(
                     expanded_query[dim1..].iter(),

@@ -11,7 +11,8 @@ use fhe::{
 };
 use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
 use rand::{distributions::Uniform, prelude::Distribution, rngs::OsRng, thread_rng};
-use util::timeit::{timeit, timeit_n};
+use rayon::prelude::*;
+use util::timeit::timeit;
 
 fn print_notice_and_exit(error: Option<String>) {
     println!(
@@ -100,11 +101,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         sk_share: SecretKey,
         pk_share: PublicKeyShare,
     }
-    let mut parties = Vec::with_capacity(num_parties);
-    timeit_n!("Party setup (per party)", num_parties as u32, {
-        let sk_share = SecretKey::random(&params, &mut OsRng);
-        let pk_share = PublicKeyShare::new(&sk_share, crp.clone(), &mut thread_rng())?;
-        parties.push(Party { sk_share, pk_share });
+    let parties: Vec<Party> = timeit!("Party setup", {
+        (0..num_parties)
+            .into_par_iter()
+            .map(|_| {
+                let mut rng = OsRng;
+                let sk_share = SecretKey::random(&params, &mut rng);
+                let mut trng = thread_rng();
+                let pk_share = PublicKeyShare::new(&sk_share, crp.clone(), &mut trng)?;
+                Ok(Party { sk_share, pk_share })
+            })
+            .collect::<fhe::Result<Vec<_>>>()?
     });
 
     // Aggregation: this could be one of the parties or a separate entity. Or the
@@ -120,23 +127,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         .sample_iter(&mut thread_rng())
         .take(num_voters)
         .collect();
-    let mut votes_encrypted = Vec::with_capacity(num_voters);
-    let mut _i = 0;
-    timeit_n!("Vote casting (per voter)", num_voters as u32, {
-        #[allow(unused_assignments)]
-        let pt = Plaintext::try_encode(&[votes[_i]], Encoding::poly(), &params)?;
-        let ct = pk.try_encrypt(&pt, &mut thread_rng())?;
-        votes_encrypted.push(ct);
-        _i += 1;
+    let votes_encrypted: Vec<Ciphertext> = timeit!("Vote casting", {
+        votes
+            .par_iter()
+            .map(|v| {
+                let pt = Plaintext::try_encode(&[*v], Encoding::poly(), &params)?;
+                let mut rng = thread_rng();
+                pk.try_encrypt(&pt, &mut rng)
+            })
+            .collect::<fhe::Result<Vec<_>>>()?
     });
 
     // Computing the tally: this can be done by anyone (party, aggregator, separate
     // computing entity).
+    let params_clone = params.clone();
     let tally = timeit!("Vote tallying", {
-        let mut sum = Ciphertext::zero(&params);
-        for ct in &votes_encrypted {
-            sum += ct;
-        }
+        let sum = votes_encrypted.par_iter().cloned().reduce(
+            || Ciphertext::zero(&params_clone),
+            |mut acc, ct| {
+                acc += &ct;
+                acc
+            },
+        );
         Arc::new(sum)
     });
 
@@ -144,12 +156,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // perform a collective decryption. If instead the result of the computation
     // should be kept private, the parties could collectively perform a
     // keyswitch to a different public key.
-    let mut decryption_shares = Vec::with_capacity(num_parties);
-    let mut _i = 0;
-    timeit_n!("Decryption (per party)", num_parties as u32, {
-        let sh = DecryptionShare::new(&parties[_i].sk_share, &tally, &mut thread_rng())?;
-        decryption_shares.push(sh);
-        _i += 1;
+    let decryption_shares: Vec<DecryptionShare> = timeit!("Decryption", {
+        parties
+            .par_iter()
+            .map(|p| {
+                let mut rng = thread_rng();
+                DecryptionShare::new(&p.sk_share, &tally, &mut rng)
+            })
+            .collect::<fhe::Result<Vec<_>>>()?
     });
 
     // Again, an aggregating party aggregates the decryption shares to produce the
