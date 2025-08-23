@@ -70,44 +70,27 @@ impl NttOperator {
     pub fn forward(&self, a: &mut [u64]) {
         debug_assert_eq!(a.len(), self.size);
 
-        let n = self.size;
-        let a_ptr = a.as_mut_ptr();
-
-        let mut l = n >> 1;
-        let mut m = 1;
+        let mut l = self.size >> 1;
         let mut k = 1;
         while l > 0 {
-            for i in 0..m {
-                unsafe {
-                    let omega = *self.omegas.get_unchecked(k);
-                    let omega_shoup = *self.omegas_shoup.get_unchecked(k);
-                    k += 1;
+            for chunk in a.chunks_exact_mut(2 * l) {
+                let omega = self.omegas[k];
+                let omega_shoup = self.omegas_shoup[k];
+                k += 1;
 
-                    let s = 2 * i * l;
-                    match l {
-                        1 => {
-                            // The last level should reduce the output
-                            let uj = &mut *a_ptr.add(s);
-                            let ujl = &mut *a_ptr.add(s + l);
-                            self.butterfly(uj, ujl, omega, omega_shoup);
-                            *uj = self.reduce3(*uj);
-                            *ujl = self.reduce3(*ujl);
-                        }
-                        _ => {
-                            for j in s..(s + l) {
-                                self.butterfly(
-                                    &mut *a_ptr.add(j),
-                                    &mut *a_ptr.add(j + l),
-                                    omega,
-                                    omega_shoup,
-                                );
-                            }
-                        }
+                let (left, right) = chunk.split_at_mut(l);
+                if l == 1 {
+                    // The last level should reduce the output
+                    self.butterfly(&mut left[0], &mut right[0], omega, omega_shoup);
+                    left[0] = self.reduce3(left[0]);
+                    right[0] = self.reduce3(right[0]);
+                } else {
+                    for (x, y) in left.iter_mut().zip(right.iter_mut()) {
+                        self.butterfly(x, y, omega, omega_shoup);
                     }
                 }
             }
             l >>= 1;
-            m <<= 1;
         }
     }
 
@@ -116,42 +99,25 @@ impl NttOperator {
     pub fn backward(&self, a: &mut [u64]) {
         debug_assert_eq!(a.len(), self.size);
 
-        let a_ptr = a.as_mut_ptr();
-
         let mut k = 0;
-        let mut m = self.size >> 1;
         let mut l = 1;
-        while m > 0 {
-            for i in 0..m {
-                let s = 2 * i * l;
-                unsafe {
-                    let zeta_inv = *self.zetas_inv.get_unchecked(k);
-                    let zeta_inv_shoup = *self.zetas_inv_shoup.get_unchecked(k);
-                    k += 1;
-                    match l {
-                        1 => {
-                            self.inv_butterfly(
-                                &mut *a_ptr.add(s),
-                                &mut *a_ptr.add(s + l),
-                                zeta_inv,
-                                zeta_inv_shoup,
-                            );
-                        }
-                        _ => {
-                            for j in s..(s + l) {
-                                self.inv_butterfly(
-                                    &mut *a_ptr.add(j),
-                                    &mut *a_ptr.add(j + l),
-                                    zeta_inv,
-                                    zeta_inv_shoup,
-                                );
-                            }
-                        }
+
+        while l < self.size {
+            for chunk in a.chunks_exact_mut(2 * l) {
+                let zeta_inv = self.zetas_inv[k];
+                let zeta_inv_shoup = self.zetas_inv_shoup[k];
+                k += 1;
+
+                let (left, right) = chunk.split_at_mut(l);
+                if l == 1 {
+                    self.inv_butterfly(&mut left[0], &mut right[0], zeta_inv, zeta_inv_shoup);
+                } else {
+                    for (x, y) in left.iter_mut().zip(right.iter_mut()) {
+                        self.inv_butterfly(x, y, zeta_inv, zeta_inv_shoup);
                     }
                 }
             }
             l <<= 1;
-            m >>= 1;
         }
 
         a.iter_mut()
