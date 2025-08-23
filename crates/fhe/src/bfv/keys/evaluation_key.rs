@@ -59,6 +59,7 @@ impl EvaluationKey {
             ))
         } else {
             let mut out = ct.clone();
+            let mut tmp = Ciphertext::zero(&ct.par);
 
             let mut i = 1;
             while i < ct.par.degree() / 2 {
@@ -66,12 +67,14 @@ impl EvaluationKey {
                     .gk
                     .get(self.rot_to_gk_exponent.get(&i).unwrap())
                     .unwrap();
-                out += &gk.relinearize(&out)?;
+                gk.relinearize_into(&out, &mut tmp)?;
+                out += &tmp;
                 i *= 2
             }
 
             let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
-            out += &gk.relinearize(&out)?;
+            gk.relinearize_into(&out, &mut tmp)?;
+            out += &tmp;
 
             Ok(out)
         }
@@ -91,7 +94,9 @@ impl EvaluationKey {
             ))
         } else {
             let gk = self.gk.get(&(self.par.degree() * 2 - 1)).unwrap();
-            gk.relinearize(ct)
+            let mut out = Ciphertext::zero(&ct.par);
+            gk.relinearize_into(ct, &mut out)?;
+            Ok(out)
         }
     }
 
@@ -116,7 +121,9 @@ impl EvaluationKey {
                 .gk
                 .get(self.rot_to_gk_exponent.get(&i).unwrap())
                 .unwrap();
-            gk.relinearize(ct)
+            let mut out = Ciphertext::zero(&ct.par);
+            gk.relinearize_into(ct, &mut out)?;
+            Ok(out)
         }
     }
 
@@ -150,20 +157,26 @@ impl EvaluationKey {
         } else if self.supports_expansion(level) {
             let mut out = vec![Ciphertext::zero(&ct.par); 1 << level];
             out[0] = ct.clone();
+            let mut sub = Ciphertext::zero(&ct.par);
 
             // We use the Oblivious expansion algorithm of
             // https://eprint.iacr.org/2019/1483.pdf
             for l in 0..level {
                 let monomial = &self.monomials[l];
                 let gk = self.gk.get(&((self.par.degree() >> l) + 1)).unwrap();
-                for i in 0..(1 << l) {
-                    let sub = gk.relinearize(&out[i])?;
-                    if (1 << l) | i < size {
-                        out[(1 << l) | i] = &out[i] - &sub;
-                        out[(1 << l) | i][0] *= monomial;
-                        out[(1 << l) | i][1] *= monomial;
+                let step = 1 << l;
+                let (low, high) = out.split_at_mut(step);
+                for i in 0..step {
+                    gk.relinearize_into(&low[i], &mut sub)?;
+                    let j = step | i;
+                    if j < size {
+                        let target = &mut high[i];
+                        target.clone_from(&low[i]);
+                        *target -= &sub;
+                        target[0] *= monomial;
+                        target[1] *= monomial;
                     }
-                    out[i] += &sub;
+                    low[i] += &sub;
                 }
             }
             out.truncate(size);

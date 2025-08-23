@@ -10,7 +10,7 @@ use fhe_math::rq::{
 };
 use rand::{CryptoRng, RngCore};
 use std::sync::Arc;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Galois key for the BFV encryption scheme.
 /// A Galois key is a special type of key switching key,
@@ -88,6 +88,44 @@ impl GaloisKey {
             level: self.ksk.ciphertext_level,
         })
     }
+
+    /// Relinearize a [`Ciphertext`] writing the result into `out`.
+    pub fn relinearize_into(&self, ct: &Ciphertext, out: &mut Ciphertext) -> Result<()> {
+        assert_eq!(ct.len(), 2);
+
+        if out.len() != 2 || out[0].ctx() != ct[0].ctx() || out[1].ctx() != ct[1].ctx() {
+            out.c = vec![
+                Poly::zero(ct[0].ctx(), Representation::Ntt),
+                Poly::zero(ct[1].ctx(), Representation::Ntt),
+            ];
+        }
+        out.par = ct.par.clone();
+        out.seed = None;
+        out.level = self.ksk.ciphertext_level;
+
+        let (out0_slice, out1_slice) = out.split_at_mut(1);
+        let out0 = &mut out0_slice[0];
+        let out1 = &mut out1_slice[0];
+
+        out0.zeroize();
+        out1.zeroize();
+
+        let mut c2 = ct[1].substitute(&self.element)?;
+        c2.change_representation(Representation::PowerBasis);
+        self.ksk.key_switch_assign(&c2, out0, out1)?;
+
+        if out0.ctx() != ct[0].ctx() {
+            out0.change_representation(Representation::PowerBasis);
+            out1.change_representation(Representation::PowerBasis);
+            out0.mod_switch_down_to(ct[0].ctx())?;
+            out1.mod_switch_down_to(ct[1].ctx())?;
+            out0.change_representation(Representation::Ntt);
+            out1.change_representation(Representation::Ntt);
+        }
+
+        *out0 += &ct[0].substitute(&self.element)?;
+        Ok(())
+    }
 }
 
 impl From<&GaloisKey> for GaloisKeyProto {
@@ -118,7 +156,9 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 #[cfg(test)]
 mod tests {
     use super::GaloisKey;
-    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::bfv::{
+        traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
+    };
     use crate::proto::bfv::GaloisKey as GaloisKeyProto;
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use rand::thread_rng;
@@ -170,6 +210,28 @@ mod tests {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn relinearization_into() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+        for params in [
+            BfvParameters::default_arc(6, 16),
+            BfvParameters::default_arc(3, 16),
+        ] {
+            let sk = SecretKey::random(&params, &mut rng);
+            let pt = Plaintext::try_encode(&[1u64, 2, 3, 4][..], Encoding::simd(), &params)?;
+            let ct = sk.try_encrypt(&pt, &mut rng)?;
+            let gk = GaloisKey::new(&sk, 3, 0, 0, &mut rng)?;
+
+            let ct_expected = gk.relinearize(&ct)?;
+
+            let mut out = Ciphertext::zero(&ct.par);
+            gk.relinearize_into(&ct, &mut out)?;
+
+            assert_eq!(ct_expected, out);
         }
         Ok(())
     }

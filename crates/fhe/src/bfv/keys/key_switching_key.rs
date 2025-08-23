@@ -15,7 +15,7 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// Key switching key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -264,6 +264,56 @@ impl KeySwitchingKey {
         Ok((c0, c1))
     }
 
+    /// Key switch a polynomial, writing the result in-place.
+    pub fn key_switch_assign(&self, p: &Poly, c0: &mut Poly, c1: &mut Poly) -> Result<()> {
+        if self.log_base != 0 {
+            let (k0, k1) = self.key_switch_decomposition(p)?;
+            *c0 = k0;
+            *c1 = k1;
+            return Ok(());
+        }
+
+        if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
+            return Err(Error::DefaultError(
+                "The input polynomial does not have the correct context.".to_string(),
+            ));
+        }
+        if p.representation() != &Representation::PowerBasis {
+            return Err(Error::DefaultError("Incorrect representation".to_string()));
+        }
+
+        if c0.ctx().as_ref() != self.ctx_ksk.as_ref() || c0.representation() != &Representation::Ntt
+        {
+            *c0 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
+        } else {
+            c0.zeroize();
+        }
+
+        if c1.ctx().as_ref() != self.ctx_ksk.as_ref() || c1.representation() != &Representation::Ntt
+        {
+            *c1 = Poly::zero(&self.ctx_ksk, Representation::Ntt);
+        } else {
+            c1.zeroize();
+        }
+
+        for (c2_i_coefficients, c0_i, c1_i) in izip!(
+            p.coefficients().outer_iter(),
+            self.c0.iter(),
+            self.c1.iter()
+        ) {
+            let mut c2_i = unsafe {
+                Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+                    c2_i_coefficients.as_slice().unwrap(),
+                    &self.ctx_ksk,
+                )
+            };
+            *c0 += &(&c2_i * c0_i);
+            c2_i *= c1_i;
+            *c1 += &c2_i;
+        }
+        Ok(())
+    }
+
     /// Key switch a polynomial.
     fn key_switch_decomposition(&self, p: &Poly) -> Result<(Poly, Poly)> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
@@ -485,6 +535,28 @@ mod tests {
                     assert!(std::cmp::min(b.bits(), (rns.modulus() - b).bits()) <= 70)
                 });
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn key_switch_assign_matches() -> Result<(), Box<dyn Error>> {
+        let mut rng = thread_rng();
+        for params in [BfvParameters::default_arc(6, 16)] {
+            let sk = SecretKey::random(&params, &mut rng);
+            let ctx = params.ctx_at_level(0)?;
+            let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
+            let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
+            let input = Poly::random(ctx, Representation::PowerBasis, &mut rng);
+
+            let (c0, c1) = ksk.key_switch(&input)?;
+
+            let mut a0 = Poly::zero(&ksk.ctx_ksk, Representation::Ntt);
+            let mut a1 = Poly::zero(&ksk.ctx_ksk, Representation::Ntt);
+            ksk.key_switch_assign(&input, &mut a0, &mut a1)?;
+
+            assert_eq!(c0, a0);
+            assert_eq!(c1, a1);
         }
         Ok(())
     }

@@ -126,8 +126,15 @@ impl Mul<&RGSWCiphertext> for &Ciphertext {
         ct0.change_representation(Representation::PowerBasis);
         ct1.change_representation(Representation::PowerBasis);
 
-        let (c0, c1) = rhs.ksk0.key_switch(&ct0).unwrap();
-        let (c0p, c1p) = rhs.ksk1.key_switch(&ct1).unwrap();
+        let mut c0 = Poly::zero(&rhs.ksk0.ctx_ksk, Representation::Ntt);
+        let mut c1 = Poly::zero(&rhs.ksk0.ctx_ksk, Representation::Ntt);
+        rhs.ksk0.key_switch_assign(&ct0, &mut c0, &mut c1).unwrap();
+
+        let mut c0p = Poly::zero(&rhs.ksk1.ctx_ksk, Representation::Ntt);
+        let mut c1p = Poly::zero(&rhs.ksk1.ctx_ksk, Representation::Ntt);
+        rhs.ksk1
+            .key_switch_assign(&ct1, &mut c0p, &mut c1p)
+            .unwrap();
 
         Ciphertext {
             par: self.par.clone(),
