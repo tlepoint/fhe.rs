@@ -7,7 +7,7 @@ This library implements [Fully Homomorphic Encryption](https://en.wikipedia.org/
 This library provides implementations of:
 
 * BFV, the Brakerski-Fan-Vercauteren (BFV) homomorphic encryption scheme.
-More precisely, this library implements a leveled variant of the [HPS](https://eprint.iacr.org/2018/117) (Halevi--Polyakov--Shoup) RNS-variant of the scheme.
+  More precisely, this library implements a leveled variant of the [HPS](https://eprint.iacr.org/2018/117) (Halevi--Polyakov--Shoup) RNS-variant of the scheme.
 
 ## Example
 

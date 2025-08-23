@@ -305,7 +305,7 @@ impl Poly {
     }
 
     /// Access the polynomial coefficients in RNS representation.
-    pub fn coefficients(&self) -> ArrayView2<u64> {
+    pub fn coefficients(&self) -> ArrayView2<'_, u64> {
         self.coefficients.view()
     }
 

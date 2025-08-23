@@ -70,7 +70,8 @@ impl RelinearizationKey {
         Ok(Self { ksk })
     }
 
-    /// Relinearize an "extended" ciphertext (c0, c1, c2) into a [`Ciphertext`]
+    /// Relinearizes the supplied `(c0, c1, c2)` ciphertext in place, reducing
+    /// it to two components.
     pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
         if ct.len() != 3 {
             Err(Error::DefaultError(
