@@ -66,8 +66,9 @@ jobs:
           command: test
           args: --no-fail-fast
         env:
-          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+          RUSTFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+          RUSTDOCFLAGS: '-Cinstrument-coverage -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+          LLVM_PROFILE_FILE: 'fhe-%p-%m.profraw'
       - uses: actions-rs/grcov@v0.1
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
