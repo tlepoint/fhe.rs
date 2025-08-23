@@ -133,7 +133,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
 #[cfg(test)]
 mod tests {
-    use crate::bfv::{BfvParameters, Encoding, PlaintextVec};
+    use crate::bfv::{parameters::BfvParametersBuilder, BfvParameters, Encoding, PlaintextVec};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
     use rand::thread_rng;
     use std::error::Error;
@@ -163,8 +163,39 @@ mod tests {
                     let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0))?;
                     assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
                 }
+
+                let plaintexts = PlaintextVec::try_encode(&a, Encoding::simd(), &params)?;
+                assert_eq!(plaintexts.0.len(), i);
+
+                for j in 0..i {
+                    let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::simd())?;
+                    assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
+                }
+
+                let plaintexts =
+                    unsafe { PlaintextVec::try_encode_vt(&a, Encoding::simd(), &params)? };
+                assert_eq!(plaintexts.0.len(), i);
+
+                for j in 0..i {
+                    let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::simd())?;
+                    assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
+                }
             }
         }
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(17)
+            .set_moduli_sizes(&[62])
+            .build_arc()?;
+        let a = vec![1u64];
+        assert!(matches!(
+            PlaintextVec::try_encode(&a, Encoding::simd(), &params),
+            Err(crate::Error::EncodingNotSupported(_))
+        ));
+        assert!(matches!(
+            unsafe { PlaintextVec::try_encode_vt(&a, Encoding::simd(), &params) },
+            Err(crate::Error::EncodingNotSupported(_))
+        ));
         Ok(())
     }
 }
