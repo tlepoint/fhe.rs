@@ -18,7 +18,7 @@ static MODULI: &[u64; 4] = &[
 
 static DEGREE: &[usize] = &[1024, 2048, 4096, 8192];
 
-fn create_group(c: &mut Criterion, name: String) -> BenchmarkGroup<WallTime> {
+fn create_group(c: &mut Criterion, name: String) -> BenchmarkGroup<'_, WallTime> {
     let mut group = c.benchmark_group(name);
     group.warm_up_time(Duration::from_millis(100));
     group.measurement_time(Duration::from_secs(1));

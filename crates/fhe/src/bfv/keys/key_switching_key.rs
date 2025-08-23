@@ -71,7 +71,7 @@ impl KeySwitchingKey {
             let log_modulus = modulus.next_power_of_two().ilog2() as usize;
             let log_base = log_modulus / 2;
 
-            let c1 = Self::generate_c1(ctx_ksk, seed, (log_modulus + log_base - 1) / log_base);
+            let c1 = Self::generate_c1(ctx_ksk, seed, log_modulus.div_ceil(log_base));
             let c0 = Self::generate_c0_decomposition(sk, from, &c1, rng, log_base)?;
 
             Ok(Self {
@@ -286,7 +286,7 @@ impl KeySwitchingKey {
         let mut coefficients = p.coefficients().to_slice().unwrap().to_vec();
         let mut c2i = vec![];
         let mask = (1u64 << self.log_base) - 1;
-        (0..(log_modulus + self.log_base - 1) / self.log_base).for_each(|_| {
+        (0..log_modulus.div_ceil(self.log_base)).for_each(|_| {
             c2i.push(coefficients.iter().map(|c| c & mask).collect_vec());
             coefficients.iter_mut().for_each(|c| *c >>= self.log_base);
         });
@@ -347,7 +347,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             } else {
                 let log_modulus: usize =
                     par.moduli().first().unwrap().next_power_of_two().ilog2() as usize;
-                c0_size = (log_modulus + log_base - 1) / log_base;
+                c0_size = log_modulus.div_ceil(log_base);
             }
         } else {
             c0_size = ctx_ciphertext.moduli().len();

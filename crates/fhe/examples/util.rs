@@ -98,11 +98,11 @@ pub fn encode_database(
     let number_elements_per_plaintext =
         number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
     let number_rows =
-        (database.len() + number_elements_per_plaintext - 1) / number_elements_per_plaintext;
+        database.len().div_ceil(number_elements_per_plaintext);
     println!("number_rows = {number_rows}");
     println!("number_elements_per_plaintext = {number_elements_per_plaintext}");
     let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
-    let dimension_2 = (number_rows + dimension_1 - 1) / dimension_1;
+    let dimension_2 = number_rows.div_ceil(dimension_1);
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
     let mut preprocessed_database =
