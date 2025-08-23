@@ -1,4 +1,4 @@
-use concrete_ntt::prime64::Plan;
+use tfhe_ntt::prime64::Plan;
 
 use crate::zq::Modulus;
 
@@ -7,7 +7,7 @@ use super::native;
 /// Number-Theoretic Transform operator.
 #[derive(Debug, Clone)]
 pub struct NttOperator {
-    concrete_operator: Option<Plan>,
+    tfhe_operator: Option<Plan>,
     native_operator: native::NttOperator,
 }
 
@@ -27,9 +27,9 @@ impl NttOperator {
     /// size.
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
         let native_operator = native::NttOperator::new(p, size)?;
-        let concrete_operator = Plan::try_new(size, p.p);
+        let tfhe_operator = Plan::try_new(size, p.p);
         Some(Self {
-            concrete_operator,
+            tfhe_operator,
             native_operator,
         })
     }
@@ -37,8 +37,8 @@ impl NttOperator {
     /// Compute the forward NTT in place.
     /// Aborts if a is not of the size handled by the operator.
     pub fn forward(&self, a: &mut [u64]) {
-        if let Some(ref concrete_operator) = self.concrete_operator {
-            concrete_operator.fwd(a);
+        if let Some(ref tfhe_operator) = self.tfhe_operator {
+            tfhe_operator.fwd(a);
         } else {
             self.native_operator.forward(a);
         }
@@ -47,9 +47,9 @@ impl NttOperator {
     /// Compute the backward NTT in place.
     /// Aborts if a is not of the size handled by the operator.
     pub fn backward(&self, a: &mut [u64]) {
-        if let Some(ref concrete_operator) = self.concrete_operator {
-            concrete_operator.inv(a);
-            concrete_operator.normalize(a);
+        if let Some(ref tfhe_operator) = self.tfhe_operator {
+            tfhe_operator.inv(a);
+            tfhe_operator.normalize(a);
         } else {
             self.native_operator.backward(a);
         }
@@ -64,9 +64,9 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
-        if let Some(ref concrete_operator) = self.concrete_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, concrete_operator.ntt_size());
-            concrete_operator.fwd(a);
+        if let Some(ref tfhe_operator) = self.tfhe_operator {
+            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            tfhe_operator.fwd(a);
         } else {
             self.native_operator.forward_vt_lazy(a_ptr);
         }
@@ -79,9 +79,9 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
-        if let Some(ref concrete_operator) = self.concrete_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, concrete_operator.ntt_size());
-            concrete_operator.fwd(a);
+        if let Some(ref tfhe_operator) = self.tfhe_operator {
+            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            tfhe_operator.fwd(a);
         } else {
             self.native_operator.forward_vt(a_ptr);
         }
@@ -94,10 +94,10 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
-        if let Some(ref concrete_operator) = self.concrete_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, concrete_operator.ntt_size());
-            concrete_operator.inv(a);
-            concrete_operator.normalize(a);
+        if let Some(ref tfhe_operator) = self.tfhe_operator {
+            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            tfhe_operator.inv(a);
+            tfhe_operator.normalize(a);
         } else {
             self.native_operator.backward_vt(a_ptr);
         }
