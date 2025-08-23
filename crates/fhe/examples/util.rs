@@ -97,8 +97,7 @@ pub fn encode_database(
     let plaintext_nbits = par.plaintext().ilog2() as usize;
     let number_elements_per_plaintext =
         number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
-    let number_rows =
-        database.len().div_ceil(number_elements_per_plaintext);
+    let number_rows = database.len().div_ceil(number_elements_per_plaintext);
     println!("number_rows = {number_rows}");
     println!("number_elements_per_plaintext = {number_elements_per_plaintext}");
     let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
