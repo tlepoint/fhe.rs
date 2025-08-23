@@ -542,7 +542,8 @@ mod tests {
     #[test]
     fn key_switch_assign_matches() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
-        for params in [BfvParameters::default_arc(6, 16)] {
+        {
+            let params = BfvParameters::default_arc(6, 16);
             let sk = SecretKey::random(&params, &mut rng);
             let ctx = params.ctx_at_level(0)?;
             let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
