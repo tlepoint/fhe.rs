@@ -13,14 +13,14 @@ rust-version.workspace = true
 bench = false  # Disable default bench (we use criterion)
 
 [features]
-concrete-ntt = []
-concrete-ntt-nightly = ["concrete-ntt/nightly"]
+tfhe-ntt = []
+tfhe-ntt-nightly = ["tfhe-ntt/nightly"]
 
 [dependencies]
 fhe-traits = { version = "^0.1.0-beta.8", path = "../fhe-traits" }
 fhe-util = { version = "^0.1.0-beta.8", path = "../fhe-util" }
 
-concrete-ntt.workspace = true
+tfhe-ntt.workspace = true
 derivative = "^2.2.0"
 ethnum.workspace = true
 fastdiv.workspace = true
@@ -30,13 +30,14 @@ num-bigint.workspace = true
 num-bigint-dig.workspace = true
 num-traits.workspace = true
 prost.workspace = true
-pulp = "^0.18.9"
+pulp.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 zeroize_derive.workspace = true
 sha2.workspace = true
+num-complex.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true
