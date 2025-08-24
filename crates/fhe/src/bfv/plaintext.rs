@@ -145,7 +145,10 @@ impl<'a> FheEncoder<&'a [u64]> for Plaintext {
     type Error = Error;
     fn try_encode(value: &'a [u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
         if value.len() > par.degree() {
-            return Err(Error::TooManyValues(value.len(), par.degree()));
+            return Err(Error::TooManyValues {
+                actual: value.len(),
+                limit: par.degree(),
+            });
         }
         let v = PlaintextVec::try_encode(value, encoding, par)?;
         Ok(v[0].clone())
@@ -168,19 +171,27 @@ impl FheDecoder<Plaintext> for Vec<u64> {
         let encoding = encoding.into();
         let enc: Encoding;
         if pt.encoding.is_none() && encoding.is_none() {
-            return Err(Error::UnspecifiedInput("No encoding specified".to_string()));
+            return Err(Error::InvalidPlaintext {
+                reason: "No encoding specified".into(),
+            });
         } else if pt.encoding.is_some() {
             enc = pt.encoding.as_ref().unwrap().clone();
             if let Some(arg_enc) = encoding {
                 if arg_enc != enc {
-                    return Err(Error::EncodingMismatch(arg_enc.into(), enc.into()));
+                    return Err(Error::EncodingMismatch {
+                        found: arg_enc.into(),
+                        expected: enc.into(),
+                    });
                 }
             }
         } else {
             enc = encoding.unwrap();
             if let Some(pt_enc) = pt.encoding.as_ref() {
                 if pt_enc != &enc {
-                    return Err(Error::EncodingMismatch(pt_enc.into(), enc.into()));
+                    return Err(Error::EncodingMismatch {
+                        found: pt_enc.into(),
+                        expected: enc.into(),
+                    });
                 }
             }
         }
@@ -199,7 +210,10 @@ impl FheDecoder<Plaintext> for Vec<u64> {
                     w.zeroize();
                     Ok(w_reordered)
                 } else {
-                    Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()))
+                    Err(Error::EncodingNotSupported {
+                        encoding: EncodingEnum::Simd.to_string(),
+                        reason: "NTT operator not available".into(),
+                    })
                 }
             }
         }
@@ -325,16 +339,19 @@ mod tests {
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::EncodingMismatch(Encoding::simd().into(), Encoding::poly().into())
+            crate::Error::EncodingMismatch {
+                found: Encoding::simd().into(),
+                expected: Encoding::poly().into(),
+            }
         );
         let e = Vec::<u64>::try_decode(&plaintext, Encoding::poly_at_level(1));
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::EncodingMismatch(
-                Encoding::poly_at_level(1).into(),
-                Encoding::poly().into()
-            )
+            crate::Error::EncodingMismatch {
+                found: Encoding::poly_at_level(1).into(),
+                expected: Encoding::poly().into(),
+            }
         );
 
         plaintext.encoding = None;
@@ -342,7 +359,9 @@ mod tests {
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::UnspecifiedInput("No encoding specified".to_string())
+            crate::Error::InvalidPlaintext {
+                reason: "No encoding specified".into(),
+            }
         );
 
         Ok(())

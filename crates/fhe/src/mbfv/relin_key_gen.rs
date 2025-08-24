@@ -213,7 +213,10 @@ impl Aggregate<RelinKeyShare<R1>> for RelinKeyShare<R1Aggregated> {
         T: IntoIterator<Item = RelinKeyShare<R1>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
+        let share = shares.next().ok_or(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        })?;
         let mut h0 = share.h0;
         let mut h1 = share.h1;
         for sh in shares {
@@ -322,7 +325,10 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
         T: IntoIterator<Item = RelinKeyShare<R2>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
+        let share = shares.next().ok_or(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        })?;
         let par = share.par.clone();
         let ctx = par.context_at_level(0)?.clone();
         let r1 = share.last_round.ok_or(Error::DefaultError(

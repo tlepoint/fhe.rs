@@ -67,7 +67,10 @@ impl Aggregate<PublicKeyShare> for PublicKey {
         T: IntoIterator<Item = PublicKeyShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
+        let share = shares.next().ok_or(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        })?;
         let mut p0 = share.p0_share;
         for sh in shares {
             p0 += &sh.p0_share;

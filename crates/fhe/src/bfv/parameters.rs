@@ -2,7 +2,7 @@
 
 use crate::bfv::{context::CipherPlainContext, context::ContextLevel};
 use crate::proto::bfv::Parameters;
-use crate::{Error, ParametersError, Result};
+use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
@@ -105,13 +105,21 @@ impl BfvParameters {
             current = current
                 .next
                 .get()
-                .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))?
+                .ok_or_else(|| Error::InvalidLevel {
+                    level,
+                    min_level: 0,
+                    max_level: self.max_level(),
+                })?
                 .as_ref();
         }
         if current.level == level {
             Ok(&current.poly_context)
         } else {
-            Err(Error::DefaultError(format!("Invalid level: {level}")))
+            Err(Error::InvalidLevel {
+                level,
+                min_level: 0,
+                max_level: self.max_level(),
+            })
         }
     }
 
@@ -134,7 +142,13 @@ impl BfvParameters {
         while current.level < level {
             match current.next.get() {
                 Some(n) => current = n.clone(),
-                None => return Err(Error::DefaultError(format!("Invalid level: {level}"))),
+                None => {
+                    return Err(Error::InvalidLevel {
+                        level,
+                        min_level: 0,
+                        max_level: self.max_level(),
+                    })
+                }
             }
         }
         Ok(current)
@@ -275,11 +289,18 @@ impl BfvParametersBuilder {
     /// Generate ciphertext moduli with the specified sizes
     fn generate_moduli(moduli_sizes: &[usize], degree: usize) -> Result<Vec<u64>> {
         let mut moduli = vec![];
-        for size in moduli_sizes {
+        let required_counts = moduli_sizes.iter().copied().counts();
+        let mut generated_counts: HashMap<usize, usize> = HashMap::new();
+        for (i, size) in moduli_sizes.iter().enumerate() {
             if *size > 62 || *size < 10 {
-                return Err(Error::ParametersError(ParametersError::InvalidModulusSize(
-                    *size, 10, 62,
-                )));
+                return Err(Error::ParametersError(
+                    ParametersError::InvalidModulusSize {
+                        index: i,
+                        size: *size,
+                        min: 10,
+                        max: 62,
+                    },
+                ));
             }
 
             let mut upper_bound = 1 << size;
@@ -287,14 +308,20 @@ impl BfvParametersBuilder {
                 if let Some(prime) = generate_prime(*size, 2 * degree as u64, upper_bound) {
                     if !moduli.contains(&prime) {
                         moduli.push(prime);
+                        *generated_counts.entry(*size).or_insert(0) += 1;
                         break;
                     } else {
                         upper_bound = prime;
                     }
                 } else {
-                    return Err(Error::ParametersError(ParametersError::NotEnoughPrimes(
-                        *size, degree,
-                    )));
+                    let needed = *required_counts.get(size).unwrap_or(&0);
+                    let available = *generated_counts.get(size).unwrap_or(&0);
+                    return Err(Error::ParametersError(ParametersError::NotEnoughPrimes {
+                        size: *size,
+                        degree,
+                        needed,
+                        available,
+                    }));
                 }
             }
         }
@@ -311,29 +338,30 @@ impl BfvParametersBuilder {
     pub fn build(&self) -> Result<BfvParameters> {
         // Check that the degree is a power of 2 (and large enough).
         if self.degree < 8 || !self.degree.is_power_of_two() {
-            return Err(Error::ParametersError(ParametersError::InvalidDegree(
-                self.degree,
-            )));
+            return Err(Error::ParametersError(
+                ParametersError::invalid_degree_with_bounds(self.degree),
+            ));
         }
 
         // This checks that the plaintext modulus is valid.
         // TODO: Check bound on the plaintext modulus.
         let plaintext_modulus = Modulus::new(self.plaintext).map_err(|e| {
-            Error::ParametersError(ParametersError::InvalidPlaintext(e.to_string()))
+            Error::ParametersError(ParametersError::InvalidPlaintextModulus {
+                modulus: self.plaintext,
+                reason: e.to_string(),
+            })
         })?;
 
         // Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is
         // specified.
         if !self.ciphertext_moduli.is_empty() && !self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::TooManySpecified(
-                "Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified"
-                    .to_string(),
-            )));
+            return Err(Error::ParametersError(ParametersError::ConflictingParameters {
+                conflict: "Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified".into(),
+            }));
         } else if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::TooFewSpecified(
-                "One of `ciphertext_moduli` and `ciphertext_moduli_sizes` must be specified"
-                    .to_string(),
-            )));
+            return Err(Error::ParametersError(ParametersError::MissingParameter {
+                parameter: "ciphertext_moduli or ciphertext_moduli_sizes".into(),
+            }));
         }
 
         // Get or generate the moduli
@@ -501,7 +529,11 @@ impl Serialize for BfvParameters {
 
 impl Deserialize for BfvParameters {
     fn try_deserialize(bytes: &[u8]) -> Result<Self> {
-        let params: Parameters = Message::decode(bytes).map_err(|_| Error::SerializationError)?;
+        let params: Parameters = Message::decode(bytes).map_err(|_| {
+            Error::SerializationError(SerializationError::ProtobufError {
+                message: "Parameters decode".into(),
+            })
+        })?;
         BfvParametersBuilder::new()
             .set_degree(params.degree as usize)
             .set_plaintext_modulus(params.plaintext)

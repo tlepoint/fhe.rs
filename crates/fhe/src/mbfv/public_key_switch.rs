@@ -96,7 +96,10 @@ impl Aggregate<PublicKeySwitchShare> for Ciphertext {
         T: IntoIterator<Item = PublicKeySwitchShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
+        let share = shares.next().ok_or(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        })?;
         let mut h0 = share.h0_share;
         let mut h1 = share.h1_share;
         for sh in shares {

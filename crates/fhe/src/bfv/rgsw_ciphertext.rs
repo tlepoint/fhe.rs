@@ -3,7 +3,7 @@ use std::ops::Mul;
 use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RGSWCiphertextProto,
 };
-use crate::{Error, Result};
+use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
 use fhe_traits::{
     DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
@@ -42,18 +42,30 @@ impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
         par: &std::sync::Arc<BfvParameters>,
     ) -> Result<Self> {
         let ksk0 = KeySwitchingKey::try_convert_from(
-            value.ksk0.as_ref().ok_or(Error::SerializationError)?,
+            value.ksk0.as_ref().ok_or(Error::SerializationError(
+                SerializationError::MissingField {
+                    field_name: "ksk0".into(),
+                },
+            ))?,
             par,
         )?;
         let ksk1 = KeySwitchingKey::try_convert_from(
-            value.ksk1.as_ref().ok_or(Error::SerializationError)?,
+            value.ksk1.as_ref().ok_or(Error::SerializationError(
+                SerializationError::MissingField {
+                    field_name: "ksk1".into(),
+                },
+            ))?,
             par,
         )?;
         if ksk0.ksk_level != ksk0.ciphertext_level
             || ksk0.ciphertext_level != ksk1.ciphertext_level
             || ksk1.ciphertext_level != ksk1.ksk_level
         {
-            return Err(Error::SerializationError);
+            return Err(Error::SerializationError(
+                SerializationError::InvalidFormat {
+                    reason: "Inconsistent key switching levels".into(),
+                },
+            ));
         }
 
         Ok(Self { ksk0, ksk1 })
@@ -64,7 +76,11 @@ impl DeserializeParametrized for RGSWCiphertext {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &std::sync::Arc<Self::Parameters>) -> Result<Self> {
-        let proto = Message::decode(bytes).map_err(|_| Error::SerializationError)?;
+        let proto = Message::decode(bytes).map_err(|_| {
+            Error::SerializationError(SerializationError::ProtobufError {
+                message: "RGSW ciphertext decode".into(),
+            })
+        })?;
         RGSWCiphertext::try_convert_from(&proto, par)
     }
 }

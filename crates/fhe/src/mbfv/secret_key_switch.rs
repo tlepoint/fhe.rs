@@ -50,7 +50,10 @@ impl SecretKeySwitchShare {
         }
         // Note: M-BFV implementation only supports ciphertext of length 2
         if ct.len() != 2 {
-            return Err(Error::TooManyValues(ct.len(), 2));
+            return Err(Error::TooManyValues {
+                actual: ct.len(),
+                limit: 2,
+            });
         }
 
         let par = sk_input_share.par.clone();
@@ -94,7 +97,10 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
         T: IntoIterator<Item = SecretKeySwitchShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
+        let share = shares.next().ok_or(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        })?;
         let mut h = share.h_share;
         for sh in shares {
             h += &sh.h_share;

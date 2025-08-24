@@ -2,7 +2,7 @@
 
 use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
-use crate::{Error, Result};
+use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{
     DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
@@ -49,7 +49,10 @@ impl Ciphertext {
     /// must be in Ntt representation and with the same context.
     pub fn new(c: Vec<Poly>, par: &Arc<BfvParameters>) -> Result<Self> {
         if c.len() < 2 {
-            return Err(Error::TooFewValues(c.len(), 2));
+            return Err(Error::TooFewValues {
+                actual: c.len(),
+                minimum: 2,
+            });
         }
 
         let ctx = c[0].ctx();
@@ -98,17 +101,18 @@ impl Ciphertext {
     /// Switch to a specific level (only moving down)
     pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
         if target_level < self.level {
-            return Err(Error::DefaultError(format!(
-                "Cannot switch to a higher level: current {}, target {}",
-                self.level, target_level
-            )));
+            return Err(Error::InvalidLevel {
+                level: target_level,
+                min_level: self.level,
+                max_level: self.max_switchable_level(),
+            });
         }
         if target_level > self.max_switchable_level() {
-            return Err(Error::DefaultError(format!(
-                "Cannot switch to a level higher than the max: max {}, target {}",
-                self.max_switchable_level(),
-                target_level
-            )));
+            return Err(Error::InvalidLevel {
+                level: target_level,
+                min_level: self.level,
+                max_level: self.max_switchable_level(),
+            });
         }
         while self.level < target_level {
             self.switch_down()?;
@@ -136,11 +140,12 @@ impl Serialize for Ciphertext {
 
 impl DeserializeParametrized for Ciphertext {
     fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
-        if let Ok(ctp) = Message::decode(bytes) {
-            Ciphertext::try_convert_from(&ctp, par)
-        } else {
-            Err(Error::SerializationError)
-        }
+        let ctp = Message::decode(bytes).map_err(|_| {
+            Error::SerializationError(SerializationError::ProtobufError {
+                message: "Ciphertext decode".into(),
+            })
+        })?;
+        Ciphertext::try_convert_from(&ctp, par)
     }
 
     type Error = Error;
@@ -178,11 +183,17 @@ impl From<&Ciphertext> for CiphertextProto {
 impl TryConvertFrom<&CiphertextProto> for Ciphertext {
     fn try_convert_from(value: &CiphertextProto, par: &Arc<BfvParameters>) -> Result<Self> {
         if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
-            return Err(Error::DefaultError("Not enough polynomials".to_string()));
+            return Err(Error::InvalidCiphertext {
+                reason: "Not enough polynomials".into(),
+            });
         }
 
         if value.level as usize > par.max_level() {
-            return Err(Error::DefaultError("Invalid level".to_string()));
+            return Err(Error::InvalidLevel {
+                level: value.level as usize,
+                min_level: 0,
+                max_level: par.max_level(),
+            });
         }
 
         let ctx = par.context_at_level(value.level as usize)?;
@@ -222,13 +233,14 @@ mod tests {
         traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
     };
     use crate::proto::bfv::Ciphertext as CiphertextProto;
+    use crate::Error as FheError;
     use fhe_traits::FheDecrypter;
     use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
     use rand::thread_rng;
-    use std::error::Error;
+    use std::error::Error as StdError;
 
     #[test]
-    fn proto_conversion() -> Result<(), Box<dyn Error>> {
+    fn proto_conversion() -> Result<(), Box<dyn StdError>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -249,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize() -> Result<(), Box<dyn Error>> {
+    fn serialize() -> Result<(), Box<dyn StdError>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -266,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn new() -> Result<(), Box<dyn Error>> {
+    fn new() -> Result<(), Box<dyn StdError>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -304,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn switch_to_last_level() -> Result<(), Box<dyn Error>> {
+    fn switch_to_last_level() -> Result<(), Box<dyn StdError>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -321,6 +333,51 @@ mod tests {
 
             let decrypted = sk.try_decrypt(&ct)?;
             assert_eq!(decrypted.value, pt.value);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn switch_to_level_invalid() -> Result<(), Box<dyn StdError>> {
+        let mut rng = thread_rng();
+        let params = BfvParameters::default_arc(2, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let v = params.plaintext.random_vec(params.degree(), &mut rng);
+        let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
+        let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+
+        // Move to level 1
+        ct.switch_down()?;
+        assert_eq!(ct.level, 1);
+
+        // Target level smaller than current
+        match ct.switch_to_level(0) {
+            Err(FheError::InvalidLevel {
+                level,
+                min_level,
+                max_level,
+            }) => {
+                assert_eq!(level, 0);
+                assert_eq!(min_level, 1);
+                assert_eq!(max_level, params.max_level());
+            }
+            _ => panic!("expected InvalidLevel error"),
+        }
+
+        // Target level larger than max
+        let too_high = params.max_level() + 1;
+        match ct.switch_to_level(too_high) {
+            Err(FheError::InvalidLevel {
+                level,
+                min_level,
+                max_level,
+            }) => {
+                assert_eq!(level, too_high);
+                assert_eq!(min_level, 1);
+                assert_eq!(max_level, params.max_level());
+            }
+            _ => panic!("expected InvalidLevel error"),
         }
 
         Ok(())
