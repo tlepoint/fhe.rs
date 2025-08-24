@@ -141,7 +141,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
         pt: &Plaintext,
         rng: &mut R,
     ) -> Result<Ciphertext> {
-        assert_eq!(self.par, pt.par);
+        assert!(Arc::ptr_eq(&self.par, &pt.par));
         let m = Zeroizing::new(pt.to_poly());
         self.encrypt_poly(m.as_ref(), rng)
     }
@@ -151,7 +151,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
     type Error = Error;
 
     fn try_decrypt(&self, ct: &Ciphertext) -> Result<Plaintext> {
-        if self.par != ct.par {
+        if !Arc::ptr_eq(&self.par, &ct.par) {
             Err(Error::DefaultError(
                 "Incompatible BFV parameters".to_string(),
             ))
