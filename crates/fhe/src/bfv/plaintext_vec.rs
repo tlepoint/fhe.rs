@@ -43,10 +43,10 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
         if value.is_empty() {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
-        if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
+        if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
             return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
         }
-        let ctx = par.ctx_at_level(encoding.level)?;
+        let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
 
         Ok(PlaintextVec(
@@ -60,7 +60,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            par.op
+                            par.ntt_operator
                                 .as_ref()
                                 .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
                                 .backward_vt(v.as_mut_ptr());
@@ -90,10 +90,10 @@ impl FheEncoder<&[u64]> for PlaintextVec {
         if value.is_empty() {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
-        if encoding.encoding == EncodingEnum::Simd && par.op.is_none() {
+        if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
             return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
         }
-        let ctx = par.ctx_at_level(encoding.level)?;
+        let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
 
         Ok(PlaintextVec(
@@ -107,7 +107,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            par.op
+                            par.ntt_operator
                                 .as_ref()
                                 .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
                                 .backward(&mut v);

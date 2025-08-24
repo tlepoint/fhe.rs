@@ -352,7 +352,7 @@ impl EvaluationKeyBuilder {
             indices.insert((self.sk.par.degree() >> l) + 1);
         }
 
-        let ciphertext_ctx = self.sk.par.ctx_at_level(self.ciphertext_level)?;
+        let ciphertext_ctx = self.sk.par.context_at_level(self.ciphertext_level)?;
         for l in 0..self.sk.par.degree().ilog2() {
             let mut monomial = vec![0i64; self.sk.par.degree()];
             monomial[self.sk.par.degree() - (1 << l)] = -1;
@@ -414,7 +414,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
             gk.insert(key.element.exponent, key);
         }
 
-        let ciphertext_ctx = par.ctx_at_level(value.ciphertext_level as usize)?;
+        let ciphertext_ctx = par.context_at_level(value.ciphertext_level as usize)?;
         let mut monomials = Vec::with_capacity(par.degree().ilog2() as usize);
         for l in 0..par.degree().ilog2() {
             let mut monomial = vec![0i64; par.degree()];

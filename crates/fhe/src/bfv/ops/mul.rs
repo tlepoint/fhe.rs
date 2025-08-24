@@ -80,7 +80,7 @@ impl Multiplicator {
         level: usize,
         par: &Arc<BfvParameters>,
     ) -> Result<Self> {
-        let base_ctx = par.ctx_at_level(level)?;
+        let base_ctx = par.context_at_level(level)?;
         let mul_ctx = Arc::new(Context::new(extended_basis, par.degree())?);
         let extender_lhs = Scaler::new(base_ctx, &mul_ctx, lhs_scaling_factor)?;
         let extender_rhs = Scaler::new(base_ctx, &mul_ctx, rhs_scaling_factor)?;
@@ -100,7 +100,7 @@ impl Multiplicator {
 
     /// Default multiplication strategy using relinearization.
     pub fn default(rk: &RelinearizationKey) -> Result<Self> {
-        let ctx = rk.ksk.par.ctx_at_level(rk.ksk.ciphertext_level)?;
+        let ctx = rk.ksk.par.context_at_level(rk.ksk.ciphertext_level)?;
 
         let modulus_size = rk.ksk.par.moduli_sizes()[..ctx.moduli().len()]
             .iter()
@@ -132,7 +132,7 @@ impl Multiplicator {
 
     /// Enable relinearization after multiplication.
     pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
-        let rk_ctx = self.par.ctx_at_level(rk.ksk.ciphertext_level)?;
+        let rk_ctx = self.par.context_at_level(rk.ksk.ciphertext_level)?;
         if rk_ctx != &self.base_ctx {
             return Err(Error::DefaultError(
                 "Invalid relinearization key context".to_string(),
@@ -145,7 +145,7 @@ impl Multiplicator {
     /// Enable modulus switching after multiplication (and relinearization, if
     /// applicable).
     pub fn enable_mod_switching(&mut self) -> Result<()> {
-        if self.par.ctx_at_level(self.par.max_level())? == &self.base_ctx {
+        if self.par.context_at_level(self.par.max_level())? == &self.base_ctx {
             Err(Error::DefaultError(
                 "Cannot modulo switch as this is already the last level".to_string(),
             ))
@@ -203,8 +203,8 @@ impl Multiplicator {
             if c0r.ctx() != c[0].ctx() {
                 c0r.change_representation(Representation::PowerBasis);
                 c1r.change_representation(Representation::PowerBasis);
-                c0r.mod_switch_down_to(c[0].ctx())?;
-                c1r.mod_switch_down_to(c[1].ctx())?;
+                c0r.switch_down_to(c[0].ctx())?;
+                c1r.switch_down_to(c[1].ctx())?;
             } else {
                 c[0].change_representation(Representation::Ntt);
                 c[1].change_representation(Representation::Ntt);
@@ -225,7 +225,7 @@ impl Multiplicator {
         };
 
         if self.mod_switch {
-            c.mod_switch_to_next_level()?;
+            c.switch_down()?;
         } else {
             c.iter_mut()
                 .for_each(|p| p.change_representation(Representation::Ntt));
@@ -383,7 +383,7 @@ mod tests {
 
             let mut multiplicator = Multiplicator::new(
                 ScalingFactor::one(),
-                ScalingFactor::new(rns.modulus(), par.ctx[0].modulus()),
+                ScalingFactor::new(rns.modulus(), par.context_at_level(0)?.modulus()),
                 &extended_basis,
                 ScalingFactor::new(&BigUint::from(par.plaintext()), rns.modulus()),
                 &par,

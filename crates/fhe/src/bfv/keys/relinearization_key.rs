@@ -46,8 +46,8 @@ impl RelinearizationKey {
         key_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
-        let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+        let ctx_relin_key = sk.par.context_at_level(key_level)?;
+        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
 
         if ctx_relin_key.moduli().len() == 1 {
             return Err(Error::DefaultError(
@@ -65,7 +65,7 @@ impl RelinearizationKey {
         let mut s2 = Zeroizing::new(s.as_ref() * s.as_ref());
         s2.change_representation(Representation::PowerBasis);
         let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
-        let s2_switched_up = Zeroizing::new(s2.mod_switch_to(&switcher_up)?);
+        let s2_switched_up = Zeroizing::new(s2.switch(&switcher_up)?);
         let ksk = KeySwitchingKey::new(sk, &s2_switched_up, ciphertext_level, key_level, rng)?;
         Ok(Self { ksk })
     }
@@ -91,8 +91,8 @@ impl RelinearizationKey {
             if c0.ctx() != ct[0].ctx() {
                 c0.change_representation(Representation::PowerBasis);
                 c1.change_representation(Representation::PowerBasis);
-                c0.mod_switch_down_to(ct[0].ctx())?;
-                c1.mod_switch_down_to(ct[1].ctx())?;
+                c0.switch_down_to(ct[0].ctx())?;
+                c1.switch_down_to(ct[1].ctx())?;
                 c0.change_representation(Representation::Ntt);
                 c1.change_representation(Representation::Ntt);
             }
@@ -171,7 +171,7 @@ mod tests {
                 let sk = SecretKey::random(&params, &mut rng);
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
-                let ctx = params.ctx_at_level(0)?;
+                let ctx = params.context_at_level(0)?;
                 let mut s = Poly::try_convert_from(
                     sk.coeffs.as_ref(),
                     ctx,
@@ -200,9 +200,9 @@ mod tests {
                 c2.change_representation(Representation::PowerBasis);
                 let (mut c0r, mut c1r) = rk.relinearizes_poly(&c2)?;
                 c0r.change_representation(Representation::PowerBasis);
-                c0r.mod_switch_down_to(c0.ctx())?;
+                c0r.switch_down_to(c0.ctx())?;
                 c1r.change_representation(Representation::PowerBasis);
-                c1r.mod_switch_down_to(c1.ctx())?;
+                c1r.switch_down_to(c1.ctx())?;
                 c0r.change_representation(Representation::Ntt);
                 c1r.change_representation(Representation::Ntt);
                 assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);
@@ -232,7 +232,7 @@ mod tests {
                             &mut rng,
                         )?;
 
-                        let ctx = params.ctx_at_level(ciphertext_level)?;
+                        let ctx = params.context_at_level(ciphertext_level)?;
                         let mut s = Poly::try_convert_from(
                             sk.coeffs.as_ref(),
                             ctx,
@@ -261,9 +261,9 @@ mod tests {
                         c2.change_representation(Representation::PowerBasis);
                         let (mut c0r, mut c1r) = rk.relinearizes_poly(&c2)?;
                         c0r.change_representation(Representation::PowerBasis);
-                        c0r.mod_switch_down_to(c0.ctx())?;
+                        c0r.switch_down_to(c0.ctx())?;
                         c1r.change_representation(Representation::PowerBasis);
-                        c1r.mod_switch_down_to(c1.ctx())?;
+                        c1r.switch_down_to(c1.ctx())?;
                         c0r.change_representation(Representation::Ntt);
                         c1r.change_representation(Representation::Ntt);
                         assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);

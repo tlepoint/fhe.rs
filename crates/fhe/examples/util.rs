@@ -104,6 +104,7 @@ pub fn encode_database(
     let dimension_2 = number_rows.div_ceil(dimension_1);
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
+
     let mut preprocessed_database =
         vec![
             bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap();

@@ -3,6 +3,7 @@
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
 mod ciphertext;
+mod context;
 mod encoding;
 mod keys;
 mod ops;
@@ -13,6 +14,7 @@ mod rgsw_ciphertext;
 
 pub mod traits;
 pub use ciphertext::Ciphertext;
+pub use context::{CipherPlainContext, ContextLevel};
 pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};

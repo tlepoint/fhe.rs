@@ -11,7 +11,7 @@ mod util;
 
 use clap::Parser;
 use fhe::bfv;
-use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
+use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
@@ -20,7 +20,7 @@ use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, RngCore};
-use std::{error::Error, sync::Arc};
+use std::error::Error;
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
     timeit::{timeit, timeit_n},
@@ -155,7 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dot_product_mod_switch = move |i, database: &[bfv::Plaintext]| {
             let column = database.iter().skip(i).step_by(dim2);
             let mut c = bfv::dot_product_scalar(query_vec.iter(), column)?;
-            c.mod_switch_to_last_level()?;
+            c.switch_to_level(c.max_switchable_level())?;
             Ok(c)
         };
 
@@ -195,7 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     expanded_query[dim1..].iter(),
                     fold.iter().map(|pts| &pts[i]),
                 )?;
-                outi.mod_switch_to_last_level()?;
+                outi.switch_to_level(outi.max_switchable_level())?;
                 Ok(outi.to_bytes())
             })
             .collect::<fhe::Result<Vec<Vec<u8>>>>()?
@@ -242,11 +242,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         poly0.truncate(params.degree());
         poly1.truncate(params.degree());
 
-        let ctx = Arc::new(Context::new(&params.moduli()[..1], params.degree())?);
+        let ctx = params.context_at_level(2)?;
         let ct = bfv::Ciphertext::new(
             vec![
-                Poly::try_convert_from(poly0, &ctx, true, Representation::Ntt)?,
-                Poly::try_convert_from(poly1, &ctx, true, Representation::Ntt)?,
+                Poly::try_convert_from(poly0, ctx, true, Representation::Ntt)?,
+                Poly::try_convert_from(poly1, ctx, true, Representation::Ntt)?,
             ],
             &params,
         )?;

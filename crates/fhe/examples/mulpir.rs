@@ -168,7 +168,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             out += &(&dot_product_mod_switch(i, &preprocessed_database)? * ci)
         }
         rk.relinearizes(&mut out)?;
-        out.mod_switch_to_last_level()?;
+        out.switch_to_level(out.max_switchable_level())?;
         out.to_bytes()
     });
     println!("📄 Response: {}", HumanBytes(response.len() as u64));

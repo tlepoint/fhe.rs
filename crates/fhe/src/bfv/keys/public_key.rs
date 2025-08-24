@@ -50,10 +50,10 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
     ) -> Result<Ciphertext> {
         let mut ct = self.c.clone();
         while ct.level != pt.level {
-            ct.mod_switch_to_next_level()?;
+            ct.switch_down()?;
         }
 
-        let ctx = self.par.ctx_at_level(ct.level)?;
+        let ctx = self.par.context_at_level(ct.level)?;
         let u = Zeroizing::new(Poly::small(
             ctx,
             Representation::Ntt,

@@ -43,7 +43,7 @@ impl Plaintext {
         self.par
             .plaintext
             .scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
-        let ctx = self.par.ctx_at_level(self.level).unwrap();
+        let ctx = self.par.context_at_level(self.level).unwrap();
         let mut m =
             Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis).unwrap();
         m.change_representation(Representation::Ntt);
@@ -54,7 +54,7 @@ impl Plaintext {
     /// Generate a zero plaintext.
     pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
         let level = encoding.level;
-        let ctx = par.ctx_at_level(level)?;
+        let ctx = par.context_at_level(level)?;
         let value = vec![0u64; par.degree()];
         let poly_ntt = Poly::zero(ctx, Representation::Ntt);
         Ok(Self {
@@ -68,7 +68,7 @@ impl Plaintext {
 
     /// Returns the level of this plaintext.
     pub fn level(&self) -> usize {
-        self.par.level_of_ctx(self.poly_ntt.ctx()).unwrap()
+        self.par.level_of_context(self.poly_ntt.ctx()).unwrap()
     }
 }
 
@@ -101,7 +101,7 @@ impl TryConvertFrom<&Plaintext> for Poly {
         if ctx
             != pt
                 .par
-                .ctx_at_level(pt.level())
+                .context_at_level(pt.level())
                 .map_err(|e| fhe_math::Error::Default(e.to_string()))?
         {
             Err(fhe_math::Error::Default(
@@ -189,7 +189,7 @@ impl FheDecoder<Plaintext> for Vec<u64> {
         match enc.encoding {
             EncodingEnum::Poly => Ok(w),
             EncodingEnum::Simd => {
-                if let Some(op) = &pt.par.op {
+                if let Some(op) = &pt.par.ntt_operator {
                     op.forward(&mut w);
                     let mut w_reordered = w.clone();
                     for i in 0..pt.par.degree() {
@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(plaintext.value, Box::<[u64]>::from([0u64; 16]));
         assert_eq!(
             plaintext.poly_ntt,
-            Poly::zero(&params.ctx[0], Representation::Ntt)
+            Poly::zero(params.context_at_level(0)?, Representation::Ntt)
         );
 
         Ok(())

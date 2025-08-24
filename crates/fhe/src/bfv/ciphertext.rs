@@ -44,40 +44,6 @@ impl DerefMut for Ciphertext {
 }
 
 impl Ciphertext {
-    /// Modulo switch the ciphertext to the last level.
-    pub fn mod_switch_to_last_level(&mut self) -> Result<()> {
-        self.level = self.par.max_level();
-        let last_ctx = self.par.ctx_at_level(self.level)?;
-        self.seed = None;
-        for ci in self.c.iter_mut() {
-            if ci.ctx() != last_ctx {
-                ci.change_representation(Representation::PowerBasis);
-                ci.mod_switch_down_to(last_ctx)?;
-                ci.change_representation(Representation::Ntt);
-            }
-        }
-        Ok(())
-    }
-
-    /// Truncate the underlying vector of polynomials.
-    pub(crate) fn truncate(&mut self, len: usize) {
-        self.c.truncate(len)
-    }
-
-    /// Modulo switch the ciphertext to the next level.
-    pub fn mod_switch_to_next_level(&mut self) -> Result<()> {
-        if self.level < self.par.max_level() {
-            self.seed = None;
-            for ci in self.c.iter_mut() {
-                ci.change_representation(Representation::PowerBasis);
-                ci.mod_switch_down_next()?;
-                ci.change_representation(Representation::Ntt);
-            }
-            self.level += 1
-        }
-        Ok(())
-    }
-
     /// Create a ciphertext from a vector of polynomials.
     /// A ciphertext must contain at least two polynomials, and all polynomials
     /// must be in Ntt representation and with the same context.
@@ -87,7 +53,7 @@ impl Ciphertext {
         }
 
         let ctx = c[0].ctx();
-        let level = par.level_of_ctx(ctx)?;
+        let level = par.level_of_context(ctx)?;
 
         // Check that all polynomials have the expected representation and context.
         for ci in c.iter() {
@@ -108,6 +74,51 @@ impl Ciphertext {
             c,
             level,
         })
+    }
+
+    /// Truncate the underlying vector of polynomials.
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.c.truncate(len)
+    }
+
+    /// Switch to the next level in the chain
+    pub fn switch_down(&mut self) -> Result<()> {
+        if self.level < self.max_switchable_level() {
+            self.seed = None;
+            for ci in self.c.iter_mut() {
+                ci.change_representation(Representation::PowerBasis);
+                ci.switch_down()?;
+                ci.change_representation(Representation::Ntt);
+            }
+            self.level += 1
+        }
+        Ok(())
+    }
+
+    /// Switch to a specific level (only moving down)
+    pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
+        if target_level < self.level {
+            return Err(Error::DefaultError(format!(
+                "Cannot switch to a higher level: current {}, target {}",
+                self.level, target_level
+            )));
+        }
+        if target_level > self.max_switchable_level() {
+            return Err(Error::DefaultError(format!(
+                "Cannot switch to a level higher than the max: max {}, target {}",
+                self.max_switchable_level(),
+                target_level
+            )));
+        }
+        while self.level < target_level {
+            self.switch_down()?;
+        }
+        Ok(())
+    }
+
+    /// Get the deepest level this ciphertext can reach
+    pub fn max_switchable_level(&self) -> usize {
+        self.par.max_level()
     }
 }
 
@@ -174,7 +185,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
             return Err(Error::DefaultError("Invalid level".to_string()));
         }
 
-        let ctx = par.ctx_at_level(value.level as usize)?;
+        let ctx = par.context_at_level(value.level as usize)?;
 
         let mut c = Vec::with_capacity(value.c.len() + 1);
         for cip in &value.c {
@@ -277,7 +288,7 @@ mod tests {
             );
             assert_eq!(ct3.level, 0);
 
-            ct3.mod_switch_to_last_level()?;
+            ct3.switch_to_level(ct3.max_switchable_level())?;
 
             let c0 = ct3.first().unwrap();
             let c1 = ct3.get(1).unwrap();
@@ -293,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
+    fn switch_to_last_level() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -305,7 +316,7 @@ mod tests {
             let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
             assert_eq!(ct.level, 0);
-            ct.mod_switch_to_last_level()?;
+            ct.switch_to_level(ct.max_switchable_level())?;
             assert_eq!(ct.level, params.max_level());
 
             let decrypted = sk.try_decrypt(&ct)?;

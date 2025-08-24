@@ -92,7 +92,7 @@ impl SecretKey {
     ) -> Result<Ciphertext> {
         assert_eq!(p.representation(), &Representation::Ntt);
 
-        let level = self.par.level_of_ctx(p.ctx())?;
+        let level = self.par.level_of_context(p.ctx())?;
 
         let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
         thread_rng().fill(&mut seed);

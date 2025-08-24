@@ -30,8 +30,8 @@ impl GaloisKey {
         galois_key_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_galois_key = sk.par.ctx_at_level(galois_key_level)?;
-        let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+        let ctx_galois_key = sk.par.context_at_level(galois_key_level)?;
+        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
 
         let ciphertext_exponent =
             SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
@@ -44,7 +44,7 @@ impl GaloisKey {
             Representation::PowerBasis,
         )?);
         let s_sub = Zeroizing::new(s.substitute(&ciphertext_exponent)?);
-        let mut s_sub_switched_up = Zeroizing::new(s_sub.mod_switch_to(&switcher_up)?);
+        let mut s_sub_switched_up = Zeroizing::new(s_sub.switch(&switcher_up)?);
         s_sub_switched_up.change_representation(Representation::PowerBasis);
 
         let ksk = KeySwitchingKey::new(
@@ -73,8 +73,8 @@ impl GaloisKey {
         if c0.ctx() != ct[0].ctx() {
             c0.change_representation(Representation::PowerBasis);
             c1.change_representation(Representation::PowerBasis);
-            c0.mod_switch_down_to(ct[0].ctx())?;
-            c1.mod_switch_down_to(ct[1].ctx())?;
+            c0.switch_down_to(ct[0].ctx())?;
+            c1.switch_down_to(ct[1].ctx())?;
             c0.change_representation(Representation::Ntt);
             c1.change_representation(Representation::Ntt);
         }
@@ -117,8 +117,8 @@ impl GaloisKey {
         if out0.ctx() != ct[0].ctx() {
             out0.change_representation(Representation::PowerBasis);
             out1.change_representation(Representation::PowerBasis);
-            out0.mod_switch_down_to(ct[0].ctx())?;
-            out1.mod_switch_down_to(ct[1].ctx())?;
+            out0.switch_down_to(ct[0].ctx())?;
+            out1.switch_down_to(ct[1].ctx())?;
             out0.change_representation(Representation::Ntt);
             out1.change_representation(Representation::Ntt);
         }
@@ -142,7 +142,7 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
         if value.ksk.is_some() {
             let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
 
-            let ctx = par.ctx_at_level(ksk.ciphertext_level)?;
+            let ctx = par.context_at_level(ksk.ciphertext_level)?;
             let element = SubstitutionExponent::new(ctx, value.exponent as usize)
                 .map_err(Error::MathError)?;
 
