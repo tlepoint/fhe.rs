@@ -14,6 +14,7 @@ pub struct Rq {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
+#[non_exhaustive]
 pub enum Representation {
     Unknown = 0,
     Powerbasis = 1,

@@ -8,6 +8,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Enum encapsulating all the possible errors from this library.
 #[derive(Debug, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum Error {
     /// Indicates that an error from the underlying mathematical library was
     /// encountered.
@@ -164,6 +165,7 @@ impl Error {
 /// Separate enum for errors arising from serialization.
 #[derive(Debug, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum SerializationError {
     /// Indicates polynomial context was not found during deserialization
     #[error("Polynomial context not found: {context_id}")]
@@ -216,6 +218,7 @@ impl From<std::io::Error> for SerializationError {
 /// Separate enum to indicate parameters-related errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum ParametersError {
     /// Indicates that the degree is invalid.
     #[error("Invalid polynomial degree {degree}: must be a power of 2 between {min} and {max}")]

@@ -14,7 +14,7 @@ fn test_unified_context_api() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(params.degree(), 16);
     assert_eq!(params.plaintext(), 1153);
     assert_eq!(params.max_level(), 1);
-    assert_eq!(params.context_chain().collect_chain().len(), 2);
+    assert_eq!(params.context_chain().iter_chain().count(), 2);
 
     // Test level-based access
     let ctx_level_0 = params.context_at_level(0)?;

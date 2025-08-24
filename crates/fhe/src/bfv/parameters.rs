@@ -154,9 +154,11 @@ impl BfvParameters {
         Ok(current)
     }
 
-    /// Vector of default parameters providing about 128 bits of security
+    /// Iterator over default parameters providing about 128 bits of security
     /// according to the <https://homomorphicencryption.org> standard.
-    pub fn default_parameters_128(plaintext_nbits: usize) -> Vec<Arc<BfvParameters>> {
+    pub fn default_parameters_128(
+        plaintext_nbits: usize,
+    ) -> impl Iterator<Item = Arc<BfvParameters>> {
         debug_assert!(plaintext_nbits < 64);
 
         let mut n_and_qs = HashMap::new();
@@ -188,27 +190,24 @@ impl BfvParameters {
             ],
         );
 
-        let mut params = vec![];
-
-        for n in n_and_qs.keys().sorted() {
-            let moduli = n_and_qs.get(n).unwrap();
-            if let Some(plaintext_modulus) = generate_prime(
-                plaintext_nbits,
-                2 * *n as u64,
-                u64::MAX >> (64 - plaintext_nbits),
-            ) {
-                params.push(
-                    BfvParametersBuilder::new()
-                        .set_degree(*n as usize)
-                        .set_plaintext_modulus(plaintext_modulus)
-                        .set_moduli(moduli)
-                        .build_arc()
-                        .unwrap(),
+        n_and_qs
+            .into_iter()
+            .sorted_by_key(|(n, _)| *n)
+            .filter_map(move |(n, moduli)| {
+                generate_prime(
+                    plaintext_nbits,
+                    2 * n as u64,
+                    u64::MAX >> (64 - plaintext_nbits),
                 )
-            }
-        }
-
-        params
+                .map(|plaintext_modulus| {
+                    BfvParametersBuilder::new()
+                        .set_degree(n as usize)
+                        .set_plaintext_modulus(plaintext_modulus)
+                        .set_moduli(&moduli)
+                        .build_arc()
+                        .unwrap()
+                })
+            })
     }
 
     #[cfg(test)]
@@ -633,5 +632,11 @@ mod tests {
         let bytes = params.to_bytes();
         assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
         Ok(())
+    }
+
+    #[test]
+    fn default_parameters_iterator() {
+        let mut it = BfvParameters::default_parameters_128(20);
+        assert!(it.next().is_some());
     }
 }

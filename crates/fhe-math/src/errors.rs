@@ -7,6 +7,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Enum encapsulation all the possible errors from this library.
 #[derive(Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// Indicates an invalid modulus
     #[error("Invalid modulus: modulus {0} should be between 2 and (1 << 62) - 1.")]

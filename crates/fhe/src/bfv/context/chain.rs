@@ -91,12 +91,9 @@ impl ContextLevel {
         max
     }
 
-    /// Walk the entire chain and collect all levels
-    pub fn collect_chain(&self) -> Vec<Arc<ContextLevel>> {
-        let mut chain = Vec::new();
-
-        // Navigate to head of the chain
-        let mut current = if let Some(prev) = self.prev.get().and_then(|w| w.upgrade()) {
+    /// Walk the entire chain without allocating a new collection
+    pub fn iter_chain(&self) -> impl Iterator<Item = Arc<ContextLevel>> {
+        let head = if let Some(prev) = self.prev.get().and_then(|w| w.upgrade()) {
             let mut head = prev;
             while let Some(p) = head.prev.get().and_then(|w| w.upgrade()) {
                 head = p;
@@ -106,16 +103,7 @@ impl ContextLevel {
             Arc::new(self.clone())
         };
 
-        // Collect nodes starting from head
-        loop {
-            chain.push(current.clone());
-            match current.next.get() {
-                Some(next) => current = next.clone(),
-                None => break,
-            }
-        }
-
-        chain
+        std::iter::successors(Some(head), |ctx| ctx.next.get().cloned())
     }
 
     /// Access multiplication parameters for this level
@@ -145,7 +133,7 @@ mod tests {
         assert!(!next.can_switch_down());
         assert_eq!(head.max_level(), 1);
 
-        let chain = head.collect_chain();
+        let chain: Vec<_> = head.iter_chain().collect();
         assert_eq!(chain.len(), 2);
     }
 }
