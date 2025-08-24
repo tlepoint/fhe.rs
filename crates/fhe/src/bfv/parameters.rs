@@ -40,20 +40,11 @@ pub struct BfvParameters {
     /// Error variance
     pub(crate) variance: usize,
 
-    /// Plaintext context
-    pub(crate) plaintext_context: Arc<Context>,
-
-    /// Bridge contexts between ciphertext and plaintext for each level
-    pub(crate) cipher_plain_contexts: Vec<Arc<CipherPlainContext>>,
-
     /// Head of the context chain for modulus switching
     pub(crate) context_chain: Arc<ContextLevel>,
 
     /// NTT operator for SIMD plaintext operations, if possible
     pub(crate) ntt_operator: Option<Arc<NttOperator>>,
-
-    /// Pre-computed scaling factors for each level
-    pub(crate) scaling_factors: Vec<ScalingFactor>,
 
     /// Scaling polynomial for the plaintext (delta values for each level)
     pub(crate) delta: Box<[Poly]>,
@@ -125,44 +116,27 @@ impl BfvParameters {
 
     /// Returns the context corresponding to the level.
     pub fn context_at_level(&self, level: usize) -> Result<&Arc<Context>> {
-        self.cipher_plain_contexts
-            .get(level)
-            .map(|cp_ctx| &cp_ctx.ciphertext_context)
-            .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))
+        let mut current: &ContextLevel = &self.context_chain;
+        while current.level < level {
+            current = current
+                .next
+                .get()
+                .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))?
+                .as_ref();
+        }
+        if current.level == level {
+            Ok(&current.poly_context)
+        } else {
+            Err(Error::DefaultError(format!("Invalid level: {level}")))
+        }
     }
 
     /// Returns the level of a given context
     pub fn level_of_context(&self, ctx: &Arc<Context>) -> Result<usize> {
-        if let Some(first_ctx) = self.cipher_plain_contexts.first() {
-            first_ctx
-                .ciphertext_context
-                .niterations_to(ctx)
-                .map_err(Error::MathError)
-        } else {
-            Err(Error::DefaultError("No contexts available".to_string()))
-        }
-    }
-
-    /// Get cipher-plain context for operations at a specific level
-    pub fn cipher_plain_context_at_level(&self, level: usize) -> Result<&Arc<CipherPlainContext>> {
-        self.cipher_plain_contexts
-            .get(level)
-            .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))
-    }
-
-    /// Get the plaintext context (for testing)
-    pub fn plaintext_context(&self) -> &Arc<Context> {
-        &self.plaintext_context
-    }
-
-    /// Get the number of contexts (for testing)
-    pub fn num_contexts(&self) -> usize {
-        self.cipher_plain_contexts.len()
-    }
-
-    /// Get the number of cipher-plain contexts (for testing)
-    pub fn num_cipher_plain_contexts(&self) -> usize {
-        self.cipher_plain_contexts.len()
+        self.context_chain
+            .poly_context
+            .niterations_to(ctx)
+            .map_err(Error::MathError)
     }
 
     /// Return head of context chain
@@ -174,7 +148,7 @@ impl BfvParameters {
     pub fn context_level_at(&self, level: usize) -> Result<Arc<ContextLevel>> {
         let mut current = self.context_chain.clone();
         while current.level < level {
-            match &current.next {
+            match current.next.get() {
                 Some(n) => current = n.clone(),
                 None => return Err(Error::DefaultError(format!("Invalid level: {level}"))),
             }
@@ -445,25 +419,22 @@ impl BfvParametersBuilder {
         cipher_plain_contexts.reverse();
 
         // Build linked context chain
-        let mut chain_head: Option<Arc<ContextLevel>> = None;
-        let mut prev_level: Option<Arc<ContextLevel>> = None;
-        for (lvl, cp_ctx) in cipher_plain_contexts.iter().enumerate() {
-            let mut node = Arc::new(ContextLevel::new(
-                cp_ctx.ciphertext_context.clone(),
-                cp_ctx.clone(),
-                lvl,
-            ));
-            if let Some(ref mut prev) = prev_level {
-                ContextLevel::chain(prev, &mut node);
-            } else {
-                chain_head = Some(node.clone());
-            }
-            prev_level = Some(node);
+        let nodes: Vec<Arc<ContextLevel>> = cipher_plain_contexts
+            .iter()
+            .enumerate()
+            .map(|(lvl, cp_ctx)| {
+                Arc::new(ContextLevel::new(
+                    cp_ctx.ciphertext_context.clone(),
+                    cp_ctx.clone(),
+                    lvl,
+                ))
+            })
+            .collect();
+        for i in 0..nodes.len() - 1 {
+            let (prev, rest) = nodes.split_at(i + 1);
+            ContextLevel::chain(&prev[i], &rest[0]);
         }
-        let context_chain = chain_head.expect("context chain");
-
-        // Create scaling factors (placeholder for now)
-        let scaling_factors = vec![ScalingFactor::one(); cipher_plain_contexts.len()];
+        let context_chain = nodes.first().unwrap().clone();
 
         // Create n+1 moduli of 62 bits for multiplication.
         let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
@@ -547,11 +518,8 @@ impl BfvParametersBuilder {
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
-            plaintext_context,
-            cipher_plain_contexts,
             context_chain,
             ntt_operator,
-            scaling_factors,
             delta: delta_polys.into(),
             q_mod_t: q_mod_t_values.into(),
             scalers: scalers.into(),

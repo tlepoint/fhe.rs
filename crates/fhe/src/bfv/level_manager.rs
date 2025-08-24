@@ -53,3 +53,52 @@ impl LevelManager {
         Ok(target)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bfv::{BfvParametersBuilder, Ciphertext};
+
+    #[test]
+    fn align_two_ciphertexts() {
+        let params = Arc::new(
+            BfvParametersBuilder::new()
+                .set_degree(16)
+                .set_plaintext_modulus(1153)
+                .set_moduli_sizes(&[50, 50])
+                .build()
+                .unwrap(),
+        );
+
+        let chain = params.context_chain();
+        let manager = LevelManager::new(chain);
+
+        let mut ct1 = Ciphertext::zero(&params);
+        let mut ct2 = Ciphertext::zero(&params);
+        ct2.switch_down().unwrap();
+
+        manager.align_levels(&mut ct1, &mut ct2).unwrap();
+        assert_eq!(ct1.level, ct2.level);
+    }
+
+    #[test]
+    fn align_batch_ciphertexts() {
+        let params = Arc::new(
+            BfvParametersBuilder::new()
+                .set_degree(16)
+                .set_plaintext_modulus(1153)
+                .set_moduli_sizes(&[50, 50])
+                .build()
+                .unwrap(),
+        );
+
+        let chain = params.context_chain();
+        let manager = LevelManager::new(chain);
+
+        let mut cts = vec![Ciphertext::zero(&params), Ciphertext::zero(&params)];
+        cts[1].switch_down().unwrap();
+        let level = manager.align_batch(&mut cts).unwrap();
+        assert_eq!(level, cts[0].level);
+        assert_eq!(cts[0].level, cts[1].level);
+    }
+}

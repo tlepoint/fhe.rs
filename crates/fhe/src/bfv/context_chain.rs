@@ -1,4 +1,5 @@
 use std::sync::{Arc, Weak};
+use once_cell::sync::OnceCell;
 
 use fhe_math::{
     rns::ScalingFactor,
@@ -19,13 +20,13 @@ pub struct ContextLevel {
     /// Total number of moduli at this level
     pub num_moduli: usize,
     /// Next level in the chain (fewer moduli)
-    pub next: Option<Arc<ContextLevel>>,
+    pub next: OnceCell<Arc<ContextLevel>>,
     /// Previous level in the chain (more moduli)
-    pub prev: Option<Weak<ContextLevel>>,
+    pub prev: OnceCell<Weak<ContextLevel>>,
     /// Modulus switching scaler to next level
-    pub down_scaler: Option<Arc<Scaler>>,
+    pub down_scaler: OnceCell<Arc<Scaler>>,
     /// Modulus switching scaler from previous level
-    pub up_scaler: Option<Arc<Scaler>>,
+    pub up_scaler: OnceCell<Arc<Scaler>>,
 }
 
 impl PartialEq for ContextLevel {
@@ -50,46 +51,38 @@ impl ContextLevel {
             poly_context,
             cipher_plain_context,
             level,
-            next: None,
-            prev: None,
-            down_scaler: None,
-            up_scaler: None,
+            next: OnceCell::new(),
+            prev: OnceCell::new(),
+            down_scaler: OnceCell::new(),
+            up_scaler: OnceCell::new(),
         }
     }
 
     /// Chain two levels together
-    pub fn chain(prev: &mut Arc<Self>, next: &mut Arc<Self>) {
+    pub fn chain(prev: &Arc<Self>, next: &Arc<Self>) {
         // Create scalers for modulus switching when possible
         if let Ok(ds) = Scaler::new(&prev.poly_context, &next.poly_context, ScalingFactor::one()) {
-            if let Some(p) = Arc::get_mut(prev) {
-                p.down_scaler = Some(Arc::new(ds));
-            }
+            let _ = prev.down_scaler.set(Arc::new(ds));
         }
         if let Ok(us) = Scaler::new(&next.poly_context, &prev.poly_context, ScalingFactor::one()) {
-            if let Some(n) = Arc::get_mut(next) {
-                n.up_scaler = Some(Arc::new(us));
-            }
+            let _ = next.up_scaler.set(Arc::new(us));
         }
-        if let Some(p) = Arc::get_mut(prev) {
-            p.next = Some(next.clone());
-        }
-        if let Some(n) = Arc::get_mut(next) {
-            n.prev = Some(Arc::downgrade(prev));
-        }
+        let _ = prev.next.set(next.clone());
+        let _ = next.prev.set(Arc::downgrade(prev));
     }
 
     /// Check if this level can switch to the next
     pub fn can_switch_down(&self) -> bool {
-        self.next.is_some()
+        self.next.get().is_some()
     }
 
     /// Get the maximum level reachable from this context
     pub fn max_level(&self) -> usize {
         let mut max = self.level;
-        let mut current = &self.next;
+        let mut current = self.next.get();
         while let Some(ctx) = current {
             max = ctx.level;
-            current = &ctx.next;
+            current = ctx.next.get();
         }
         max
     }
@@ -97,17 +90,51 @@ impl ContextLevel {
     /// Walk the entire chain and collect all levels
     pub fn collect_chain(&self) -> Vec<Arc<ContextLevel>> {
         let mut chain = Vec::new();
-        // Move to head
-        let mut current = self.clone();
-        while let Some(prev) = current.prev.as_ref().and_then(|w| w.upgrade()) {
-            current = (*prev).clone();
+
+        // Navigate to head of the chain
+        let mut current = if let Some(prev) = self.prev.get().and_then(|w| w.upgrade()) {
+            let mut head = prev;
+            while let Some(p) = head.prev.get().and_then(|w| w.upgrade()) {
+                head = p;
+            }
+            head
+        } else {
+            Arc::new(self.clone())
+        };
+
+        // Collect nodes starting from head
+        loop {
+            chain.push(current.clone());
+            match current.next.get() {
+                Some(next) => current = next.clone(),
+                None => break,
+            }
         }
-        // Collect
-        let mut cur = Some(Arc::new(current));
-        while let Some(node) = cur {
-            chain.push(node.clone());
-            cur = node.next.clone();
-        }
+
         chain
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bfv::BfvParametersBuilder;
+
+    #[test]
+    fn chain_basics() {
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(1153)
+            .set_moduli_sizes(&[50, 50])
+            .build()
+            .unwrap();
+
+        let head = params.context_chain();
+        assert!(head.can_switch_down());
+        let next = head.next.get().unwrap();
+        assert!(!next.can_switch_down());
+        assert_eq!(head.max_level(), 1);
+
+        let chain = head.collect_chain();
+        assert_eq!(chain.len(), 2);
     }
 }
