@@ -1,6 +1,6 @@
 //! Ciphertext type in the BFV encryption scheme.
 
-use crate::bfv::{context_chain::ContextLevel, parameters::BfvParameters, traits::TryConvertFrom};
+use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
@@ -44,82 +44,6 @@ impl DerefMut for Ciphertext {
 }
 
 impl Ciphertext {
-    /// Modulo switch the ciphertext to the last level.
-    pub fn mod_switch_to_last_level(&mut self) -> Result<()> {
-        self.level = self.par.max_level();
-        let last_ctx = self.par.context_at_level(self.level)?;
-        self.seed = None;
-        for ci in self.c.iter_mut() {
-            if ci.ctx() != last_ctx {
-                ci.change_representation(Representation::PowerBasis);
-                ci.mod_switch_down_to(last_ctx)?;
-                ci.change_representation(Representation::Ntt);
-            }
-        }
-        Ok(())
-    }
-
-    /// Truncate the underlying vector of polynomials.
-    pub(crate) fn truncate(&mut self, len: usize) {
-        self.c.truncate(len)
-    }
-
-    /// Modulo switch the ciphertext to the next level.
-    pub fn mod_switch_to_next_level(&mut self) -> Result<()> {
-        if self.level < self.par.max_level() {
-            self.seed = None;
-            for ci in self.c.iter_mut() {
-                ci.change_representation(Representation::PowerBasis);
-                ci.mod_switch_down_next()?;
-                ci.change_representation(Representation::Ntt);
-            }
-            self.level += 1
-        }
-        Ok(())
-    }
-
-    /// Get the context level for this ciphertext
-    pub fn context_level(&self) -> Arc<ContextLevel> {
-        // safe unwrap: parameters always contain context chain
-        self.par.context_level_at(self.level).unwrap()
-    }
-
-    /// Switch to the next level in the chain
-    pub fn switch_down(&mut self) -> Result<()> {
-        self.mod_switch_to_next_level()
-    }
-
-    /// Switch to a specific level (only moving down)
-    pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
-        if target_level < self.level {
-            return Err(Error::DefaultError(format!(
-                "Cannot switch to a higher level: current {}, target {}",
-                self.level, target_level
-            )));
-        }
-        if target_level > self.par.max_level() {
-            return Err(Error::DefaultError(format!(
-                "Invalid level: {target_level}"
-            )));
-        }
-        while self.level < target_level {
-            self.mod_switch_to_next_level()?;
-        }
-        Ok(())
-    }
-
-    /// Get the deepest level this ciphertext can reach
-    pub fn max_switchable_level(&self) -> usize {
-        self.par.max_level()
-    }
-
-    /// Clone the ciphertext and switch to a specific level
-    pub fn clone_at_level(&self, level: usize) -> Result<Self> {
-        let mut cloned = self.clone();
-        cloned.switch_to_level(level)?;
-        Ok(cloned)
-    }
-
     /// Create a ciphertext from a vector of polynomials.
     /// A ciphertext must contain at least two polynomials, and all polynomials
     /// must be in Ntt representation and with the same context.
@@ -150,6 +74,51 @@ impl Ciphertext {
             c,
             level,
         })
+    }
+
+    /// Truncate the underlying vector of polynomials.
+    pub(crate) fn truncate(&mut self, len: usize) {
+        self.c.truncate(len)
+    }
+
+    /// Switch to the next level in the chain
+    pub fn switch_down(&mut self) -> Result<()> {
+        if self.level < self.max_switchable_level() {
+            self.seed = None;
+            for ci in self.c.iter_mut() {
+                ci.change_representation(Representation::PowerBasis);
+                ci.switch_down()?;
+                ci.change_representation(Representation::Ntt);
+            }
+            self.level += 1
+        }
+        Ok(())
+    }
+
+    /// Switch to a specific level (only moving down)
+    pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
+        if target_level < self.level {
+            return Err(Error::DefaultError(format!(
+                "Cannot switch to a higher level: current {}, target {}",
+                self.level, target_level
+            )));
+        }
+        if target_level > self.max_switchable_level() {
+            return Err(Error::DefaultError(format!(
+                "Cannot switch to a level higher than the max: max {}, target {}",
+                self.max_switchable_level(),
+                target_level
+            )));
+        }
+        while self.level < target_level {
+            self.switch_down()?;
+        }
+        Ok(())
+    }
+
+    /// Get the deepest level this ciphertext can reach
+    pub fn max_switchable_level(&self) -> usize {
+        self.par.max_level()
     }
 }
 
@@ -319,7 +288,7 @@ mod tests {
             );
             assert_eq!(ct3.level, 0);
 
-            ct3.mod_switch_to_last_level()?;
+            ct3.switch_to_level(ct3.max_switchable_level())?;
 
             let c0 = ct3.first().unwrap();
             let c1 = ct3.get(1).unwrap();
@@ -335,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn mod_switch_to_last_level() -> Result<(), Box<dyn Error>> {
+    fn switch_to_last_level() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -347,7 +316,7 @@ mod tests {
             let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
             assert_eq!(ct.level, 0);
-            ct.mod_switch_to_last_level()?;
+            ct.switch_to_level(ct.max_switchable_level())?;
             assert_eq!(ct.level, params.max_level());
 
             let decrypted = sk.try_decrypt(&ct)?;

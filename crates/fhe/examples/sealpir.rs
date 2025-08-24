@@ -5,13 +5,6 @@
 // SealPIR is described in <https://eprint.iacr.org/2017/1142>.
 // We use the same parameters as in Microsoft's public implementation
 // <https://github.com/microsoft/SealPIR> to enable an apple-to-apple comparison.
-//
-// This example demonstrates the unified context management API:
-// - params.fhe_context() provides access to the unified context manager
-// - params.context_at_level(level) gets contexts for specific modulus chain
-//   levels
-// - The API eliminates manual context creation and provides safer, cleaner
-//   access
 
 mod pir;
 mod util;
@@ -69,7 +62,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // Let's generate the BFV parameters structure.
-    // Using the unified context management API provides cleaner access to contexts
     let params = timeit!(
         "Parameters generation",
         bfv::BfvParametersBuilder::new()
@@ -134,7 +126,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
-        // Using the unified context API: level-specific encoding is cleaner
         let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
         let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut thread_rng())?;
         query.to_bytes()
@@ -164,7 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dot_product_mod_switch = move |i, database: &[bfv::Plaintext]| {
             let column = database.iter().skip(i).step_by(dim2);
             let mut c = bfv::dot_product_scalar(query_vec.iter(), column)?;
-            c.mod_switch_to_last_level()?;
+            c.switch_to_level(c.max_switchable_level())?;
             Ok(c)
         };
 
@@ -204,7 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     expanded_query[dim1..].iter(),
                     fold.iter().map(|pts| &pts[i]),
                 )?;
-                outi.mod_switch_to_last_level()?;
+                outi.switch_to_level(outi.max_switchable_level())?;
                 Ok(outi.to_bytes())
             })
             .collect::<fhe::Result<Vec<Vec<u8>>>>()?
@@ -251,9 +242,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         poly0.truncate(params.degree());
         poly1.truncate(params.degree());
 
-        // Using the unified context API: get context at the last level (level 2)
-        // This replaces manual Context::new with a cleaner, level-aware approach
-        // Benefits: eliminates manual moduli management and reduces potential errors
         let ctx = params.context_at_level(2)?;
         let ct = bfv::Ciphertext::new(
             vec![

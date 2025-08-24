@@ -1,6 +1,6 @@
 //! Create parameters for the BFV encryption scheme
 
-use crate::bfv::{context::CipherPlainContext, context_chain::ContextLevel};
+use crate::bfv::{context::CipherPlainContext, context::ContextLevel};
 use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
@@ -372,7 +372,6 @@ impl BfvParametersBuilder {
 
         // Create cipher-plain bridge contexts
         let mut cipher_plain_contexts = Vec::with_capacity(moduli.len());
-        let mut next_context: Option<Arc<CipherPlainContext>> = None;
 
         // Build contexts in reverse order to establish the chain
         for i in (0..moduli.len()).rev() {
@@ -408,11 +407,9 @@ impl BfvParametersBuilder {
                 delta,
                 q_mod_t,
                 plain_threshold,
-                next_context.clone(),
             );
 
             cipher_plain_contexts.push(cipher_plain_ctx.clone());
-            next_context = Some(cipher_plain_ctx);
         }
 
         // Reverse to get correct order (level 0 first)
@@ -585,95 +582,6 @@ mod tests {
     use super::{BfvParameters, BfvParametersBuilder};
     use fhe_traits::{Deserialize, Serialize};
     use std::error::Error;
-
-    // TODO: To fix when errors handling is fixed.
-    // #[test]
-    // fn builder()  -> Result<(), Box<dyn Error>> {
-    // 	let params = BfvParametersBuilder::new().build();
-    // 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified degree"));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(7)
-    // 		.build()
-    // 		.is_err_and(
-    // 			|e| e.to_string() == "The degree should be a power of two larger or equal to
-    // 8" 		));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(1023)
-    // 		.build()
-    // 		.is_err_and(
-    // 			|e| e.to_string() == "The degree should be a power of two larger or equal to
-    // 8" 		));
-
-    // 	let params = BfvParametersBuilder::new().set_degree(1024).build();
-    // 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified plaintext
-    // modulus"));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(1024)
-    // 		.set_plaintext_modulus(0)
-    // 		.build()
-    // 		.is_err_and(|e| e.to_string() == "modulus should be between 2 and
-    // 2^62-1"));
-
-    // 	let params = BfvParametersBuilder::new()
-    // 		.set_degree(1024)
-    // 		.set_plaintext_modulus(2)
-    // 		.build();
-    // 	assert!(params.is_err_and(|e| e.to_string() == "Unspecified ciphertext
-    // moduli"));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(1024)
-    // 		.set_plaintext_modulus(2)
-    // 		.set_moduli(&[])
-    // 		.build()
-    // 		.is_err_and(|e| e.to_string() == "Unspecified ciphertext moduli"));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(1024)
-    // 		.set_plaintext_modulus(2)
-    // 		.set_moduli(&[1153])
-    // 		.set_moduli_sizes(&[62])
-    // 		.build()
-    // 		.is_err_and(|e| e.to_string() == "The set of ciphertext moduli is already
-    // specified"));
-
-    // 	assert!(BfvParametersBuilder::new()
-    // 		.set_degree(8)
-    // 		.set_plaintext_modulus(2)
-    // 		.set_moduli(&[1])
-    // 		.build()
-    // 		.is_err_and(|e| e.to_string() == "modulus should be between 2 and
-    // 2^62-1"));
-
-    // 	let params = BfvParametersBuilder::new()
-    // 		.set_degree(8)
-    // 		.set_plaintext_modulus(2)
-    // 		.set_moduli(&[2])
-    // 		.build();
-    // 	assert!(params.is_err_and(|e| e.to_string() == "Impossible to construct a
-    // Ntt operator"));
-
-    // 	let params = BfvParametersBuilder::new()
-    // 		.set_degree(8)
-    // 		.set_plaintext_modulus(2)
-    // 		.set_moduli(&[1153])
-    // 		.build();
-    // 	assert!(params.is_ok());
-
-    // 	let params = params.unwrap();
-    // 	assert_eq!(params.ciphertext_moduli, vec![1153]);
-    // 	assert_eq!(params.moduli(), vec![1153]);
-    // 	assert_eq!(params.plaintext_modulus, 2);
-    // 	assert_eq!(params.polynomial_degree, 16);
-    // 	assert_eq!(params.degree(), 16);
-    // 	assert_eq!(params.variance, 1);
-    // 	assert!(params.op.is_none());
-
-    // 	Ok(())
-    // }
 
     #[test]
     fn default() {

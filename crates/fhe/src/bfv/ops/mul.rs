@@ -203,8 +203,8 @@ impl Multiplicator {
             if c0r.ctx() != c[0].ctx() {
                 c0r.change_representation(Representation::PowerBasis);
                 c1r.change_representation(Representation::PowerBasis);
-                c0r.mod_switch_down_to(c[0].ctx())?;
-                c1r.mod_switch_down_to(c[1].ctx())?;
+                c0r.switch_down_to(c[0].ctx())?;
+                c1r.switch_down_to(c[1].ctx())?;
             } else {
                 c[0].change_representation(Representation::Ntt);
                 c[1].change_representation(Representation::Ntt);
@@ -225,7 +225,7 @@ impl Multiplicator {
         };
 
         if self.mod_switch {
-            c.mod_switch_to_next_level()?;
+            c.switch_down()?;
         } else {
             c.iter_mut()
                 .for_each(|p| p.change_representation(Representation::Ntt));

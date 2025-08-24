@@ -1,5 +1,5 @@
-use std::sync::{Arc, Weak};
 use once_cell::sync::OnceCell;
+use std::sync::{Arc, Weak};
 
 use fhe_math::{
     rns::ScalingFactor,
@@ -14,19 +14,19 @@ pub struct ContextLevel {
     /// The polynomial context at this level
     pub poly_context: Arc<Context>,
     /// Bridge to plaintext operations
-    pub cipher_plain_context: Arc<CipherPlainContext>,
+    pub(crate) cipher_plain_context: Arc<CipherPlainContext>,
     /// Level number (0 = highest, increases as we switch down)
-    pub level: usize,
+    pub(crate) level: usize,
     /// Total number of moduli at this level
-    pub num_moduli: usize,
+    pub(crate) num_moduli: usize,
     /// Next level in the chain (fewer moduli)
     pub next: OnceCell<Arc<ContextLevel>>,
     /// Previous level in the chain (more moduli)
-    pub prev: OnceCell<Weak<ContextLevel>>,
+    pub(crate) prev: OnceCell<Weak<ContextLevel>>,
     /// Modulus switching scaler to next level
-    pub down_scaler: OnceCell<Arc<Scaler>>,
+    pub(crate) down_scaler: OnceCell<Arc<Scaler>>,
     /// Modulus switching scaler from previous level
-    pub up_scaler: OnceCell<Arc<Scaler>>,
+    pub(crate) up_scaler: OnceCell<Arc<Scaler>>,
 }
 
 impl PartialEq for ContextLevel {

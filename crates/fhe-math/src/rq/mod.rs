@@ -432,7 +432,7 @@ impl Poly {
     ///
     /// Returns an error if there is no next context or if the representation
     /// is not PowerBasis.
-    pub fn mod_switch_down_next(&mut self) -> Result<()> {
+    pub fn switch_down(&mut self) -> Result<()> {
         if self.ctx.next_context.is_none() {
             return Err(Error::NoMoreContext);
         }
@@ -522,10 +522,10 @@ impl Poly {
     /// Returns an error if there is the provided context is not a child of the
     /// current context, or if the polynomial is not in PowerBasis
     /// representation.
-    pub fn mod_switch_down_to(&mut self, context: &Arc<Context>) -> Result<()> {
+    pub fn switch_down_to(&mut self, context: &Arc<Context>) -> Result<()> {
         let niterations = self.ctx.niterations_to(context)?;
         for _ in 0..niterations {
-            self.mod_switch_down_next()?;
+            self.switch_down()?;
         }
         assert_eq!(&self.ctx, context);
         Ok(())
@@ -533,7 +533,7 @@ impl Poly {
 
     /// Modulo switch to another context. The target context needs not to be
     /// related to the current context.
-    pub fn mod_switch_to(&self, switcher: &Switcher) -> Result<Poly> {
+    pub fn switch(&self, switcher: &Switcher) -> Result<Poly> {
         switcher.switch(self)
     }
 
@@ -987,14 +987,14 @@ mod tests {
     }
 
     #[test]
-    fn mod_switch_down_next() -> Result<(), Box<dyn Error>> {
+    fn switch_down() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
         let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         for _ in 0..ntests {
             // If the polynomial has incorrect representation, an error is returned
-            let e = Poly::random(&ctx, Representation::Ntt, &mut rng).mod_switch_down_next();
+            let e = Poly::random(&ctx, Representation::Ntt, &mut rng).switch_down();
             assert!(e.is_err());
             assert_eq!(
                 e.unwrap_err(),
@@ -1013,7 +1013,7 @@ mod tests {
                 let denominator = current_ctx.modulus().clone();
                 current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
                 let numerator = current_ctx.modulus().clone();
-                assert!(p.mod_switch_down_next().is_ok());
+                assert!(p.switch_down().is_ok());
                 assert_eq!(p.ctx, current_ctx);
                 let p_biguint = Vec::<BigUint>::from(&p);
                 assert_eq!(
@@ -1033,7 +1033,7 @@ mod tests {
     }
 
     #[test]
-    fn mod_switch_down_to() -> Result<(), Box<dyn Error>> {
+    fn switch_down_to() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
         let ctx1 = Arc::new(Context::new(MODULI, 16)?);
@@ -1043,7 +1043,7 @@ mod tests {
             let mut p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
             let reference = Vec::<BigUint>::from(&p);
 
-            p.mod_switch_down_to(&ctx2)?;
+            p.switch_down_to(&ctx2)?;
 
             assert_eq!(p.ctx, ctx2);
             assert_eq!(
@@ -1059,7 +1059,7 @@ mod tests {
     }
 
     #[test]
-    fn mod_switch_to() -> Result<(), Box<dyn Error>> {
+    fn switch() -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
         let ntests = 100;
         let ctx1 = Arc::new(Context::new(&MODULI[..2], 16)?);
@@ -1069,7 +1069,7 @@ mod tests {
             let p = Poly::random(&ctx1, Representation::PowerBasis, &mut rng);
             let reference = Vec::<BigUint>::from(&p);
 
-            let q = p.mod_switch_to(&switcher)?;
+            let q = p.switch(&switcher)?;
 
             assert_eq!(q.ctx, ctx2);
             assert_eq!(

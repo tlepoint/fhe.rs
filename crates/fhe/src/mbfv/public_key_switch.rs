@@ -46,7 +46,7 @@ impl PublicKeySwitchShare {
         // Get appropriate context / level for the following computations
         let mut pk_ct = public_key.c.clone();
         while pk_ct.level != ct.level {
-            pk_ct.mod_switch_to_next_level()?;
+            pk_ct.switch_down()?;
         }
         let ctx = par.context_at_level(ct.level)?;
 
