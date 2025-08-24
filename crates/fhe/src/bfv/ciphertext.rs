@@ -1,6 +1,6 @@
 //! Ciphertext type in the BFV encryption scheme.
 
-use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
+use crate::bfv::{context_chain::ContextLevel, parameters::BfvParameters, traits::TryConvertFrom};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
@@ -76,6 +76,48 @@ impl Ciphertext {
             self.level += 1
         }
         Ok(())
+    }
+
+    /// Get the context level for this ciphertext
+    pub fn context_level(&self) -> Arc<ContextLevel> {
+        // safe unwrap: parameters always contain context chain
+        self.par.context_level_at(self.level).unwrap()
+    }
+
+    /// Switch to the next level in the chain
+    pub fn switch_down(&mut self) -> Result<()> {
+        self.mod_switch_to_next_level()
+    }
+
+    /// Switch to a specific level (only moving down)
+    pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
+        if target_level < self.level {
+            return Err(Error::DefaultError(format!(
+                "Cannot switch to a higher level: current {}, target {}",
+                self.level, target_level
+            )));
+        }
+        if target_level > self.par.max_level() {
+            return Err(Error::DefaultError(format!(
+                "Invalid level: {target_level}"
+            )));
+        }
+        while self.level < target_level {
+            self.mod_switch_to_next_level()?;
+        }
+        Ok(())
+    }
+
+    /// Get the deepest level this ciphertext can reach
+    pub fn max_switchable_level(&self) -> usize {
+        self.par.max_level()
+    }
+
+    /// Clone the ciphertext and switch to a specific level
+    pub fn clone_at_level(&self, level: usize) -> Result<Self> {
+        let mut cloned = self.clone();
+        cloned.switch_to_level(level)?;
+        Ok(cloned)
     }
 
     /// Create a ciphertext from a vector of polynomials.

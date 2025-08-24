@@ -1,6 +1,6 @@
 //! Create parameters for the BFV encryption scheme
 
-use crate::bfv::context::CipherPlainContext;
+use crate::bfv::{context::CipherPlainContext, context_chain::ContextLevel};
 use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
@@ -45,6 +45,9 @@ pub struct BfvParameters {
 
     /// Bridge contexts between ciphertext and plaintext for each level
     pub(crate) cipher_plain_contexts: Vec<Arc<CipherPlainContext>>,
+
+    /// Head of the context chain for modulus switching
+    pub(crate) context_chain: Arc<ContextLevel>,
 
     /// NTT operator for SIMD plaintext operations, if possible
     pub(crate) ntt_operator: Option<Arc<NttOperator>>,
@@ -160,6 +163,23 @@ impl BfvParameters {
     /// Get the number of cipher-plain contexts (for testing)
     pub fn num_cipher_plain_contexts(&self) -> usize {
         self.cipher_plain_contexts.len()
+    }
+
+    /// Return head of context chain
+    pub fn context_chain(&self) -> Arc<ContextLevel> {
+        self.context_chain.clone()
+    }
+
+    /// Get context level at a specific depth
+    pub fn context_level_at(&self, level: usize) -> Result<Arc<ContextLevel>> {
+        let mut current = self.context_chain.clone();
+        while current.level < level {
+            match &current.next {
+                Some(n) => current = n.clone(),
+                None => return Err(Error::DefaultError(format!("Invalid level: {level}"))),
+            }
+        }
+        Ok(current)
     }
 
     /// Vector of default parameters providing about 128 bits of security
@@ -424,6 +444,24 @@ impl BfvParametersBuilder {
         // Reverse to get correct order (level 0 first)
         cipher_plain_contexts.reverse();
 
+        // Build linked context chain
+        let mut chain_head: Option<Arc<ContextLevel>> = None;
+        let mut prev_level: Option<Arc<ContextLevel>> = None;
+        for (lvl, cp_ctx) in cipher_plain_contexts.iter().enumerate() {
+            let mut node = Arc::new(ContextLevel::new(
+                cp_ctx.ciphertext_context.clone(),
+                cp_ctx.clone(),
+                lvl,
+            ));
+            if let Some(ref mut prev) = prev_level {
+                ContextLevel::chain(prev, &mut node);
+            } else {
+                chain_head = Some(node.clone());
+            }
+            prev_level = Some(node);
+        }
+        let context_chain = chain_head.expect("context chain");
+
         // Create scaling factors (placeholder for now)
         let scaling_factors = vec![ScalingFactor::one(); cipher_plain_contexts.len()];
 
@@ -511,6 +549,7 @@ impl BfvParametersBuilder {
             variance: self.variance,
             plaintext_context,
             cipher_plain_contexts,
+            context_chain,
             ntt_operator,
             scaling_factors,
             delta: delta_polys.into(),
