@@ -96,6 +96,18 @@ impl Zeroize for Poly {
     }
 }
 
+impl AsRef<Poly> for Poly {
+    fn as_ref(&self) -> &Poly {
+        self
+    }
+}
+
+impl AsMut<Poly> for Poly {
+    fn as_mut(&mut self) -> &mut Poly {
+        self
+    }
+}
+
 impl Poly {
     /// Creates a polynomial holding the constant 0.
     pub fn zero(ctx: &Arc<Context>, representation: Representation) -> Self {
@@ -424,16 +436,15 @@ impl Poly {
         let (mut q_new_polys, mut q_last_poly) =
             self.coefficients.view_mut().split_at(Axis(0), q_len - 1);
 
-        let (add, reduce): (
-            fn(&Modulus, u64, u64) -> u64,
-            unsafe fn(&Modulus, u64) -> u64,
-        ) = if self.allow_variable_time_computations {
-            (
-                |qi, a, b| unsafe { qi.add_vt(a, b) },
-                |qi, a| unsafe { qi.reduce_vt(a) },
-            )
+        let add: fn(&Modulus, u64, u64) -> u64 = if self.allow_variable_time_computations {
+            |qi, a, b| unsafe { qi.add_vt(a, b) }
         } else {
-            (|qi, a, b| qi.add(a, b), |qi, a| qi.reduce(a))
+            |qi, a, b| qi.add(a, b)
+        };
+        let reduce: unsafe fn(&Modulus, u64) -> u64 = if self.allow_variable_time_computations {
+            |qi, a| unsafe { qi.reduce_vt(a) }
+        } else {
+            |qi, a| qi.reduce(a)
         };
 
         q_last_poly
