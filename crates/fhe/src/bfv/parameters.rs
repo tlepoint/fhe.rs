@@ -1,6 +1,6 @@
 //! Create parameters for the BFV encryption scheme
 
-use crate::bfv::context::FheContext;
+use crate::bfv::context::CipherPlainContext;
 use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
@@ -19,6 +19,10 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Parameters for the BFV encryption scheme.
+///
+/// This struct consolidates all parameter-specific data and pre-computed values
+/// needed for BFV operations. It contains the raw parameters as well as
+/// operational contexts and pre-computed scaling factors.
 #[derive(PartialEq, Eq)]
 pub struct BfvParameters {
     /// Number of coefficients in a polynomial.
@@ -28,38 +32,36 @@ pub struct BfvParameters {
     plaintext_modulus: u64,
 
     /// Vector of coprime moduli q_i for the ciphertext.
-    /// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
-    /// must be specified.
     pub(crate) moduli: Box<[u64]>,
 
     /// Vector of the sized of the coprime moduli q_i for the ciphertext.
-    /// One and only one of `ciphertext_moduli` or `ciphertext_moduli_sizes`
-    /// must be specified.
     moduli_sizes: Box<[usize]>,
 
     /// Error variance
     pub(crate) variance: usize,
 
-    /// Unified context manager
-    pub(crate) fhe_context: Arc<FheContext>,
+    /// Plaintext context
+    pub(crate) plaintext_context: Arc<Context>,
 
-    /// Context for the underlying polynomials (deprecated - use fhe_context
-    /// instead)
-    pub(crate) ctx: Vec<Arc<Context>>,
+    /// Bridge contexts between ciphertext and plaintext for each level
+    pub(crate) cipher_plain_contexts: Vec<Arc<CipherPlainContext>>,
 
-    /// Ntt operator for the SIMD plaintext, if possible.
-    pub(crate) op: Option<Arc<NttOperator>>,
+    /// NTT operator for SIMD plaintext operations, if possible
+    pub(crate) ntt_operator: Option<Arc<NttOperator>>,
 
-    /// Scaling polynomial for the plaintext
+    /// Pre-computed scaling factors for each level
+    pub(crate) scaling_factors: Vec<ScalingFactor>,
+
+    /// Scaling polynomial for the plaintext (delta values for each level)
     pub(crate) delta: Box<[Poly]>,
 
-    /// Q modulo the plaintext modulus
+    /// Q modulo the plaintext modulus (for each level)
     pub(crate) q_mod_t: Box<[u64]>,
 
-    /// Down scaler for the plaintext
+    /// Down scalers for the plaintext (for each level)
     pub(crate) scalers: Box<[Scaler]>,
 
-    /// Plaintext Modulus
+    /// Plaintext Modulus as a Modulus type
     pub(crate) plaintext: Modulus,
 
     // Parameters for the multiplications
@@ -119,39 +121,45 @@ impl BfvParameters {
     }
 
     /// Returns the context corresponding to the level.
-    pub(crate) fn ctx_at_level(&self, level: usize) -> Result<&Arc<Context>> {
-        // Use the unified context first, fallback to old method for compatibility
-        self.fhe_context.context_at_level(level).or_else(|_| {
-            self.ctx
-                .get(level)
-                .ok_or_else(|| Error::DefaultError("No context".to_string()))
-        })
+    pub fn context_at_level(&self, level: usize) -> Result<&Arc<Context>> {
+        self.cipher_plain_contexts
+            .get(level)
+            .map(|cp_ctx| &cp_ctx.ciphertext_context)
+            .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))
     }
 
     /// Returns the level of a given context
-    pub(crate) fn level_of_ctx(&self, ctx: &Arc<Context>) -> Result<usize> {
-        // Use the unified context first, fallback to old method for compatibility
-        self.fhe_context
-            .level_of_context(ctx)
-            .or_else(|_| self.ctx[0].niterations_to(ctx).map_err(Error::MathError))
-    }
-
-    /// Get the unified context manager
-    pub fn fhe_context(&self) -> &Arc<FheContext> {
-        &self.fhe_context
-    }
-
-    /// Get the context at a specific level using the unified context system
-    pub fn context_at_level(&self, level: usize) -> Result<&Arc<Context>> {
-        self.fhe_context.context_at_level(level)
+    pub fn level_of_context(&self, ctx: &Arc<Context>) -> Result<usize> {
+        if let Some(first_ctx) = self.cipher_plain_contexts.first() {
+            first_ctx
+                .ciphertext_context
+                .niterations_to(ctx)
+                .map_err(Error::MathError)
+        } else {
+            Err(Error::DefaultError("No contexts available".to_string()))
+        }
     }
 
     /// Get cipher-plain context for operations at a specific level
-    pub fn cipher_plain_context_at_level(
-        &self,
-        level: usize,
-    ) -> Result<&Arc<crate::bfv::context::CipherPlainContext>> {
-        self.fhe_context.cipher_plain_context_at_level(level)
+    pub fn cipher_plain_context_at_level(&self, level: usize) -> Result<&Arc<CipherPlainContext>> {
+        self.cipher_plain_contexts
+            .get(level)
+            .ok_or_else(|| Error::DefaultError(format!("Invalid level: {level}")))
+    }
+
+    /// Get the plaintext context (for testing)
+    pub fn plaintext_context(&self) -> &Arc<Context> {
+        &self.plaintext_context
+    }
+
+    /// Get the number of contexts (for testing)
+    pub fn num_contexts(&self) -> usize {
+        self.cipher_plain_contexts.len()
+    }
+
+    /// Get the number of cipher-plain contexts (for testing)
+    pub fn num_cipher_plain_contexts(&self) -> usize {
+        self.cipher_plain_contexts.len()
     }
 
     /// Vector of default parameters providing about 128 bits of security
@@ -356,19 +364,68 @@ impl BfvParametersBuilder {
             moduli = Self::generate_moduli(&self.ciphertext_moduli_sizes, self.degree)?
         }
 
-        // Create unified context
-        let fhe_context = Arc::new(FheContext::new(
-            self.degree,
-            self.plaintext,
-            &moduli,
-            self.variance,
-        )?);
-
         // Recomputes the moduli sizes
         let moduli_sizes = moduli
             .iter()
             .map(|m| 64 - m.leading_zeros() as usize)
             .collect_vec();
+
+        // Create plaintext context using the first ciphertext modulus
+        let plaintext_context = Context::new_arc(&moduli[..1], self.degree)?;
+
+        // Create NTT operator for SIMD operations if possible
+        let ntt_operator = NttOperator::new(&plaintext_modulus, self.degree).map(Arc::new);
+
+        // Create cipher-plain bridge contexts
+        let mut cipher_plain_contexts = Vec::with_capacity(moduli.len());
+        let mut next_context: Option<Arc<CipherPlainContext>> = None;
+
+        // Build contexts in reverse order to establish the chain
+        for i in (0..moduli.len()).rev() {
+            let level_moduli = &moduli[..moduli.len() - i];
+            let cipher_ctx = Context::new_arc(level_moduli, self.degree)?;
+            // Compute delta (scaling polynomial)
+            let level_moduli = &moduli[..moduli.len() - i];
+            let mut delta_rests = vec![];
+            for m in level_moduli {
+                let q = Modulus::new(*m)?;
+                delta_rests.push(q.inv(q.neg(*plaintext_modulus)).unwrap())
+            }
+
+            // Use RnsContext to lift the delta values and create the scaling polynomial
+            let rns = RnsContext::new(level_moduli)?;
+            let mut delta = Poly::try_convert_from(
+                &[rns.lift((&delta_rests).into())],
+                &cipher_ctx,
+                true,
+                Representation::PowerBasis,
+            )?;
+            delta.change_representation(Representation::NttShoup);
+
+            // Compute q_mod_t
+            let q_mod_t = (rns.modulus() % *plaintext_modulus).to_u64().unwrap();
+
+            // Compute plain_threshold
+            let plain_threshold = self.plaintext.div_ceil(2);
+
+            let cipher_plain_ctx = CipherPlainContext::new_arc(
+                &plaintext_context,
+                &cipher_ctx,
+                delta,
+                q_mod_t,
+                plain_threshold,
+                next_context.clone(),
+            );
+
+            cipher_plain_contexts.push(cipher_plain_ctx.clone());
+            next_context = Some(cipher_plain_ctx);
+        }
+
+        // Reverse to get correct order (level 0 first)
+        cipher_plain_contexts.reverse();
+
+        // Create scaling factors (placeholder for now)
+        let scaling_factors = vec![ScalingFactor::one(); cipher_plain_contexts.len()];
 
         // Create n+1 moduli of 62 bits for multiplication.
         let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
@@ -380,38 +437,36 @@ impl BfvParametersBuilder {
             }
         }
 
-        let op = NttOperator::new(&plaintext_modulus, self.degree);
-
-        let plaintext_ctx = Context::new_arc(&moduli[..1], self.degree)?;
-
         let mut delta_rests = vec![];
+        let mut delta_polys = Vec::with_capacity(moduli.len());
+        let mut q_mod_t_values = Vec::with_capacity(moduli.len());
+        let mut scalers = Vec::with_capacity(moduli.len());
+        let mut mul_params = Vec::with_capacity(moduli.len());
+
         for m in &moduli {
             let q = Modulus::new(*m)?;
             delta_rests.push(q.inv(q.neg(*plaintext_modulus)).unwrap())
         }
 
-        let mut ctx = Vec::with_capacity(moduli.len());
-        let mut delta = Vec::with_capacity(moduli.len());
-        let mut q_mod_t = Vec::with_capacity(moduli.len());
-        let mut scalers = Vec::with_capacity(moduli.len());
-        let mut mul_params = Vec::with_capacity(moduli.len());
         for i in 0..moduli.len() {
-            let rns = RnsContext::new(&moduli[..moduli.len() - i])?;
-            let ctx_i = Context::new_arc(&moduli[..moduli.len() - i], self.degree)?;
+            let level_moduli = &moduli[..moduli.len() - i];
+            let rns = RnsContext::new(level_moduli)?;
+            let ctx_i = &cipher_plain_contexts[i].ciphertext_context;
+
             let mut p = Poly::try_convert_from(
                 &[rns.lift((&delta_rests).into())],
-                &ctx_i,
+                ctx_i,
                 true,
                 Representation::PowerBasis,
             )?;
             p.change_representation(Representation::NttShoup);
-            delta.push(p);
+            delta_polys.push(p);
 
-            q_mod_t.push((rns.modulus() % *plaintext_modulus).to_u64().unwrap());
+            q_mod_t_values.push((rns.modulus() % *plaintext_modulus).to_u64().unwrap());
 
             scalers.push(Scaler::new(
-                &ctx_i,
-                &plaintext_ctx,
+                ctx_i,
+                &plaintext_context,
                 ScalingFactor::new(&BigUint::from(*plaintext_modulus), rns.modulus()),
             )?);
 
@@ -424,13 +479,11 @@ impl BfvParametersBuilder {
             mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
             let mul_1_ctx = Context::new_arc(&mul_1_moduli, self.degree)?;
             mul_params.push(MultiplicationParameters::new(
-                &ctx_i,
+                ctx_i,
                 &mul_1_ctx,
                 ScalingFactor::one(),
                 ScalingFactor::new(&BigUint::from(*plaintext_modulus), ctx_i.modulus()),
             )?);
-
-            ctx.push(ctx_i);
         }
 
         // We use the same code as SEAL
@@ -456,11 +509,12 @@ impl BfvParametersBuilder {
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
-            fhe_context,
-            ctx,
-            op: op.map(Arc::new),
-            delta: delta.into(),
-            q_mod_t: q_mod_t.into(),
+            plaintext_context,
+            cipher_plain_contexts,
+            ntt_operator,
+            scaling_factors,
+            delta: delta_polys.into(),
+            q_mod_t: q_mod_t_values.into(),
             scalers: scalers.into(),
             plaintext: plaintext_modulus,
             mul_params: mul_params.into(),

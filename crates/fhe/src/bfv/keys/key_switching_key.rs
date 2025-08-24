@@ -54,8 +54,8 @@ impl KeySwitchingKey {
         ksk_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_ksk = sk.par.ctx_at_level(ksk_level)?;
-        let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+        let ctx_ksk = sk.par.context_at_level(ksk_level)?;
+        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
 
         if from.ctx() != ctx_ksk {
             return Err(Error::DefaultError(
@@ -382,8 +382,8 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
     fn try_convert_from(value: &KeySwitchingKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
         let ciphertext_level = value.ciphertext_level as usize;
         let ksk_level = value.ksk_level as usize;
-        let ctx_ksk = par.ctx_at_level(ksk_level)?;
-        let ctx_ciphertext = par.ctx_at_level(ciphertext_level)?;
+        let ctx_ksk = par.context_at_level(ksk_level)?;
+        let ctx_ciphertext = par.context_at_level(ciphertext_level)?;
 
         let c0_size: usize;
         let log_base = value.log_base as usize;
@@ -474,7 +474,7 @@ mod tests {
             BfvParameters::default_arc(3, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let ctx = params.ctx_at_level(0)?;
+            let ctx = params.context_at_level(0)?;
             let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng);
             assert!(ksk.is_ok());
@@ -491,7 +491,7 @@ mod tests {
         ] {
             let level = params.moduli().len() - 1;
             let sk = SecretKey::random(&params, &mut rng);
-            let ctx = params.ctx_at_level(level)?;
+            let ctx = params.context_at_level(level)?;
             let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, level, level, &mut rng);
             assert!(ksk.is_ok());
@@ -505,7 +505,7 @@ mod tests {
         for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
-                let ctx = params.ctx_at_level(0)?;
+                let ctx = params.context_at_level(0)?;
                 let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
                 let mut s = Poly::try_convert_from(
@@ -543,7 +543,7 @@ mod tests {
         {
             let params = BfvParameters::default_arc(6, 16);
             let sk = SecretKey::random(&params, &mut rng);
-            let ctx = params.ctx_at_level(0)?;
+            let ctx = params.context_at_level(0)?;
             let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let input = Poly::random(ctx, Representation::PowerBasis, &mut rng);
@@ -566,7 +566,7 @@ mod tests {
         for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
-                let ctx = params.ctx_at_level(5)?;
+                let ctx = params.context_at_level(5)?;
                 let mut p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 5, 5, &mut rng)?;
                 let mut s = Poly::try_convert_from(
@@ -609,7 +609,7 @@ mod tests {
             BfvParameters::default_arc(3, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let ctx = params.ctx_at_level(0)?;
+            let ctx = params.context_at_level(0)?;
             let p = Poly::small(ctx, Representation::PowerBasis, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let ksk_proto = KeySwitchingKeyProto::from(&ksk);

@@ -37,7 +37,7 @@ impl CommonRandomPoly {
         level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx = par.ctx_at_level(level)?;
+        let ctx = par.context_at_level(level)?;
         let poly = Poly::random(ctx, fhe_math::rq::Representation::Ntt, rng);
         Ok(Self { poly })
     }

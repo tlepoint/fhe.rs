@@ -48,7 +48,7 @@ impl PublicKeySwitchShare {
         while pk_ct.level != ct.level {
             pk_ct.mod_switch_to_next_level()?;
         }
-        let ctx = par.ctx_at_level(ct.level)?;
+        let ctx = par.context_at_level(ct.level)?;
 
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),

@@ -47,7 +47,7 @@ impl Ciphertext {
     /// Modulo switch the ciphertext to the last level.
     pub fn mod_switch_to_last_level(&mut self) -> Result<()> {
         self.level = self.par.max_level();
-        let last_ctx = self.par.ctx_at_level(self.level)?;
+        let last_ctx = self.par.context_at_level(self.level)?;
         self.seed = None;
         for ci in self.c.iter_mut() {
             if ci.ctx() != last_ctx {
@@ -87,7 +87,7 @@ impl Ciphertext {
         }
 
         let ctx = c[0].ctx();
-        let level = par.level_of_ctx(ctx)?;
+        let level = par.level_of_context(ctx)?;
 
         // Check that all polynomials have the expected representation and context.
         for ci in c.iter() {
@@ -174,7 +174,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
             return Err(Error::DefaultError("Invalid level".to_string()));
         }
 
-        let ctx = par.ctx_at_level(value.level as usize)?;
+        let ctx = par.context_at_level(value.level as usize)?;
 
         let mut c = Vec::with_capacity(value.c.len() + 1);
         for cip in &value.c {

@@ -86,7 +86,7 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         rng: &mut R,
     ) -> Result<RGSWCiphertext> {
         let level = pt.level;
-        let ctx = self.par.ctx_at_level(level)?;
+        let ctx = self.par.context_at_level(level)?;
 
         let mut m = Zeroizing::new(pt.poly_ntt.clone());
         let mut m_s = Zeroizing::new(Poly::try_convert_from(

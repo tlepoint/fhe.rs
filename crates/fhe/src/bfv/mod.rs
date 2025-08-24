@@ -14,7 +14,7 @@ mod rgsw_ciphertext;
 
 pub mod traits;
 pub use ciphertext::Ciphertext;
-pub use context::{CipherPlainContext, FheContext};
+pub use context::CipherPlainContext;
 pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};

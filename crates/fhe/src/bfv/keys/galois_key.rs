@@ -30,8 +30,8 @@ impl GaloisKey {
         galois_key_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_galois_key = sk.par.ctx_at_level(galois_key_level)?;
-        let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+        let ctx_galois_key = sk.par.context_at_level(galois_key_level)?;
+        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
 
         let ciphertext_exponent =
             SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
@@ -142,7 +142,7 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
         if value.ksk.is_some() {
             let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
 
-            let ctx = par.ctx_at_level(ksk.ciphertext_level)?;
+            let ctx = par.context_at_level(ksk.ciphertext_level)?;
             let element = SubstitutionExponent::new(ctx, value.exponent as usize)
                 .map_err(Error::MathError)?;
 

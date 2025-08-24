@@ -80,7 +80,7 @@ impl<'a, 'b> RelinKeyGenerator<'a, 'b> {
         rng: &mut R,
     ) -> Result<Self> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
         if ctx.moduli().len() == 1 {
             Err(Error::DefaultError(
                 "These parameters do not support key switching".to_string(),
@@ -120,7 +120,7 @@ impl RelinKeyShare<R1> {
     ) -> Result<Self> {
         let par = sk_share.par.clone();
 
-        if crp.len() != par.ctx_at_level(0)?.moduli().len() {
+        if crp.len() != par.context_at_level(0)?.moduli().len() {
             Err(Error::DefaultError(
                 "The size of the CRP polynomial vector must equal the number of ciphertext moduli."
                     .to_string(),
@@ -145,7 +145,7 @@ impl RelinKeyShare<R1> {
         rng: &mut R,
     ) -> Result<Box<[Poly]>> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
 
         let s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
@@ -182,7 +182,7 @@ impl RelinKeyShare<R1> {
         rng: &mut R,
     ) -> Result<Box<[Poly]>> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
@@ -256,7 +256,7 @@ impl RelinKeyShare<R2> {
         rng: &mut R,
     ) -> Result<Box<[Poly]>> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
 
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
@@ -289,7 +289,7 @@ impl RelinKeyShare<R2> {
         rng: &mut R,
     ) -> Result<Box<[Poly]>> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
         let mut s = Zeroizing::new(Poly::try_convert_from(
             sk_share.coeffs.as_ref(),
             ctx,
@@ -324,7 +324,7 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
         let mut shares = iter.into_iter();
         let share = shares.next().ok_or(Error::TooFewValues(0, 1))?;
         let par = share.par.clone();
-        let ctx = par.ctx_at_level(0)?.clone();
+        let ctx = par.context_at_level(0)?.clone();
         let r1 = share.last_round.ok_or(Error::DefaultError(
             "Shares from round 2 should include a copy for the round 1 aggregation.".to_string(),
         ))?;

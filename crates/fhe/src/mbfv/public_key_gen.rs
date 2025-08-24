@@ -36,7 +36,7 @@ impl PublicKeyShare {
         rng: &mut R,
     ) -> Result<Self> {
         let par = sk_share.par.clone();
-        let ctx = par.ctx_at_level(0)?;
+        let ctx = par.context_at_level(0)?;
 
         // Convert secret key to usable polynomial
         let mut s = Zeroizing::new(Poly::try_convert_from(

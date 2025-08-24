@@ -46,8 +46,8 @@ impl RelinearizationKey {
         key_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_relin_key = sk.par.ctx_at_level(key_level)?;
-        let ctx_ciphertext = sk.par.ctx_at_level(ciphertext_level)?;
+        let ctx_relin_key = sk.par.context_at_level(key_level)?;
+        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
 
         if ctx_relin_key.moduli().len() == 1 {
             return Err(Error::DefaultError(
@@ -171,7 +171,7 @@ mod tests {
                 let sk = SecretKey::random(&params, &mut rng);
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
-                let ctx = params.ctx_at_level(0)?;
+                let ctx = params.context_at_level(0)?;
                 let mut s = Poly::try_convert_from(
                     sk.coeffs.as_ref(),
                     ctx,
@@ -232,7 +232,7 @@ mod tests {
                             &mut rng,
                         )?;
 
-                        let ctx = params.ctx_at_level(ciphertext_level)?;
+                        let ctx = params.context_at_level(ciphertext_level)?;
                         let mut s = Poly::try_convert_from(
                             sk.coeffs.as_ref(),
                             ctx,
