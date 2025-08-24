@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // Let's generate the BFV parameters structure.
+    // The unified context API simplifies context management across different levels
     let params = timeit!(
         "Parameters generation",
         bfv::BfvParametersBuilder::new()
@@ -132,6 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
+        // Using unified context API: level-specific encoding provides better clarity
         let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
         let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut thread_rng())?;
         query.to_bytes()

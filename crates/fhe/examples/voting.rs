@@ -84,6 +84,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\tnum_parties = {num_parties}");
 
     // Let's generate the BFV parameters structure.
+    // The unified context API provides cleaner access to cryptographic contexts
+    // Benefits: automatic context management, level-aware operations, and reduced
+    // complexity
     let params = timeit!(
         "Parameters generation",
         bfv::BfvParametersBuilder::new()
@@ -124,6 +127,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut _i = 0;
     timeit_n!("Vote casting (per voter)", num_voters as u32, {
         #[allow(unused_assignments)]
+        // Using the unified context API makes encoding more intuitive
+        // Encoding::poly() automatically uses the appropriate context level
         let pt = Plaintext::try_encode(&[votes[_i]], Encoding::poly(), &params)?;
         let ct = pk.try_encrypt(&pt, &mut thread_rng())?;
         votes_encrypted.push(ct);

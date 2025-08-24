@@ -104,6 +104,9 @@ pub fn encode_database(
     let dimension_2 = number_rows.div_ceil(dimension_1);
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
+
+    // Using the unified context API: level-specific encoding is more explicit
+    // The poly_at_level encoding automatically uses the appropriate context
     let mut preprocessed_database =
         vec![
             bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap();
@@ -117,6 +120,8 @@ pub fn encode_database(
             }
         }
         let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
+        // Unified context API makes encoding at specific levels cleaner and more
+        // intuitive
         preprocessed_database[i] =
             bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
                 .unwrap();

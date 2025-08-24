@@ -1,5 +1,6 @@
 //! Create parameters for the BFV encryption scheme
 
+use crate::bfv::context::FheContext;
 use crate::proto::bfv::Parameters;
 use crate::{Error, ParametersError, Result};
 use fhe_math::{
@@ -39,7 +40,11 @@ pub struct BfvParameters {
     /// Error variance
     pub(crate) variance: usize,
 
-    /// Context for the underlying polynomials
+    /// Unified context manager
+    pub(crate) fhe_context: Arc<FheContext>,
+
+    /// Context for the underlying polynomials (deprecated - use fhe_context
+    /// instead)
     pub(crate) ctx: Vec<Arc<Context>>,
 
     /// Ntt operator for the SIMD plaintext, if possible.
@@ -115,14 +120,38 @@ impl BfvParameters {
 
     /// Returns the context corresponding to the level.
     pub(crate) fn ctx_at_level(&self, level: usize) -> Result<&Arc<Context>> {
-        self.ctx
-            .get(level)
-            .ok_or_else(|| Error::DefaultError("No context".to_string()))
+        // Use the unified context first, fallback to old method for compatibility
+        self.fhe_context.context_at_level(level).or_else(|_| {
+            self.ctx
+                .get(level)
+                .ok_or_else(|| Error::DefaultError("No context".to_string()))
+        })
     }
 
     /// Returns the level of a given context
     pub(crate) fn level_of_ctx(&self, ctx: &Arc<Context>) -> Result<usize> {
-        self.ctx[0].niterations_to(ctx).map_err(Error::MathError)
+        // Use the unified context first, fallback to old method for compatibility
+        self.fhe_context
+            .level_of_context(ctx)
+            .or_else(|_| self.ctx[0].niterations_to(ctx).map_err(Error::MathError))
+    }
+
+    /// Get the unified context manager
+    pub fn fhe_context(&self) -> &Arc<FheContext> {
+        &self.fhe_context
+    }
+
+    /// Get the context at a specific level using the unified context system
+    pub fn context_at_level(&self, level: usize) -> Result<&Arc<Context>> {
+        self.fhe_context.context_at_level(level)
+    }
+
+    /// Get cipher-plain context for operations at a specific level
+    pub fn cipher_plain_context_at_level(
+        &self,
+        level: usize,
+    ) -> Result<&Arc<crate::bfv::context::CipherPlainContext>> {
+        self.fhe_context.cipher_plain_context_at_level(level)
     }
 
     /// Vector of default parameters providing about 128 bits of security
@@ -327,6 +356,14 @@ impl BfvParametersBuilder {
             moduli = Self::generate_moduli(&self.ciphertext_moduli_sizes, self.degree)?
         }
 
+        // Create unified context
+        let fhe_context = Arc::new(FheContext::new(
+            self.degree,
+            self.plaintext,
+            &moduli,
+            self.variance,
+        )?);
+
         // Recomputes the moduli sizes
         let moduli_sizes = moduli
             .iter()
@@ -419,6 +456,7 @@ impl BfvParametersBuilder {
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
+            fhe_context,
             ctx,
             op: op.map(Arc::new),
             delta: delta.into(),
