@@ -46,20 +46,8 @@ pub struct BfvParameters {
     /// NTT operator for SIMD plaintext operations, if possible
     pub(crate) ntt_operator: Option<Arc<NttOperator>>,
 
-    /// Scaling polynomial for the plaintext (delta values for each level)
-    pub(crate) delta: Box<[Poly]>,
-
-    /// Q modulo the plaintext modulus (for each level)
-    pub(crate) q_mod_t: Box<[u64]>,
-
-    /// Down scalers for the plaintext (for each level)
-    pub(crate) scalers: Box<[Scaler]>,
-
     /// Plaintext Modulus as a Modulus type
     pub(crate) plaintext: Modulus,
-
-    // Parameters for the multiplications
-    pub(crate) mul_params: Box<[MultiplicationParameters]>,
 
     pub(crate) matrix_reps_index_map: Box<[usize]>,
 }
@@ -74,11 +62,7 @@ impl Debug for BfvParameters {
             // .field("variance", &self.variance)
             // .field("ctx", &self.ctx)
             // .field("op", &self.op)
-            // .field("delta", &self.delta)
-            // .field("q_mod_t", &self.q_mod_t)
-            // .field("scaler", &self.scaler)
             // .field("plaintext", &self.plaintext)
-            // .field("mul_params", &self.mul_params)
             // .field("matrix_reps_index_map", &self.matrix_reps_index_map)
             .finish()
     }
@@ -378,7 +362,6 @@ impl BfvParametersBuilder {
             let level_moduli = &moduli[..moduli.len() - i];
             let cipher_ctx = Context::new_arc(level_moduli, self.degree)?;
             // Compute delta (scaling polynomial)
-            let level_moduli = &moduli[..moduli.len() - i];
             let mut delta_rests = vec![];
             for m in level_moduli {
                 let q = Modulus::new(*m)?;
@@ -401,12 +384,20 @@ impl BfvParametersBuilder {
             // Compute plain_threshold
             let plain_threshold = self.plaintext.div_ceil(2);
 
+            // Scaler from ciphertext to plaintext context
+            let scaler = Scaler::new(
+                &cipher_ctx,
+                &plaintext_context,
+                ScalingFactor::new(&BigUint::from(*plaintext_modulus), rns.modulus()),
+            )?;
+
             let cipher_plain_ctx = CipherPlainContext::new_arc(
                 &plaintext_context,
                 &cipher_ctx,
                 delta,
                 q_mod_t,
                 plain_threshold,
+                scaler,
             );
 
             cipher_plain_contexts.push(cipher_plain_ctx.clone());
@@ -443,39 +434,8 @@ impl BfvParametersBuilder {
             }
         }
 
-        let mut delta_rests = vec![];
-        let mut delta_polys = Vec::with_capacity(moduli.len());
-        let mut q_mod_t_values = Vec::with_capacity(moduli.len());
-        let mut scalers = Vec::with_capacity(moduli.len());
-        let mut mul_params = Vec::with_capacity(moduli.len());
-
-        for m in &moduli {
-            let q = Modulus::new(*m)?;
-            delta_rests.push(q.inv(q.neg(*plaintext_modulus)).unwrap())
-        }
-
-        for i in 0..moduli.len() {
-            let level_moduli = &moduli[..moduli.len() - i];
-            let rns = RnsContext::new(level_moduli)?;
-            let ctx_i = &cipher_plain_contexts[i].ciphertext_context;
-
-            let mut p = Poly::try_convert_from(
-                &[rns.lift((&delta_rests).into())],
-                ctx_i,
-                true,
-                Representation::PowerBasis,
-            )?;
-            p.change_representation(Representation::NttShoup);
-            delta_polys.push(p);
-
-            q_mod_t_values.push((rns.modulus() % *plaintext_modulus).to_u64().unwrap());
-
-            scalers.push(Scaler::new(
-                ctx_i,
-                &plaintext_context,
-                ScalingFactor::new(&BigUint::from(*plaintext_modulus), rns.modulus()),
-            )?);
-
+        // Compute multiplication parameters for each level
+        for (i, node) in nodes.iter().enumerate() {
             // For the first multiplication, we want to extend to a context that
             // is ~60 bits larger.
             let modulus_size = moduli_sizes[..moduli_sizes.len() - i].iter().sum::<usize>();
@@ -484,12 +444,16 @@ impl BfvParametersBuilder {
             mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
             mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
             let mul_1_ctx = Context::new_arc(&mul_1_moduli, self.degree)?;
-            mul_params.push(MultiplicationParameters::new(
-                ctx_i,
+            let mp = MultiplicationParameters::new(
+                &node.poly_context,
                 &mul_1_ctx,
                 ScalingFactor::one(),
-                ScalingFactor::new(&BigUint::from(*plaintext_modulus), ctx_i.modulus()),
-            )?);
+                ScalingFactor::new(
+                    &BigUint::from(*plaintext_modulus),
+                    node.poly_context.modulus(),
+                ),
+            )?;
+            node.mul_params.set(mp).unwrap();
         }
 
         // We use the same code as SEAL
@@ -517,11 +481,7 @@ impl BfvParametersBuilder {
             variance: self.variance,
             context_chain,
             ntt_operator,
-            delta: delta_polys.into(),
-            q_mod_t: q_mod_t_values.into(),
-            scalers: scalers.into(),
             plaintext: plaintext_modulus,
-            mul_params: mul_params.into(),
             matrix_reps_index_map: matrix_reps_index_map.into(),
         })
     }
@@ -553,7 +513,7 @@ impl Deserialize for BfvParameters {
 }
 
 /// Multiplication parameters
-#[derive(Debug, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct MultiplicationParameters {
     pub(crate) extender: Scaler,
     pub(crate) down_scaler: Scaler,

@@ -40,14 +40,15 @@ impl FhePlaintext for Plaintext {
 impl Plaintext {
     pub(crate) fn to_poly(&self) -> Poly {
         let mut m_v = Zeroizing::new(self.value.clone());
+        let ctx_lvl = self.par.context_level_at(self.level).unwrap();
         self.par
             .plaintext
-            .scalar_mul_vec(&mut m_v, self.par.q_mod_t[self.level]);
-        let ctx = self.par.context_at_level(self.level).unwrap();
+            .scalar_mul_vec(&mut m_v, ctx_lvl.cipher_plain_context.q_mod_t);
+        let ctx = &ctx_lvl.poly_context;
         let mut m =
             Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis).unwrap();
         m.change_representation(Representation::Ntt);
-        m *= &self.par.delta[self.level];
+        m *= &ctx_lvl.cipher_plain_context.delta;
         m
     }
 
