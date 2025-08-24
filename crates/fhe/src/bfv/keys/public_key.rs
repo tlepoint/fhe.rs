@@ -3,7 +3,7 @@
 use crate::bfv::traits::TryConvertFrom;
 use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext};
 use crate::proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto};
-use crate::{Error, Result};
+use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
 use prost::Message;
@@ -113,12 +113,19 @@ impl DeserializeParametrized for PublicKey {
     type Error = Error;
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
-        let proto: PublicKeyProto =
-            Message::decode(bytes).map_err(|_| Error::SerializationError)?;
+        let proto: PublicKeyProto = Message::decode(bytes).map_err(|_| {
+            Error::SerializationError(SerializationError::ProtobufError {
+                message: "PublicKey decode".into(),
+            })
+        })?;
         if proto.c.is_some() {
             let mut c = Ciphertext::try_convert_from(&proto.c.unwrap(), par)?;
             if c.level != 0 {
-                Err(Error::SerializationError)
+                Err(Error::SerializationError(
+                    SerializationError::InvalidFormat {
+                        reason: "ciphertext level must be 0".into(),
+                    },
+                ))
             } else {
                 // The polynomials of a public key should not allow for variable time
                 // computation.
@@ -130,7 +137,11 @@ impl DeserializeParametrized for PublicKey {
                 })
             }
         } else {
-            Err(Error::SerializationError)
+            Err(Error::SerializationError(
+                SerializationError::MissingField {
+                    field_name: "c".into(),
+                },
+            ))
         }
     }
 }

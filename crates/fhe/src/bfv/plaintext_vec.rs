@@ -44,7 +44,10 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
-            return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
+            return Err(Error::EncodingNotSupported {
+                encoding: EncodingEnum::Simd.to_string(),
+                reason: "NTT operator not available".into(),
+            });
         }
         let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
@@ -62,7 +65,9 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                             }
                             par.ntt_operator
                                 .as_ref()
-                                .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
+                                .ok_or(Error::InvalidPlaintext {
+                                    reason: "No Ntt operator".into(),
+                                })?
                                 .backward_vt(v.as_mut_ptr());
                         }
                     };
@@ -91,7 +96,10 @@ impl FheEncoder<&[u64]> for PlaintextVec {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
-            return Err(Error::EncodingNotSupported(EncodingEnum::Simd.to_string()));
+            return Err(Error::EncodingNotSupported {
+                encoding: EncodingEnum::Simd.to_string(),
+                reason: "NTT operator not available".into(),
+            });
         }
         let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
@@ -109,7 +117,9 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                             }
                             par.ntt_operator
                                 .as_ref()
-                                .ok_or(Error::DefaultError("No Ntt operator".to_string()))?
+                                .ok_or(Error::InvalidPlaintext {
+                                    reason: "No Ntt operator".into(),
+                                })?
                                 .backward(&mut v);
                         }
                     };
@@ -190,11 +200,11 @@ mod tests {
         let a = vec![1u64];
         assert!(matches!(
             PlaintextVec::try_encode(&a, Encoding::simd(), &params),
-            Err(crate::Error::EncodingNotSupported(_))
+            Err(crate::Error::EncodingNotSupported { .. })
         ));
         assert!(matches!(
             unsafe { PlaintextVec::try_encode_vt(&a, Encoding::simd(), &params) },
-            Err(crate::Error::EncodingNotSupported(_))
+            Err(crate::Error::EncodingNotSupported { .. })
         ));
         Ok(())
     }
