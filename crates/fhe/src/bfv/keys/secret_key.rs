@@ -182,7 +182,8 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             }
             c.change_representation(Representation::PowerBasis);
 
-            let d = Zeroizing::new(c.scale(&self.par.scalers[ct.level])?);
+            let ctx_lvl = self.par.context_level_at(ct.level).unwrap();
+            let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
             // TODO: Can we handle plaintext moduli that are BigUint?
             let v = Zeroizing::new(

@@ -177,7 +177,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
 
         if rhs == self {
             // Squaring operation
-            let mp = &self.par.mul_params[self.level];
+            let ctx_lvl = self.par.context_level_at(self.level).unwrap();
+            let mp = ctx_lvl.mul_params();
 
             // Scale all ciphertexts
             // let mut now = std::time::SystemTime::now();
@@ -222,7 +223,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
             assert_eq!(self.par, rhs.par);
             assert_eq!(self.level, rhs.level);
 
-            let mp = &self.par.mul_params[self.level];
+            let ctx_lvl = self.par.context_level_at(self.level).unwrap();
+            let mp = ctx_lvl.mul_params();
 
             // Scale all ciphertexts
             // let mut now = std::time::SystemTime::now();

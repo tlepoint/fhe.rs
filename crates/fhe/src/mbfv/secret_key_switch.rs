@@ -149,7 +149,8 @@ impl Aggregate<DecryptionShare> for Plaintext {
         c.change_representation(Representation::PowerBasis);
 
         // The true decryption part is done during SKS; all that is left is to scale
-        let d = Zeroizing::new(c.scale(&ct.par.scalers[ct.level])?);
+        let ctx_lvl = ct.par.context_level_at(ct.level).unwrap();
+        let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
         let v = Zeroizing::new(
             Vec::<u64>::from(d.as_ref())
                 .iter_mut()

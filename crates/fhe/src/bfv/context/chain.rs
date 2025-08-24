@@ -6,7 +6,7 @@ use fhe_math::{
     rq::{scaler::Scaler, Context},
 };
 
-use crate::bfv::context::CipherPlainContext;
+use crate::bfv::{context::CipherPlainContext, parameters::MultiplicationParameters};
 
 /// A context in the modulus switching chain
 #[derive(Debug, Clone)]
@@ -27,6 +27,9 @@ pub struct ContextLevel {
     pub(crate) down_scaler: OnceCell<Arc<Scaler>>,
     /// Modulus switching scaler from previous level
     pub(crate) up_scaler: OnceCell<Arc<Scaler>>,
+    /// Parameters required for ciphertext-ciphertext multiplication at this
+    /// level
+    pub(crate) mul_params: OnceCell<MultiplicationParameters>,
 }
 
 impl PartialEq for ContextLevel {
@@ -55,6 +58,7 @@ impl ContextLevel {
             prev: OnceCell::new(),
             down_scaler: OnceCell::new(),
             up_scaler: OnceCell::new(),
+            mul_params: OnceCell::new(),
         }
     }
 
@@ -112,6 +116,13 @@ impl ContextLevel {
         }
 
         chain
+    }
+
+    /// Access multiplication parameters for this level
+    pub(crate) fn mul_params(&self) -> &MultiplicationParameters {
+        self.mul_params
+            .get()
+            .expect("multiplication parameters not set")
     }
 }
 
