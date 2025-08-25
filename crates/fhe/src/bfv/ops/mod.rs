@@ -9,29 +9,60 @@ pub use mul::Multiplicator;
 use super::{Ciphertext, Plaintext};
 use crate::{Error, Result};
 use fhe_math::rq::{Poly, Representation};
-use itertools::{izip, Itertools as _};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::sync::Arc;
 
 impl Add<&Ciphertext> for &Ciphertext {
     type Output = Ciphertext;
 
     fn add(self, rhs: &Ciphertext) -> Ciphertext {
-        let mut self_clone = self.clone();
-        self_clone += rhs;
-        self_clone
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
+
+        if self.is_empty() {
+            return rhs.clone();
+        }
+        if rhs.is_empty() {
+            return self.clone();
+        }
+
+        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.len(), rhs.len());
+
+        let c = self
+            .iter()
+            .zip(rhs.iter())
+            .map(|(c1i, c2i)| c1i + c2i)
+            .collect::<Vec<_>>();
+        Ciphertext {
+            par: self.par.clone(),
+            seed: None,
+            c,
+            level: self.level,
+        }
+    }
+}
+
+impl Add<&Ciphertext> for Ciphertext {
+    type Output = Ciphertext;
+
+    fn add(mut self, rhs: &Ciphertext) -> Ciphertext {
+        self += rhs;
+        self
     }
 }
 
 impl AddAssign<&Ciphertext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Ciphertext) {
-        assert_eq!(self.par, rhs.par);
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
 
         if self.is_empty() {
             *self = rhs.clone()
         } else if !rhs.is_empty() {
             assert_eq!(self.level, rhs.level);
             assert_eq!(self.len(), rhs.len());
-            izip!(self.iter_mut(), rhs.iter()).for_each(|(c1i, c2i)| *c1i += c2i);
+            self.iter_mut()
+                .zip(rhs.iter())
+                .for_each(|(c1i, c2i)| *c1i += c2i);
             self.seed = None
         }
     }
@@ -57,7 +88,7 @@ impl Add<&Ciphertext> for &Plaintext {
 
 impl AddAssign<&Plaintext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Plaintext) {
-        assert_eq!(self.par, rhs.par);
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
         assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level);
 
@@ -67,26 +98,66 @@ impl AddAssign<&Plaintext> for Ciphertext {
     }
 }
 
+impl Add<&Plaintext> for Ciphertext {
+    type Output = Ciphertext;
+
+    fn add(mut self, rhs: &Plaintext) -> Ciphertext {
+        self += rhs;
+        self
+    }
+}
+
 impl Sub<&Ciphertext> for &Ciphertext {
     type Output = Ciphertext;
 
     fn sub(self, rhs: &Ciphertext) -> Ciphertext {
-        let mut self_clone = self.clone();
-        self_clone -= rhs;
-        self_clone
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
+
+        if self.is_empty() {
+            return -rhs.clone();
+        }
+        if rhs.is_empty() {
+            return self.clone();
+        }
+
+        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.len(), rhs.len());
+
+        let c = self
+            .iter()
+            .zip(rhs.iter())
+            .map(|(c1i, c2i)| c1i - c2i)
+            .collect::<Vec<_>>();
+        Ciphertext {
+            par: self.par.clone(),
+            seed: None,
+            c,
+            level: self.level,
+        }
+    }
+}
+
+impl Sub<&Ciphertext> for Ciphertext {
+    type Output = Ciphertext;
+
+    fn sub(mut self, rhs: &Ciphertext) -> Ciphertext {
+        self -= rhs;
+        self
     }
 }
 
 impl SubAssign<&Ciphertext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Ciphertext) {
-        assert_eq!(self.par, rhs.par);
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
 
         if self.is_empty() {
             *self = -rhs
         } else if !rhs.is_empty() {
             assert_eq!(self.level, rhs.level);
             assert_eq!(self.len(), rhs.len());
-            izip!(self.iter_mut(), rhs.iter()).for_each(|(c1i, c2i)| *c1i -= c2i);
+            self.iter_mut()
+                .zip(rhs.iter())
+                .for_each(|(c1i, c2i)| *c1i -= c2i);
             self.seed = None
         }
     }
@@ -112,7 +183,7 @@ impl Sub<&Ciphertext> for &Plaintext {
 
 impl SubAssign<&Plaintext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Plaintext) {
-        assert_eq!(self.par, rhs.par);
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
         assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level);
 
@@ -122,11 +193,20 @@ impl SubAssign<&Plaintext> for Ciphertext {
     }
 }
 
+impl Sub<&Plaintext> for Ciphertext {
+    type Output = Ciphertext;
+
+    fn sub(mut self, rhs: &Plaintext) -> Ciphertext {
+        self -= rhs;
+        self
+    }
+}
+
 impl Neg for &Ciphertext {
     type Output = Ciphertext;
 
     fn neg(self) -> Ciphertext {
-        let c = self.iter().map(|c1i| -c1i).collect_vec();
+        let c = self.iter().map(|c1i| -c1i).collect::<Vec<_>>();
         Ciphertext {
             par: self.par.clone(),
             seed: None,
@@ -148,7 +228,7 @@ impl Neg for Ciphertext {
 
 impl MulAssign<&Plaintext> for Ciphertext {
     fn mul_assign(&mut self, rhs: &Plaintext) {
-        assert_eq!(self.par, rhs.par);
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
         if !self.is_empty() {
             assert_eq!(self.level, rhs.level);
             self.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
@@ -164,6 +244,15 @@ impl Mul<&Plaintext> for &Ciphertext {
         let mut self_clone = self.clone();
         self_clone *= rhs;
         self_clone
+    }
+}
+
+impl Mul<&Plaintext> for Ciphertext {
+    type Output = Ciphertext;
+
+    fn mul(mut self, rhs: &Plaintext) -> Ciphertext {
+        self *= rhs;
+        self
     }
 }
 
@@ -220,7 +309,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
                 level: rhs.level,
             }
         } else {
-            assert_eq!(self.par, rhs.par);
+            assert!(Arc::ptr_eq(&self.par, &rhs.par));
             assert_eq!(self.level, rhs.level);
 
             let ctx_lvl = self.par.context_level_at(self.level).unwrap();
@@ -305,15 +394,17 @@ mod tests {
                     let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
                     let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
-                    let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
+                    let mut ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
                     assert_eq!(ct_a, &ct_a + &zero);
                     assert_eq!(ct_a, &zero + &ct_a);
                     let ct_b: Ciphertext = sk.try_encrypt(&pt_b, &mut rng)?;
                     let ct_c = &ct_a + &ct_b;
+                    let ct_c_owned = ct_a.clone() + &ct_b;
                     ct_a += &ct_b;
 
                     let pt_c = sk.try_decrypt(&ct_c)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
+                    assert_eq!(ct_c_owned, ct_c);
                     let pt_c = sk.try_decrypt(&ct_a)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
                 }
@@ -344,7 +435,7 @@ mod tests {
                     let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
                     let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
-                    let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
+                    let mut ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
                     assert_eq!(
                         Vec::<u64>::try_decode(
                             &sk.try_decrypt(&(&ct_a + &zero))?,
@@ -360,10 +451,12 @@ mod tests {
                         a
                     );
                     let ct_c = &ct_a + &pt_b;
+                    let ct_c_owned = ct_a.clone() + &pt_b;
                     ct_a += &pt_b;
 
                     let pt_c = sk.try_decrypt(&ct_c)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
+                    assert_eq!(ct_c_owned, ct_c);
                     let pt_c = sk.try_decrypt(&ct_a)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
                 }
@@ -395,7 +488,7 @@ mod tests {
                     let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
                     let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
-                    let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
+                    let mut ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
                     assert_eq!(ct_a, &ct_a - &zero);
                     assert_eq!(
                         Vec::<u64>::try_decode(
@@ -406,10 +499,12 @@ mod tests {
                     );
                     let ct_b: Ciphertext = sk.try_encrypt(&pt_b, &mut rng)?;
                     let ct_c = &ct_a - &ct_b;
+                    let ct_c_owned = ct_a.clone() - &ct_b;
                     ct_a -= &ct_b;
 
                     let pt_c = sk.try_decrypt(&ct_c)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
+                    assert_eq!(ct_c_owned, ct_c);
                     let pt_c = sk.try_decrypt(&ct_a)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
                 }
@@ -441,7 +536,7 @@ mod tests {
                     let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
                     let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
-                    let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
+                    let mut ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
                     assert_eq!(
                         Vec::<u64>::try_decode(
                             &sk.try_decrypt(&(&ct_a - &zero))?,
@@ -457,10 +552,12 @@ mod tests {
                         a_neg
                     );
                     let ct_c = &ct_a - &pt_b;
+                    let ct_c_owned = ct_a.clone() - &pt_b;
                     ct_a -= &pt_b;
 
                     let pt_c = sk.try_decrypt(&ct_c)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
+                    assert_eq!(ct_c_owned, ct_c);
                     let pt_c = sk.try_decrypt(&ct_a)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
                 }
@@ -543,12 +640,14 @@ mod tests {
                     let pt_a = Plaintext::try_encode(&a, encoding.clone(), &params)?;
                     let pt_b = Plaintext::try_encode(&b, encoding.clone(), &params)?;
 
-                    let mut ct_a = sk.try_encrypt(&pt_a, &mut rng)?;
+                    let mut ct_a: Ciphertext = sk.try_encrypt(&pt_a, &mut rng)?;
                     let ct_c = &ct_a * &pt_b;
+                    let ct_c_owned = ct_a.clone() * &pt_b;
                     ct_a *= &pt_b;
 
                     let pt_c = sk.try_decrypt(&ct_c)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
+                    assert_eq!(ct_c_owned, ct_c);
                     let pt_c = sk.try_decrypt(&ct_a)?;
                     assert_eq!(Vec::<u64>::try_decode(&pt_c, encoding.clone())?, c);
                 }
