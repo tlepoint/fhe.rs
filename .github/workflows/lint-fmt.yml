@@ -16,7 +16,7 @@ jobs:
       CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -35,7 +35,7 @@ jobs:
       CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
