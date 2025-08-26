@@ -430,14 +430,14 @@ mod tests {
         Error as CrateError,
     };
     use num_bigint::BigUint;
-    use rand::thread_rng;
+    use rand::rng;
     use std::{error::Error, sync::Arc};
 
     static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
 
     #[test]
     fn proto() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn biguint() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..100 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);

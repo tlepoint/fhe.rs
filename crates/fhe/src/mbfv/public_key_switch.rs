@@ -118,7 +118,7 @@ mod tests {
     use std::sync::Arc;
 
     use fhe_traits::{FheDecrypter, FheEncoder, FheEncrypter};
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn encrypt_keyswitch_decrypt() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for par in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 32),

@@ -10,7 +10,7 @@ use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
 use fhe_util::sample_vec_cbd;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use rand::{thread_rng, CryptoRng, Rng, RngCore, SeedableRng};
+use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -95,7 +95,7 @@ impl SecretKey {
         let level = self.par.level_of_context(p.ctx())?;
 
         let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-        thread_rng().fill(&mut seed);
+        rand::rng().fill(&mut seed);
 
         // Let's create a secret key with the ciphertext context
         let mut s = Zeroizing::new(Poly::try_convert_from(
@@ -219,12 +219,12 @@ mod tests {
     use super::SecretKey;
     use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext};
     use fhe_traits::{FheDecrypter, FheEncoder, FheEncrypter};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn keygen() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BfvParameters::default_arc(1, 16);
         let sk = SecretKey::random(&params, &mut rng);
         assert_eq!(sk.par, params);
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),

@@ -86,7 +86,7 @@ impl Aggregate<PublicKeyShare> for PublicKey {
 #[cfg(test)]
 mod tests {
     use fhe_traits::{FheEncoder, FheEncrypter};
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
@@ -102,7 +102,7 @@ mod tests {
     // encryptions complete without error. See a full encrypt->decrypt test in
     // `secret_key_switch`.
     fn protocol_creates_valid_pk() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for par in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 32),

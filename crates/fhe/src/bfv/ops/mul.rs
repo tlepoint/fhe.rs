@@ -246,14 +246,14 @@ mod tests {
     };
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use num_bigint::BigUint;
-    use rand::{rngs::OsRng, thread_rng};
+    use rand::rng;
     use std::error::Error;
 
     use super::Multiplicator;
 
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
@@ -262,7 +262,7 @@ mod tests {
             let mut expected = values.clone();
             par.plaintext.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut OsRng);
+            let sk = SecretKey::random(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
             let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
             let ct1 = sk.try_encrypt(&pt, &mut rng)?;
@@ -286,7 +286,7 @@ mod tests {
 
     #[test]
     fn mul_at_level() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
         for _ in 0..15 {
             for level in 0..2 {
@@ -294,7 +294,7 @@ mod tests {
                 let mut expected = values.clone();
                 par.plaintext.mul_vec(&mut expected, &values);
 
-                let sk = SecretKey::random(&par, &mut OsRng);
+                let sk = SecretKey::random(&par, &mut rng);
                 let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
                 let pt = Plaintext::try_encode(&values, Encoding::simd_at_level(level), &par)?;
                 let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn mul_no_relin() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let par = BfvParameters::default_arc(6, 16);
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
@@ -330,7 +330,7 @@ mod tests {
             let mut expected = values.clone();
             par.plaintext.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut OsRng);
+            let sk = SecretKey::random(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
             let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
             let ct1 = sk.try_encrypt(&pt, &mut rng)?;
@@ -358,7 +358,7 @@ mod tests {
     fn different_mul_strategy() -> Result<(), Box<dyn Error>> {
         // Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
         let mut extended_basis = par.moduli().to_vec();
         extended_basis
@@ -376,7 +376,7 @@ mod tests {
             let mut expected = values.clone();
             par.plaintext.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut OsRng);
+            let sk = SecretKey::random(&par, &mut rng);
             let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
             let ct1 = sk.try_encrypt(&pt, &mut rng)?;
             let ct2 = sk.try_encrypt(&pt, &mut rng)?;

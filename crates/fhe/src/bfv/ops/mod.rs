@@ -370,12 +370,12 @@ mod tests {
         encoding::EncodingEnum, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
     };
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
-    use rand::{rngs::OsRng, thread_rng};
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn add() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn add_scalar() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn sub() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn sub_scalar() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn neg() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn mul_scalar() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for params in [
             BfvParameters::default_arc(1, 16),
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for par in [
             BfvParameters::default_arc(2, 16),
             BfvParameters::default_arc(8, 16),
@@ -672,7 +672,7 @@ mod tests {
                 let mut expected = v1.clone();
                 par.plaintext.mul_vec(&mut expected, &v2);
 
-                let sk = SecretKey::random(&par, &mut OsRng);
+                let sk = SecretKey::random(&par, &mut rng);
                 let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &par)?;
                 let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &par)?;
 
@@ -697,7 +697,7 @@ mod tests {
 
     #[test]
     fn square() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let par = BfvParameters::default_arc(6, 16);
         for _ in 0..20 {
             // We will encode `values` in an Simd format, and check that the product is
@@ -706,7 +706,7 @@ mod tests {
             let mut expected = v.clone();
             par.plaintext.mul_vec(&mut expected, &v);
 
-            let sk = SecretKey::random(&par, &mut OsRng);
+            let sk = SecretKey::random(&par, &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &par)?;
 
             let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;

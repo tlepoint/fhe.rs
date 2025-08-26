@@ -463,12 +463,12 @@ mod tests {
         rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation},
     };
     use num_bigint::BigUint;
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn constructor_last_level() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn key_switch() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn key_switch_assign_matches() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         {
             let params = BfvParameters::default_arc(6, 16);
             let sk = SecretKey::random(&params, &mut rng);
@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn key_switch_decomposition() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),

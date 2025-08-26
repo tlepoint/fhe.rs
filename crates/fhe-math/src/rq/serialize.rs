@@ -28,7 +28,7 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     use fhe_traits::{DeserializeWithContext, Serialize};
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::rq::{Context, Poly, Representation};
 
@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn serialize() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for qi in Q {
             let ctx = Arc::new(Context::new(&[*qi], 16)?);

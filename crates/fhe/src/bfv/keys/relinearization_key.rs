@@ -160,12 +160,12 @@ mod tests {
     use crate::proto::bfv::RelinearizationKey as RelinearizationKeyProto;
     use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
     use fhe_traits::{FheDecoder, FheDecrypter};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [BfvParameters::default_arc(6, 16)] {
             for _ in 0..100 {
                 let sk = SecretKey::random(&params, &mut rng);
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [BfvParameters::default_arc(5, 16)] {
             for ciphertext_level in 0..params.max_level() {
                 for key_level in 0..=ciphertext_level {
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),

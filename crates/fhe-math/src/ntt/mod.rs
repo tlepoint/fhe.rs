@@ -24,7 +24,7 @@ pub(crate) fn supports_ntt(p: u64, n: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
+    use rand::rng;
 
     use super::{supports_ntt, NttOperator};
     use crate::zq::Modulus;
@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn bijection() {
         let ntests = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for size in [32, 1024] {
             for p in [1153, 4611686018326724609] {
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn forward_lazy() {
         let ntests = 100;
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for size in [32, 1024] {
             for p in [1153, 4611686018326724609] {

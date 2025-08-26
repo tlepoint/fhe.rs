@@ -10,7 +10,10 @@ use fhe::{
     mbfv::{AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare},
 };
 use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
-use rand::{distributions::Uniform, prelude::Distribution, rngs::OsRng, thread_rng};
+use rand::{
+    distr::{Distribution, Uniform},
+    rng,
+};
 use util::timeit::{timeit, timeit_n};
 
 fn print_notice_and_exit(error: Option<String>) {
@@ -92,7 +95,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             .set_moduli(&moduli)
             .build_arc()?
     );
-    let crp = CommonRandomPoly::new(&params, &mut thread_rng())?;
+    let mut rng = rng();
+    let crp = CommonRandomPoly::new(&params, &mut rng)?;
 
     // Party setup: each party generates a secret key and shares of a collective
     // public key.
@@ -102,8 +106,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut parties = Vec::with_capacity(num_parties);
     timeit_n!("Party setup (per party)", num_parties as u32, {
-        let sk_share = SecretKey::random(&params, &mut OsRng);
-        let pk_share = PublicKeyShare::new(&sk_share, crp.clone(), &mut thread_rng())?;
+        let sk_share = SecretKey::random(&params, &mut rng);
+        let pk_share = PublicKeyShare::new(&sk_share, crp.clone(), &mut rng)?;
         parties.push(Party { sk_share, pk_share });
     });
 
@@ -115,17 +119,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // Vote casting
-    let dist = Uniform::new_inclusive(0, 1);
-    let votes: Vec<u64> = dist
-        .sample_iter(&mut thread_rng())
-        .take(num_voters)
-        .collect();
+    let dist = Uniform::new_inclusive(0u64, 1u64).unwrap();
+    let votes: Vec<u64> = dist.sample_iter(&mut rng).take(num_voters).collect();
     let mut votes_encrypted = Vec::with_capacity(num_voters);
     let mut _i = 0;
     timeit_n!("Vote casting (per voter)", num_voters as u32, {
         #[allow(unused_assignments)]
         let pt = Plaintext::try_encode(&[votes[_i]], Encoding::poly(), &params)?;
-        let ct = pk.try_encrypt(&pt, &mut thread_rng())?;
+        let ct = pk.try_encrypt(&pt, &mut rng)?;
         votes_encrypted.push(ct);
         _i += 1;
     });
@@ -147,7 +148,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut decryption_shares = Vec::with_capacity(num_parties);
     let mut _i = 0;
     timeit_n!("Decryption (per party)", num_parties as u32, {
-        let sh = DecryptionShare::new(&parties[_i].sk_share, &tally, &mut thread_rng())?;
+        let sh = DecryptionShare::new(&parties[_i].sk_share, &tally, &mut rng)?;
         decryption_shares.push(sh);
         _i += 1;
     });

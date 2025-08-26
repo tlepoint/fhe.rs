@@ -19,7 +19,7 @@ use fhe_traits::{
 use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
-use rand::{rngs::OsRng, thread_rng, RngCore};
+use rand::{rng, RngCore};
 use std::error::Error;
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
@@ -36,6 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = pir::Cli::parse();
     let database_size = args.database_size;
     let elements_size = args.element_size;
+    let mut rng = rng();
 
     // Compute what is the maximum byte-length of an element to fit within one
     // ciphertext. Each coefficient of the ciphertext polynomial can contain
@@ -83,12 +84,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // the server will which enable to obliviously expand a ciphertext up to (dim1 +
     // dim2) values, i.e. with expansion level ceil(log2(dim1 + dim2)).
     let (sk, ek_expansion_serialized) = timeit!("Client setup", {
-        let sk = bfv::SecretKey::random(&params, &mut OsRng);
+        let sk = bfv::SecretKey::random(&params, &mut rng);
         let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("expansion_level = {level}");
         let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
             .enable_expansion(level)?
-            .build(&mut thread_rng())?;
+            .build(&mut rng)?;
         let ek_expansion_serialized = ek_expansion.to_bytes();
         (sk, ek_expansion_serialized)
     });
@@ -113,7 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // has been dropped already; the reason is that the expansion will happen at
     // level 0 (with all three moduli) and then one of the moduli will be dropped
     // to reduce the noise.
-    let index = (thread_rng().next_u64() as usize) % database_size;
+    let index = (rng.next_u64() as usize) % database_size;
     let query = timeit!("Client query", {
         let level = (dim1 + dim2).next_power_of_two().ilog2();
         let query_index = index
@@ -127,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
         let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
-        let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut thread_rng())?;
+        let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut rng)?;
         query.to_bytes()
     });
     println!("📄 Query: {}", HumanBytes(query.len() as u64));

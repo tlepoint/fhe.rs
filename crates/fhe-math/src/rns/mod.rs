@@ -222,7 +222,7 @@ mod tests {
             BigUint::from(product - 1)
         );
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..ntests {
             let b = BigUint::from(rng.next_u64() % product);

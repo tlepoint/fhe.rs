@@ -450,12 +450,12 @@ mod tests {
         DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
     };
     use itertools::izip;
-    use rand::thread_rng;
+    use rand::rng;
     use std::{cmp::min, error::Error};
 
     #[test]
     fn builder() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BfvParameters::default_arc(6, 16);
         let sk = SecretKey::random(&params, &mut rng);
 
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn inner_sum() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(5, 16),
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn row_rotation() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(5, 16),
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn column_rotation() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(5, 16),
@@ -672,7 +672,7 @@ mod tests {
 
     #[test]
     fn expansion() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(5, 16),
@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -770,7 +770,7 @@ mod tests {
 
     #[test]
     fn serialize() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),

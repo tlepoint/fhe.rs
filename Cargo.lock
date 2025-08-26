@@ -449,8 +449,8 @@ dependencies = [
  "once_cell",
  "prost",
  "prost-build",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
  "thiserror",
  "zeroize",
  "zeroize_derive",
@@ -475,8 +475,8 @@ dependencies = [
  "prost",
  "prost-build",
  "pulp",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
  "sha2",
  "tfhe-ntt",
  "thiserror",
@@ -488,7 +488,7 @@ dependencies = [
 name = "fhe-traits"
 version = "0.1.0-beta.8"
 dependencies = [
- "rand 0.8.5",
+ "rand 0.9.2",
 ]
 
 [[package]]
@@ -499,7 +499,7 @@ dependencies = [
  "num-bigint-dig",
  "num-traits",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.2",
 ]
 
 [[package]]

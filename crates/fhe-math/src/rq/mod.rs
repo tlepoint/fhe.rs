@@ -551,7 +551,7 @@ mod tests {
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
-    use rand::{thread_rng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::{error::Error, sync::Arc};
 
@@ -623,10 +623,10 @@ mod tests {
 
     #[test]
     fn random() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..100 {
             let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-            thread_rng().fill(&mut seed);
+            rand::rng().fill(&mut seed);
 
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -640,7 +640,7 @@ mod tests {
             let q = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
             assert_eq!(p, q);
 
-            thread_rng().fill(&mut seed);
+            rand::rng().fill(&mut seed);
             let p = Poly::random_from_seed(&ctx, Representation::Ntt, seed);
             assert_ne!(p, q);
 
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn coefficients() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..50 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
@@ -739,7 +739,7 @@ mod tests {
 
     #[test]
     fn change_representation() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         let mut p = Poly::random(&ctx, Representation::default(), &mut rng);
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn override_representation() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ctx = Arc::new(Context::new(MODULI, 16)?);
 
         let mut p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn small() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let q = Modulus::new(*modulus).unwrap();
@@ -846,7 +846,8 @@ mod tests {
         // Generate a very large polynomial to check the variance (here equal to 8).
         let ctx = Arc::new(Context::new(&[4611686018326724609], 1 << 18)?);
         let q = Modulus::new(4611686018326724609).unwrap();
-        let p = Poly::small(&ctx, Representation::PowerBasis, 16, &mut thread_rng())?;
+        let mut rng = rand::rng();
+        let p = Poly::small(&ctx, Representation::PowerBasis, 16, &mut rng)?;
         let coefficients = p.coefficients().to_slice().unwrap();
         let v = unsafe { q.center_vec_vt(coefficients) };
         assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 32);
@@ -857,7 +858,7 @@ mod tests {
 
     #[test]
     fn substitute() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
@@ -953,7 +954,7 @@ mod tests {
 
     #[test]
     fn switch_down() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ntests = 100;
         let ctx = Arc::new(Context::new(MODULI, 16)?);
 
@@ -999,7 +1000,7 @@ mod tests {
 
     #[test]
     fn switch_down_to() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ntests = 100;
         let ctx1 = Arc::new(Context::new(MODULI, 16)?);
         let ctx2 = Arc::new(Context::new(&MODULI[..2], 16)?);
@@ -1025,7 +1026,7 @@ mod tests {
 
     #[test]
     fn switch() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ntests = 100;
         let ctx1 = Arc::new(Context::new(&MODULI[..2], 16)?);
         let ctx2 = Arc::new(Context::new(&MODULI[3..], 16)?);
@@ -1050,7 +1051,7 @@ mod tests {
 
     #[test]
     fn mul_x_power() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         let e = Poly::random(&ctx, Representation::Ntt, &mut rng).multiply_inverse_power_of_x(1);
         assert!(e.is_err());

@@ -151,12 +151,12 @@ mod tests {
     use super::PublicKey;
     use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext, SecretKey};
     use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn keygen() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BfvParameters::default_arc(1, 16);
         let sk = SecretKey::random(&params, &mut rng);
         let pk = PublicKey::new(&sk, &mut rng);
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_serialize() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),

@@ -161,12 +161,12 @@ mod tests {
     };
     use crate::proto::bfv::GaloisKey as GaloisKeyProto;
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn relinearization_into() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(3, 16),
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(4, 16),
