@@ -322,7 +322,7 @@ impl NttOperator {
 
         let mut rng: ChaCha8Rng = SeedableRng::seed_from_u64(0);
         for _ in 0..100 {
-            let mut root = rng.gen_range(0..p.p);
+            let mut root = rng.random_range(0..p.p);
             root = p.pow(root, lambda);
             if Self::is_primitive_root(root, 2 * n, p) {
                 return root;

@@ -175,13 +175,13 @@ mod tests {
 
     use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
     use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
-    use rand::thread_rng;
+    use rand::rng;
 
     use super::RGSWCiphertext;
 
     #[test]
     fn external_product() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(2, 16),
             BfvParameters::default_arc(8, 16),
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn serialize() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(6, 16),
             BfvParameters::default_arc(5, 16),

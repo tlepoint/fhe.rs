@@ -145,12 +145,12 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 mod tests {
     use crate::bfv::{parameters::BfvParametersBuilder, BfvParameters, Encoding, PlaintextVec};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn encode_decode() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..20 {
             for i in 1..5 {
                 let params = BfvParameters::default_arc(1, 16);

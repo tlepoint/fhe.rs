@@ -181,7 +181,7 @@ pub fn variance<T: PrimInt>(values: &[T]) -> f64 {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
-    use rand::{thread_rng, RngCore};
+    use rand::RngCore;
 
     use crate::variance;
 
@@ -209,17 +209,18 @@ mod tests {
 
     #[test]
     fn sample_cbd() {
-        assert!(sample_vec_cbd(10, 0, &mut thread_rng()).is_err());
-        assert!(sample_vec_cbd(10, 17, &mut thread_rng()).is_err());
+        let mut rng = rand::rng();
+        assert!(sample_vec_cbd(10, 0, &mut rng).is_err());
+        assert!(sample_vec_cbd(10, 17, &mut rng).is_err());
 
         for var in 1..=16 {
             for size in 0..=100 {
-                let v = sample_vec_cbd(size, var, &mut thread_rng()).unwrap();
+                let v = sample_vec_cbd(size, var, &mut rng).unwrap();
                 assert_eq!(v.len(), size);
             }
 
             // Verifies that the min, max are in absolute value smaller than 2 * var
-            let v = sample_vec_cbd(100000, var, &mut thread_rng()).unwrap();
+            let v = sample_vec_cbd(100000, var, &mut rng).unwrap();
             assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * var as i64);
 
             // Verifies that the variance is correct. We could probably refine the bound
@@ -231,7 +232,7 @@ mod tests {
 
     #[test]
     fn transcode_self_consistency() {
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
 
         for size in 1..=100 {
             let input = (0..size).map(|_| rng.next_u64()).collect_vec();

@@ -12,7 +12,7 @@ use itertools::{izip, Itertools};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
-use rand::{distributions::Uniform, CryptoRng, Rng, RngCore};
+use rand::{distr::Uniform, CryptoRng, Rng, RngCore};
 
 /// cond ? on_true : on_false
 const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
@@ -64,7 +64,7 @@ impl Modulus {
                 barrett_lo: barrett as u64,
                 leading_zeros: p.leading_zeros(),
                 supports_opt: primes::supports_opt(p),
-                distribution: Uniform::from(0..p),
+                distribution: Uniform::new(0, p).unwrap(),
                 arch: Arch::new(),
             })
         }
@@ -775,7 +775,7 @@ mod tests {
     use itertools::{izip, Itertools};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
-    use rand::{thread_rng, RngCore};
+    use rand::{rng, RngCore};
 
     // Utility functions for the proptests.
 
@@ -1043,7 +1043,7 @@ mod tests {
 
         #[test]
         fn random_vec(p in valid_moduli(), size in 1..1000usize) {
-            let mut rng = thread_rng();
+            let mut rng = rng();
 
             let v = p.random_vec(size, &mut rng);
             prop_assert_eq!(v.len(), size);
@@ -1069,7 +1069,7 @@ mod tests {
     #[test]
     fn mul_opt() {
         let ntests = 100;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         #[allow(clippy::single_element_loop)]
         for p in [4611686018326724609] {
@@ -1105,7 +1105,7 @@ mod tests {
     #[test]
     fn pow() {
         let ntests = 10;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for p in [2u64, 3, 17, 1987, 4611686018326724609] {
             let q = Modulus::new(p).unwrap();
@@ -1142,7 +1142,7 @@ mod tests {
     #[test]
     fn inv() {
         let ntests = 100;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for p in [2u64, 3, 17, 1987, 4611686018326724609] {
             let q = Modulus::new(p).unwrap();

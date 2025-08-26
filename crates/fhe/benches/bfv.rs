@@ -8,18 +8,18 @@ use fhe_math::zq::primes::generate_prime;
 use fhe_traits::{FheEncoder, FheEncrypter};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use rand::{rngs::OsRng, thread_rng};
+use rand::rng;
 use std::time::Duration;
 
 pub fn bfv_benchmark(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut group = c.benchmark_group("bfv");
     group.sample_size(10);
     group.warm_up_time(Duration::from_millis(600));
     group.measurement_time(Duration::from_millis(1000));
 
     for par in BfvParameters::default_parameters_128(20) {
-        let sk = SecretKey::random(&par, &mut OsRng);
+        let sk = SecretKey::random(&par, &mut rng);
         let ek = if par.moduli().len() > 1 {
             Some(
                 EvaluationKeyBuilder::new(&sk)
@@ -53,7 +53,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
         group.bench_function(
             BenchmarkId::new("keygen_sk", format!("n={}/log(q)={}", par.degree(), q)),
             |b| {
-                b.iter(|| SecretKey::random(&par, &mut OsRng));
+                b.iter(|| SecretKey::random(&par, &mut rng));
             },
         );
 

@@ -26,7 +26,7 @@ One ciphertext encrypts the value `20` using the secret key, and one ciphertext 
 ```rust
 use fhe::bfv::{BfvParametersBuilder, Ciphertext, Encoding, Plaintext, PublicKey, SecretKey};
 use fhe_traits::*;
-use rand::{rngs::OsRng, thread_rng};
+use rand::rng;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -35,9 +35,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             .set_moduli(&[0x3fffffff000001])
             .set_plaintext_modulus(1 << 10)
             .build_arc()?;
-    let mut rng = thread_rng();
-
-    let secret_key = SecretKey::random(&parameters, &mut OsRng);
+    let mut rng = rng();
+    let secret_key = SecretKey::random(&parameters, &mut rng);
     let public_key = PublicKey::new(&secret_key, &mut rng);
 
     let plaintext_1 = Plaintext::try_encode(&[20_u64], Encoding::poly(), &parameters)?;

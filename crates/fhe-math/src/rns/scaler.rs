@@ -349,7 +349,7 @@ mod tests {
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
     use num_traits::{ToPrimitive, Zero};
-    use rand::{thread_rng, RngCore};
+    use rand::{rng, RngCore};
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {
@@ -368,7 +368,7 @@ mod tests {
     fn scale_same_context() -> Result<(), Box<dyn Error>> {
         let ntests = 1000;
         let q = Arc::new(RnsContext::new(&[4u64, 4611686018326724609, 1153])?);
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
             for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {
@@ -422,7 +422,7 @@ mod tests {
             4611686018106523649,
             4611686018058289153,
         ])?);
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for numerator in &[1u64, 2, 3, 100, 1000, 4611686018326724610] {
             for denominator in &[1u64, 2, 3, 4, 100, 101, 1000, 1001, 4611686018326724610] {

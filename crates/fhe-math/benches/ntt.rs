@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe_math::{ntt::NttOperator, zq::Modulus};
-use rand::thread_rng;
+use rand::rng;
 use std::sync::Arc;
 
 pub fn ntt_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("ntt");
     group.sample_size(50);
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     for vector_size in [1024usize, 4096].iter() {
         for p in [4611686018326724609u64, 40961u64] {

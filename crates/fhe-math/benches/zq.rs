@@ -1,13 +1,13 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe_math::zq::Modulus;
-use rand::thread_rng;
+use rand::rng;
 
 pub fn zq_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("zq");
     group.sample_size(50);
 
     let p = 4611686018326724609;
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     for vector_size in [1024usize, 4096].iter() {
         let q = Modulus::new(p).unwrap();

@@ -2,7 +2,7 @@ use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
 use fhe_math::rq::*;
 use itertools::{izip, Itertools};
-use rand::thread_rng;
+use rand::rng;
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     sync::Arc,
@@ -33,7 +33,7 @@ macro_rules! bench_op {
             $name.to_string()
         };
         let mut group = create_group($c, name);
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
@@ -61,7 +61,7 @@ macro_rules! bench_op_unary {
             $name.to_string()
         };
         let mut group = create_group($c, name);
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
@@ -89,7 +89,7 @@ macro_rules! bench_op_assign {
             $name.to_string()
         };
         let mut group = create_group($c, name);
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
@@ -123,7 +123,7 @@ pub fn rq_op_benchmark(c: &mut Criterion) {
 
 pub fn rq_dot_product(c: &mut Criterion) {
     let mut group = create_group(c, "rq_dot_product".to_string());
-    let mut rng = thread_rng();
+    let mut rng = rng();
     for degree in DEGREE {
         for i in [1, 4] {
             let ctx = Arc::new(Context::new(&MODULI[..i], *degree).unwrap());
@@ -178,7 +178,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
     group.warm_up_time(Duration::from_millis(100));
     group.measurement_time(Duration::from_secs(1));
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
     for degree in DEGREE {
         for nmoduli in 1..=MODULI.len() {
             if !nmoduli.is_power_of_two() {

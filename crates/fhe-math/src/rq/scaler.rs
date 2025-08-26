@@ -141,7 +141,7 @@ mod tests {
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     // Moduli to be used in tests.
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn scaler() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let ntests = 100;
         let from = Context::new_arc(Q, 16)?;
         let to = Context::new_arc(P, 16)?;

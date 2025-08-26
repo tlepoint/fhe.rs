@@ -458,7 +458,7 @@ where
 #[cfg(test)]
 mod tests {
     use itertools::{izip, Itertools};
-    use rand::thread_rng;
+    use rand::rng;
 
     use super::dot_product;
     use crate::{
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn add() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let n = 16;
         for _ in 0..100 {
             for modulus in MODULI {
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn sub() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..100 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..100 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn mul_shoup() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..100 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -620,7 +620,7 @@ mod tests {
 
     #[test]
     fn neg() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..100 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_dot_product() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for _ in 0..20 {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);

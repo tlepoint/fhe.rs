@@ -2,11 +2,11 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe::bfv::{dot_product_scalar, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_traits::{FheEncoder, FheEncrypter};
 use itertools::{izip, Itertools};
-use rand::{rngs::OsRng, thread_rng};
+use rand::rng;
 use std::time::Duration;
 
 pub fn bfv_benchmark(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut group = c.benchmark_group("bfv_optimized_ops");
     group.sample_size(10);
     group.warm_up_time(Duration::from_secs(1));
@@ -14,7 +14,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
 
     for par in BfvParameters::default_parameters_128(20).skip(2) {
         for size in [10, 128, 1000] {
-            let sk = SecretKey::random(&par, &mut OsRng);
+            let sk = SecretKey::random(&par, &mut rng);
             let pt1 =
                 Plaintext::try_encode(&(1..16u64).collect_vec(), Encoding::poly(), &par).unwrap();
             let mut c1: Ciphertext = sk.try_encrypt(&pt1, &mut rng).unwrap();

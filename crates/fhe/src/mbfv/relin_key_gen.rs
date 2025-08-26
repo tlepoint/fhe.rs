@@ -44,7 +44,7 @@ pub struct RelinKeyShare<R: Round = R1> {
 ///         .build_arc()?;
 ///
 /// // Party perspective
-/// let mut rng = rand::thread_rng();
+/// let mut rng = rand::rng();
 /// let sk_share = SecretKey::random(&parameters, &mut rng);
 /// let crp = CommonRandomPoly::new_vec(&parameters, &mut rng)?;
 /// let rlk_generator = RelinKeyGenerator::new(&sk_share, &crp, &mut rng)?;
@@ -377,7 +377,7 @@ mod tests {
     use std::sync::Arc;
 
     use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
-    use rand::thread_rng;
+    use rand::rng;
 
     use crate::{
         bfv::{BfvParameters, Encoding, Multiplicator, Plaintext, PublicKey, SecretKey},
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn relinearization_works() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for par in [
             BfvParameters::default_arc(3, 16),
             BfvParameters::default_arc(6, 32),

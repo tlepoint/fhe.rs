@@ -160,12 +160,12 @@ mod tests {
     use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
     use fhe_traits::{FheEncoder, FheEncrypter};
     use itertools::{izip, Itertools};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error;
 
     #[test]
     fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(2, 32),

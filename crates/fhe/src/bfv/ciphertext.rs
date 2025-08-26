@@ -236,12 +236,12 @@ mod tests {
     use crate::Error as FheError;
     use fhe_traits::FheDecrypter;
     use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
-    use rand::thread_rng;
+    use rand::rng;
     use std::error::Error as StdError;
 
     #[test]
     fn proto_conversion() -> Result<(), Box<dyn StdError>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn serialize() -> Result<(), Box<dyn StdError>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn new() -> Result<(), Box<dyn StdError>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn switch_to_last_level() -> Result<(), Box<dyn StdError>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn switch_to_level_invalid() -> Result<(), Box<dyn StdError>> {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let params = BfvParameters::default_arc(2, 16);
         let sk = SecretKey::random(&params, &mut rng);
         let v = params.plaintext.random_vec(params.degree(), &mut rng);
