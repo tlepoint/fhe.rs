@@ -18,7 +18,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
     group.warm_up_time(Duration::from_millis(600));
     group.measurement_time(Duration::from_millis(1000));
 
-    for par in BfvParameters::default_parameters_128(20) {
+    for par in BfvParameters::default_parameters_128(20).unwrap() {
         let sk = SecretKey::random(&par, &mut rng);
         let ek = if par.moduli().len() > 1 {
             Some(

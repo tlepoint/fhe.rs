@@ -139,8 +139,8 @@ impl Error {
         U: std::fmt::Debug,
     {
         Self::ContextMismatch {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
+            found: format!("{found:?}"),
+            expected: format!("{expected:?}"),
         }
     }
 
@@ -313,6 +313,10 @@ pub enum ParametersError {
     /// Indicates missing required parameter
     #[error("Missing required parameter: {parameter}")]
     MissingParameter { parameter: String },
+
+    /// Indicates no parameters are available after filtering
+    #[error("No parameters available: {reason}")]
+    NoParametersAvailable { reason: String },
 }
 
 impl ParametersError {

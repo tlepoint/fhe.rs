@@ -11,7 +11,7 @@ pub fn bfv_rgsw_benchmark(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(1));
 
-    for par in BfvParameters::default_parameters_128(20).skip(2) {
+    for par in BfvParameters::default_parameters_128(20).unwrap() {
         let mut rng = rng();
         let sk = SecretKey::random(&par, &mut rng);
 

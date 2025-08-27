@@ -61,10 +61,19 @@ name = "bfv_rgsw"
 harness = false
 
 [[example]]
+name = "bfv_basic"
+
+[[example]]
+name = "bfv_ops"
+
+[[example]]
 name = "mulpir"
 
 [[example]]
 name = "sealpir"
+
+[[example]]
+name = "rgsw"
 
 [[example]]
 name = "voting"
