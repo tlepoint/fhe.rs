@@ -12,7 +12,7 @@ use fhe_math::{
 use fhe_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
+use num_traits::{PrimInt as _, ToPrimitive};
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -156,9 +156,13 @@ impl BfvParameters {
 
     /// Iterator over default parameters providing about 128 bits of security
     /// according to the <https://homomorphicencryption.org> standard.
+    /// Filters out parameters where the modulus product bitlength is smaller
+    /// than the plaintext modulus bitlength.
+    ///
+    /// Returns an error if no parameters are available after filtering.
     pub fn default_parameters_128(
         plaintext_nbits: usize,
-    ) -> impl Iterator<Item = Arc<BfvParameters>> {
+    ) -> Result<impl Iterator<Item = Arc<BfvParameters>>> {
         debug_assert!(plaintext_nbits < 64);
 
         let mut n_and_qs = HashMap::new();
@@ -190,7 +194,7 @@ impl BfvParameters {
             ],
         );
 
-        n_and_qs
+        let parameters: Vec<Arc<BfvParameters>> = n_and_qs
             .into_iter()
             .sorted_by_key(|(n, _)| *n)
             .filter_map(move |(n, moduli)| {
@@ -199,15 +203,38 @@ impl BfvParameters {
                     2 * n as u64,
                     u64::MAX >> (64 - plaintext_nbits),
                 )
-                .map(|plaintext_modulus| {
-                    BfvParametersBuilder::new()
-                        .set_degree(n as usize)
-                        .set_plaintext_modulus(plaintext_modulus)
-                        .set_moduli(&moduli)
-                        .build_arc()
-                        .unwrap()
+                .and_then(|plaintext_modulus| {
+                    // Calculate the bitlength of the product of moduli
+                    let modulus_product_bitlength = moduli
+                        .iter()
+                        .map(|&m| 64 - m.leading_zeros() as usize)
+                        .sum::<usize>();
+
+                    // Filter out parameters where modulus product bitlength < plaintext bitlength
+                    if modulus_product_bitlength >= plaintext_nbits {
+                        BfvParametersBuilder::new()
+                            .set_degree(n as usize)
+                            .set_plaintext_modulus(plaintext_modulus)
+                            .set_moduli(&moduli)
+                            .build_arc()
+                            .ok()
+                    } else {
+                        None
+                    }
                 })
             })
+            .collect();
+
+        // Check if we have any valid parameters after filtering
+        if parameters.is_empty() {
+            return Err(Error::ParametersError(ParametersError::NoParametersAvailable {
+                reason: format!(
+                    "No default parameters available for plaintext modulus of {plaintext_nbits} bits. All parameter sets have modulus product bitlength smaller than the plaintext modulus."
+                ),
+            }));
+        }
+
+        Ok(parameters.into_iter())
     }
 
     #[cfg(test)]
@@ -636,7 +663,33 @@ mod tests {
 
     #[test]
     fn default_parameters_iterator() {
-        let mut it = BfvParameters::default_parameters_128(20);
+        let mut it = BfvParameters::default_parameters_128(20).unwrap();
         assert!(it.next().is_some());
+    }
+
+    #[test]
+    fn default_parameters_filtering() {
+        // Test that parameters are filtered correctly
+        let params: Vec<_> = BfvParameters::default_parameters_128(20).unwrap().collect();
+
+        // All returned parameters should have sufficient modulus bitlength
+        for param in &params {
+            let modulus_product_bitlength = param.moduli_sizes.iter().sum::<usize>();
+            assert!(modulus_product_bitlength >= 20);
+        }
+
+        // Test with a very small plaintext modulus for which we won't be able to
+        // create any parameters
+        let result = BfvParameters::default_parameters_128(10);
+        assert!(result.is_err());
+
+        match result {
+            Err(e) => {
+                let error_string = format!("{e}");
+                assert!(error_string.contains("No parameters available"));
+                assert!(error_string.contains("10 bits"));
+            }
+            Ok(_) => panic!("Expected error"),
+        }
     }
 }
