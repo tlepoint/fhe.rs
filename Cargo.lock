@@ -1271,9 +1271,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c64925e25d6ba666f75332ce44fbd2e80be64dbd657e3c2652a6a07f2868d17"
+checksum = "27e21dbb266f4472337dec6a608ffca2cf911d680b52873db8027c572f22d0fc"
 dependencies = [
  "aligned-vec",
  "bytemuck",
