@@ -13,3 +13,5 @@ proptest-regressions/
 
 # Visual Studio Code
 .vscode
+# tmuxp project config
+.tmuxp.yaml
