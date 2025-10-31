@@ -47,3 +47,7 @@ message Parameters {
 message PublicKey {
     Ciphertext c = 1;
 }
+
+message SecretKey {
+    repeated sint64 coeffs = 1;
+}

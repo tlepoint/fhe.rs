@@ -1,0 +1,27 @@
+session_name: fhe-rs
+shell_command_before: "export RUST_LOG=info; clear;"
+windows:
+  - window_name: code
+    focus: true
+    start-directory: ./
+    panes:
+      - shell_command:
+        - helix
+  - window_name: agents
+    start-directory: ./
+    panes:
+      - shell_command:
+        - codex
+  - window_name: cmd1
+    start-directory: ./
+    panes:
+      - shell_command:
+        - eza --long
+  - window_name: cmd2
+    panes:
+      - shell_command:
+        - eza --long
+  - window_name: files
+    panes:
+      - shell_command:
+        - yazi

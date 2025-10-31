@@ -1,15 +1,17 @@
 //! Secret keys for the BFV encryption scheme
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
-use crate::{Error, Result};
+use crate::proto::bfv::SecretKey as SecretKeyProto;
+use crate::{Error, Result, SerializationError};
 use fhe_math::{
     rq::{traits::TryConvertFrom, Poly, Representation},
     zq::Modulus,
 };
-use fhe_traits::{FheDecrypter, FheEncrypter, FheParametrized};
+use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncrypter, FheParametrized, Serialize};
 use fhe_util::sample_vec_cbd;
 use itertools::Itertools;
 use num_bigint::BigUint;
+use prost::Message;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
@@ -129,6 +131,45 @@ impl SecretKey {
     }
 }
 
+impl From<&SecretKey> for SecretKeyProto {
+    fn from(sk: &SecretKey) -> Self {
+        Self {
+            coeffs: sk.coeffs.to_vec(),
+        }
+    }
+}
+
+impl Serialize for SecretKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        SecretKeyProto::from(self).encode_to_vec()
+    }
+}
+
+impl DeserializeParametrized for SecretKey {
+    type Error = Error;
+
+    fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
+        let proto: SecretKeyProto = Message::decode(bytes).map_err(|_| {
+            Error::SerializationError(SerializationError::ProtobufError {
+                message: "SecretKey decode".into(),
+            })
+        })?;
+
+        if proto.coeffs.len() != par.degree() {
+            return Err(Error::SerializationError(
+                SerializationError::InvalidFormat {
+                    reason: "SecretKey coeffs length and parameters degree mismatch".into(),
+                },
+            ));
+        }
+
+        Ok(Self {
+            par: par.clone(),
+            coeffs: proto.coeffs.into_boxed_slice(),
+        })
+    }
+}
+
 impl FheParametrized for SecretKey {
     type Parameters = BfvParameters;
 }
@@ -218,7 +259,9 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 mod tests {
     use super::SecretKey;
     use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext};
-    use fhe_traits::{FheDecrypter, FheEncoder, FheEncrypter};
+    use crate::proto::bfv::SecretKey as SecretKeyProto;
+    use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+    use prost::Message;
     use rand::rng;
     use std::error::Error;
 
@@ -261,5 +304,35 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn serialize_roundtrip() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(2, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+
+        let bytes = sk.to_bytes();
+        let decoded = SecretKey::from_bytes(&bytes, &params)?;
+
+        assert_eq!(decoded, sk);
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_invalid_length() {
+        let params = BfvParameters::default_arc(1, 16);
+        let mut proto = SecretKeyProto {
+            coeffs: vec![0; params.degree()],
+        };
+        proto.coeffs.pop();
+
+        let bytes = proto.encode_to_vec();
+        let err = SecretKey::from_bytes(&bytes, &params).unwrap_err();
+
+        assert!(matches!(
+            err,
+            crate::Error::SerializationError(crate::SerializationError::InvalidFormat { .. })
+        ));
     }
 }
