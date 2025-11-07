@@ -76,3 +76,9 @@ pub struct PublicKey {
     #[prost(message, optional, tag = "1")]
     pub c: ::core::option::Option<Ciphertext>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SecretKey {
+    #[prost(sint64, repeated, tag = "1")]
+    pub coeffs: ::prost::alloc::vec::Vec<i64>,
+}
