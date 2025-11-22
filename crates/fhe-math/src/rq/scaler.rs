@@ -55,7 +55,7 @@ impl Scaler {
                 "The input polynomial does not have the correct context".to_string(),
             ))
         } else {
-            let mut representation = p.representation.clone();
+            let mut representation = p.representation;
             if representation == Representation::NttShoup {
                 representation = Representation::Ntt;
             }

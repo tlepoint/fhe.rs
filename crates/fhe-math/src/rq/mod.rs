@@ -25,7 +25,7 @@ use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Possible representations of the underlying polynomial.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Representation {
     /// This is the list of coefficients ci, such that the polynomial is c0 + c1
@@ -114,7 +114,7 @@ impl Poly {
     pub fn zero(ctx: &Arc<Context>, representation: Representation) -> Self {
         Self {
             ctx: ctx.clone(),
-            representation: representation.clone(),
+            representation,
             allow_variable_time_computations: false,
             has_lazy_coefficients: false,
             coefficients: Array2::zeros((ctx.q.len(), ctx.degree)),
@@ -327,7 +327,7 @@ impl Poly {
     /// multiple of 2 * degree. In Ntt and NttShoup representation, i can be any
     /// odd integer that is not a multiple of 2 * degree.
     pub fn substitute(&self, i: &SubstitutionExponent) -> Result<Poly> {
-        let mut q = Poly::zero(&self.ctx, self.representation.clone());
+        let mut q = Poly::zero(&self.ctx, self.representation);
         if self.allow_variable_time_computations {
             unsafe { q.allow_variable_time_computations() }
         }
@@ -421,7 +421,7 @@ impl Poly {
 
         if self.representation != Representation::PowerBasis {
             return Err(Error::IncorrectRepresentation(
-                self.representation.clone(),
+                self.representation,
                 Representation::PowerBasis,
             ));
         }
@@ -516,29 +516,30 @@ impl Poly {
     pub fn multiply_inverse_power_of_x(&mut self, power: usize) -> Result<()> {
         if self.representation != Representation::PowerBasis {
             return Err(Error::IncorrectRepresentation(
-                self.representation.clone(),
+                self.representation,
                 Representation::PowerBasis,
             ));
         }
 
         let shift = ((self.ctx.degree << 1) - power) % (self.ctx.degree << 1);
         let mask = self.ctx.degree - 1;
-        let original_coefficients = self.coefficients.clone();
+        let mut new_coefficients = Array2::zeros((self.ctx.q.len(), self.ctx.degree));
         izip!(
-            self.coefficients.outer_iter_mut(),
-            original_coefficients.outer_iter(),
+            new_coefficients.outer_iter_mut(),
+            self.coefficients.outer_iter(),
             self.ctx.q.iter()
         )
-        .for_each(|(mut coeffs, orig_coeffs, qi)| {
+        .for_each(|(mut new_coeffs, orig_coeffs, qi)| {
             for k in 0..self.ctx.degree {
                 let index = shift + k;
                 if index & self.ctx.degree == 0 {
-                    coeffs[index & mask] = orig_coeffs[k];
+                    new_coeffs[index & mask] = orig_coeffs[k];
                 } else {
-                    coeffs[index & mask] = qi.neg(orig_coeffs[k]);
+                    new_coeffs[index & mask] = qi.neg(orig_coeffs[k]);
                 }
             }
         });
+        self.coefficients = new_coefficients;
         Ok(())
     }
 }

@@ -62,7 +62,7 @@ impl Ciphertext {
         for ci in c.iter() {
             if ci.representation() != &Representation::Ntt {
                 return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
-                    ci.representation().clone(),
+                    *ci.representation(),
                     Representation::Ntt,
                 )));
             }

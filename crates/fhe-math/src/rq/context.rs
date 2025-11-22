@@ -45,20 +45,20 @@ impl Context {
                 "The degree is not a power of two larger or equal to 8".to_string(),
             ))
         } else {
-            let mut q = Vec::with_capacity(moduli.len());
             let rns = Arc::new(RnsContext::new(moduli)?);
-            let mut ops = Vec::with_capacity(moduli.len());
-            for modulus in moduli {
-                let qi = Modulus::new(*modulus)?;
-                if let Some(op) = NttOperator::new(&qi, degree) {
-                    q.push(qi);
-                    ops.push(op);
-                } else {
-                    return Err(Error::Default(
-                        "Impossible to construct a Ntt operator".to_string(),
-                    ));
-                }
-            }
+            let (q, ops): (Vec<Modulus>, Vec<NttOperator>) = moduli
+                .iter()
+                .map(|modulus| {
+                    let qi = Modulus::new(*modulus)?;
+                    NttOperator::new(&qi, degree)
+                        .ok_or_else(|| {
+                            Error::Default("Impossible to construct a Ntt operator".to_string())
+                        })
+                        .map(|op| (qi, op))
+                })
+                .collect::<Result<Vec<(Modulus, NttOperator)>>>()?
+                .into_iter()
+                .unzip();
             let bitrev = (0..degree)
                 .map(|j| j.reverse_bits() >> (degree.leading_zeros() + 1))
                 .collect_vec();

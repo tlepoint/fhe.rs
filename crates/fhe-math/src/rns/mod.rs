@@ -3,7 +3,7 @@
 //! Residue-Number System operations.
 
 use crate::{zq::Modulus, Error, Result};
-use itertools::izip;
+use itertools::{izip, Itertools};
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
@@ -67,33 +67,30 @@ impl RnsContext {
                 product_dig *= &BigUintDig::from(moduli_u64[i]);
             }
 
-            let mut moduli = Vec::with_capacity(moduli_u64.len());
-            let mut q_tilde = Vec::with_capacity(moduli_u64.len());
-            let mut q_tilde_shoup = Vec::with_capacity(moduli_u64.len());
-            let mut q_star = Vec::with_capacity(moduli_u64.len());
-            let mut garner = Vec::with_capacity(moduli_u64.len());
-
-            for modulus in moduli_u64 {
-                moduli.push(Modulus::new(*modulus)?);
-                // q* = product / modulus
-                let q_star_i = &product / modulus;
-                // q~ = (product / modulus) ^ (-1) % modulus
-                let q_tilde_i = (&product_dig / modulus)
-                    .mod_inverse(&BigUintDig::from(*modulus))
-                    .unwrap()
-                    .to_u64()
-                    .unwrap();
-                // garner = (q*) * (q~)
-                let garner_i = &q_star_i * q_tilde_i;
-                q_tilde.push(q_tilde_i);
-                garner.push(garner_i);
-                q_star.push(q_star_i);
-                q_tilde_shoup.push(
-                    Modulus::new(*modulus)
+            #[allow(clippy::type_complexity)]
+            let (moduli, q_tilde, q_tilde_shoup, q_star, garner): (
+                Vec<Modulus>,
+                Vec<u64>,
+                Vec<u64>,
+                Vec<BigUint>,
+                Vec<BigUint>,
+            ) = moduli_u64
+                .iter()
+                .map(|modulus| {
+                    let m = Modulus::new(*modulus)?;
+                    let q_star_i = &product / modulus;
+                    let q_tilde_i = (&product_dig / modulus)
+                        .mod_inverse(&BigUintDig::from(*modulus))
                         .unwrap()
-                        .shoup(q_tilde_i.to_u64().unwrap()),
-                );
-            }
+                        .to_u64()
+                        .unwrap();
+                    let garner_i = &q_star_i * q_tilde_i;
+                    let q_tilde_shoup_i = m.shoup(q_tilde_i);
+                    Ok((m, q_tilde_i, q_tilde_shoup_i, q_star_i, garner_i))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .multiunzip();
 
             Ok(Self {
                 moduli_u64: moduli_u64.to_owned(),
@@ -114,11 +111,10 @@ impl RnsContext {
 
     /// Project a BigUint into its rests.
     pub fn project(&self, a: &BigUint) -> Vec<u64> {
-        let mut rests = Vec::with_capacity(self.moduli_u64.len());
-        for modulus in &self.moduli_u64 {
-            rests.push((a % modulus).to_u64().unwrap())
-        }
-        rests
+        self.moduli_u64
+            .iter()
+            .map(|modulus| (a % modulus).to_u64().unwrap())
+            .collect()
     }
 
     /// Lift rests into a BigUint.

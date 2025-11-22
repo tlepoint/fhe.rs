@@ -202,7 +202,7 @@ impl MulAssign<&BigUint> for Poly {
             v.as_ref() as &[BigUint],
             &self.ctx,
             self.allow_variable_time_computations,
-            self.representation.clone(),
+            self.representation,
         )
         .unwrap();
         q.change_representation(Representation::Ntt);
