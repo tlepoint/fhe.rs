@@ -15,7 +15,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-fhe = "0.1.0-beta.8"
+fhe = "0.1.0"
 ```
 
 ## Example
@@ -83,6 +83,5 @@ Run tests with `cargo test`.
 ## ⚠️ Security / Stability
 
 The implementations in this crate have never been independently audited for security.
-Additionally, no promise on the API and ABI stability will be made until version `1.0.0` of the crate.
 
 Use at your own risk.
