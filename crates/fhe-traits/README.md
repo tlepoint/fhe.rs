@@ -8,7 +8,7 @@ This crate provides common abstractions for parameters, plaintext and ciphertext
 
 ```toml
 [dependencies]
-fhe-traits = "0.1.0-beta.8"
+fhe-traits = "0.1.1"
 ```
 
 ## Testing
@@ -23,5 +23,5 @@ This project is licensed under the [MIT license](https://opensource.org/licenses
 
 ## Security / Stability
 
-The code in this crate has not undergone an independent security audit and the API may change before version `1.0.0`.
+The code in this crate has not undergone an independent security audit.
 Use at your own risk.

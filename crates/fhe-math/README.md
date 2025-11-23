@@ -15,7 +15,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-fhe-math = "0.1.0-beta.8"
+fhe-math = "0.1.1"
 ```
 
 ## Testing
@@ -30,5 +30,5 @@ This project is licensed under the [MIT license](https://opensource.org/licenses
 
 ## Security / Stability
 
-The code in this crate has not undergone an independent security audit and the API may change before version `1.0.0`.
+The code in this crate has not undergone an independent security audit.
 Use at your own risk.

@@ -28,17 +28,15 @@ impl Scaler {
             return Err(Error::Default("Incompatible degrees".to_string()));
         }
 
-        let mut number_common_moduli = 0;
-        if factor.is_one {
-            for (qi, pi) in izip!(from.q.iter(), to.q.iter()) {
-                if qi == pi {
-                    number_common_moduli += 1
-                } else {
-                    break;
-                }
-            }
-        }
-
+        let number_common_moduli = if factor.is_one {
+            from.q
+                .iter()
+                .zip(to.q.iter())
+                .take_while(|(qi, pi)| qi == pi)
+                .count()
+        } else {
+            0
+        };
         let scaler = RnsScaler::new(&from.rns, &to.rns, factor);
 
         Ok(Self {

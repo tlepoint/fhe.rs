@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.0"
+version = "0.1.1"
 
 [lib]
 bench = false # Disable default bench (we use criterion)
@@ -16,9 +16,9 @@ tfhe-ntt = ["fhe-math/tfhe-ntt"]
 tfhe-ntt-nightly = ["fhe-math/tfhe-ntt-nightly"]
 
 [dependencies]
-fhe-math = { version = "=0.1.0", path = "../fhe-math" }
-fhe-traits = { version = "=0.1.0", path = "../fhe-traits" }
-fhe-util = { version = "=0.1.0", path = "../fhe-util" }
+fhe-math = { version = "=0.1.1", path = "../fhe-math" }
+fhe-traits = { version = "=0.1.1", path = "../fhe-traits" }
+fhe-util = { version = "=0.1.1", path = "../fhe-util" }
 
 doc-comment.workspace = true
 itertools.workspace = true
