@@ -32,15 +32,9 @@ impl From<&Poly> for Rq {
                 proto.representation = RepresentationProto::Nttshoup as i32;
             }
         }
-        let mut serialization_length = 0;
-        p.ctx
-            .q
-            .iter()
-            .for_each(|qi| serialization_length += qi.serialization_length(p.ctx.degree));
-        let mut serialization = Vec::with_capacity(serialization_length);
-
-        izip!(q.coefficients.outer_iter(), p.ctx.q.iter())
-            .for_each(|(v, qi)| serialization.append(&mut qi.serialize_vec(v.as_slice().unwrap())));
+        let serialization: Vec<u8> = izip!(q.coefficients.outer_iter(), p.ctx.q.iter())
+            .flat_map(|(v, qi)| qi.serialize_vec(v.as_slice().unwrap()))
+            .collect();
         proto.coefficients = serialization;
         proto.degree = p.ctx.degree as u32;
         proto.allow_variable_time = p.allow_variable_time_computations;
@@ -185,15 +179,17 @@ impl TryConvertFrom<&Rq> for Poly {
             return Err(Error::Default("Invalid coefficients".to_string()));
         }
 
-        let mut power_basis_coefficients = Vec::with_capacity(ctx.q.len() * ctx.degree);
         let mut index = 0;
-        for i in 0..ctx.q.len() {
-            let qi = &ctx.q[i];
-            let size = qi.serialization_length(degree);
-            let mut v = qi.deserialize_vec(&value.coefficients[index..index + size]);
-            power_basis_coefficients.append(&mut v);
-            index += size;
-        }
+        let power_basis_coefficients: Vec<u64> = ctx
+            .q
+            .iter()
+            .flat_map(|qi| {
+                let size = qi.serialization_length(degree);
+                let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
+                index += size;
+                v
+            })
+            .collect();
 
         let mut p = Poly::try_convert_from(
             power_basis_coefficients,

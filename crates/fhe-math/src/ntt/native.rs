@@ -40,13 +40,12 @@ impl NttOperator {
                 .take(size)
                 .collect_vec();
 
-            let mut omegas = Vec::with_capacity(size);
-            let mut zetas_inv = Vec::with_capacity(size);
-            for i in 0..size {
-                let j = i.reverse_bits() >> (size.leading_zeros() + 1);
-                omegas.push(powers[j]);
-                zetas_inv.push(powers_inv[j]);
-            }
+            let (omegas, zetas_inv): (Vec<u64>, Vec<u64>) = (0..size)
+                .map(|i| {
+                    let j = i.reverse_bits() >> (size.leading_zeros() + 1);
+                    (powers[j], powers_inv[j])
+                })
+                .unzip();
 
             let omegas_shoup = p.shoup_vec(&omegas);
             let zetas_inv_shoup = p.shoup_vec(&zetas_inv);

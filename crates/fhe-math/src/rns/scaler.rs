@@ -87,32 +87,34 @@ impl RnsScaler {
             .collect_vec();
 
         // Let's define omega_i = round(from.garner_i * numerator / denominator)
-        let mut omega = Vec::with_capacity(to.moduli.len());
-        let mut omega_shoup = Vec::with_capacity(to.moduli.len());
-        for _ in &to.moduli {
-            omega.push(vec![0u64; from.moduli.len()].into_boxed_slice());
-            omega_shoup.push(vec![0u64; from.moduli.len()].into_boxed_slice());
-        }
-        let mut theta_omega_lo = Vec::with_capacity(from.garner.len());
-        let mut theta_omega_hi = Vec::with_capacity(from.garner.len());
-        let mut theta_omega_sign = Vec::with_capacity(from.garner.len());
-        for i in 0..from.garner.len() {
-            let (omega_i, theta_omega_i_lo, theta_omega_i_hi, theta_omega_i_sign) =
+        let mut omega = vec![vec![0u64; from.moduli.len()].into_boxed_slice(); to.moduli.len()];
+        let mut omega_shoup =
+            vec![vec![0u64; from.moduli.len()].into_boxed_slice(); to.moduli.len()];
+        let (omegas_i, theta_omega_lo, theta_omega_hi, theta_omega_sign): (
+            Vec<Vec<u64>>,
+            Vec<u64>,
+            Vec<u64>,
+            Vec<bool>,
+        ) = from
+            .garner
+            .iter()
+            .map(|garner_i| {
                 Self::extract_projection_and_theta(
                     to,
-                    &from.garner[i],
+                    garner_i,
                     &scaling_factor.numerator,
                     &scaling_factor.denominator,
                     true,
-                );
+                )
+            })
+            .multiunzip();
+
+        for (i, omega_i) in omegas_i.iter().enumerate() {
             for j in 0..to.moduli.len() {
                 let qj = &to.moduli[j];
                 omega[j][i] = qj.reduce(omega_i[j]);
                 omega_shoup[j][i] = qj.shoup(omega[j][i]);
             }
-            theta_omega_lo.push(theta_omega_i_lo);
-            theta_omega_hi.push(theta_omega_i_hi);
-            theta_omega_sign.push(theta_omega_i_sign);
         }
 
         // Determine the shift so that the sum of the scaled theta_garner fit on an U192
@@ -132,16 +134,17 @@ impl RnsScaler {
         );
         // Finally, define theta_garner_i = from.garner_i / product, also scaled by
         // 2^127.
-        let mut theta_garner_lo = Vec::with_capacity(from.garner.len());
-        let mut theta_garner_hi = Vec::with_capacity(from.garner.len());
-        for garner_i in &from.garner {
-            let mut theta: BigUint =
-                ((garner_i << theta_garner_shift) + (&from.product >> 1)) / &from.product;
-            let theta_hi: BigUint = &theta >> 64;
-            theta -= &theta_hi << 64;
-            theta_garner_lo.push(theta.to_u64().unwrap());
-            theta_garner_hi.push(theta_hi.to_u64().unwrap());
-        }
+        let (theta_garner_lo, theta_garner_hi): (Vec<u64>, Vec<u64>) = from
+            .garner
+            .iter()
+            .map(|garner_i| {
+                let mut theta: BigUint =
+                    ((garner_i << theta_garner_shift) + (&from.product >> 1)) / &from.product;
+                let theta_hi: BigUint = &theta >> 64;
+                theta -= &theta_hi << 64;
+                (theta.to_u64().unwrap(), theta_hi.to_u64().unwrap())
+            })
+            .unzip();
 
         Self {
             from: from.clone(),

@@ -15,15 +15,26 @@ use prost::Message;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
-use zeroize::Zeroizing;
-use zeroize_derive::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, Zeroizing};
 
 /// Secret key for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq, Clone, Zeroize, ZeroizeOnDrop)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SecretKey {
-    #[zeroize(skip)]
     pub(crate) par: Arc<BfvParameters>,
     pub(crate) coeffs: Box<[i64]>,
+}
+
+impl Zeroize for SecretKey {
+    fn zeroize(&mut self) {
+        // Only zeroize the sensitive coefficients field
+        self.coeffs.zeroize();
+    }
+}
+
+impl Drop for SecretKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl SecretKey {
