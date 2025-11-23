@@ -34,9 +34,6 @@ ndarray.workspace = true
 thiserror.workspace = true
 once_cell.workspace = true
 
-[build-dependencies]
-prost-build.workspace = true
-
 [dev-dependencies]
 clap.workspace = true
 console.workspace = true

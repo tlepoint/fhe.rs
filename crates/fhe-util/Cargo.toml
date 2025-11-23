@@ -10,10 +10,10 @@ version.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-itertools.workspace = true
 num-bigint-dig = { workspace = true, features = ["prime"] }
 num-traits.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
+itertools.workspace = true
 proptest.workspace = true
