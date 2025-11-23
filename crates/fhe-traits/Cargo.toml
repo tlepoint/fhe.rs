@@ -6,8 +6,8 @@ documentation.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-version.workspace = true
 rust-version.workspace = true
+version = "0.1.0"
 
 [lib]
 bench = false  # Disable default bench (we use criterion)
