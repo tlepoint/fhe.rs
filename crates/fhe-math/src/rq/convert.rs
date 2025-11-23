@@ -8,6 +8,7 @@ use crate::{
 use itertools::{izip, Itertools};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
+use std::borrow::Cow;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -15,10 +16,14 @@ impl From<&Poly> for Rq {
     fn from(p: &Poly) -> Self {
         assert!(!p.has_lazy_coefficients);
 
-        let mut q = p.clone();
-        if p.representation != Representation::PowerBasis {
-            q.change_representation(Representation::PowerBasis);
-        }
+        let needs_transform = p.representation != Representation::PowerBasis;
+        let q: Cow<'_, Poly> = if needs_transform {
+            let mut owned = p.clone();
+            owned.change_representation(Representation::PowerBasis);
+            Cow::Owned(owned)
+        } else {
+            Cow::Borrowed(p)
+        };
 
         let mut proto = Rq::default();
         match p.representation {
