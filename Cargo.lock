@@ -412,7 +412,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fhe"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "console",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "fhe-math"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "ethnum",
@@ -464,14 +464,14 @@ dependencies = [
 
 [[package]]
 name = "fhe-traits"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rand",
 ]
 
 [[package]]
 name = "fhe-util"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint-dig",
