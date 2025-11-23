@@ -8,6 +8,7 @@ use fhe_math::rq::{Poly, Representation};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
 use prost::Message;
 use rand::{CryptoRng, RngCore};
+use std::borrow::Cow;
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -48,10 +49,16 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         pt: &Plaintext,
         rng: &mut R,
     ) -> Result<Ciphertext> {
-        let mut ct = self.c.clone();
-        while ct.level != pt.level {
-            ct.switch_down()?;
-        }
+        let needs_switch = self.c.level != pt.level;
+        let ct: Cow<'_, Ciphertext> = if needs_switch {
+            let mut owned = self.c.clone();
+            while owned.level != pt.level {
+                owned.switch_down()?;
+            }
+            Cow::Owned(owned)
+        } else {
+            Cow::Borrowed(&self.c)
+        };
 
         let ctx = self.par.context_at_level(ct.level)?;
         let u = Zeroizing::new(Poly::small(
