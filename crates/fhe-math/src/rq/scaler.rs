@@ -9,6 +9,7 @@ use crate::{
 };
 use itertools::izip;
 use ndarray::{s, Array2, Axis};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 /// Context extender.
@@ -69,39 +70,36 @@ impl Scaler {
             }
 
             if self.number_common_moduli < self.to.q.len() {
-                if p.representation == Representation::PowerBasis {
-                    izip!(
-                        new_coefficients
-                            .slice_mut(s![self.number_common_moduli.., ..])
-                            .axis_iter_mut(Axis(1)),
-                        p.coefficients.axis_iter(Axis(1))
-                    )
-                    .for_each(|(new_column, column)| {
-                        self.scaler
-                            .scale(column, new_column, self.number_common_moduli)
-                    });
-                } else if self.number_common_moduli < self.to.q.len() {
-                    let mut p_coefficients_powerbasis = p.coefficients.clone();
+                let needs_transform = p.representation != Representation::PowerBasis;
+                let p_coefficients_powerbasis: Cow<'_, Array2<u64>> = if needs_transform {
+                    let mut owned = p.coefficients.clone();
                     // Backward NTT
                     if p.allow_variable_time_computations {
-                        izip!(p_coefficients_powerbasis.outer_iter_mut(), p.ctx.ops.iter())
+                        izip!(owned.outer_iter_mut(), p.ctx.ops.iter())
                             .for_each(|(mut v, op)| unsafe { op.backward_vt(v.as_mut_ptr()) });
                     } else {
-                        izip!(p_coefficients_powerbasis.outer_iter_mut(), p.ctx.ops.iter())
+                        izip!(owned.outer_iter_mut(), p.ctx.ops.iter())
                             .for_each(|(mut v, op)| op.backward(v.as_slice_mut().unwrap()));
                     }
-                    // Conversion
-                    izip!(
-                        new_coefficients
-                            .slice_mut(s![self.number_common_moduli.., ..])
-                            .axis_iter_mut(Axis(1)),
-                        p_coefficients_powerbasis.axis_iter(Axis(1))
-                    )
-                    .for_each(|(new_column, column)| {
-                        self.scaler
-                            .scale(column, new_column, self.number_common_moduli)
-                    });
-                    // Forward NTT on the second half
+                    Cow::Owned(owned)
+                } else {
+                    Cow::Borrowed(&p.coefficients)
+                };
+
+                // Conversion
+                izip!(
+                    new_coefficients
+                        .slice_mut(s![self.number_common_moduli.., ..])
+                        .axis_iter_mut(Axis(1)),
+                    p_coefficients_powerbasis.axis_iter(Axis(1))
+                )
+                .for_each(|(new_column, column)| {
+                    self.scaler
+                        .scale(column, new_column, self.number_common_moduli)
+                });
+
+                // Forward NTT on the second half when the source required a transform
+                if needs_transform {
                     if p.allow_variable_time_computations {
                         izip!(
                             new_coefficients
