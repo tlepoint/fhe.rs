@@ -276,20 +276,16 @@ impl Mul<&Ciphertext> for &Ciphertext {
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()
                 .unwrap();
-            // println!("Extend: {:?}", now.elapsed().unwrap());
 
             // Multiply
-            // now = std::time::SystemTime::now();
             let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); 2 * self_c.len() - 1];
             for i in 0..self_c.len() {
                 for j in 0..self_c.len() {
                     c[i + j] += &(&self_c[i] * &self_c[j])
                 }
             }
-            // println!("Multiply: {:?}", now.elapsed().unwrap());
 
             // Scale
-            // now = std::time::SystemTime::now();
             let c = c
                 .iter_mut()
                 .map(|ci| {
@@ -300,7 +296,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
                 })
                 .collect::<Result<Vec<Poly>>>()
                 .unwrap();
-            // println!("Scale: {:?}", now.elapsed().unwrap());
 
             Ciphertext {
                 par: self.par.clone(),
@@ -327,10 +322,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()
                 .unwrap();
-            // println!("Extend: {:?}", now.elapsed().unwrap());
 
             // Multiply
-            // now = std::time::SystemTime::now();
             let mut c =
                 vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
             for i in 0..self_c.len() {
@@ -338,10 +331,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
                     c[i + j] += &(&self_c[i] * &other_c[j])
                 }
             }
-            // println!("Multiply: {:?}", now.elapsed().unwrap());
 
             // Scale
-            // now = std::time::SystemTime::now();
             let c = c
                 .iter_mut()
                 .map(|ci| {
@@ -352,7 +343,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
                 })
                 .collect::<Result<Vec<Poly>>>()
                 .unwrap();
-            // println!("Scale: {:?}", now.elapsed().unwrap());
 
             Ciphertext {
                 par: self.par.clone(),

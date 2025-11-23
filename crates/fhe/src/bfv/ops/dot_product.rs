@@ -12,8 +12,8 @@ use crate::{
 /// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
 unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
     let n = out.len();
-    assert_eq!(x.len(), n);
-    assert_eq!(y.len(), n);
+    debug_assert_eq!(x.len(), n);
+    debug_assert_eq!(y.len(), n);
 
     macro_rules! fma_at {
         ($idx:expr) => {

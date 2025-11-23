@@ -54,10 +54,11 @@ impl KeySwitchingKey {
         ksk_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_ksk = sk.par.context_at_level(ksk_level)?;
-        let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
+        let par = sk.par.clone();
+        let ctx_ksk = par.context_at_level(ksk_level)?.clone();
+        let ctx_ciphertext = par.context_at_level(ciphertext_level)?.clone();
 
-        if from.ctx() != ctx_ksk {
+        if from.ctx() != &ctx_ksk {
             return Err(Error::DefaultError(
                 "Incorrect context for polynomial from".to_string(),
             ));
@@ -71,33 +72,33 @@ impl KeySwitchingKey {
             let log_modulus = modulus.next_power_of_two().ilog2() as usize;
             let log_base = log_modulus / 2;
 
-            let c1 = Self::generate_c1(ctx_ksk, seed, log_modulus.div_ceil(log_base));
+            let c1 = Self::generate_c1(&ctx_ksk, seed, log_modulus.div_ceil(log_base));
             let c0 = Self::generate_c0_decomposition(sk, from, &c1, rng, log_base)?;
 
             Ok(Self {
-                par: sk.par.clone(),
+                par,
                 seed: Some(seed),
                 c0: c0.into_boxed_slice(),
                 c1: c1.into_boxed_slice(),
                 ciphertext_level,
-                ctx_ciphertext: ctx_ciphertext.clone(),
+                ctx_ciphertext,
                 ksk_level,
-                ctx_ksk: ctx_ksk.clone(),
+                ctx_ksk,
                 log_base,
             })
         } else {
-            let c1 = Self::generate_c1(ctx_ksk, seed, ctx_ciphertext.moduli().len());
+            let c1 = Self::generate_c1(&ctx_ksk, seed, ctx_ciphertext.moduli().len());
             let c0 = Self::generate_c0(sk, from, &c1, rng)?;
 
             Ok(Self {
-                par: sk.par.clone(),
+                par,
                 seed: Some(seed),
                 c0: c0.into_boxed_slice(),
                 c1: c1.into_boxed_slice(),
                 ciphertext_level,
-                ctx_ciphertext: ctx_ciphertext.clone(),
+                ctx_ciphertext,
                 ksk_level,
-                ctx_ksk: ctx_ksk.clone(),
+                ctx_ksk,
                 log_base: 0,
             })
         }
@@ -382,8 +383,8 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
     fn try_convert_from(value: &KeySwitchingKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
         let ciphertext_level = value.ciphertext_level as usize;
         let ksk_level = value.ksk_level as usize;
-        let ctx_ksk = par.context_at_level(ksk_level)?;
-        let ctx_ciphertext = par.context_at_level(ciphertext_level)?;
+        let ctx_ksk = par.context_at_level(ksk_level)?.clone();
+        let ctx_ciphertext = par.context_at_level(ciphertext_level)?.clone();
 
         let c0_size: usize;
         let log_base = value.log_base as usize;
@@ -423,19 +424,19 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
         };
 
         let c1 = if let Some(seed) = seed {
-            Self::generate_c1(ctx_ksk, seed, value.c0.len())
+            Self::generate_c1(&ctx_ksk, seed, value.c0.len())
         } else {
             value
                 .c1
                 .iter()
-                .map(|c1i| Poly::from_bytes(c1i, ctx_ksk).map_err(Error::MathError))
+                .map(|c1i| Poly::from_bytes(c1i, &ctx_ksk).map_err(Error::MathError))
                 .collect::<Result<Vec<Poly>>>()?
         };
 
         let c0 = value
             .c0
             .iter()
-            .map(|c0i| Poly::from_bytes(c0i, ctx_ksk).map_err(Error::MathError))
+            .map(|c0i| Poly::from_bytes(c0i, &ctx_ksk).map_err(Error::MathError))
             .collect::<Result<Vec<Poly>>>()?;
 
         Ok(Self {
@@ -444,9 +445,9 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             c0: c0.into_boxed_slice(),
             c1: c1.into_boxed_slice(),
             ciphertext_level,
-            ctx_ciphertext: ctx_ciphertext.clone(),
+            ctx_ciphertext,
             ksk_level,
-            ctx_ksk: ctx_ksk.clone(),
+            ctx_ksk,
             log_base: value.log_base as usize,
         })
     }
