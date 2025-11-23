@@ -270,7 +270,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
             let mp = ctx_lvl.mul_params();
 
             // Scale all ciphertexts
-            // let mut now = std::time::SystemTime::now();
             let self_c = self
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
@@ -311,7 +310,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
             let mp = ctx_lvl.mul_params();
 
             // Scale all ciphertexts
-            // let mut now = std::time::SystemTime::now();
             let self_c = self
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
