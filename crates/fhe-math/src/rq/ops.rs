@@ -1,6 +1,6 @@
 //! Implementation of operations over polynomials.
 
-use super::{traits::TryConvertFrom, Poly, Representation};
+use super::{Poly, Representation};
 use crate::{Error, Result};
 use itertools::{izip, Itertools};
 use ndarray::Array2;
@@ -197,34 +197,34 @@ impl MulAssign<&Poly> for Poly {
 
 impl MulAssign<&BigUint> for Poly {
     fn mul_assign(&mut self, p: &BigUint) {
-        let v: Vec<BigUint> = vec![p.clone()];
-        let mut q = Poly::try_convert_from(
-            v.as_ref() as &[BigUint],
-            &self.ctx,
-            self.allow_variable_time_computations,
+        assert_ne!(
             self.representation,
-        )
-        .unwrap();
-        q.change_representation(Representation::Ntt);
+            Representation::NttShoup,
+            "Cannot multiply a polynomial in NttShoup representation by a scalar"
+        );
+
+        // Project the scalar into its CRT representation (reduced modulo each prime)
+        let scalar_crt = self.ctx.rns.project(p);
+
         if self.allow_variable_time_computations {
             unsafe {
                 izip!(
                     self.coefficients.outer_iter_mut(),
-                    q.coefficients.outer_iter(),
+                    scalar_crt.iter(),
                     self.ctx.q.iter()
                 )
-                .for_each(|(mut v1, v2, qi)| {
-                    qi.mul_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                .for_each(|(mut v1, scalar_qi, qi)| {
+                    qi.scalar_mul_vec_vt(v1.as_slice_mut().unwrap(), *scalar_qi)
                 });
             }
         } else {
             izip!(
                 self.coefficients.outer_iter_mut(),
-                q.coefficients.outer_iter(),
+                scalar_crt.iter(),
                 self.ctx.q.iter()
             )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.mul_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+            .for_each(|(mut v1, scalar_qi, qi)| {
+                qi.scalar_mul_vec(v1.as_slice_mut().unwrap(), *scalar_qi)
             });
         }
     }
@@ -458,6 +458,7 @@ where
 #[cfg(test)]
 mod tests {
     use itertools::{izip, Itertools};
+    use num_bigint::BigUint;
     use rand::rng;
 
     use super::dot_product;
@@ -697,5 +698,101 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn mul_scalar() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        for _ in 0..100 {
+            for modulus in MODULI {
+                let ctx = Arc::new(Context::new(&[*modulus], 16)?);
+                let m = Modulus::new(*modulus).unwrap();
+
+                // Test with PowerBasis representation
+                let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
+                let scalar = BigUint::from(42u64);
+                let r = &p * &scalar;
+                assert_eq!(r.representation, Representation::PowerBasis);
+                let mut expected = Vec::<u64>::from(&p);
+                m.scalar_mul_vec(&mut expected, 42u64);
+                assert_eq!(Vec::<u64>::from(&r), expected);
+
+                // Test with NTT representation
+                let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
+                let scalar = BigUint::from(123u64);
+                let r = &p * &scalar;
+                assert_eq!(r.representation, Representation::Ntt);
+                let mut expected = Vec::<u64>::from(&p);
+                m.scalar_mul_vec(&mut expected, 123u64);
+                assert_eq!(Vec::<u64>::from(&r), expected);
+            }
+
+            let ctx = Arc::new(Context::new(MODULI, 16)?);
+
+            // Test with PowerBasis representation
+            let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
+            let scalar = BigUint::from(99u64);
+            let r = &p * &scalar;
+            assert_eq!(r.representation, Representation::PowerBasis);
+            let mut expected = Vec::<u64>::from(&p);
+            for i in 0..MODULI.len() {
+                let m = Modulus::new(MODULI[i]).unwrap();
+                m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], 99u64)
+            }
+            assert_eq!(Vec::<u64>::from(&r), expected);
+
+            // Test with NTT representation
+            let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
+            let scalar = BigUint::from(77u64);
+            let r = &p * &scalar;
+            assert_eq!(r.representation, Representation::Ntt);
+            let mut expected = Vec::<u64>::from(&p);
+            for i in 0..MODULI.len() {
+                let m = Modulus::new(MODULI[i]).unwrap();
+                m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], 77u64)
+            }
+            assert_eq!(Vec::<u64>::from(&r), expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn mul_scalar_large_crt() -> Result<(), Box<dyn Error>> {
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
+
+        // Create a large scalar that exceeds the max modulus
+        let q_prod = MODULI.iter().fold(BigUint::from(1u64), |acc, &m| acc * m);
+        let large_scalar = &q_prod + BigUint::from(12345u64);
+
+        let p = Poly::random(&ctx, Representation::Ntt, &mut rng());
+        let r = &p * &large_scalar;
+        assert_eq!(r.representation, Representation::Ntt);
+
+        // Verify by computing the expected result manually for each modulus
+        let mut expected = Vec::<u64>::from(&p);
+        for i in 0..MODULI.len() {
+            let m = Modulus::new(MODULI[i]).unwrap();
+            // Reduce the large scalar modulo this prime
+            let scalar_mod_qi = (&large_scalar % MODULI[i]).to_u64_digits()[0];
+            m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], scalar_mod_qi)
+        }
+        assert_eq!(Vec::<u64>::from(&r), expected);
+
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Cannot multiply a polynomial in NttShoup representation by a scalar"
+    )]
+    fn mul_scalar_ntt_shoup_panic() {
+        use num_bigint::BigUint;
+
+        let ctx = Arc::new(Context::new(MODULI, 16).unwrap());
+        let mut p = Poly::random(&ctx, Representation::NttShoup, &mut rng());
+        let scalar = BigUint::from(42u64);
+
+        // This should panic with the assertion message
+        p *= &scalar;
     }
 }
