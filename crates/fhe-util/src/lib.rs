@@ -13,6 +13,7 @@ use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
 use num_traits::{cast::ToPrimitive, PrimInt};
 
 /// Returns whether the modulus p is prime; this function is 100% accurate.
+#[must_use]
 pub fn is_prime(p: u64) -> bool {
     probably_prime(&BigUint::from(p), 0)
 }
@@ -55,6 +56,7 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
 }
 
 /// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
+#[must_use]
 pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
     assert!(0 < nbits && nbits <= 64);
 
@@ -67,8 +69,11 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
     let mut current_value_nbits = 0;
     while current_index < a.len() {
         if current_value_nbits < 8 {
-            debug_assert!(64 - a[current_index].leading_zeros() <= nbits as u32);
-            current_value |= ((a[current_index] as u128) & mask) << current_value_nbits;
+            let value = a
+                .get(current_index)
+                .expect("current_index is guaranteed to be within bounds");
+            debug_assert!(64 - value.leading_zeros() <= nbits as u32);
+            current_value |= ((*value as u128) & mask) << current_value_nbits;
             current_value_nbits += nbits;
             current_index += 1;
         }
@@ -90,6 +95,7 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
 }
 
 /// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
+#[must_use]
 pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
     assert!(0 < nbits && nbits <= 64);
     let mask = (u64::MAX >> (64 - nbits)) as u128;
@@ -102,7 +108,10 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
     let mut current_index = 0;
     while current_index < b.len() {
         if current_value_nbits < nbits {
-            current_value |= (b[current_index] as u128) << current_value_nbits;
+            let value = b
+                .get(current_index)
+                .expect("current_index is guaranteed to be within bounds");
+            current_value |= (*value as u128) << current_value_nbits;
             current_value_nbits += 8;
             current_index += 1;
         }
@@ -124,6 +133,7 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
 
 /// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
 /// of `output_nbits`-bit numbers.
+#[must_use]
 pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
     assert!(0 < input_nbits && input_nbits <= 64);
     assert!(0 < output_nbits && output_nbits <= 64);
@@ -138,8 +148,11 @@ pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usiz
     let mut current_value_nbits = 0;
     while current_index < a.len() {
         if current_value_nbits < output_nbits {
-            debug_assert!(64 - a[current_index].leading_zeros() <= input_nbits as u32);
-            current_value |= ((a[current_index] as u128) & input_mask) << current_value_nbits;
+            let value = a
+                .get(current_index)
+                .expect("current_index is guaranteed to be within bounds");
+            debug_assert!(64 - value.leading_zeros() <= input_nbits as u32);
+            current_value |= ((*value as u128) & input_mask) << current_value_nbits;
             current_value_nbits += input_nbits;
             current_index += 1;
         }
@@ -162,6 +175,7 @@ pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usiz
 
 /// Computes the modular multiplicative inverse of `a` modulo `p`. Returns
 /// `None` if `a` is not invertible modulo `p`.
+#[must_use]
 pub fn inverse(a: u64, p: u64) -> Option<u64> {
     let p = BigUint::from(p);
     let a = BigUint::from(a);
@@ -180,6 +194,9 @@ pub fn variance<T: PrimInt>(values: &[T]) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    // Allow indexing in tests for convenience
+    #![allow(clippy::indexing_slicing)]
+
     use itertools::Itertools;
     use rand::RngCore;
 

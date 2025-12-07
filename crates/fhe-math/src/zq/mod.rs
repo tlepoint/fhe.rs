@@ -38,7 +38,28 @@ impl Eq for Modulus {}
 
 impl PartialEq for Modulus {
     fn eq(&self, other: &Self) -> bool {
-        self.p == other.p
+        let Self {
+            p,
+            barrett_hi: _,
+            barrett_lo: _,
+            leading_zeros: _,
+            supports_opt: _,
+            distribution: _,
+            arch: _,
+        } = self;
+        let Self {
+            p: other_p,
+            barrett_hi: _,
+            barrett_lo: _,
+            leading_zeros: _,
+            supports_opt: _,
+            distribution: _,
+            arch: _,
+        } = other;
+
+        // All other fields are deterministically derived from p, so we only compare p.
+        // The destructuring ensures the compiler will warn us if new fields are added.
+        p == other_p
     }
 }
 
@@ -72,6 +93,7 @@ impl Modulus {
 
     /// Performs the modular addition of a and b in constant time.
     /// Aborts if a >= p or b >= p in debug mode.
+    #[must_use]
     pub const fn add(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         Self::reduce1(a + b, self.p)
@@ -83,6 +105,7 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being added.
+    #[must_use]
     pub const unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         Self::reduce1_vt(a + b, self.p)
@@ -90,6 +113,7 @@ impl Modulus {
 
     /// Performs the modular subtraction of a and b in constant time.
     /// Aborts if a >= p or b >= p in debug mode.
+    #[must_use]
     pub const fn sub(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         Self::reduce1(a + self.p - b, self.p)
@@ -108,6 +132,7 @@ impl Modulus {
 
     /// Performs the modular multiplication of a and b in constant time.
     /// Aborts if a >= p or b >= p in debug mode.
+    #[must_use]
     pub const fn mul(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         self.reduce_u128((a as u128) * (b as u128))
@@ -127,6 +152,7 @@ impl Modulus {
     /// Optimized modular multiplication of a and b in constant time.
     ///
     /// Aborts if a >= p or b >= p in debug mode.
+    #[must_use]
     pub const fn mul_opt(&self, a: u64, b: u64) -> u64 {
         debug_assert!(self.supports_opt);
         debug_assert!(a < self.p && b < self.p);
@@ -150,6 +176,7 @@ impl Modulus {
     /// Modular negation in constant time.
     ///
     /// Aborts if a >= p in debug mode.
+    #[must_use]
     pub const fn neg(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
         Self::reduce1(self.p - a, self.p)
@@ -169,6 +196,7 @@ impl Modulus {
     /// Compute the Shoup representation of a.
     ///
     /// Aborts if a >= p in debug mode.
+    #[must_use]
     pub const fn shoup(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
 
@@ -178,6 +206,7 @@ impl Modulus {
     /// Shoup multiplication of a and b in constant time.
     ///
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
+    #[must_use]
     pub const fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
         Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
     }
@@ -196,6 +225,7 @@ impl Modulus {
     /// The output is in the interval [0, 2 * p).
     ///
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
+    #[must_use]
     pub const fn lazy_mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
         debug_assert!(b < self.p);
         debug_assert!(b_shoup == self.shoup(b));
@@ -391,6 +421,7 @@ impl Modulus {
     /// Compute the Shoup representation of a vector.
     ///
     /// Aborts if any of the values of the vector is >= p in debug mode.
+    #[must_use]
     pub fn shoup_vec(&self, a: &[u64]) -> Vec<u64> {
         self.arch
             .dispatch(|| a.iter().map(|ai| self.shoup(*ai)).collect_vec())
@@ -456,6 +487,7 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being centered.
+    #[must_use]
     pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
         self.arch
             .dispatch(|| a.iter().map(|ai| self.center_vt(*ai)).collect_vec())
@@ -486,6 +518,7 @@ impl Modulus {
     }
 
     /// Reduce a vector in place in constant time.
+    #[must_use]
     pub fn reduce_vec_i64(&self, a: &[i64]) -> Vec<u64> {
         self.arch
             .dispatch(|| a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec())
@@ -496,12 +529,14 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
+    #[must_use]
     pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
         self.arch
             .dispatch(|| a.iter().map(|ai| self.reduce_i64_vt(*ai)).collect())
     }
 
     /// Reduce a vector in constant time.
+    #[must_use]
     pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
         self.arch
             .dispatch(|| a.iter().map(|ai| self.reduce(*ai)).collect())
@@ -512,6 +547,7 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
+    #[must_use]
     pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
         self.arch
             .dispatch(|| a.iter().map(|bi| self.reduce_vt(*bi)).collect())
@@ -539,6 +575,7 @@ impl Modulus {
     /// Modular exponentiation in variable time.
     ///
     /// Aborts if a >= p or n >= p in debug mode.
+    #[must_use]
     pub fn pow(&self, a: u64, n: u64) -> u64 {
         debug_assert!(a < self.p && n < self.p);
 
@@ -564,6 +601,7 @@ impl Modulus {
     ///
     /// Returns None if p is not prime or a = 0.
     /// Aborts if a >= p in debug mode.
+    #[must_use]
     pub fn inv(&self, a: u64) -> std::option::Option<u64> {
         if !is_prime(self.p) || a == 0 {
             None
@@ -575,6 +613,7 @@ impl Modulus {
     }
 
     /// Modular reduction of a u128 in constant time.
+    #[must_use]
     pub const fn reduce_u128(&self, a: u128) -> u64 {
         Self::reduce1(self.lazy_reduce_u128(a), self.p)
     }
@@ -584,11 +623,13 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
+    #[must_use]
     pub const unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
         Self::reduce1_vt(self.lazy_reduce_u128(a), self.p)
     }
 
     /// Modular reduction of a u64 in constant time.
+    #[must_use]
     pub const fn reduce(&self, a: u64) -> u64 {
         Self::reduce1(self.lazy_reduce(a), self.p)
     }
@@ -598,11 +639,13 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
+    #[must_use]
     pub const unsafe fn reduce_vt(&self, a: u64) -> u64 {
         Self::reduce1_vt(self.lazy_reduce(a), self.p)
     }
 
     /// Optimized modular reduction of a u128 in constant time.
+    #[must_use]
     pub const fn reduce_opt_u128(&self, a: u128) -> u64 {
         debug_assert!(self.supports_opt);
         Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
@@ -619,6 +662,7 @@ impl Modulus {
     }
 
     /// Optimized modular reduction of a u64 in constant time.
+    #[must_use]
     pub const fn reduce_opt(&self, a: u64) -> u64 {
         Self::reduce1(self.lazy_reduce_opt(a), self.p)
     }
@@ -628,6 +672,7 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
+    #[must_use]
     pub const unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
         Self::reduce1_vt(self.lazy_reduce_opt(a), self.p)
     }
@@ -671,6 +716,7 @@ impl Modulus {
 
     /// Lazy modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
+    #[must_use]
     pub const fn lazy_reduce_u128(&self, a: u128) -> u64 {
         let a_lo = a as u64;
         let a_hi = (a >> 64) as u64;
@@ -689,6 +735,7 @@ impl Modulus {
 
     /// Lazy modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
+    #[must_use]
     pub const fn lazy_reduce(&self, a: u64) -> u64 {
         let p_lo_lo = ((a as u128) * (self.barrett_lo as u128)) >> 64;
         let p_lo_hi = (a as u128) * (self.barrett_hi as u128);
@@ -706,6 +753,7 @@ impl Modulus {
     /// The output is in the interval [0, 2 * p).
     ///
     /// Aborts if the input is >= p ^ 2 in debug mode.
+    #[must_use]
     pub const fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
         debug_assert!(a < (self.p as u128) * (self.p as u128));
 
@@ -748,6 +796,7 @@ impl Modulus {
     /// Length of the serialization of a vector of size `size`.
     ///
     /// Panics if the size is not a multiple of 8.
+    #[must_use]
     pub const fn serialization_length(&self, size: usize) -> usize {
         assert!(size % 8 == 0);
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
@@ -757,12 +806,14 @@ impl Modulus {
     /// Serialize a vector of elements of length a multiple of 8.
     ///
     /// Panics if the length of the vector is not a multiple of 8.
+    #[must_use]
     pub fn serialize_vec(&self, a: &[u64]) -> Vec<u8> {
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
         transcode_to_bytes(a, p_nbits)
     }
 
     /// Deserialize a vector of bytes into a vector of elements mod p.
+    #[must_use]
     pub fn deserialize_vec(&self, b: &[u8]) -> Vec<u64> {
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
         transcode_from_bytes(b, p_nbits)

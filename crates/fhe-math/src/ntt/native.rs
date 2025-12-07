@@ -1,3 +1,7 @@
+// Allow indexing in this performance-critical NTT implementation.
+// The unsafe blocks already indicate this is performance-sensitive code.
+#![allow(clippy::indexing_slicing)]
+
 use crate::zq::Modulus;
 use itertools::Itertools;
 use rand::{Rng, SeedableRng};
@@ -24,6 +28,7 @@ impl NttOperator {
     /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
     /// Returns None if the modulus does not support the NTT for this specific
     /// size.
+    #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
         if !super::supports_ntt(p.p, size) {
             None

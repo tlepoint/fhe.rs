@@ -98,16 +98,19 @@ impl Context {
     }
 
     /// Returns the modulus as a BigUint.
+    #[must_use]
     pub fn modulus(&self) -> &BigUint {
         self.rns.modulus()
     }
 
     /// Returns a reference to the moduli in this context.
+    #[must_use]
     pub fn moduli(&self) -> &[u64] {
         &self.moduli
     }
 
     /// Returns a reference to the moduli as Modulus in this context.
+    #[must_use]
     pub fn moduli_operators(&self) -> &[Modulus] {
         &self.q
     }

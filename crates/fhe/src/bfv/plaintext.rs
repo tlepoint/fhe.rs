@@ -78,6 +78,7 @@ impl Plaintext {
     }
 
     /// Returns the level of this plaintext.
+    #[must_use]
     pub fn level(&self) -> usize {
         self.par.level_of_context(self.poly_ntt.ctx()).unwrap()
     }
@@ -89,10 +90,29 @@ unsafe impl Send for Plaintext {}
 // even if one of them doesn't store its encoding information.
 impl PartialEq for Plaintext {
     fn eq(&self, other: &Self) -> bool {
-        let mut eq = self.par == other.par;
-        eq &= self.value == other.value;
-        if self.encoding.is_some() && other.encoding.is_some() {
-            eq &= self.encoding.as_ref().unwrap() == other.encoding.as_ref().unwrap()
+        let Self {
+            par,
+            value,
+            encoding,
+            poly_ntt,
+            level,
+        } = self;
+        let Self {
+            par: other_par,
+            value: other_value,
+            encoding: other_encoding,
+            poly_ntt: other_poly_ntt,
+            level: other_level,
+        } = other;
+
+        let mut eq = par == other_par;
+        eq &= value == other_value;
+        eq &= poly_ntt == other_poly_ntt;
+        eq &= level == other_level;
+        // Compare encoding only if both plaintexts have encoding information.
+        // This allows comparing plaintexts even when one doesn't store encoding.
+        if encoding.is_some() && other_encoding.is_some() {
+            eq &= encoding == other_encoding;
         }
         eq
     }

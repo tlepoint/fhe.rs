@@ -1,3 +1,6 @@
+// Allow indexing in benchmarks for convenience
+#![allow(clippy::indexing_slicing)]
+
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
 use fhe_math::rq::*;

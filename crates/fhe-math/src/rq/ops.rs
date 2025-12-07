@@ -188,7 +188,7 @@ impl MulAssign<&Poly> for Poly {
                 }
                 self.has_lazy_coefficients = false
             }
-            _ => {
+            Representation::PowerBasis => {
                 panic!("Multiplication requires a multipliand in Ntt or NttShoup representation.")
             }
         }
@@ -249,7 +249,7 @@ impl Mul<&Poly> for &Poly {
                 q *= self;
                 q
             }
-            _ => {
+            Representation::PowerBasis | Representation::Ntt => {
                 let mut q = self.clone();
                 q *= p;
                 q
@@ -483,31 +483,31 @@ mod tests {
                 let q = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
                 let r = &p + &q;
                 assert_eq!(r.representation, Representation::PowerBasis);
-                let mut a = Vec::<u64>::from(&p);
-                m.add_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.add_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
 
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let r = &p + &q;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut a = Vec::<u64>::from(&p);
-                m.add_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.add_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
             let q = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
-            let mut a = Vec::<u64>::from(&p);
-            let b = Vec::<u64>::from(&q);
+            let mut a = Vec::<u64>::try_from(&p).unwrap();
+            let b = Vec::<u64>::try_from(&q).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.add_vec(&mut a[i * 16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
             }
             let r = &p + &q;
             assert_eq!(r.representation, Representation::PowerBasis);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
         }
         Ok(())
     }
@@ -524,31 +524,31 @@ mod tests {
                 let q = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
                 let r = &p - &q;
                 assert_eq!(r.representation, Representation::PowerBasis);
-                let mut a = Vec::<u64>::from(&p);
-                m.sub_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.sub_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
 
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let r = &p - &q;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut a = Vec::<u64>::from(&p);
-                m.sub_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.sub_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
             let q = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
-            let mut a = Vec::<u64>::from(&p);
-            let b = Vec::<u64>::from(&q);
+            let mut a = Vec::<u64>::try_from(&p).unwrap();
+            let b = Vec::<u64>::try_from(&q).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.sub_vec(&mut a[i * 16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
             }
             let r = &p - &q;
             assert_eq!(r.representation, Representation::PowerBasis);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
         }
         Ok(())
     }
@@ -565,23 +565,23 @@ mod tests {
                 let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let r = &p * &q;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut a = Vec::<u64>::from(&p);
-                m.mul_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.mul_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
             let q = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            let mut a = Vec::<u64>::from(&p);
-            let b = Vec::<u64>::from(&q);
+            let mut a = Vec::<u64>::try_from(&p).unwrap();
+            let b = Vec::<u64>::try_from(&q).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.mul_vec(&mut a[i * 16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
             }
             let r = &p * &q;
             assert_eq!(r.representation, Representation::Ntt);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
         }
         Ok(())
     }
@@ -598,23 +598,23 @@ mod tests {
                 let q = Poly::random(&ctx, Representation::NttShoup, &mut rng);
                 let r = &p * &q;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut a = Vec::<u64>::from(&p);
-                m.mul_vec(&mut a, &Vec::<u64>::from(&q));
-                assert_eq!(Vec::<u64>::from(&r), a);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
+                m.mul_vec(&mut a, &Vec::<u64>::try_from(&q).unwrap());
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
             let q = Poly::random(&ctx, Representation::NttShoup, &mut rng);
-            let mut a = Vec::<u64>::from(&p);
-            let b = Vec::<u64>::from(&q);
+            let mut a = Vec::<u64>::try_from(&p).unwrap();
+            let b = Vec::<u64>::try_from(&q).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.mul_vec(&mut a[i * 16..(i + 1) * 16], &b[i * 16..(i + 1) * 16])
             }
             let r = &p * &q;
             assert_eq!(r.representation, Representation::Ntt);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
         }
         Ok(())
     }
@@ -630,32 +630,32 @@ mod tests {
                 let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
                 let r = -&p;
                 assert_eq!(r.representation, Representation::PowerBasis);
-                let mut a = Vec::<u64>::from(&p);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
                 m.neg_vec(&mut a);
-                assert_eq!(Vec::<u64>::from(&r), a);
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
 
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let r = -&p;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut a = Vec::<u64>::from(&p);
+                let mut a = Vec::<u64>::try_from(&p).unwrap();
                 m.neg_vec(&mut a);
-                assert_eq!(Vec::<u64>::from(&r), a);
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
-            let mut a = Vec::<u64>::from(&p);
+            let mut a = Vec::<u64>::try_from(&p).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.neg_vec(&mut a[i * 16..(i + 1) * 16])
             }
             let r = -&p;
             assert_eq!(r.representation, Representation::PowerBasis);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
 
             let r = -p;
             assert_eq!(r.representation, Representation::PowerBasis);
-            assert_eq!(Vec::<u64>::from(&r), a);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), a);
         }
         Ok(())
     }
@@ -713,18 +713,18 @@ mod tests {
                 let scalar = BigUint::from(42u64);
                 let r = &p * &scalar;
                 assert_eq!(r.representation, Representation::PowerBasis);
-                let mut expected = Vec::<u64>::from(&p);
+                let mut expected = Vec::<u64>::try_from(&p).unwrap();
                 m.scalar_mul_vec(&mut expected, 42u64);
-                assert_eq!(Vec::<u64>::from(&r), expected);
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), expected);
 
                 // Test with NTT representation
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
                 let scalar = BigUint::from(123u64);
                 let r = &p * &scalar;
                 assert_eq!(r.representation, Representation::Ntt);
-                let mut expected = Vec::<u64>::from(&p);
+                let mut expected = Vec::<u64>::try_from(&p).unwrap();
                 m.scalar_mul_vec(&mut expected, 123u64);
-                assert_eq!(Vec::<u64>::from(&r), expected);
+                assert_eq!(Vec::<u64>::try_from(&r).unwrap(), expected);
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
@@ -734,24 +734,24 @@ mod tests {
             let scalar = BigUint::from(99u64);
             let r = &p * &scalar;
             assert_eq!(r.representation, Representation::PowerBasis);
-            let mut expected = Vec::<u64>::from(&p);
+            let mut expected = Vec::<u64>::try_from(&p).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], 99u64)
             }
-            assert_eq!(Vec::<u64>::from(&r), expected);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), expected);
 
             // Test with NTT representation
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
             let scalar = BigUint::from(77u64);
             let r = &p * &scalar;
             assert_eq!(r.representation, Representation::Ntt);
-            let mut expected = Vec::<u64>::from(&p);
+            let mut expected = Vec::<u64>::try_from(&p).unwrap();
             for i in 0..MODULI.len() {
                 let m = Modulus::new(MODULI[i]).unwrap();
                 m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], 77u64)
             }
-            assert_eq!(Vec::<u64>::from(&r), expected);
+            assert_eq!(Vec::<u64>::try_from(&r).unwrap(), expected);
         }
         Ok(())
     }
@@ -769,14 +769,14 @@ mod tests {
         assert_eq!(r.representation, Representation::Ntt);
 
         // Verify by computing the expected result manually for each modulus
-        let mut expected = Vec::<u64>::from(&p);
+        let mut expected = Vec::<u64>::try_from(&p).unwrap();
         for i in 0..MODULI.len() {
             let m = Modulus::new(MODULI[i]).unwrap();
             // Reduce the large scalar modulo this prime
             let scalar_mod_qi = (&large_scalar % MODULI[i]).to_u64_digits()[0];
             m.scalar_mul_vec(&mut expected[i * 16..(i + 1) * 16], scalar_mod_qi)
         }
-        assert_eq!(Vec::<u64>::from(&r), expected);
+        assert_eq!(Vec::<u64>::try_from(&r).unwrap(), expected);
 
         Ok(())
     }

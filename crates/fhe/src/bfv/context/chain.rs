@@ -34,9 +34,34 @@ pub struct ContextLevel {
 
 impl PartialEq for ContextLevel {
     fn eq(&self, other: &Self) -> bool {
-        self.level == other.level
-            && self.num_moduli == other.num_moduli
-            && self.cipher_plain_context == other.cipher_plain_context
+        let Self {
+            poly_context,
+            cipher_plain_context,
+            level,
+            num_moduli,
+            next: _,
+            prev: _,
+            down_scaler: _,
+            up_scaler: _,
+            mul_params: _,
+        } = self;
+        let Self {
+            poly_context: other_poly_context,
+            cipher_plain_context: other_cipher_plain_context,
+            level: other_level,
+            num_moduli: other_num_moduli,
+            next: _,
+            prev: _,
+            down_scaler: _,
+            up_scaler: _,
+            mul_params: _,
+        } = other;
+
+        // OnceCell fields are lazily computed caching fields, not part of equality.
+        level == other_level
+            && num_moduli == other_num_moduli
+            && poly_context == other_poly_context
+            && cipher_plain_context == other_cipher_plain_context
     }
 }
 
@@ -44,6 +69,7 @@ impl Eq for ContextLevel {}
 
 impl ContextLevel {
     /// Create a new context level
+    #[must_use]
     pub fn new(
         poly_context: Arc<Context>,
         cipher_plain_context: Arc<CipherPlainContext>,

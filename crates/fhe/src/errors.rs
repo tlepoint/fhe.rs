@@ -320,6 +320,7 @@ pub enum ParametersError {
 }
 
 impl ParametersError {
+    #[must_use]
     pub fn invalid_degree_with_bounds(degree: usize) -> Self {
         Self::InvalidDegree {
             degree,
@@ -328,6 +329,7 @@ impl ParametersError {
         }
     }
 
+    #[must_use]
     pub fn insufficient_security(actual: u32) -> Self {
         Self::InsufficientSecurity {
             actual,

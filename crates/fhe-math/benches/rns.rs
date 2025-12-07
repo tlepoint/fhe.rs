@@ -1,3 +1,6 @@
+// Allow indexing in benchmarks for convenience
+#![allow(clippy::indexing_slicing)]
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe_math::rns::{RnsContext, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;

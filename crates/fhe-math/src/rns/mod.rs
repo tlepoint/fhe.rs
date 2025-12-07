@@ -1,4 +1,6 @@
 #![warn(missing_docs, unused_imports)]
+// Allow indexing in this performance-critical RNS implementation
+#![allow(clippy::indexing_slicing)]
 
 //! Residue-Number System operations.
 
@@ -105,11 +107,13 @@ impl RnsContext {
     }
 
     /// Returns the product of the moduli used when creating the RNS context.
+    #[must_use]
     pub const fn modulus(&self) -> &BigUint {
         &self.product
     }
 
     /// Project a BigUint into its rests.
+    #[must_use]
     pub fn project(&self, a: &BigUint) -> Vec<u64> {
         self.moduli_u64
             .iter()
@@ -121,6 +125,7 @@ impl RnsContext {
     ///
     /// Aborts if the number of rests is different than the number of moduli in
     /// debug mode.
+    #[must_use]
     pub fn lift(&self, rests: ArrayView1<u64>) -> BigUint {
         let mut result = BigUint::zero();
         izip!(rests.iter(), self.garner.iter())
@@ -129,6 +134,7 @@ impl RnsContext {
     }
 
     /// Getter for the i-th garner coefficient.
+    #[must_use]
     pub fn get_garner(&self, i: usize) -> Option<&BigUint> {
         self.garner.get(i)
     }

@@ -1,3 +1,6 @@
+// Allow indexing in examples for simplicity
+#![allow(clippy::indexing_slicing)]
+
 mod util;
 
 use std::error::Error;

@@ -1,3 +1,6 @@
+// Allow indexing in examples for simplicity
+#![allow(clippy::indexing_slicing)]
+
 // Implementation of multiparty voting using the `fhe` crate.
 
 mod util;

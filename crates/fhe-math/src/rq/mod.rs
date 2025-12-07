@@ -1,4 +1,7 @@
 #![warn(missing_docs, unused_imports)]
+// Allow indexing/slicing in this performance-critical polynomial arithmetic module.
+// This code heavily uses RNS representation and requires fast array access.
+#![allow(clippy::indexing_slicing)]
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are
 //! prime moduli in zq.
@@ -111,6 +114,7 @@ impl AsMut<Poly> for Poly {
 
 impl Poly {
     /// Creates a polynomial holding the constant 0.
+    #[must_use]
     pub fn zero(ctx: &Arc<Context>, representation: Representation) -> Self {
         Self {
             ctx: ctx.clone(),
@@ -142,6 +146,7 @@ impl Poly {
     }
 
     /// Current representation of the polynomial.
+    #[must_use]
     pub const fn representation(&self) -> &Representation {
         &self.representation
     }
@@ -242,6 +247,7 @@ impl Poly {
     }
 
     /// Generate a random polynomial deterministically from a seed.
+    #[must_use]
     pub fn random_from_seed(
         ctx: &Arc<Context>,
         representation: Representation,
@@ -296,6 +302,7 @@ impl Poly {
     }
 
     /// Access the polynomial coefficients in RNS representation.
+    #[must_use]
     pub fn coefficients(&self) -> ArrayView2<'_, u64> {
         self.coefficients.view()
     }
@@ -384,6 +391,7 @@ impl Poly {
     /// # Safety
     /// This operation also creates a polynomial that allows variable time
     /// operations.
+    #[must_use]
     pub unsafe fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
         power_basis_coefficients: &[u64],
         ctx: &Arc<Context>,
@@ -508,6 +516,7 @@ impl Poly {
     }
 
     /// Returns the context of the underlying polynomial
+    #[must_use]
     pub fn ctx(&self) -> &Arc<Context> {
         &self.ctx
     }
@@ -591,16 +600,16 @@ mod tests {
             let p = Poly::zero(&ctx, Representation::PowerBasis);
             let q = Poly::zero(&ctx, Representation::Ntt);
             assert_ne!(p, q);
-            assert_eq!(Vec::<u64>::from(&p), &[0; 16]);
-            assert_eq!(Vec::<u64>::from(&q), &[0; 16]);
+            assert_eq!(Vec::<u64>::try_from(&p).unwrap(), &[0; 16]);
+            assert_eq!(Vec::<u64>::try_from(&q).unwrap(), &[0; 16]);
         }
 
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::zero(&ctx, Representation::PowerBasis);
         let q = Poly::zero(&ctx, Representation::Ntt);
         assert_ne!(p, q);
-        assert_eq!(Vec::<u64>::from(&p), [0; 16 * MODULI.len()]);
-        assert_eq!(Vec::<u64>::from(&q), [0; 16 * MODULI.len()]);
+        assert_eq!(Vec::<u64>::try_from(&p).unwrap(), [0; 16 * MODULI.len()]);
+        assert_eq!(Vec::<u64>::try_from(&q).unwrap(), [0; 16 * MODULI.len()]);
         assert_eq!(Vec::<BigUint>::from(&p), reference);
         assert_eq!(Vec::<BigUint>::from(&q), reference);
 
@@ -659,13 +668,13 @@ mod tests {
             for modulus in MODULI {
                 let ctx = Arc::new(Context::new(&[*modulus], 16)?);
                 let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-                let p_coefficients = Vec::<u64>::from(&p);
+                let p_coefficients = Vec::<u64>::try_from(&p).unwrap();
                 assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
             }
 
             let ctx = Arc::new(Context::new(MODULI, 16)?);
             let p = Poly::random(&ctx, Representation::Ntt, &mut rng);
-            let p_coefficients = Vec::<u64>::from(&p);
+            let p_coefficients = Vec::<u64>::try_from(&p).unwrap();
             assert_eq!(p_coefficients, p.coefficients().as_slice().unwrap())
         }
         Ok(())
@@ -867,7 +876,7 @@ mod tests {
             p_ntt.change_representation(Representation::Ntt);
             let mut p_ntt_shoup = p.clone();
             p_ntt_shoup.change_representation(Representation::NttShoup);
-            let p_coeffs = Vec::<u64>::from(&p);
+            let p_coeffs = Vec::<u64>::try_from(&p).unwrap();
 
             // Substitution by a multiple of 2 * degree, or even numbers, should fail
             assert!(SubstitutionExponent::new(&ctx, 0).is_err());
@@ -895,7 +904,7 @@ mod tests {
                     p_coeffs[i]
                 };
             }
-            assert_eq!(&Vec::<u64>::from(&q), &v);
+            assert_eq!(&Vec::<u64>::try_from(&q).unwrap(), &v);
 
             let q_ntt = p_ntt.substitute(&SubstitutionExponent::new(&ctx, 3)?)?;
             q.change_representation(Representation::Ntt);

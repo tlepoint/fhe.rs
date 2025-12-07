@@ -160,7 +160,9 @@ impl TryConvertFrom<&Rq> for Poly {
             RepresentationProto::Powerbasis => Representation::PowerBasis,
             RepresentationProto::Ntt => Representation::Ntt,
             RepresentationProto::Nttshoup => Representation::NttShoup,
-            _ => return Err(Error::Default("Unknown representation".to_string())),
+            RepresentationProto::Unknown => {
+                return Err(Error::Default("Unknown representation".to_string()))
+            }
         };
 
         let variable_time = variable_time || value.allow_variable_time;
@@ -409,9 +411,16 @@ impl<'a, const N: usize> TryConvertFrom<&'a [i64; N]> for Poly {
     }
 }
 
-impl From<&Poly> for Vec<u64> {
-    fn from(p: &Poly) -> Self {
-        p.coefficients.as_slice().unwrap().to_vec()
+impl TryFrom<&Poly> for Vec<u64> {
+    type Error = Error;
+
+    fn try_from(p: &Poly) -> Result<Self> {
+        p.coefficients
+            .as_slice()
+            .ok_or_else(|| {
+                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
+            })
+            .map(|slice| slice.to_vec())
     }
 }
 

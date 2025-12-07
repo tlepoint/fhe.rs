@@ -26,6 +26,7 @@ pub struct Encoding {
 impl Encoding {
     /// A Poly encoding encodes a vector as coefficients of a polynomial;
     /// homomorphic operations are therefore polynomial operations.
+    #[must_use]
     pub fn poly() -> Self {
         Self {
             encoding: EncodingEnum::Poly,
@@ -37,6 +38,7 @@ impl Encoding {
     /// component-wise operations on the coefficients of the underlying vectors.
     /// The Simd encoding require that the plaintext modulus is congruent to 1
     /// modulo the degree of the underlying polynomial.
+    #[must_use]
     pub fn simd() -> Self {
         Self {
             encoding: EncodingEnum::Simd,
@@ -45,6 +47,7 @@ impl Encoding {
     }
 
     /// A poly encoding at a given level.
+    #[must_use]
     pub fn poly_at_level(level: usize) -> Self {
         Self {
             encoding: EncodingEnum::Poly,
@@ -53,6 +56,7 @@ impl Encoding {
     }
 
     /// A simd encoding at a given level.
+    #[must_use]
     pub fn simd_at_level(level: usize) -> Self {
         Self {
             encoding: EncodingEnum::Simd,
