@@ -36,3 +36,13 @@ thiserror = "^2.0.17"
 zeroize = "^1.8.2"
 zeroize_derive = "^1.4.2"
 once_cell = "^1.19.0"
+
+[workspace.lints.clippy]
+indexing_slicing = "deny"
+fallible_impl_from = "deny"
+wildcard_enum_match_arm = "deny"
+# Note: unneeded_field_pattern is intentionally not enabled because it conflicts
+# with the defensive programming pattern of explicitly listing all struct fields
+# in destructuring to ensure compiler catches when new fields are added.
+fn_params_excessive_bools = "deny"
+must_use_candidate = "warn"

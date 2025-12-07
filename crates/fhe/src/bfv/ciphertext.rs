@@ -55,7 +55,10 @@ impl Ciphertext {
             });
         }
 
-        let ctx = c[0].ctx();
+        let ctx = c
+            .first()
+            .expect("c has at least 2 elements due to length check above")
+            .ctx();
         let level = par.level_of_context(ctx)?;
 
         // Check that all polynomials have the expected representation and context.
@@ -121,6 +124,7 @@ impl Ciphertext {
     }
 
     /// Get the deepest level this ciphertext can reach
+    #[must_use]
     pub fn max_switchable_level(&self) -> usize {
         self.par.max_level()
     }
@@ -153,6 +157,7 @@ impl DeserializeParametrized for Ciphertext {
 
 impl Ciphertext {
     /// Generate the zero ciphertext.
+    #[must_use]
     pub fn zero(par: &Arc<BfvParameters>) -> Self {
         Self {
             par: par.clone(),
@@ -167,14 +172,28 @@ impl Ciphertext {
 impl From<&Ciphertext> for CiphertextProto {
     fn from(ct: &Ciphertext) -> Self {
         let mut proto = CiphertextProto::default();
-        for i in 0..ct.len() - 1 {
-            proto.c.push(ct[i].to_bytes())
+
+        // Split the ciphertext polynomials into all-but-last and last
+        match ct.c.split_last() {
+            None => {
+                // Empty ciphertext - this should not happen as new() requires
+                // at least 2 polys but we handle it gracefully
+            }
+            Some((last, rest)) => {
+                // Serialize all but the last polynomial
+                for poly in rest {
+                    proto.c.push(poly.to_bytes());
+                }
+
+                // Handle the last polynomial based on whether we have a seed
+                if let Some(seed) = ct.seed {
+                    proto.seed = seed.to_vec();
+                } else {
+                    proto.c.push(last.to_bytes());
+                }
+            }
         }
-        if let Some(seed) = ct.seed {
-            proto.seed = seed.to_vec()
-        } else {
-            proto.c.push(ct[ct.len() - 1].to_bytes())
-        }
+
         proto.level = ct.level as u32;
         proto
     }

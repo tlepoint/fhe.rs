@@ -74,26 +74,31 @@ unsafe impl Send for BfvParameters {}
 
 impl BfvParameters {
     /// Returns the underlying polynomial degree
+    #[must_use]
     pub const fn degree(&self) -> usize {
         self.polynomial_degree
     }
 
     /// Returns a reference to the ciphertext moduli
+    #[must_use]
     pub fn moduli(&self) -> &[u64] {
         &self.moduli
     }
 
     /// Returns a reference to the ciphertext moduli
+    #[must_use]
     pub fn moduli_sizes(&self) -> &[usize] {
         &self.moduli_sizes
     }
 
     /// Returns the plaintext modulus
+    #[must_use]
     pub const fn plaintext(&self) -> u64 {
         self.plaintext_modulus
     }
 
     /// Returns the maximum level allowed by these parameters.
+    #[must_use]
     pub fn max_level(&self) -> usize {
         self.moduli.len() - 1
     }
@@ -132,6 +137,7 @@ impl BfvParameters {
     }
 
     /// Return head of context chain
+    #[must_use]
     pub fn context_chain(&self) -> Arc<ContextLevel> {
         self.context_chain.clone()
     }
@@ -239,6 +245,7 @@ impl BfvParameters {
 
     #[cfg(test)]
     /// Returns default parameters for tests.
+    #[must_use]
     pub fn default_arc(num_moduli: usize, degree: usize) -> Arc<Self> {
         if !degree.is_power_of_two() || degree < 8 {
             panic!("Invalid degree");
@@ -265,6 +272,7 @@ pub struct BfvParametersBuilder {
 impl BfvParametersBuilder {
     /// Creates a new instance of the builder
     #[allow(clippy::new_without_default)]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             degree: Default::default(),

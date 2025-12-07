@@ -1,3 +1,6 @@
+// Allow indexing in examples for simplicity
+#![allow(clippy::indexing_slicing)]
+
 use std::error::Error;
 
 use fhe::bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey};

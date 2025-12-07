@@ -158,7 +158,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
         let ctx_lvl = ct.par.context_level_at(ct.level)?;
         let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
         let v = Zeroizing::new(
-            Vec::<u64>::from(d.as_ref())
+            Vec::<u64>::try_from(d.as_ref())?
                 .iter_mut()
                 .map(|vi| *vi + *ct.par.plaintext)
                 .collect_vec(),

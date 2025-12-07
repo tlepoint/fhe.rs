@@ -1,4 +1,6 @@
 #![warn(missing_docs, unused_imports)]
+// Allow indexing in BFV cryptographic operations for performance
+#![allow(clippy::indexing_slicing)]
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 

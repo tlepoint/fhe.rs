@@ -13,7 +13,19 @@ pub struct NttOperator {
 
 impl PartialEq for NttOperator {
     fn eq(&self, other: &Self) -> bool {
-        self.native_operator == other.native_operator
+        let Self {
+            tfhe_operator: _,
+            native_operator,
+        } = self;
+        let Self {
+            tfhe_operator: _,
+            native_operator: other_native_operator,
+        } = other;
+
+        // We only compare native_operator because tfhe_operator (when present) is
+        // just an optimized implementation that computes the same result.
+        // Both operators should agree if native_operators match.
+        native_operator == other_native_operator
     }
 }
 

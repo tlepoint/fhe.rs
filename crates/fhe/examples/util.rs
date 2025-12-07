@@ -1,3 +1,6 @@
+// Allow indexing in examples for simplicity
+#![allow(clippy::indexing_slicing)]
+
 //! Utility functions for the examples
 
 use fhe::bfv;
@@ -66,6 +69,7 @@ impl fmt::Display for DisplayDuration {
 /// little endian encoding of the index. When the element size is less than 4B,
 /// the encoding is truncated.
 #[allow(dead_code)]
+#[must_use]
 pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<u8>> {
     assert!(database_size > 0 && elements_size > 0);
     let mut database = vec![vec![0u8; elements_size]; database_size];
@@ -77,6 +81,7 @@ pub fn generate_database(database_size: usize, elements_size: usize) -> Vec<Vec<
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn number_elements_per_plaintext(
     degree: usize,
     plaintext_nbits: usize,
@@ -86,6 +91,7 @@ pub fn number_elements_per_plaintext(
 }
 
 #[allow(dead_code)]
+#[must_use]
 pub fn encode_database(
     database: &[Vec<u8>],
     par: Arc<bfv::BfvParameters>,

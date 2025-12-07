@@ -1,4 +1,6 @@
 #![warn(missing_docs, unused_imports)]
+// Allow indexing in this performance-critical RNS scaler implementation
+#![allow(clippy::indexing_slicing)]
 
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
@@ -20,6 +22,7 @@ pub struct ScalingFactor {
 
 impl ScalingFactor {
     /// Create a new scaling factor. Aborts if the denominator is 0.
+    #[must_use]
     pub fn new(numerator: &BigUint, denominator: &BigUint) -> Self {
         assert_ne!(denominator, &BigUint::zero());
         Self {
@@ -30,6 +33,7 @@ impl ScalingFactor {
     }
 
     /// Returns the identity element of `Self`.
+    #[must_use]
     pub fn one() -> Self {
         Self {
             numerator: BigUint::one(),
@@ -68,6 +72,7 @@ impl RnsScaler {
     /// Create a RNS scaler by numerator / denominator.
     ///
     /// Aborts if denominator is equal to 0.
+    #[must_use]
     pub fn new(
         from: &Arc<RnsContext>,
         to: &Arc<RnsContext>,
@@ -225,6 +230,7 @@ impl RnsScaler {
     ///
     /// Aborts if the number of rests is different than the number of moduli in
     /// debug mode, or if the size is not in [1, ..., rests.len()].
+    #[must_use]
     pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize) -> Vec<u64> {
         let mut out = vec![0; size];
         self.scale(rests, (&mut out).into(), 0);

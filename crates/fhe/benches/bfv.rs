@@ -1,3 +1,6 @@
+// Allow indexing in benchmarks for convenience
+#![allow(clippy::indexing_slicing)]
+
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe::bfv::{
     BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, PublicKey,

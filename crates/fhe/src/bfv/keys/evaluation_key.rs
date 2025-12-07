@@ -39,6 +39,7 @@ pub struct EvaluationKey {
 impl EvaluationKey {
     /// Reports whether the evaluation key enables to compute an homomorphic
     /// inner sums.
+    #[must_use]
     pub fn supports_inner_sum(&self) -> bool {
         let mut ret = self.gk.contains_key(&(self.par.degree() * 2 - 1));
         let mut i = 1;
@@ -82,6 +83,7 @@ impl EvaluationKey {
 
     /// Reports whether the evaluation key enables to rotate the rows of the
     /// plaintext.
+    #[must_use]
     pub fn supports_row_rotation(&self) -> bool {
         self.gk.contains_key(&(self.par.degree() * 2 - 1))
     }
@@ -102,6 +104,7 @@ impl EvaluationKey {
 
     /// Reports whether the evaluation key enables to rotate the columns of the
     /// plaintext.
+    #[must_use]
     pub fn supports_column_rotation_by(&self, i: usize) -> bool {
         if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
             self.gk.contains_key(exp)
@@ -128,6 +131,7 @@ impl EvaluationKey {
     }
 
     /// Reports whether the evaluation key supports oblivious expansion.
+    #[must_use]
     pub fn supports_expansion(&self, level: usize) -> bool {
         if level == 0 {
             true

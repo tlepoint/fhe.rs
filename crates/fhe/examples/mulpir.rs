@@ -1,3 +1,6 @@
+// Allow indexing in examples for simplicity
+#![allow(clippy::indexing_slicing)]
+
 // Implementation of MulPIR using the `fhe` crate.
 //
 // SealPIR is a Private Information Retrieval scheme that enables a client to
