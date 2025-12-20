@@ -14,7 +14,7 @@ rust-version = "1.73"
 clap = { version = "^4.5.53", features = ["derive"] }
 tfhe-ntt = "^0.6.1"
 console = "^0.16.1"
-criterion = "^0.8.0"
+criterion = "^0.8.1"
 doc-comment = "^0.3.4"
 env_logger = "^0.11.3"
 ethnum = "^1.5.0"
