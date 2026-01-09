@@ -449,7 +449,6 @@ dependencies = [
  "ndarray",
  "num-bigint",
  "num-traits",
- "once_cell",
  "prost",
  "rand",
  "rand_chacha",
