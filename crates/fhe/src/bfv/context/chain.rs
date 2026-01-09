@@ -1,5 +1,4 @@
-use once_cell::sync::OnceCell;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 use fhe_math::{
     rns::ScalingFactor,
@@ -20,16 +19,16 @@ pub struct ContextLevel {
     /// Total number of moduli at this level
     pub(crate) num_moduli: usize,
     /// Next level in the chain (fewer moduli)
-    pub next: OnceCell<Arc<ContextLevel>>,
+    pub next: OnceLock<Arc<ContextLevel>>,
     /// Previous level in the chain (more moduli)
-    pub(crate) prev: OnceCell<Weak<ContextLevel>>,
+    pub(crate) prev: OnceLock<Weak<ContextLevel>>,
     /// Modulus switching scaler to next level
-    pub(crate) down_scaler: OnceCell<Arc<Scaler>>,
+    pub(crate) down_scaler: OnceLock<Arc<Scaler>>,
     /// Modulus switching scaler from previous level
-    pub(crate) up_scaler: OnceCell<Arc<Scaler>>,
+    pub(crate) up_scaler: OnceLock<Arc<Scaler>>,
     /// Parameters required for ciphertext-ciphertext multiplication at this
     /// level
-    pub(crate) mul_params: OnceCell<MultiplicationParameters>,
+    pub(crate) mul_params: OnceLock<MultiplicationParameters>,
 }
 
 impl PartialEq for ContextLevel {
@@ -80,11 +79,11 @@ impl ContextLevel {
             poly_context,
             cipher_plain_context,
             level,
-            next: OnceCell::new(),
-            prev: OnceCell::new(),
-            down_scaler: OnceCell::new(),
-            up_scaler: OnceCell::new(),
-            mul_params: OnceCell::new(),
+            next: OnceLock::new(),
+            prev: OnceLock::new(),
+            down_scaler: OnceLock::new(),
+            up_scaler: OnceLock::new(),
+            mul_params: OnceLock::new(),
         }
     }
 
@@ -161,5 +160,21 @@ mod tests {
 
         let chain: Vec<_> = head.iter_chain().collect();
         assert_eq!(chain.len(), 2);
+    }
+
+    #[test]
+    fn iter_chain_from_middle_returns_head() {
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(1153)
+            .set_moduli_sizes(&[50, 50, 50])
+            .build()
+            .unwrap();
+
+        let head = params.context_chain();
+        let mid = head.next.get().unwrap().clone();
+        let chain: Vec<_> = mid.iter_chain().collect();
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain.first().unwrap().level, 0);
     }
 }

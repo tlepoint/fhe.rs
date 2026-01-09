@@ -34,7 +34,6 @@ zeroize.workspace = true
 zeroize_derive.workspace = true
 ndarray.workspace = true
 thiserror.workspace = true
-once_cell.workspace = true
 
 [dev-dependencies]
 clap.workspace = true
