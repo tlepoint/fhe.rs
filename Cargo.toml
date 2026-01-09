@@ -17,7 +17,7 @@ unused_must_use = "deny"
 unsafe_op_in_unsafe_fn = "allow"
 
 [workspace.dependencies]
-clap = { version = "^4.5.53", features = ["derive"] }
+clap = { version = "^4.5.54", features = ["derive"] }
 tfhe-ntt = "^0.6.1"
 console = "^0.16.2"
 criterion = "^0.8.1"
