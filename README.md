@@ -34,7 +34,7 @@ fhe-traits = "0.1.1"
 
 ## Minimum supported version / toolchain
 
-Rust **1.73** or newer. (The switch to `std::sync::OnceLock` does not require an MSRV bump; it stabilized in Rust 1.70.)
+Rust **1.73** or newer.
 
 ## ⚠️ Security / Stability
 
