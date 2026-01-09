@@ -8,7 +8,12 @@ authors = ["Tancrède Lepoint"]
 edition = "2021"
 repository = "https://github.com/tlepoint/fhe.rs"
 license = "MIT"
-rust-version = "1.73"
+rust-version = "1.89" # MSRV for workspace lints
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unused_imports = "warn"
+unused_must_use = "deny"
 
 [workspace.dependencies]
 clap = { version = "^4.5.53", features = ["derive"] }
@@ -37,6 +42,8 @@ zeroize = "^1.8.2"
 zeroize_derive = "^1.4.2"
 
 [workspace.lints.clippy]
+expect_used = "deny"
+panic = "deny"
 indexing_slicing = "deny"
 fallible_impl_from = "deny"
 wildcard_enum_match_arm = "deny"

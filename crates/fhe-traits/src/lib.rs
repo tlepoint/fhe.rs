@@ -1,6 +1,5 @@
 #![crate_name = "fhe_traits"]
 #![crate_type = "lib"]
-#![warn(missing_docs, unused_imports)]
 
 //! Traits for Fully Homomorphic Encryption
 

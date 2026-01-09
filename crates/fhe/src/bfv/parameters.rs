@@ -246,6 +246,7 @@ impl BfvParameters {
     #[cfg(test)]
     /// Returns default parameters for tests.
     #[must_use]
+    #[allow(clippy::panic)]
     pub fn default_arc(num_moduli: usize, degree: usize) -> Arc<Self> {
         if !degree.is_power_of_two() || degree < 8 {
             panic!("Invalid degree");
@@ -691,6 +692,7 @@ mod tests {
         let result = BfvParameters::default_parameters_128(10);
         assert!(result.is_err());
 
+        #[allow(clippy::panic)]
         match result {
             Err(e) => {
                 let error_string = format!("{e}");

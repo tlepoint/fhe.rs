@@ -1,5 +1,6 @@
 // Allow indexing in benchmarks for convenience
 #![allow(clippy::indexing_slicing)]
+#![allow(missing_docs)]
 
 use criterion::measurement::WallTime;
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
