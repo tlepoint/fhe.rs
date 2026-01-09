@@ -34,7 +34,7 @@ fhe-traits = "0.1.1"
 
 ## Minimum supported version / toolchain
 
-Rust **1.73** or newer.
+Rust **1.74** or newer (required for workspace lint configuration).
 
 ## ⚠️ Security / Stability
 

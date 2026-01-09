@@ -1,4 +1,6 @@
 // Integration test to verify the unified context management API works correctly
+#![allow(missing_docs)]
+
 use fhe::bfv::BfvParametersBuilder;
 
 #[test]

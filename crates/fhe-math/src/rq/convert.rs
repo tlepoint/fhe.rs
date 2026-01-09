@@ -434,6 +434,8 @@ impl From<&Poly> for Vec<BigUint> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used)]
+
     use crate::{
         proto::rq::Rq,
         rq::{traits::TryConvertFrom, Context, Poly, Representation},

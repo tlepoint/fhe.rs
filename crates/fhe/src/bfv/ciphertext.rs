@@ -47,6 +47,7 @@ impl Ciphertext {
     /// Create a ciphertext from a vector of polynomials.
     /// A ciphertext must contain at least two polynomials, and all polynomials
     /// must be in Ntt representation and with the same context.
+    #[allow(clippy::expect_used)]
     pub fn new(c: Vec<Poly>, par: &Arc<BfvParameters>) -> Result<Self> {
         if c.len() < 2 {
             return Err(Error::TooFewValues {
@@ -358,6 +359,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic)]
     fn switch_to_level_invalid() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let params = BfvParameters::default_arc(2, 16);

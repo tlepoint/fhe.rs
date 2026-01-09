@@ -1,6 +1,5 @@
 #![crate_name = "fhe_util"]
 #![crate_type = "lib"]
-#![warn(missing_docs, unused_imports)]
 
 //! Utilities for the fhe.rs library.
 
@@ -57,6 +56,7 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
 
 /// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
 #[must_use]
+#[allow(clippy::expect_used)]
 pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
     assert!(0 < nbits && nbits <= 64);
 
@@ -96,6 +96,7 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
 
 /// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
 #[must_use]
+#[allow(clippy::expect_used)]
 pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
     assert!(0 < nbits && nbits <= 64);
     let mask = (u64::MAX >> (64 - nbits)) as u128;
@@ -134,6 +135,7 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
 /// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
 /// of `output_nbits`-bit numbers.
 #[must_use]
+#[allow(clippy::expect_used)]
 pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
     assert!(0 < input_nbits && input_nbits <= 64);
     assert!(0 < output_nbits && output_nbits <= 64);
@@ -279,6 +281,14 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn transcode_known_roundtrip() {
+        let input = vec![0x1u64, 0x2u64, 0x3u64, 0x4u64];
+        let bytes = transcode_to_bytes(&input, 4);
+        let decoded = transcode_from_bytes(&bytes, 4);
+        assert_eq!(&decoded[..input.len()], input);
     }
 
     #[test]

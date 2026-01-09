@@ -1,5 +1,6 @@
 // Allow indexing in benchmarks for convenience
 #![allow(clippy::indexing_slicing)]
+#![allow(missing_docs)]
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fhe_math::zq::Modulus;
