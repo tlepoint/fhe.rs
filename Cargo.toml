@@ -8,7 +8,7 @@ authors = ["Tancrède Lepoint"]
 edition = "2021"
 repository = "https://github.com/tlepoint/fhe.rs"
 license = "MIT"
-rust-version = "1.89" # MSRV for workspace lints
+rust-version = "1.74" # MSRV for workspace lints
 
 [workspace.lints.rust]
 missing_docs = "warn"
