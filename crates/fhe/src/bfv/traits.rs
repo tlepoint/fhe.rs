@@ -1,7 +1,7 @@
 //! Traits used for the BFV homomorphic encryption scheme.
 
-use crate::bfv::BfvParameters;
 use crate::Result;
+use crate::bfv::BfvParameters;
 use std::sync::Arc;
 
 /// Conversions.

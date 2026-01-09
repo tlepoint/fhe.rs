@@ -2,8 +2,8 @@
 
 //! Polynomial modulus switcher.
 
-use super::{scaler::Scaler, Context, Poly};
-use crate::{rns::ScalingFactor, Result};
+use super::{Context, Poly, scaler::Scaler};
+use crate::{Result, rns::ScalingFactor};
 use std::sync::Arc;
 
 /// Context switcher.

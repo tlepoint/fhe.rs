@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::bfv::{traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::bfv::{BfvParameters, Ciphertext, SecretKey, traits::TryConvertFrom};
 use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
 use crate::{Error, Result};
 use fhe_math::rq::{
-    switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation,
+    Poly, Representation, switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly,
 };
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use prost::Message;
@@ -156,9 +156,9 @@ impl DeserializeParametrized for RelinearizationKey {
 #[cfg(test)]
 mod tests {
     use super::RelinearizationKey;
-    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, SecretKey};
+    use crate::bfv::{BfvParameters, Ciphertext, Encoding, SecretKey, traits::TryConvertFrom};
     use crate::proto::bfv::RelinearizationKey as RelinearizationKeyProto;
-    use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
+    use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly};
     use fhe_traits::{FheDecoder, FheDecrypter};
     use rand::rng;
     use std::error::Error;

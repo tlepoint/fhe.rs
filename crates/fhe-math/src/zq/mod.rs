@@ -8,11 +8,11 @@ use std::ops::Deref;
 
 use crate::errors::{Error, Result};
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
-use rand::{distr::Uniform, CryptoRng, Rng, RngCore};
+use rand::{CryptoRng, Rng, RngCore, distr::Uniform};
 
 /// cond ? on_true : on_false
 const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
@@ -701,11 +701,7 @@ impl Modulus {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
-        if x >= p {
-            x - p
-        } else {
-            x
-        }
+        if x >= p { x - p } else { x }
     }
 
     #[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
@@ -822,11 +818,11 @@ impl Modulus {
 
 #[cfg(test)]
 mod tests {
-    use super::{primes, Modulus};
-    use itertools::{izip, Itertools};
+    use super::{Modulus, primes};
+    use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
-    use proptest::prelude::{any, BoxedStrategy, Just, Strategy};
-    use rand::{rng, RngCore};
+    use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
+    use rand::{RngCore, rng};
 
     // Utility functions for the proptests.
 

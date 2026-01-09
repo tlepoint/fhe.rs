@@ -5,15 +5,16 @@ resolver = "2"
 
 [workspace.package]
 authors = ["Tancrède Lepoint"]
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/tlepoint/fhe.rs"
 license = "MIT"
-rust-version = "1.74" # MSRV for workspace lints
+rust-version = "1.85" # MSRV for Rust 2024 edition
 
 [workspace.lints.rust]
 missing_docs = "warn"
 unused_imports = "warn"
 unused_must_use = "deny"
+unsafe_op_in_unsafe_fn = "allow"
 
 [workspace.dependencies]
 clap = { version = "^4.5.53", features = ["derive"] }

@@ -26,7 +26,7 @@ pub(crate) fn supports_ntt(p: u64, n: usize) -> bool {
 mod tests {
     use rand::rng;
 
-    use super::{supports_ntt, NttOperator};
+    use super::{NttOperator, supports_ntt};
     use crate::zq::Modulus;
 
     #[test]

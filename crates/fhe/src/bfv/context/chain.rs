@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use fhe_math::{
     rns::ScalingFactor,
-    rq::{scaler::Scaler, Context},
+    rq::{Context, scaler::Scaler},
 };
 
 use crate::bfv::{context::CipherPlainContext, parameters::MultiplicationParameters};

@@ -249,11 +249,11 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
 #[cfg(test)]
 mod tests {
+    use crate::Error as FheError;
     use crate::bfv::{
-        traits::TryConvertFrom, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
+        BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, traits::TryConvertFrom,
     };
     use crate::proto::bfv::Ciphertext as CiphertextProto;
-    use crate::Error as FheError;
     use fhe_traits::FheDecrypter;
     use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
     use rand::rng;

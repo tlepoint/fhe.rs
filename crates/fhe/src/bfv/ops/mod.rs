@@ -355,7 +355,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 #[cfg(test)]
 mod tests {
     use crate::bfv::{
-        encoding::EncodingEnum, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey,
+        BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, encoding::EncodingEnum,
     };
     use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
     use rand::rng;

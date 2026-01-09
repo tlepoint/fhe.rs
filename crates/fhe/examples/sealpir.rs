@@ -15,7 +15,7 @@ mod util;
 
 use clap::Parser;
 use fhe::bfv;
-use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
@@ -23,7 +23,7 @@ use fhe_traits::{
 use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
-use rand::{rng, RngCore};
+use rand::{RngCore, rng};
 use std::error::Error;
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,
@@ -47,7 +47,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // floor(log2(plaintext_modulus)) bits.
     let max_element_size = ((plaintext_modulus.ilog2() as usize) * degree) / 8;
     if elements_size > max_element_size || elements_size == 0 || database_size == 0 {
-        log::error!("Invalid parameters: database_size = {database_size}, elements_size = {elements_size}. The maximum element size if {max_element_size}.");
+        log::error!(
+            "Invalid parameters: database_size = {database_size}, elements_size = {elements_size}. The maximum element size if {max_element_size}."
+        );
         clap::Error::new(clap::error::ErrorKind::InvalidValue).exit();
     }
 

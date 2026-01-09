@@ -1,11 +1,11 @@
 //! Implementation of conversions from and to polynomials.
 
-use super::{traits::TryConvertFrom, Context, Poly, Representation};
+use super::{Context, Poly, Representation, traits::TryConvertFrom};
 use crate::{
-    proto::rq::{Representation as RepresentationProto, Rq},
     Error, Result,
+    proto::rq::{Representation as RepresentationProto, Rq},
 };
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
 use std::borrow::Cow;
@@ -161,7 +161,7 @@ impl TryConvertFrom<&Rq> for Poly {
             RepresentationProto::Ntt => Representation::Ntt,
             RepresentationProto::Nttshoup => Representation::NttShoup,
             RepresentationProto::Unknown => {
-                return Err(Error::Default("Unknown representation".to_string()))
+                return Err(Error::Default("Unknown representation".to_string()));
             }
         };
 
@@ -437,9 +437,9 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use crate::{
-        proto::rq::Rq,
-        rq::{traits::TryConvertFrom, Context, Poly, Representation},
         Error as CrateError,
+        proto::rq::Rq,
+        rq::{Context, Poly, Representation, traits::TryConvertFrom},
     };
     use num_bigint::BigUint;
     use rand::rng;
@@ -522,13 +522,15 @@ mod tests {
                 Poly::try_convert_from(&[0i64; 16], &ctx, false, Representation::PowerBasis)?,
                 Poly::zero(&ctx, Representation::PowerBasis)
             );
-            assert!(Poly::try_convert_from(
-                &[0u64; 17], // One too many
-                &ctx,
-                false,
-                Representation::PowerBasis,
-            )
-            .is_err());
+            assert!(
+                Poly::try_convert_from(
+                    &[0u64; 17], // One too many
+                    &ctx,
+                    false,
+                    Representation::PowerBasis,
+                )
+                .is_err()
+            );
 
             // Ntt
             assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
@@ -538,13 +540,15 @@ mod tests {
                 Poly::zero(&ctx, Representation::Ntt)
             );
             assert!(Poly::try_convert_from(&[0i64; 16], &ctx, false, Representation::Ntt).is_err());
-            assert!(Poly::try_convert_from(
-                &[0u64; 17], // One too many
-                &ctx,
-                false,
-                Representation::Ntt,
-            )
-            .is_err());
+            assert!(
+                Poly::try_convert_from(
+                    &[0u64; 17], // One too many
+                    &ctx,
+                    false,
+                    Representation::Ntt,
+                )
+                .is_err()
+            );
         }
 
         let ctx = Arc::new(Context::new(MODULI, 16)?);

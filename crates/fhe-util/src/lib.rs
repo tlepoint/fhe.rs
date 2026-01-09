@@ -8,8 +8,8 @@ extern crate proptest;
 
 use rand::{CryptoRng, RngCore};
 
-use num_bigint_dig::{prime::probably_prime, BigUint, ModInverse};
-use num_traits::{cast::ToPrimitive, PrimInt};
+use num_bigint_dig::{BigUint, ModInverse, prime::probably_prime};
+use num_traits::{PrimInt, cast::ToPrimitive};
 
 /// Returns whether the modulus p is prime; this function is 100% accurate.
 #[must_use]

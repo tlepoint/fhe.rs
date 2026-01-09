@@ -5,8 +5,8 @@
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
 use super::RnsContext;
-use ethnum::{u256, U256};
-use itertools::{izip, Itertools};
+use ethnum::{U256, u256};
+use itertools::{Itertools, izip};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
@@ -354,11 +354,11 @@ mod tests {
     use std::{error::Error, panic::catch_unwind, sync::Arc};
 
     use super::RnsScaler;
-    use crate::rns::{scaler::ScalingFactor, RnsContext};
+    use crate::rns::{RnsContext, scaler::ScalingFactor};
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
     use num_traits::{ToPrimitive, Zero};
-    use rand::{rng, RngCore};
+    use rand::{RngCore, rng};
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {

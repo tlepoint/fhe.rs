@@ -15,11 +15,11 @@ pub mod scaler;
 pub mod switcher;
 pub mod traits;
 use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
-use crate::{zq::Modulus, Error, Result};
+use crate::{Error, Result, zq::Modulus};
 pub use context::Context;
 use fhe_util::sample_vec_cbd;
-use itertools::{izip, Itertools};
-use ndarray::{s, Array2, ArrayView2, Axis};
+use itertools::{Itertools, izip};
+use ndarray::{Array2, ArrayView2, Axis, s};
 pub use ops::dot_product;
 use rand::{CryptoRng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -555,7 +555,7 @@ impl Poly {
 
 #[cfg(test)]
 mod tests {
-    use super::{switcher::Switcher, Context, Poly, Representation};
+    use super::{Context, Poly, Representation, switcher::Switcher};
     use crate::{rq::SubstitutionExponent, zq::Modulus};
     use fhe_util::variance;
     use itertools::Itertools;

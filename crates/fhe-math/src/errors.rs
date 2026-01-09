@@ -41,7 +41,7 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::{rq::Representation, Error};
+    use crate::{Error, rq::Representation};
 
     #[test]
     fn error_strings() {

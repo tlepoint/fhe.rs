@@ -4,7 +4,7 @@ use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RGSWCiphertextProto,
 };
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly};
 use fhe_traits::{
     DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
@@ -13,7 +13,7 @@ use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use super::{
-    keys::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, Ciphertext, Plaintext, SecretKey,
+    BfvParameters, Ciphertext, Plaintext, SecretKey, keys::KeySwitchingKey, traits::TryConvertFrom,
 };
 
 /// A RGSW ciphertext encrypting a plaintext.

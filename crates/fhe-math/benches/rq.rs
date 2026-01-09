@@ -3,9 +3,9 @@
 #![allow(missing_docs)]
 
 use criterion::measurement::WallTime;
-use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
+use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe_math::rq::*;
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use rand::rng;
 use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},

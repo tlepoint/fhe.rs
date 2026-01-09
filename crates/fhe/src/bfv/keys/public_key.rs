@@ -156,7 +156,7 @@ impl DeserializeParametrized for PublicKey {
 #[cfg(test)]
 mod tests {
     use super::PublicKey;
-    use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::bfv::{Encoding, Plaintext, SecretKey, parameters::BfvParameters};
     use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
     use rand::rng;
     use std::error::Error;

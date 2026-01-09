@@ -1,9 +1,9 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::{
-    bfv::{BfvParameters, Encoding, PlaintextVec},
     Error, Result,
+    bfv::{BfvParameters, Encoding, PlaintextVec},
 };
-use fhe_math::rq::{traits::TryConvertFrom, Context, Poly, Representation};
+use fhe_math::rq::{Context, Poly, Representation, traits::TryConvertFrom};
 use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};

@@ -2,7 +2,7 @@
 #![allow(clippy::indexing_slicing)]
 #![allow(missing_docs)]
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe::bfv::{
     BfvParameters, Ciphertext, Encoding, EvaluationKeyBuilder, Multiplicator, Plaintext, PublicKey,
     RelinearizationKey, SecretKey,

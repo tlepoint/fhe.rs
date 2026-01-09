@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use fhe_math::{
     rns::ScalingFactor,
-    rq::{scaler::Scaler, Context, Representation},
+    rq::{Context, Representation, scaler::Scaler},
     zq::primes::generate_prime,
 };
 use num_bigint::BigUint;
 
 use crate::{
-    bfv::{keys::RelinearizationKey, BfvParameters, Ciphertext},
     Error, Result,
+    bfv::{BfvParameters, Ciphertext, keys::RelinearizationKey},
 };
 
 /// Multiplicator that implements a strategy for multiplying. In particular, the

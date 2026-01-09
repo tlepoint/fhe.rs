@@ -1,16 +1,16 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use crate::Error;
 use crate::bfv::{BfvParameters, KeySwitchingKey, RelinearizationKey, SecretKey};
 use crate::errors::Result;
-use crate::Error;
 use fhe_math::rns::RnsContext;
-use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
 use itertools::izip;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
-use super::round::{R1Aggregated, Round, R1, R2};
+use super::round::{R1, R1Aggregated, R2, Round};
 use super::{Aggregate, CommonRandomPoly};
 
 /// A party's share in the relinearization key generation protocol.

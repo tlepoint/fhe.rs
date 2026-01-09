@@ -2,7 +2,7 @@
 
 use super::{Poly, Representation};
 use crate::{Error, Result};
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use ndarray::Array2;
 use num_bigint::BigUint;
 use std::{
@@ -120,9 +120,9 @@ impl MulAssign<&Poly> for Poly {
         );
         if self.has_lazy_coefficients && self.representation == Representation::Ntt {
             assert!(
-				p.representation == Representation::NttShoup,
-				"Can only multiply a polynomial with lazy coefficients by an NttShoup representation."
-			);
+                p.representation == Representation::NttShoup,
+                "Can only multiply a polynomial with lazy coefficients by an NttShoup representation."
+            );
         } else {
             assert_eq!(
                 self.representation,
@@ -354,12 +354,14 @@ where
     I: Iterator<Item = &'a Poly> + Clone,
     J: Iterator<Item = &'b Poly> + Clone,
 {
-    debug_assert!(!p
-        .clone()
-        .any(|pi| pi.representation == Representation::PowerBasis));
-    debug_assert!(!q
-        .clone()
-        .any(|qi| qi.representation == Representation::PowerBasis));
+    debug_assert!(
+        !p.clone()
+            .any(|pi| pi.representation == Representation::PowerBasis)
+    );
+    debug_assert!(
+        !q.clone()
+            .any(|qi| qi.representation == Representation::PowerBasis)
+    );
 
     let count = min(p.clone().count(), q.clone().count());
     if count == 0 {
@@ -458,7 +460,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use itertools::{izip, Itertools};
+    use itertools::{Itertools, izip};
     use num_bigint::BigUint;
     use rand::rng;
 
