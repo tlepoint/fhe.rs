@@ -2,10 +2,10 @@
 #![allow(clippy::indexing_slicing)]
 #![allow(missing_docs)]
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use fhe::bfv::{dot_product_scalar, BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use fhe::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, dot_product_scalar};
 use fhe_traits::{FheEncoder, FheEncrypter};
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use rand::rng;
 use std::time::Duration;
 

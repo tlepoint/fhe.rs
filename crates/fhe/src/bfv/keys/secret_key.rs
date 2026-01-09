@@ -4,7 +4,7 @@ use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
-    rq::{traits::TryConvertFrom, Poly, Representation},
+    rq::{Poly, Representation, traits::TryConvertFrom},
     zq::Modulus,
 };
 use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncrypter, FheParametrized, Serialize};
@@ -269,7 +269,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 #[cfg(test)]
 mod tests {
     use super::SecretKey;
-    use crate::bfv::{parameters::BfvParameters, Encoding, Plaintext};
+    use crate::bfv::{Encoding, Plaintext, parameters::BfvParameters};
     use crate::proto::bfv::SecretKey as SecretKeyProto;
     use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
     use prost::Message;

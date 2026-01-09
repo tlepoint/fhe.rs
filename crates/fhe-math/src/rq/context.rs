@@ -2,7 +2,7 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use std::{fmt::Debug, sync::Arc};
 
-use crate::{ntt::NttOperator, rns::RnsContext, zq::Modulus, Error, Result};
+use crate::{Error, Result, ntt::NttOperator, rns::RnsContext, zq::Modulus};
 
 /// Struct that holds the context associated with elements in rq.
 #[derive(Default, Clone, PartialEq, Eq)]

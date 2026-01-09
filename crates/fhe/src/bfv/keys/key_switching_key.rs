@@ -1,16 +1,16 @@
 //! Key-switching keys for the BFV encryption scheme
 
-use crate::bfv::{traits::TryConvertFrom as BfvTryConvertFrom, BfvParameters, SecretKey};
+use crate::bfv::{BfvParameters, SecretKey, traits::TryConvertFrom as BfvTryConvertFrom};
 use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
 use crate::{Error, Result};
-use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::Context;
+use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::{
     rns::RnsContext,
     rq::{Poly, Representation},
 };
 use fhe_traits::{DeserializeWithContext, Serialize};
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -456,12 +456,12 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 #[cfg(test)]
 mod tests {
     use crate::bfv::{
-        keys::key_switching_key::KeySwitchingKey, traits::TryConvertFrom, BfvParameters, SecretKey,
+        BfvParameters, SecretKey, keys::key_switching_key::KeySwitchingKey, traits::TryConvertFrom,
     };
     use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
     use fhe_math::{
         rns::RnsContext,
-        rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation},
+        rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly},
     };
     use num_bigint::BigUint;
     use rand::rng;

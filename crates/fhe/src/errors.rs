@@ -184,7 +184,9 @@ pub enum SerializationError {
     InvalidFormat { reason: String },
 
     /// Indicates version mismatch in serialized data
-    #[error("Version mismatch: serialized with {serialized_version}, current version is {current_version}")]
+    #[error(
+        "Version mismatch: serialized with {serialized_version}, current version is {current_version}"
+    )]
     VersionMismatch {
         serialized_version: String,
         current_version: String,
@@ -287,7 +289,9 @@ pub enum ParametersError {
     },
 
     /// Indicates plaintext modulus is too large relative to ciphertext moduli
-    #[error("Plaintext modulus {plaintext_modulus} exceeds ciphertext modulus {ciphertext_modulus} at index {index}")]
+    #[error(
+        "Plaintext modulus {plaintext_modulus} exceeds ciphertext modulus {ciphertext_modulus} at index {index}"
+    )]
     PlaintextModulusTooLarge {
         plaintext_modulus: u64,
         ciphertext_modulus: u64,
@@ -295,7 +299,9 @@ pub enum ParametersError {
     },
 
     /// Indicates insecure parameters according to standard
-    #[error("Parameters provide insufficient security: estimated security level {actual} bits, minimum required {minimum} bits")]
+    #[error(
+        "Parameters provide insufficient security: estimated security level {actual} bits, minimum required {minimum} bits"
+    )]
     InsufficientSecurity { actual: u32, minimum: u32 },
 
     /// Indicates variance parameter out of range

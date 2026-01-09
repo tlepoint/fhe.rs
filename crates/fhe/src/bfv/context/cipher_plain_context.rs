@@ -1,4 +1,4 @@
-use fhe_math::rq::{scaler::Scaler, Context, Poly};
+use fhe_math::rq::{Context, Poly, scaler::Scaler};
 use std::sync::Arc;
 
 /// Stores pre-computed values relating a ciphertext and plaintext context pair.

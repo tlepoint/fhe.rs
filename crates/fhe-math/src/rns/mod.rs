@@ -4,12 +4,12 @@
 
 //! Residue-Number System operations.
 
-use crate::{zq::Modulus, Error, Result};
-use itertools::{izip, Itertools};
+use crate::{Error, Result, zq::Modulus};
+use itertools::{Itertools, izip};
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
 use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
-use num_traits::{cast::ToPrimitive, One, Zero};
+use num_traits::{One, Zero, cast::ToPrimitive};
 use std::{cmp::Ordering, fmt::Debug};
 
 mod scaler;

@@ -2,10 +2,10 @@
 #![allow(clippy::indexing_slicing)]
 #![allow(missing_docs)]
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe_math::rns::{RnsContext, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;
-use rand::{rng, RngCore};
+use rand::{RngCore, rng};
 use std::sync::Arc;
 
 pub fn rns_benchmark(c: &mut Criterion) {

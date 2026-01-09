@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use crate::Error;
 use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
 use crate::errors::Result;
-use crate::Error;
-use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 

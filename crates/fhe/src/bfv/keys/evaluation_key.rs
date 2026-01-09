@@ -1,9 +1,9 @@
 //! Leveled evaluation keys for the BFV encryption scheme.
 
-use crate::bfv::{keys::GaloisKey, traits::TryConvertFrom, BfvParameters, Ciphertext, SecretKey};
+use crate::bfv::{BfvParameters, Ciphertext, SecretKey, keys::GaloisKey, traits::TryConvertFrom};
 use crate::proto::bfv::{EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto};
 use crate::{Error, Result};
-use fhe_math::rq::{traits::TryConvertFrom as TryConvertFromPoly, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly};
 use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use prost::Message;
@@ -448,7 +448,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
 #[cfg(test)]
 mod tests {
     use super::{EvaluationKey, EvaluationKeyBuilder};
-    use crate::bfv::{traits::TryConvertFrom, BfvParameters, Encoding, Plaintext, SecretKey};
+    use crate::bfv::{BfvParameters, Encoding, Plaintext, SecretKey, traits::TryConvertFrom};
     use crate::proto::bfv::EvaluationKey as LeveledEvaluationKeyProto;
     use fhe_traits::{
         DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
@@ -476,9 +476,11 @@ mod tests {
                 assert!(!builder.build(&mut rng)?.supports_expansion(1));
                 assert!(builder.build(&mut rng)?.supports_expansion(0));
                 assert!(builder.enable_column_rotation(0).is_err());
-                assert!(builder
-                    .enable_expansion(64 - params.degree().leading_zeros() as usize)
-                    .is_err());
+                assert!(
+                    builder
+                        .enable_expansion(64 - params.degree().leading_zeros() as usize)
+                        .is_err()
+                );
 
                 builder.enable_column_rotation(1)?;
                 assert!(builder.build(&mut rng)?.supports_column_rotation_by(1));
@@ -494,14 +496,18 @@ mod tests {
                 builder.enable_inner_sum()?;
                 assert!(builder.build(&mut rng)?.supports_inner_sum());
                 assert!(builder.build(&mut rng)?.supports_expansion(1));
-                assert!(!builder
-                    .build(&mut rng)?
-                    .supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
+                assert!(
+                    !builder
+                        .build(&mut rng)?
+                        .supports_expansion(64 - 1 - params.degree().leading_zeros() as usize)
+                );
 
                 builder.enable_expansion(64 - 1 - params.degree().leading_zeros() as usize)?;
-                assert!(builder
-                    .build(&mut rng)?
-                    .supports_expansion(64 - 1 - params.degree().leading_zeros() as usize));
+                assert!(
+                    builder
+                        .build(&mut rng)?
+                        .supports_expansion(64 - 1 - params.degree().leading_zeros() as usize)
+                );
 
                 assert!(builder.build(&mut rng).is_ok());
 

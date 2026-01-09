@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use super::{traits::TryConvertFrom, Context, Poly};
-use crate::{proto::rq::Rq, Error};
+use super::{Context, Poly, traits::TryConvertFrom};
+use crate::{Error, proto::rq::Rq};
 use fhe_traits::{DeserializeWithContext, Serialize};
 use prost::Message;
 

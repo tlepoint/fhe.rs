@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use crate::bfv::BfvParameters;
 use crate::Result;
+use crate::bfv::BfvParameters;
 use fhe_math::rq::Poly;
 use rand::{CryptoRng, RngCore};
 

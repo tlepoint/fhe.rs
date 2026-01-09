@@ -1,12 +1,12 @@
 use std::{cmp::min, ops::Deref, sync::Arc};
 
-use fhe_math::rq::{traits::TryConvertFrom, Poly, Representation};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
 use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
 use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    bfv::{BfvParameters, Encoding, Plaintext},
     Error, Result,
+    bfv::{BfvParameters, Encoding, Plaintext},
 };
 
 use super::encoding::EncodingEnum;
@@ -143,7 +143,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
 #[cfg(test)]
 mod tests {
-    use crate::bfv::{parameters::BfvParametersBuilder, BfvParameters, Encoding, PlaintextVec};
+    use crate::bfv::{BfvParameters, Encoding, PlaintextVec, parameters::BfvParametersBuilder};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
     use rand::rng;
     use std::error::Error;

@@ -6,8 +6,8 @@ use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
-    rq::{scaler::Scaler, traits::TryConvertFrom, Context, Poly, Representation},
-    zq::{primes::generate_prime, Modulus},
+    rq::{Context, Poly, Representation, scaler::Scaler, traits::TryConvertFrom},
+    zq::{Modulus, primes::generate_prime},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;
@@ -153,7 +153,7 @@ impl BfvParameters {
                         level,
                         min_level: 0,
                         max_level: self.max_level(),
-                    })
+                    });
                 }
             }
         }
@@ -233,11 +233,13 @@ impl BfvParameters {
 
         // Check if we have any valid parameters after filtering
         if parameters.is_empty() {
-            return Err(Error::ParametersError(ParametersError::NoParametersAvailable {
-                reason: format!(
-                    "No default parameters available for plaintext modulus of {plaintext_nbits} bits. All parameter sets have modulus product bitlength smaller than the plaintext modulus."
-                ),
-            }));
+            return Err(Error::ParametersError(
+                ParametersError::NoParametersAvailable {
+                    reason: format!(
+                        "No default parameters available for plaintext modulus of {plaintext_nbits} bits. All parameter sets have modulus product bitlength smaller than the plaintext modulus."
+                    ),
+                },
+            ));
         }
 
         Ok(parameters.into_iter())
@@ -523,7 +525,7 @@ impl BfvParametersBuilder {
         // https://github.com/microsoft/SEAL/blob/82b07db635132e297282649e2ab5908999089ad2/native/src/seal/batchencoder.cpp
         let row_size = self.degree >> 1;
         let m = self.degree << 1;
-        let gen = 3;
+        let generator = 3;
         let mut pos = 1;
         let mut matrix_reps_index_map = vec![0usize; self.degree];
         for i in 0..row_size {
@@ -532,7 +534,7 @@ impl BfvParametersBuilder {
             matrix_reps_index_map[i] = index1.reverse_bits() >> (self.degree.leading_zeros() + 1);
             matrix_reps_index_map[row_size | i] =
                 index2.reverse_bits() >> (self.degree.leading_zeros() + 1);
-            pos *= gen;
+            pos *= generator;
             pos &= m - 1;
         }
 
@@ -667,6 +669,24 @@ mod tests {
             .build()?;
         let bytes = params.to_bytes();
         assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
+        Ok(())
+    }
+
+    #[test]
+    fn matrix_reps_index_map_is_permutation() -> Result<(), Box<dyn Error>> {
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(2)
+            .set_moduli_sizes(&[62, 62])
+            .build()?;
+
+        let mut map = params.matrix_reps_index_map.to_vec();
+        assert_eq!(map.len(), params.degree());
+
+        map.sort_unstable();
+        map.dedup();
+        assert_eq!(map.len(), params.degree());
+
         Ok(())
     }
 

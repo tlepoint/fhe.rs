@@ -20,7 +20,7 @@ pub use context::{CipherPlainContext, ContextLevel};
 pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
-pub use ops::{dot_product_scalar, Multiplicator};
+pub use ops::{Multiplicator, dot_product_scalar};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;
 pub use plaintext_vec::PlaintextVec;

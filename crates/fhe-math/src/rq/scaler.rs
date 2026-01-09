@@ -4,11 +4,11 @@
 
 use super::{Context, Poly, Representation};
 use crate::{
-    rns::{RnsScaler, ScalingFactor},
     Error, Result,
+    rns::{RnsScaler, ScalingFactor},
 };
 use itertools::izip;
-use ndarray::{s, Array2, Axis};
+use ndarray::{Array2, Axis, s};
 use std::borrow::Cow;
 use std::sync::Arc;
 
