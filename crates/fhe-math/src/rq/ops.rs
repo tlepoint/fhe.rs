@@ -309,40 +309,28 @@ impl Neg for Poly {
 }
 
 /// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
-unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
+///
+/// Uses safe slice chunk APIs (Rust 1.88+) to process elements in chunks of 16
+/// for better performance through loop unrolling, while maintaining safety.
+fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
     let n = out.len();
     assert_eq!(x.len(), n);
     assert_eq!(y.len(), n);
 
-    macro_rules! fma_at {
-        ($idx:expr) => {
-            *out.get_unchecked_mut($idx) +=
-                (*x.get_unchecked($idx) as u128) * (*y.get_unchecked($idx) as u128);
-        };
+    // Process complete chunks of 16 elements using safe chunk APIs
+    let (out_chunks, out_remainder) = out.as_chunks_mut::<16>();
+    let (x_chunks, x_remainder) = x.as_chunks::<16>();
+    let (y_chunks, y_remainder) = y.as_chunks::<16>();
+
+    for ((out_chunk, x_chunk), y_chunk) in out_chunks.iter_mut().zip(x_chunks).zip(y_chunks) {
+        for i in 0..16 {
+            out_chunk[i] += (x_chunk[i] as u128) * (y_chunk[i] as u128);
+        }
     }
 
-    let r = n / 16;
-    for i in 0..r {
-        fma_at!(16 * i);
-        fma_at!(16 * i + 1);
-        fma_at!(16 * i + 2);
-        fma_at!(16 * i + 3);
-        fma_at!(16 * i + 4);
-        fma_at!(16 * i + 5);
-        fma_at!(16 * i + 6);
-        fma_at!(16 * i + 7);
-        fma_at!(16 * i + 8);
-        fma_at!(16 * i + 9);
-        fma_at!(16 * i + 10);
-        fma_at!(16 * i + 11);
-        fma_at!(16 * i + 12);
-        fma_at!(16 * i + 13);
-        fma_at!(16 * i + 14);
-        fma_at!(16 * i + 15);
-    }
-
-    for i in 0..n % 16 {
-        fma_at!(16 * r + i);
+    // Process any remaining elements
+    for ((out_elem, x_elem), y_elem) in out_remainder.iter_mut().zip(x_remainder).zip(y_remainder) {
+        *out_elem += (*x_elem as u128) * (*y_elem as u128);
     }
 }
 
@@ -399,9 +387,13 @@ where
             let qij = qi.coefficients();
             let pi_slice = pij.as_slice().unwrap();
             let qi_slice = qij.as_slice().unwrap();
-            unsafe {
-                fma(out_slice, pi_slice, qi_slice);
+            fma(out_slice, pi_slice, qi_slice);
 
+            // SAFETY: The pointer arithmetic here is valid because:
+            // - acc_ptr, num_acc_ptr, max_acc_ptr, q_ptr are all valid pointers
+            // - j is bounded by p_first.ctx.q.len()
+            // - i is bounded by (j+1) * degree which is within acc bounds
+            unsafe {
                 for j in 0..p_first.ctx.q.len() as isize {
                     let qj = &*q_ptr.offset(j);
                     *num_acc_ptr.offset(j) += 1;
@@ -428,7 +420,7 @@ where
             let qij = qi.coefficients();
             let pi_slice = pij.as_slice().unwrap();
             let qi_slice = qij.as_slice().unwrap();
-            unsafe { fma(out_slice, pi_slice, qi_slice) }
+            fma(out_slice, pi_slice, qi_slice);
         }
     }
     // Last reduction to create the coefficients

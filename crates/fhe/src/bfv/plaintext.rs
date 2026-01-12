@@ -206,23 +206,23 @@ impl FheDecoder<Plaintext> for Vec<u64> {
             });
         } else if pt.encoding.is_some() {
             enc = pt.encoding.as_ref().unwrap().clone();
-            if let Some(arg_enc) = encoding {
-                if arg_enc != enc {
-                    return Err(Error::EncodingMismatch {
-                        found: arg_enc.into(),
-                        expected: enc.into(),
-                    });
-                }
+            if let Some(arg_enc) = encoding
+                && arg_enc != enc
+            {
+                return Err(Error::EncodingMismatch {
+                    found: arg_enc.into(),
+                    expected: enc.into(),
+                });
             }
         } else {
             enc = encoding.unwrap();
-            if let Some(pt_enc) = pt.encoding.as_ref() {
-                if pt_enc != &enc {
-                    return Err(Error::EncodingMismatch {
-                        found: pt_enc.into(),
-                        expected: enc.into(),
-                    });
-                }
+            if let Some(pt_enc) = pt.encoding.as_ref()
+                && pt_enc != &enc
+            {
+                return Err(Error::EncodingMismatch {
+                    found: pt_enc.into(),
+                    expected: enc.into(),
+                });
             }
         }
 

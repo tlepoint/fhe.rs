@@ -2,6 +2,12 @@
 
 //! Ring operations for moduli up to 62 bits.
 
+// Expect indexing/slicing in this performance-critical polynomial arithmetic module.
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
+
 pub mod primes;
 
 use std::ops::Deref;
@@ -117,17 +123,6 @@ impl Modulus {
     pub const fn sub(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
         Self::reduce1(a + self.p - b, self.p)
-    }
-
-    /// Performs the modular subtraction of a and b in constant time.
-    /// Aborts if a >= p or b >= p in debug mode.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being subtracted.
-    const unsafe fn sub_vt(&self, a: u64, b: u64) -> u64 {
-        debug_assert!(a < self.p && b < self.p);
-        Self::reduce1_vt(a + self.p - b, self.p)
     }
 
     /// Performs the modular multiplication of a and b in constant time.
@@ -261,39 +256,27 @@ impl Modulus {
         debug_assert_eq!(n, b.len());
 
         let p = self.p;
-        macro_rules! add_at {
-            ($idx:expr) => {
-                *a.get_unchecked_mut($idx) =
-                    Self::reduce1_vt(*a.get_unchecked_mut($idx) + *b.get_unchecked($idx), p);
-            };
-        }
 
-        if n % 16 == 0 {
-            self.arch.dispatch(|| {
-                for i in 0..n / 16 {
-                    add_at!(16 * i);
-                    add_at!(16 * i + 1);
-                    add_at!(16 * i + 2);
-                    add_at!(16 * i + 3);
-                    add_at!(16 * i + 4);
-                    add_at!(16 * i + 5);
-                    add_at!(16 * i + 6);
-                    add_at!(16 * i + 7);
-                    add_at!(16 * i + 8);
-                    add_at!(16 * i + 9);
-                    add_at!(16 * i + 10);
-                    add_at!(16 * i + 11);
-                    add_at!(16 * i + 12);
-                    add_at!(16 * i + 13);
-                    add_at!(16 * i + 14);
-                    add_at!(16 * i + 15);
+        self.arch.dispatch(|| {
+            // Process complete chunks of 16 elements using safe chunk APIs
+            let (a_chunks, a_remainder) = a.as_chunks_mut::<16>();
+            let (b_chunks, b_remainder) = b.as_chunks::<16>();
+
+            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks) {
+                for i in 0..16 {
+                    unsafe {
+                        a_chunk[i] = Self::reduce1_vt(a_chunk[i] + b_chunk[i], p);
+                    }
                 }
-            })
-        } else {
-            self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add_vt(*ai, *bi))
-            })
-        }
+            }
+
+            // Process any remaining elements
+            for (ai, bi) in a_remainder.iter_mut().zip(b_remainder) {
+                unsafe {
+                    *ai = Self::reduce1_vt(*ai + *bi, p);
+                }
+            }
+        })
     }
 
     /// Modular subtraction of vectors in place in constant time.
@@ -319,39 +302,27 @@ impl Modulus {
         debug_assert_eq!(n, b.len());
 
         let p = self.p;
-        macro_rules! sub_at {
-            ($idx:expr) => {
-                *a.get_unchecked_mut($idx) =
-                    Self::reduce1_vt(p + *a.get_unchecked_mut($idx) - *b.get_unchecked($idx), p);
-            };
-        }
 
-        if n % 16 == 0 {
-            self.arch.dispatch(|| {
-                for i in 0..n / 16 {
-                    sub_at!(16 * i);
-                    sub_at!(16 * i + 1);
-                    sub_at!(16 * i + 2);
-                    sub_at!(16 * i + 3);
-                    sub_at!(16 * i + 4);
-                    sub_at!(16 * i + 5);
-                    sub_at!(16 * i + 6);
-                    sub_at!(16 * i + 7);
-                    sub_at!(16 * i + 8);
-                    sub_at!(16 * i + 9);
-                    sub_at!(16 * i + 10);
-                    sub_at!(16 * i + 11);
-                    sub_at!(16 * i + 12);
-                    sub_at!(16 * i + 13);
-                    sub_at!(16 * i + 14);
-                    sub_at!(16 * i + 15);
+        self.arch.dispatch(|| {
+            // Process complete chunks of 16 elements using safe chunk APIs
+            let (a_chunks, a_remainder) = a.as_chunks_mut::<16>();
+            let (b_chunks, b_remainder) = b.as_chunks::<16>();
+
+            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks) {
+                for i in 0..16 {
+                    unsafe {
+                        a_chunk[i] = Self::reduce1_vt(p + a_chunk[i] - b_chunk[i], p);
+                    }
                 }
-            })
-        } else {
-            self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub_vt(*ai, *bi))
-            })
-        }
+            }
+
+            // Process any remaining elements
+            for (ai, bi) in a_remainder.iter_mut().zip(b_remainder) {
+                unsafe {
+                    *ai = Self::reduce1_vt(p + *ai - *bi, p);
+                }
+            }
+        })
     }
 
     /// Modular multiplication of vectors in place in constant time.
@@ -794,7 +765,7 @@ impl Modulus {
     /// Panics if the size is not a multiple of 8.
     #[must_use]
     pub const fn serialization_length(&self, size: usize) -> usize {
-        assert!(size % 8 == 0);
+        assert!(size.is_multiple_of(8));
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
         p_nbits * size / 8
     }
@@ -891,7 +862,6 @@ mod tests {
             a = p.reduce(a);
             b = p.reduce(b);
             prop_assert_eq!(p.sub(a, b), (a + *p - b) % *p);
-            unsafe { prop_assert_eq!(p.sub_vt(a, b), (a + *p - b) % *p) }
 
             #[cfg(debug_assertions)]
             {
