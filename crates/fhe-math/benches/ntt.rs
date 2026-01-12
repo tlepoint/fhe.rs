@@ -1,7 +1,4 @@
-// Allow indexing in benchmarks for convenience
-#![allow(clippy::indexing_slicing)]
-#![allow(missing_docs)]
-
+#![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe_math::{ntt::NttOperator, zq::Modulus};
 use rand::rng;

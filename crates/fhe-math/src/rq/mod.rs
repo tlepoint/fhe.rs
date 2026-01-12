@@ -1,7 +1,10 @@
 #![warn(missing_docs, unused_imports)]
-// Allow indexing/slicing in this performance-critical polynomial arithmetic module.
+// Expect indexing/slicing in this performance-critical polynomial arithmetic module.
 // This code heavily uses RNS representation and requires fast array access.
-#![allow(clippy::indexing_slicing)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 //! Polynomials in R_q\[x\] = (ZZ_q1 x ... x ZZ_qn)\[x\] where the qi's are
 //! prime moduli in zq.

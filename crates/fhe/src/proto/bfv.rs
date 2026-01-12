@@ -1,6 +1,5 @@
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "prost-generated types omit docs")]
 
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Ciphertext {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -10,7 +9,6 @@ pub struct Ciphertext {
     #[prost(uint32, tag = "3")]
     pub level: u32,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RgswCiphertext {
     #[prost(message, optional, tag = "1")]
@@ -18,7 +16,6 @@ pub struct RgswCiphertext {
     #[prost(message, optional, tag = "2")]
     pub ksk1: ::core::option::Option<KeySwitchingKey>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeySwitchingKey {
     #[prost(bytes = "vec", repeated, tag = "1")]
@@ -34,13 +31,11 @@ pub struct KeySwitchingKey {
     #[prost(uint32, tag = "6")]
     pub log_base: u32,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RelinearizationKey {
     #[prost(message, optional, tag = "1")]
     pub ksk: ::core::option::Option<KeySwitchingKey>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GaloisKey {
     #[prost(message, optional, tag = "1")]
@@ -48,7 +43,6 @@ pub struct GaloisKey {
     #[prost(uint32, tag = "2")]
     pub exponent: u32,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EvaluationKey {
     #[prost(message, repeated, tag = "2")]
@@ -58,7 +52,6 @@ pub struct EvaluationKey {
     #[prost(uint32, tag = "4")]
     pub evaluation_key_level: u32,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Parameters {
     #[prost(uint32, tag = "1")]
@@ -70,13 +63,11 @@ pub struct Parameters {
     #[prost(uint32, tag = "4")]
     pub variance: u32,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublicKey {
     #[prost(message, optional, tag = "1")]
     pub c: ::core::option::Option<Ciphertext>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SecretKey {
     #[prost(sint64, repeated, tag = "1")]

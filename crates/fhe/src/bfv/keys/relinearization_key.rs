@@ -85,7 +85,6 @@ impl RelinearizationKey {
             let mut c2 = ct[2].clone();
             c2.change_representation(Representation::PowerBasis);
 
-            #[allow(unused_mut)]
             let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
 
             if c0.ctx() != ct[0].ctx() {

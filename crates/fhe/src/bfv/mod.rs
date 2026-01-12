@@ -1,6 +1,9 @@
 #![warn(missing_docs, unused_imports)]
-// Allow indexing in BFV cryptographic operations for performance
-#![allow(clippy::indexing_slicing)]
+// Expect indexing in BFV cryptographic operations for performance
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 

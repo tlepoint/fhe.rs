@@ -1118,7 +1118,6 @@ mod tests {
         let ntests = 100;
         let mut rng = rand::rng();
 
-        #[allow(clippy::single_element_loop)]
         for p in [4611686018326724609] {
             let q = Modulus::new(p).unwrap();
             assert!(primes::supports_opt(p));

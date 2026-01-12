@@ -1,6 +1,9 @@
-// Allow indexing in examples for simplicity
-#![allow(clippy::indexing_slicing)]
-#![allow(missing_docs)]
+// Expect indexing in examples for simplicity
+#![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 // Implementation of multiparty voting using the `fhe` crate.
 
@@ -128,7 +131,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut votes_encrypted = Vec::with_capacity(num_voters);
     let mut _i = 0;
     timeit_n!("Vote casting (per voter)", num_voters as u32, {
-        #[allow(unused_assignments)]
         let pt = Plaintext::try_encode(&[votes[_i]], Encoding::poly(), &params)?;
         let ct = pk.try_encrypt(&pt, &mut rng)?;
         votes_encrypted.push(ct);

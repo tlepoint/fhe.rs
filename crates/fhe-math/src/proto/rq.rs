@@ -1,6 +1,7 @@
-#![allow(missing_docs)]
-
-#[allow(clippy::derive_partial_eq_without_eq)]
+#[expect(
+    clippy::derive_partial_eq_without_eq,
+    reason = "prost-generated types do not need Eq"
+)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Rq {
     #[prost(enumeration = "Representation", tag = "1")]

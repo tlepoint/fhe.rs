@@ -1,6 +1,9 @@
-// Allow indexing in this performance-critical NTT implementation.
+// Expect indexing in this performance-critical NTT implementation.
 // The unsafe blocks already indicate this is performance-sensitive code.
-#![allow(clippy::indexing_slicing)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 use crate::zq::Modulus;
 use itertools::Itertools;

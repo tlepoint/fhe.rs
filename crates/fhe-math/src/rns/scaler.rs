@@ -1,6 +1,9 @@
 #![warn(missing_docs, unused_imports)]
-// Allow indexing in this performance-critical RNS scaler implementation
-#![allow(clippy::indexing_slicing)]
+// Expect indexing in this performance-critical RNS scaler implementation
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 //! RNS scaler inspired from Remark 3.2 of <https://eprint.iacr.org/2021/204.pdf>.
 
