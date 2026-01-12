@@ -167,14 +167,14 @@ impl TryConvertFrom<&Rq> for Poly {
 
         let variable_time = variable_time || value.allow_variable_time;
 
-        if let Some(r) = representation.into() as Option<Representation> {
-            if r != representation_from_proto {
-                return Err(Error::Default("The representation asked for does not match the representation in the serialization".to_string()));
-            }
+        if let Some(r) = representation.into() as Option<Representation>
+            && r != representation_from_proto
+        {
+            return Err(Error::Default("The representation asked for does not match the representation in the serialization".to_string()));
         }
 
         let degree = value.degree as usize;
-        if degree % 8 != 0 || degree < 8 {
+        if !degree.is_multiple_of(8) || degree < 8 {
             return Err(Error::Default("Invalid degree".to_string()));
         }
 
