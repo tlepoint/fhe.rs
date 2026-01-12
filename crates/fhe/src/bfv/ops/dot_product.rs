@@ -17,8 +17,10 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 
     macro_rules! fma_at {
         ($idx:expr) => {
-            *out.get_unchecked_mut($idx) +=
-                (*x.get_unchecked($idx) as u128) * (*y.get_unchecked($idx) as u128);
+            unsafe {
+                *out.get_unchecked_mut($idx) +=
+                    (*x.get_unchecked($idx) as u128) * (*y.get_unchecked($idx) as u128);
+            }
         };
     }
 
@@ -166,6 +168,10 @@ mod tests {
     #[test]
     fn test_dot_product_scalar() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
+        let empty_ct: Vec<Ciphertext> = Vec::new();
+        let empty_pt: Vec<Plaintext> = Vec::new();
+        assert!(dot_product_scalar(empty_ct.iter(), empty_pt.iter()).is_err());
+
         for params in [
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(2, 32),

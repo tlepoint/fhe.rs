@@ -406,7 +406,7 @@ impl Poly {
                     .unwrap()
                     .clone_from_slice(power_basis_coefficients);
                 qi.lazy_reduce_vec(p.as_slice_mut().unwrap());
-                op.forward_vt_lazy(p.as_mut_ptr());
+                unsafe { op.forward_vt_lazy(p.as_mut_ptr()) };
             },
         );
         Self {
@@ -746,6 +746,33 @@ mod tests {
 
         q = -&p;
         assert!(q.allow_variable_time_computations);
+
+        Ok(())
+    }
+
+    #[test]
+    fn create_constant_ntt_with_lazy_coefficients_and_variable_time() -> Result<(), Box<dyn Error>>
+    {
+        let modulus = MODULI[0];
+        let ctx = Arc::new(Context::new(&[modulus], 16)?);
+        let coeffs: Vec<u64> = (0..ctx.degree)
+            .map(|i| (i as u64).wrapping_mul(modulus).wrapping_add(i as u64))
+            .collect();
+
+        let poly = unsafe {
+            Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+                &coeffs, &ctx,
+            )
+        };
+
+        assert_eq!(poly.representation(), &Representation::Ntt);
+        assert!(poly.allow_variable_time_computations);
+        assert!(poly.has_lazy_coefficients);
+
+        let mut expected = coeffs.clone();
+        ctx.q[0].lazy_reduce_vec(&mut expected);
+        unsafe { ctx.ops[0].forward_vt_lazy(expected.as_mut_ptr()) };
+        assert_eq!(poly.coefficients().as_slice().unwrap(), expected);
 
         Ok(())
     }

@@ -63,12 +63,11 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            par.ntt_operator
-                                .as_ref()
-                                .ok_or(Error::InvalidPlaintext {
+                            let ntt_operator =
+                                par.ntt_operator.as_ref().ok_or(Error::InvalidPlaintext {
                                     reason: "No Ntt operator".into(),
-                                })?
-                                .backward_vt(v.as_mut_ptr());
+                                })?;
+                            unsafe { ntt_operator.backward_vt(v.as_mut_ptr()) };
                         }
                     };
 
@@ -164,13 +163,17 @@ mod tests {
                     assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts = unsafe {
+                let plaintexts_vt = unsafe {
                     PlaintextVec::try_encode_vt(&a, Encoding::poly_at_level(0), &params)?
                 };
-                assert_eq!(plaintexts.0.len(), i);
+                assert_eq!(plaintexts_vt.0.len(), i);
+                for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
+                    assert_eq!(pt.value, pt_vt.value);
+                }
 
                 for j in 0..i {
-                    let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::poly_at_level(0))?;
+                    let b =
+                        Vec::<u64>::try_decode(&plaintexts_vt.0[j], Encoding::poly_at_level(0))?;
                     assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
@@ -182,12 +185,15 @@ mod tests {
                     assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts =
+                let plaintexts_vt =
                     unsafe { PlaintextVec::try_encode_vt(&a, Encoding::simd(), &params)? };
-                assert_eq!(plaintexts.0.len(), i);
+                assert_eq!(plaintexts_vt.0.len(), i);
+                for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
+                    assert_eq!(pt.value, pt_vt.value);
+                }
 
                 for j in 0..i {
-                    let b = Vec::<u64>::try_decode(&plaintexts.0[j], Encoding::simd())?;
+                    let b = Vec::<u64>::try_decode(&plaintexts_vt.0[j], Encoding::simd())?;
                     assert_eq!(b, &a[j * params.degree()..(j + 1) * params.degree()]);
                 }
             }

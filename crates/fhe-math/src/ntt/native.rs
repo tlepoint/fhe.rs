@@ -140,15 +140,15 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
-        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+        let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, self.size) };
 
         let mut l = self.size >> 1;
         let mut m = 1;
         let mut k = 1;
         while l > 0 {
             for i in 0..m {
-                let omega = *self.omegas.get_unchecked(k);
-                let omega_shoup = *self.omegas_shoup.get_unchecked(k);
+                let omega = unsafe { *self.omegas.get_unchecked(k) };
+                let omega_shoup = unsafe { *self.omegas_shoup.get_unchecked(k) };
                 k += 1;
 
                 let s = 2 * i * l;
@@ -156,15 +156,15 @@ impl NttOperator {
                     1 => {
                         // SAFETY: s and s + l are distinct (l > 0) and in-bounds
                         // (s + l < 2 * m * l = size)
-                        let [x, y] = a.get_disjoint_unchecked_mut([s, s + l]);
-                        self.butterfly_vt(x, y, omega, omega_shoup);
+                        let [x, y] = unsafe { a.get_disjoint_unchecked_mut([s, s + l]) };
+                        unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
                     }
                     _ => {
                         for j in s..(s + l) {
                             // SAFETY: j and j + l are distinct (l > 0) and in-bounds
                             // (j + l < s + 2 * l <= 2 * m * l = size)
-                            let [x, y] = a.get_disjoint_unchecked_mut([j, j + l]);
-                            self.butterfly_vt(x, y, omega, omega_shoup);
+                            let [x, y] = unsafe { a.get_disjoint_unchecked_mut([j, j + l]) };
+                            unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
                         }
                     }
                 }
@@ -181,10 +181,10 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
-        self.forward_vt_lazy(a_ptr);
-        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+        unsafe { self.forward_vt_lazy(a_ptr) };
+        let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, self.size) };
         for ai in a.iter_mut() {
-            *ai = self.reduce3_vt(*ai);
+            *ai = unsafe { self.reduce3_vt(*ai) };
         }
     }
 
@@ -195,7 +195,7 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
-        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+        let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, self.size) };
 
         let mut k = 0;
         let mut m = self.size >> 1;
@@ -203,22 +203,22 @@ impl NttOperator {
         while m > 0 {
             for i in 0..m {
                 let s = 2 * i * l;
-                let zeta_inv = *self.zetas_inv.get_unchecked(k);
-                let zeta_inv_shoup = *self.zetas_inv_shoup.get_unchecked(k);
+                let zeta_inv = unsafe { *self.zetas_inv.get_unchecked(k) };
+                let zeta_inv_shoup = unsafe { *self.zetas_inv_shoup.get_unchecked(k) };
                 k += 1;
                 match l {
                     1 => {
                         // SAFETY: s and s + l are distinct (l > 0) and in-bounds
                         // (s + l < 2 * m * l = size)
-                        let [x, y] = a.get_disjoint_unchecked_mut([s, s + l]);
-                        self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup);
+                        let [x, y] = unsafe { a.get_disjoint_unchecked_mut([s, s + l]) };
+                        unsafe { self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup) };
                     }
                     _ => {
                         for j in s..(s + l) {
                             // SAFETY: j and j + l are distinct (l > 0) and in-bounds
                             // (j + l < s + 2 * l <= 2 * m * l = size)
-                            let [x, y] = a.get_disjoint_unchecked_mut([j, j + l]);
-                            self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup);
+                            let [x, y] = unsafe { a.get_disjoint_unchecked_mut([j, j + l]) };
+                            unsafe { self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup) };
                         }
                     }
                 }
@@ -248,8 +248,8 @@ impl NttOperator {
     const unsafe fn reduce3_vt(&self, a: u64) -> u64 {
         debug_assert!(a < 4 * self.p.p);
 
-        let y = Modulus::reduce1_vt(a, self.p_twice);
-        Modulus::reduce1_vt(y, self.p.p)
+        let y = unsafe { Modulus::reduce1_vt(a, self.p_twice) };
+        unsafe { Modulus::reduce1_vt(y, self.p.p) }
     }
 
     /// NTT Butterfly.
@@ -275,7 +275,7 @@ impl NttOperator {
         debug_assert!(w < self.p.p);
         debug_assert_eq!(self.p.shoup(w), w_shoup);
 
-        *x = Modulus::reduce1_vt(*x, self.p_twice);
+        *x = unsafe { Modulus::reduce1_vt(*x, self.p_twice) };
         let t = self.p.lazy_mul_shoup(*y, w, w_shoup);
         *y = *x + self.p_twice - t;
         *x += t;
@@ -307,7 +307,7 @@ impl NttOperator {
         debug_assert_eq!(self.p.shoup(z), z_shoup);
 
         let t = *x;
-        *x = Modulus::reduce1_vt(*y + t, self.p_twice);
+        *x = unsafe { Modulus::reduce1_vt(*y + t, self.p_twice) };
         *y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
 
         debug_assert!(*x < self.p_twice);
