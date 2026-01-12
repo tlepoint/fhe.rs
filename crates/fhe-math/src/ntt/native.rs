@@ -140,6 +140,8 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
+        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+
         let mut l = self.size >> 1;
         let mut m = 1;
         let mut k = 1;
@@ -152,21 +154,17 @@ impl NttOperator {
                 let s = 2 * i * l;
                 match l {
                     1 => {
-                        self.butterfly_vt(
-                            &mut *a_ptr.add(s),
-                            &mut *a_ptr.add(s + l),
-                            omega,
-                            omega_shoup,
-                        );
+                        // SAFETY: s and s + l are distinct (l > 0) and in-bounds
+                        // (s + l < 2 * m * l = size)
+                        let [x, y] = a.get_disjoint_unchecked_mut([s, s + l]);
+                        self.butterfly_vt(x, y, omega, omega_shoup);
                     }
                     _ => {
                         for j in s..(s + l) {
-                            self.butterfly_vt(
-                                &mut *a_ptr.add(j),
-                                &mut *a_ptr.add(j + l),
-                                omega,
-                                omega_shoup,
-                            );
+                            // SAFETY: j and j + l are distinct (l > 0) and in-bounds
+                            // (j + l < s + 2 * l <= 2 * m * l = size)
+                            let [x, y] = a.get_disjoint_unchecked_mut([j, j + l]);
+                            self.butterfly_vt(x, y, omega, omega_shoup);
                         }
                     }
                 }
@@ -184,8 +182,9 @@ impl NttOperator {
     /// about the value being reduced.
     pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
         self.forward_vt_lazy(a_ptr);
-        for i in 0..self.size {
-            *a_ptr.add(i) = self.reduce3_vt(*a_ptr.add(i))
+        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+        for ai in a.iter_mut() {
+            *ai = self.reduce3_vt(*ai);
         }
     }
 
@@ -196,6 +195,8 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
+        let a = std::slice::from_raw_parts_mut(a_ptr, self.size);
+
         let mut k = 0;
         let mut m = self.size >> 1;
         let mut l = 1;
@@ -207,21 +208,17 @@ impl NttOperator {
                 k += 1;
                 match l {
                     1 => {
-                        self.inv_butterfly_vt(
-                            &mut *a_ptr.add(s),
-                            &mut *a_ptr.add(s + l),
-                            zeta_inv,
-                            zeta_inv_shoup,
-                        );
+                        // SAFETY: s and s + l are distinct (l > 0) and in-bounds
+                        // (s + l < 2 * m * l = size)
+                        let [x, y] = a.get_disjoint_unchecked_mut([s, s + l]);
+                        self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup);
                     }
                     _ => {
                         for j in s..(s + l) {
-                            self.inv_butterfly_vt(
-                                &mut *a_ptr.add(j),
-                                &mut *a_ptr.add(j + l),
-                                zeta_inv,
-                                zeta_inv_shoup,
-                            );
+                            // SAFETY: j and j + l are distinct (l > 0) and in-bounds
+                            // (j + l < s + 2 * l <= 2 * m * l = size)
+                            let [x, y] = a.get_disjoint_unchecked_mut([j, j + l]);
+                            self.inv_butterfly_vt(x, y, zeta_inv, zeta_inv_shoup);
                         }
                     }
                 }
@@ -230,10 +227,8 @@ impl NttOperator {
             m >>= 1;
         }
 
-        for i in 0..self.size as isize {
-            *a_ptr.offset(i) =
-                self.p
-                    .mul_shoup(*a_ptr.offset(i), self.size_inv, self.size_inv_shoup)
+        for ai in a.iter_mut() {
+            *ai = self.p.mul_shoup(*ai, self.size_inv, self.size_inv_shoup);
         }
     }
 
