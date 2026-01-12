@@ -434,7 +434,7 @@ impl From<&Poly> for Vec<BigUint> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![expect(clippy::expect_used, reason = "bounds are validated before use")]
 
     use crate::{
         Error as CrateError,

@@ -248,7 +248,7 @@ impl BfvParameters {
     #[cfg(test)]
     /// Returns default parameters for tests.
     #[must_use]
-    #[allow(clippy::panic)]
+    #[expect(clippy::panic, reason = "panic indicates violated internal invariant")]
     pub fn default_arc(num_moduli: usize, degree: usize) -> Arc<Self> {
         if !degree.is_power_of_two() || degree < 8 {
             panic!("Invalid degree");
@@ -274,7 +274,10 @@ pub struct BfvParametersBuilder {
 
 impl BfvParametersBuilder {
     /// Creates a new instance of the builder
-    #[allow(clippy::new_without_default)]
+    #[expect(
+        clippy::new_without_default,
+        reason = "builder requires explicit configuration"
+    )]
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -712,7 +715,7 @@ mod tests {
         let result = BfvParameters::default_parameters_128(10);
         assert!(result.is_err());
 
-        #[allow(clippy::panic)]
+        #[expect(clippy::panic, reason = "panic indicates violated internal invariant")]
         match result {
             Err(e) => {
                 let error_string = format!("{e}");

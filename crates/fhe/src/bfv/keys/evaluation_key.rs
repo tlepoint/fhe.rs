@@ -289,7 +289,6 @@ impl EvaluationKeyBuilder {
     }
 
     /// Allow expansion by this evaluation key.
-    #[allow(unused_must_use)]
     pub fn enable_expansion(&mut self, level: usize) -> Result<&mut Self> {
         if level >= 64 - self.sk.par.degree().leading_zeros() as usize {
             Err(Error::DefaultError("Invalid level 2".to_string()))
@@ -300,14 +299,12 @@ impl EvaluationKeyBuilder {
     }
 
     /// Allow this evaluation key to compute homomorphic inner sums.
-    #[allow(unused_must_use)]
     pub fn enable_inner_sum(&mut self) -> Result<&mut Self> {
         self.inner_sum = true;
         Ok(self)
     }
 
     /// Allow this evaluation key to homomorphically rotate the plaintext rows.
-    #[allow(unused_must_use)]
     pub fn enable_row_rotation(&mut self) -> Result<&mut Self> {
         self.row_rotation = true;
         Ok(self)
@@ -315,7 +312,6 @@ impl EvaluationKeyBuilder {
 
     /// Allow this evaluation key to homomorphically rotate the plaintext
     /// columns.
-    #[allow(unused_must_use)]
     pub fn enable_column_rotation(&mut self, i: usize) -> Result<&mut Self> {
         if let Some(exp) = self.rot_to_gk_exponent.get(&i) {
             self.column_rotation.insert(*exp);

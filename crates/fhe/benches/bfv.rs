@@ -1,6 +1,9 @@
-// Allow indexing in benchmarks for convenience
-#![allow(clippy::indexing_slicing)]
-#![allow(missing_docs)]
+// Expect indexing in benchmarks for convenience
+#![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe::bfv::{

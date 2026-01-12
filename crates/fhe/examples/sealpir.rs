@@ -1,6 +1,9 @@
-// Allow indexing in examples for simplicity
-#![allow(clippy::indexing_slicing)]
-#![allow(missing_docs)]
+// Expect indexing in examples for simplicity
+#![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 // Implementation of SealPIR using the `fhe` crate.
 //

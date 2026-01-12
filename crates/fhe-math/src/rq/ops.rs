@@ -110,7 +110,7 @@ impl Sub<&Poly> for &Poly {
 }
 
 impl MulAssign<&Poly> for Poly {
-    #[allow(clippy::panic)]
+    #[expect(clippy::panic, reason = "panic indicates violated internal invariant")]
     fn mul_assign(&mut self, p: &Poly) {
         assert!(!p.has_lazy_coefficients);
         assert_ne!(

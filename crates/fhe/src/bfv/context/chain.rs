@@ -132,7 +132,7 @@ impl ContextLevel {
     }
 
     /// Access multiplication parameters for this level
-    #[allow(clippy::expect_used)]
+    #[expect(clippy::expect_used, reason = "bounds are validated before use")]
     pub(crate) fn mul_params(&self) -> &MultiplicationParameters {
         self.mul_params
             .get()

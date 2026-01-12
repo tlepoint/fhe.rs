@@ -197,7 +197,6 @@ impl Multiplicator {
 
         // Relinearize
         if let Some(rk) = self.rk.as_ref() {
-            #[allow(unused_mut)]
             let (mut c0r, mut c1r) = rk.relinearizes_poly(&c[2])?;
 
             if c0r.ctx() != c[0].ctx() {

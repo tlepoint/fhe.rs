@@ -1,5 +1,5 @@
 // Integration test to verify the unified context management API works correctly
-#![allow(missing_docs)]
+#![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
 
 use fhe::bfv::BfvParametersBuilder;
 

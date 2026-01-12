@@ -1,6 +1,9 @@
 #![warn(missing_docs, unused_imports)]
-// Allow indexing in this performance-critical RNS implementation
-#![allow(clippy::indexing_slicing)]
+// Expect indexing in this performance-critical RNS implementation
+#![expect(
+    clippy::indexing_slicing,
+    reason = "performance or example code relies on validated indices"
+)]
 
 //! Residue-Number System operations.
 
@@ -69,7 +72,10 @@ impl RnsContext {
                 product_dig *= &BigUintDig::from(moduli_u64[i]);
             }
 
-            #[allow(clippy::type_complexity)]
+            #[expect(
+                clippy::type_complexity,
+                reason = "complex tuple is produced by multiunzip"
+            )]
             let (moduli, q_tilde, q_tilde_shoup, q_star, garner): (
                 Vec<Modulus>,
                 Vec<u64>,
