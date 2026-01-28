@@ -77,10 +77,12 @@ impl NttOperator {
     /// about the value being reduced.
     pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
         if let Some(ref tfhe_operator) = self.tfhe_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size()) };
             tfhe_operator.fwd(a);
         } else {
-            self.native_operator.forward_vt_lazy(a_ptr);
+            unsafe {
+                self.native_operator.forward_vt_lazy(a_ptr);
+            }
         }
     }
 
@@ -92,10 +94,12 @@ impl NttOperator {
     /// about the value being reduced.
     pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
         if let Some(ref tfhe_operator) = self.tfhe_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size()) };
             tfhe_operator.fwd(a);
         } else {
-            self.native_operator.forward_vt(a_ptr);
+            unsafe {
+                self.native_operator.forward_vt(a_ptr);
+            }
         }
     }
 
@@ -107,11 +111,13 @@ impl NttOperator {
     /// about the value being reduced.
     pub unsafe fn backward_vt(&self, a_ptr: *mut u64) {
         if let Some(ref tfhe_operator) = self.tfhe_operator {
-            let a = std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size());
+            let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, tfhe_operator.ntt_size()) };
             tfhe_operator.inv(a);
             tfhe_operator.normalize(a);
         } else {
-            self.native_operator.backward_vt(a_ptr);
+            unsafe {
+                self.native_operator.backward_vt(a_ptr);
+            }
         }
     }
 }

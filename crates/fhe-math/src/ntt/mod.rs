@@ -4,12 +4,12 @@ use fhe_util::is_prime;
 
 mod native;
 
-#[cfg(any(feature = "tfhe-ntt", feature = "tfhe-ntt-nightly"))]
+#[cfg(feature = "tfhe-ntt")]
 mod tfhe;
 
-#[cfg(not(any(feature = "tfhe-ntt", feature = "tfhe-ntt-nightly")))]
+#[cfg(not(feature = "tfhe-ntt"))]
 pub use native::NttOperator;
-#[cfg(any(feature = "tfhe-ntt", feature = "tfhe-ntt-nightly"))]
+#[cfg(feature = "tfhe-ntt")]
 pub use tfhe::NttOperator;
 
 /// Returns whether a modulus p is prime and supports the Number Theoretic
