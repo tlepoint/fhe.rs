@@ -73,7 +73,7 @@ impl Add<&Poly> for &Poly {
                 q += p;
                 q
             }
-            _ => {
+            Representation::PowerBasis | Representation::Ntt => {
                 let mut q = self.clone();
                 q += p;
                 q
@@ -152,7 +152,7 @@ impl Sub<&Poly> for &Poly {
                 q -= p;
                 q
             }
-            _ => {
+            Representation::PowerBasis | Representation::Ntt => {
                 let mut q = self.clone();
                 q -= p;
                 q

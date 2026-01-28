@@ -1,6 +1,6 @@
 use fhe_math::rq::{Context, Poly, Representation};
-use std::sync::Arc;
 use rand::rng;
+use std::sync::Arc;
 
 #[test]
 fn test_ntt_shoup_add_sub_neg() {
