@@ -14,6 +14,26 @@ use zeroize::Zeroize;
 impl AddAssign<&Poly> for Poly {
     fn add_assign(&mut self, p: &Poly) {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
+
+        // p and self must have the same context.
+        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+
+        // p and q must have comptatible representations.
+        match self.representation {
+            Representation::PowerBasis => assert_eq!(
+                p.representation,
+                Representation::PowerBasis,
+                "Incompatible representations"
+            ),
+            Representation::Ntt | Representation::NttShoup => assert!(
+                p.representation == Representation::Ntt
+                    || p.representation == Representation::NttShoup,
+                "Incompatible representations"
+            ),
+        }
+
+        // If the representation is NttShoup, drop the Shoup coefficients
+        // and switch to Ntt representation.
         if self.representation == Representation::NttShoup {
             self.coefficients_shoup
                 .as_mut()
@@ -24,19 +44,6 @@ impl AddAssign<&Poly> for Poly {
             unsafe { self.override_representation(Representation::Ntt) }
         }
 
-        if self.representation == Representation::Ntt {
-            assert!(
-                p.representation == Representation::Ntt
-                    || p.representation == Representation::NttShoup,
-                "Incompatible representations"
-            )
-        } else {
-            assert_eq!(
-                self.representation, p.representation,
-                "Incompatible representations"
-            );
-        }
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
         self.allow_variable_time_computations |= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
@@ -63,26 +70,15 @@ impl AddAssign<&Poly> for Poly {
 impl Add<&Poly> for &Poly {
     type Output = Poly;
     fn add(self, p: &Poly) -> Poly {
-        match self.representation {
-            Representation::NttShoup => {
-                let mut q = self.clone();
-                if q.representation == Representation::NttShoup {
-                    q.coefficients_shoup
-                        .as_mut()
-                        .unwrap()
-                        .as_slice_mut()
-                        .unwrap()
-                        .zeroize();
-                    unsafe { q.override_representation(Representation::Ntt) }
-                }
-                q += p;
-                q
-            }
-            Representation::PowerBasis | Representation::Ntt => {
-                let mut q = self.clone();
-                q += p;
-                q
-            }
+        // if self is in NttShoup representation, let's copy `p` instead
+        if self.representation == Representation::NttShoup {
+            let mut q = p.clone();
+            q += self;
+            q
+        } else {
+            let mut q = self.clone();
+            q += p;
+            q
         }
     }
 }
@@ -98,24 +94,36 @@ impl Add for Poly {
 impl SubAssign<&Poly> for Poly {
     fn sub_assign(&mut self, p: &Poly) {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        assert_ne!(
-            self.representation,
-            Representation::NttShoup,
-            "Cannot subtract from a polynomial in NttShoup representation"
-        );
-        if self.representation == Representation::Ntt {
-            assert!(
+
+        // p and self must have the same context.
+        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+
+        // p and q must have comptatible representations.
+        match self.representation {
+            Representation::PowerBasis => assert_eq!(
+                p.representation,
+                Representation::PowerBasis,
+                "Incompatible representations"
+            ),
+            Representation::Ntt | Representation::NttShoup => assert!(
                 p.representation == Representation::Ntt
                     || p.representation == Representation::NttShoup,
                 "Incompatible representations"
-            )
-        } else {
-            assert_eq!(
-                self.representation, p.representation,
-                "Incompatible representations"
-            );
+            ),
         }
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+
+        // If the representation is NttShoup, drop the Shoup coefficients
+        // and switch to Ntt representation.
+        if self.representation == Representation::NttShoup {
+            self.coefficients_shoup
+                .as_mut()
+                .unwrap()
+                .as_slice_mut()
+                .unwrap()
+                .zeroize();
+            unsafe { self.override_representation(Representation::Ntt) }
+        }
+
         self.allow_variable_time_computations |= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
@@ -142,27 +150,9 @@ impl SubAssign<&Poly> for Poly {
 impl Sub<&Poly> for &Poly {
     type Output = Poly;
     fn sub(self, p: &Poly) -> Poly {
-        match self.representation {
-            Representation::NttShoup => {
-                let mut q = self.clone();
-                if q.representation == Representation::NttShoup {
-                    q.coefficients_shoup
-                        .as_mut()
-                        .unwrap()
-                        .as_slice_mut()
-                        .unwrap()
-                        .zeroize();
-                    unsafe { q.override_representation(Representation::Ntt) }
-                }
-                q -= p;
-                q
-            }
-            Representation::PowerBasis | Representation::Ntt => {
-                let mut q = self.clone();
-                q -= p;
-                q
-            }
-        }
+        let mut q = self.clone();
+        q -= p;
+        q
     }
 }
 
@@ -255,11 +245,17 @@ impl MulAssign<&Poly> for Poly {
 
 impl MulAssign<&BigUint> for Poly {
     fn mul_assign(&mut self, p: &BigUint) {
-        assert_ne!(
-            self.representation,
-            Representation::NttShoup,
-            "Cannot multiply a polynomial in NttShoup representation by a scalar"
-        );
+        // If the representation is NttShoup, drop the Shoup coefficients
+        // and switch to Ntt representation.
+        if self.representation == Representation::NttShoup {
+            self.coefficients_shoup
+                .as_mut()
+                .unwrap()
+                .as_slice_mut()
+                .unwrap()
+                .zeroize();
+            unsafe { self.override_representation(Representation::Ntt) }
+        }
 
         // Project the scalar into its CRT representation (reduced modulo each prime)
         let scalar_crt = self.ctx.rns.project(p);
@@ -291,27 +287,15 @@ impl MulAssign<&BigUint> for Poly {
 impl Mul<&Poly> for &Poly {
     type Output = Poly;
     fn mul(self, p: &Poly) -> Poly {
-        match self.representation {
-            Representation::NttShoup => {
-                // TODO: To test, and do the same thing for add, sub, and neg
-                let mut q = p.clone();
-                if q.representation == Representation::NttShoup {
-                    q.coefficients_shoup
-                        .as_mut()
-                        .unwrap()
-                        .as_slice_mut()
-                        .unwrap()
-                        .zeroize();
-                    unsafe { q.override_representation(Representation::Ntt) }
-                }
-                q *= self;
-                q
-            }
-            Representation::PowerBasis | Representation::Ntt => {
-                let mut q = self.clone();
-                q *= p;
-                q
-            }
+        // if self is in NttShoup representation, let's copy `p` instead
+        if self.representation == Representation::NttShoup {
+            let mut q = p.clone();
+            q *= self;
+            q
+        } else {
+            let mut q = self.clone();
+            q *= p;
+            q
         }
     }
 }
@@ -852,17 +836,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "Cannot multiply a polynomial in NttShoup representation by a scalar"
-    )]
-    fn mul_scalar_ntt_shoup_panic() {
+    fn mul_scalar_ntt_shoup() {
         use num_bigint::BigUint;
 
         let ctx = Arc::new(Context::new(MODULI, 16).unwrap());
         let mut p = Poly::random(&ctx, Representation::NttShoup, &mut rng());
+        let mut p_ntt = p.clone();
+        p_ntt.change_representation(Representation::Ntt);
         let scalar = BigUint::from(42u64);
 
-        // This should panic with the assertion message
         p *= &scalar;
+
+        assert_eq!(p.representation, Representation::Ntt);
+        assert_eq!(&p_ntt * &scalar, p);
     }
 }
