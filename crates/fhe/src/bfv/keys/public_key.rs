@@ -125,8 +125,8 @@ impl DeserializeParametrized for PublicKey {
                 message: "PublicKey decode".into(),
             })
         })?;
-        if proto.c.is_some() {
-            let mut c = Ciphertext::try_convert_from(&proto.c.unwrap(), par)?;
+        if let Some(proto_c) = &proto.c {
+            let mut c = Ciphertext::try_convert_from(proto_c, par)?;
             if c.level != 0 {
                 Err(Error::SerializationError(
                     SerializationError::InvalidFormat {

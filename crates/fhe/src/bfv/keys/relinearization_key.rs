@@ -119,9 +119,9 @@ impl From<&RelinearizationKey> for RelinearizationKeyProto {
 
 impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
     fn try_convert_from(value: &RelinearizationKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-        if value.ksk.is_some() {
+        if let Some(ksk) = &value.ksk {
             Ok(RelinearizationKey {
-                ksk: KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?,
+                ksk: KeySwitchingKey::try_convert_from(ksk, par)?,
             })
         } else {
             Err(Error::DefaultError("Invalid serialization".to_string()))
