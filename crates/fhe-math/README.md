@@ -7,7 +7,7 @@ This crate exposes building blocks such as number theoretic transforms (NTT), re
 ## Features
 
 * `ntt`, `rns`, `rq`, and `zq` modules for modular arithmetic over large rings.
-* Optional `tfhe-ntt` and `tfhe-ntt-nightly` features to enable hardware accelerated NTTs via the [`tfhe-ntt`](https://crates.io/crates/tfhe-ntt) crate.
+* Optional `tfhe-ntt` features to enable hardware accelerated NTTs via the [`tfhe-ntt`](https://crates.io/crates/tfhe-ntt) crate.
 
 ## Installation
 
