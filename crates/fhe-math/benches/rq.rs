@@ -317,5 +317,11 @@ pub fn rq_convert_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(rq, rq_op_benchmark, rq_dot_product, rq_benchmark, rq_convert_benchmark);
+criterion_group!(
+    rq,
+    rq_op_benchmark,
+    rq_dot_product,
+    rq_benchmark,
+    rq_convert_benchmark
+);
 criterion_main!(rq);
