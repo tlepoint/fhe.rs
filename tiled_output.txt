@@ -1,0 +1,41 @@
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+warning: variable does not need to be mutable
+   --> crates/fhe/src/bfv/ops/dot_product.rs:109:13
+    |
+109 |         let mut acc_slice = acc.as_slice_mut().unwrap();
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `len`
+   --> crates/fhe/src/bfv/ops/dot_product.rs:118:17
+    |
+118 |             let len = end - i;
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `j`
+   --> crates/fhe/src/bfv/ops/dot_product.rs:122:22
+    |
+122 |                 for (j, (ci, acc_part)) in izip!(
+    |                      ^ help: if this is intentional, prefix it with an underscore: `_j`
+
+warning: `fhe` (lib) generated 3 warnings (run `cargo fix --lib -p fhe` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 26.24s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 57.2 ms
+⏱  Parameters generation: 21.9 ms
+number_rows = 6554
+number_elements_per_plaintext = 10
+dimensions = 81 81
+dimension = 6561
+⏱  Database preprocessing: 3607 ms
+level = 8
+Error: DefaultError("These parameters do not support key switching")

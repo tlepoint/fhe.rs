@@ -1,0 +1,55 @@
+warning: variable does not need to be mutable
+   --> crates/fhe/src/bfv/ops/dot_product.rs:109:13
+    |
+109 |         let mut acc_slice = acc.as_slice_mut().unwrap();
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `len`
+   --> crates/fhe/src/bfv/ops/dot_product.rs:118:17
+    |
+118 |             let len = end - i;
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_len`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `j`
+   --> crates/fhe/src/bfv/ops/dot_product.rs:122:22
+    |
+122 |                 for (j, (ci, acc_part)) in izip!(
+    |                      ^ help: if this is intentional, prefix it with an underscore: `_j`
+
+warning: `fhe` (lib) generated 3 warnings (run `cargo fix --lib -p fhe` to apply 3 suggestions)
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+    Finished `release` profile [optimized] target(s) in 18.49s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 55.4 ms
+⏱  Parameters generation: 81.5 ms
+number_rows = 3277
+number_elements_per_plaintext = 20
+dimensions = 58 57
+dimension = 3306
+⏱  Database preprocessing: 5792.4 ms
+level = 7
+⏱  Client setup: 247.4 ms
+📄 Evaluation key (expansion): 2.19 MiB
+📄 Relinearization key: 210.07 KiB
+⏱  Server setup: 63.6 ms
+⏱  Client query: 3.9 ms
+📄 Query: 105.05 KiB
+Expand: 897.196364ms
+Expand: 571.333164ms
+Expand: 571.245231ms
+Expand: 570.166552ms
+Expand: 578.212036ms
+⏱  Server response: 1785.3 ms
+📄 Response: 100.03 KiB
+Noise in response: Ok(19)
+⏱  Client answer: 5.8 ms

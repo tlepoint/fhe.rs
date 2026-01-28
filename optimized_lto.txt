@@ -1,0 +1,148 @@
+   Compiling proc-macro2 v1.0.101
+   Compiling unicode-ident v1.0.18
+   Compiling autocfg v1.5.0
+   Compiling cfg-if v1.0.3
+   Compiling libm v0.2.15
+   Compiling version_check v0.9.5
+   Compiling num-traits v0.2.19
+   Compiling libc v0.2.175
+   Compiling zerocopy v0.8.26
+   Compiling quote v1.0.40
+   Compiling serde v1.0.219
+   Compiling syn v2.0.106
+   Compiling getrandom v0.3.3
+   Compiling typenum v1.18.0
+   Compiling generic-array v0.14.7
+   Compiling memchr v2.7.5
+   Compiling num-integer v0.1.46
+   Compiling rand_core v0.9.3
+   Compiling bytemuck v1.23.2
+   Compiling crossbeam-utils v0.8.21
+   Compiling either v1.15.0
+   Compiling num-complex v0.4.6
+   Compiling ppv-lite86 v0.2.21
+   Compiling utf8parse v0.2.2
+   Compiling once_cell v1.21.3
+   Compiling anyhow v1.0.99
+   Compiling rand_chacha v0.9.0
+   Compiling anstyle-parse v0.2.7
+   Compiling rand v0.9.2
+   Compiling aho-corasick v1.1.3
+   Compiling pulp v0.21.5
+   Compiling matrixmultiply v0.3.10
+   Compiling shlex v1.3.0
+   Compiling colorchoice v1.0.4
+   Compiling find-msvc-tools v0.1.5
+   Compiling reborrow v0.5.5
+   Compiling anstyle-query v1.1.4
+   Compiling is_terminal_polyfill v1.70.1
+   Compiling anstyle v1.0.11
+   Compiling num-bigint-dig v0.9.1
+   Compiling regex-syntax v0.8.5
+   Compiling paste v1.0.15
+   Compiling itertools v0.14.0
+   Compiling serde_derive v1.0.219
+   Compiling equator-macro v0.4.2
+   Compiling equator v0.4.2
+   Compiling regex-automata v0.4.9
+   Compiling anstream v0.6.20
+   Compiling cc v1.2.48
+   Compiling crossbeam-epoch v0.9.18
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.6
+   Compiling num-iter v0.1.45
+   Compiling pulp v0.22.2
+   Compiling serde_json v1.0.143
+   Compiling rawpointer v0.2.1
+   Compiling smallvec v1.15.1
+   Compiling rayon-core v1.13.0
+   Compiling thiserror v2.0.17
+   Compiling bitflags v2.9.3
+   Compiling regex v1.11.1
+   Compiling raw-cpuid v11.6.0
+   Compiling digest v0.10.7
+   Compiling prost-derive v0.14.3
+   Compiling crossbeam-deque v0.8.6
+   Compiling alloca v0.4.0
+   Compiling aligned-vec v0.6.4
+   Compiling thiserror-impl v2.0.17
+   Compiling half v2.6.0
+   Compiling itoa v1.0.15
+   Compiling ciborium-io v0.2.2
+   Compiling heck v0.5.0
+   Compiling bytes v1.10.1
+   Compiling plotters-backend v0.3.7
+   Compiling cpufeatures v0.2.17
+   Compiling doc-comment v0.3.4
+   Compiling clap_lex v0.7.5
+   Compiling ryu v1.0.20
+   Compiling strsim v0.11.1
+   Compiling pulp-wasm-simd-flag v0.1.0
+   Compiling portable-atomic v1.11.1
+   Compiling clap_builder v4.5.54
+   Compiling tfhe-ntt v0.6.1
+   Compiling prost v0.14.3
+   Compiling sha2 v0.10.9
+   Compiling plotters-svg v0.3.7
+   Compiling clap_derive v4.5.49
+   Compiling ciborium-ll v0.2.2
+   Compiling ndarray v0.17.2
+   Compiling fhe-util v0.1.1 (/app/crates/fhe-util)
+   Compiling fhe-traits v0.1.1 (/app/crates/fhe-traits)
+   Compiling itertools v0.13.0
+   Compiling num-bigint v0.4.6
+   Compiling same-file v1.0.6
+   Compiling zeroize v1.8.2
+   Compiling unicode-width v0.2.1
+   Compiling cast v0.3.0
+   Compiling log v0.4.29
+   Compiling ethnum v1.5.2
+   Compiling env_filter v0.1.3
+   Compiling criterion-plot v0.8.1
+   Compiling console v0.16.2
+   Compiling walkdir v2.5.0
+   Compiling clap v4.5.54
+   Compiling rayon v1.11.0
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling tinytemplate v1.2.1
+   Compiling fhe-math v0.1.1 (/app/crates/fhe-math)
+   Compiling zeroize_derive v1.4.3
+   Compiling page_size v0.6.0
+   Compiling anes v0.1.6
+   Compiling jiff v0.2.15
+   Compiling oorandom v11.1.5
+   Compiling unit-prefix v0.5.1
+   Compiling indicatif v0.18.3
+   Compiling criterion v0.8.1
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+   Compiling env_logger v0.11.8
+    Finished `release` profile [optimized] target(s) in 1m 13s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 56.2 ms
+⏱  Parameters generation: 82.7 ms
+number_rows = 3277
+number_elements_per_plaintext = 20
+dimensions = 58 57
+dimension = 3306
+⏱  Database preprocessing: 3476.9 ms
+level = 7
+⏱  Client setup: 257.4 ms
+📄 Evaluation key (expansion): 2.19 MiB
+📄 Relinearization key: 210.07 KiB
+⏱  Server setup: 67 ms
+⏱  Client query: 3.9 ms
+📄 Query: 105.05 KiB
+Expand: 892.606106ms
+Expand: 570.449986ms
+Expand: 571.935406ms
+Expand: 573.982792ms
+Expand: 570.870228ms
+⏱  Server response: 1723.5 ms
+📄 Response: 100.03 KiB
+Noise in response: Ok(19)
+⏱  Client answer: 22.5 ms

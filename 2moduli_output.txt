@@ -1,0 +1,16 @@
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+    Finished `release` profile [optimized] target(s) in 21.15s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 77.1 ms
+⏱  Parameters generation: 37.7 ms
+number_rows = 3277
+number_elements_per_plaintext = 20
+dimensions = 58 57
+dimension = 3306
+⏱  Database preprocessing: 3295.2 ms
+level = 7
+Error: DefaultError("These parameters do not support key switching")

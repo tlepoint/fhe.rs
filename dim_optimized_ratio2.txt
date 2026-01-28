@@ -1,0 +1,30 @@
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+    Finished `release` profile [optimized] target(s) in 20.47s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 83.2 ms
+⏱  Parameters generation: 82.6 ms
+number_rows = 3277
+number_elements_per_plaintext = 20
+dimensions = 81 41
+dimension = 3321
+⏱  Database preprocessing: 7960.5 ms
+level = 7
+⏱  Client setup: 264.3 ms
+📄 Evaluation key (expansion): 2.19 MiB
+📄 Relinearization key: 210.07 KiB
+⏱  Server setup: 63.9 ms
+⏱  Client query: 4.1 ms
+📄 Query: 105.05 KiB
+Expand: 902.387562ms
+Expand: 587.374234ms
+Expand: 564.818901ms
+Expand: 569.605985ms
+Expand: 576.189802ms
+⏱  Server response: 1486.3 ms
+📄 Response: 100.03 KiB
+Noise in response: Ok(20)
+⏱  Client answer: 5.9 ms

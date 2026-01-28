@@ -108,28 +108,35 @@ pub fn encode_database(
     let number_rows = database.len().div_ceil(number_elements_per_plaintext);
     println!("number_rows = {number_rows}");
     println!("number_elements_per_plaintext = {number_elements_per_plaintext}");
-    let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
+    let dimension_1 = (number_rows as f64 * 2.5).sqrt().ceil() as usize;
     let dimension_2 = number_rows.div_ceil(dimension_1);
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
 
-    let mut preprocessed_database =
-        vec![
-            bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap();
-            dimension_1 * dimension_2
-        ];
-    (0..number_rows).for_each(|i| {
-        let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
-        for j in 0..number_elements_per_plaintext {
-            if let Some(pt) = database.get(j + i * number_elements_per_plaintext) {
-                serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
+    let mut preprocessed_database = Vec::with_capacity(dimension_1 * dimension_2);
+    for i in 0..dimension_1 * dimension_2 {
+        let col = i / dimension_1;
+        let row = i % dimension_1;
+        let pt_index = row * dimension_2 + col;
+
+        if pt_index < number_rows {
+            let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
+            for j in 0..number_elements_per_plaintext {
+                if let Some(pt) = database.get(j + pt_index * number_elements_per_plaintext) {
+                    serialized_plaintext[j * elements_size..(j + 1) * elements_size]
+                        .copy_from_slice(pt)
+                }
             }
+            let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
+            preprocessed_database.push(
+                bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
+                    .unwrap(),
+            );
+        } else {
+            preprocessed_database
+                .push(bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap());
         }
-        let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
-        preprocessed_database[i] =
-            bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
-                .unwrap();
-    });
+    }
     (preprocessed_database, (dimension_1, dimension_2))
 }
 

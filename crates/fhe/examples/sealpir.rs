@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let query_vec = &expanded_query[..dim1];
         let dot_product_mod_switch = move |i, database: &[bfv::Plaintext]| {
-            let column = database.iter().skip(i).step_by(dim2);
+            let column = database[i * dim1..(i + 1) * dim1].iter();
             let mut c = bfv::dot_product_scalar(query_vec.iter(), column)?;
             c.switch_to_level(c.max_switchable_level())?;
             Ok(c)

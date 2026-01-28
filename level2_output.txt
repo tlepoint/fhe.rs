@@ -1,0 +1,23 @@
+   Compiling fhe v0.1.1 (/app/crates/fhe)
+    Finished `release` profile [optimized] target(s) in 1.80s
+     Running `target/release/examples/mulpir`
+# MulPIR with fhe.rs
+database of 64.00 MiB
+	database_size = 65536
+	elements_size = 1024
+⏱  Database generation: 60.3 ms
+⏱  Parameters generation: 88.9 ms
+number_rows = 3277
+number_elements_per_plaintext = 20
+dimensions = 58 57
+dimension = 3306
+⏱  Database preprocessing: 1478.6 ms
+level = 7
+⏱  Client setup: 141 ms
+📄 Evaluation key (expansion): 2.19 MiB
+📄 Relinearization key: 210.07 KiB
+⏱  Server setup: 75.1 ms
+⏱  Client query: 4.3 ms
+📄 Query: 105.05 KiB
+Expand: 843.498071ms
+Error: DefaultError("Ciphertext has incorrect level")

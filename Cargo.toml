@@ -52,3 +52,8 @@ wildcard_enum_match_arm = "deny"
 # in destructuring to ensure compiler catches when new fields are added.
 fn_params_excessive_bools = "deny"
 must_use_candidate = "warn"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
