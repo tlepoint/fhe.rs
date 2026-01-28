@@ -19,10 +19,18 @@ impl AddAssign<&Poly> for Poly {
             Representation::NttShoup,
             "Cannot add to a polynomial in NttShoup representation"
         );
-        assert_eq!(
-            self.representation, p.representation,
-            "Incompatible representations"
-        );
+        if self.representation == Representation::Ntt {
+            assert!(
+                p.representation == Representation::Ntt
+                    || p.representation == Representation::NttShoup,
+                "Incompatible representations"
+            )
+        } else {
+            assert_eq!(
+                self.representation, p.representation,
+                "Incompatible representations"
+            );
+        }
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
         self.allow_variable_time_computations |= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
@@ -50,9 +58,27 @@ impl AddAssign<&Poly> for Poly {
 impl Add<&Poly> for &Poly {
     type Output = Poly;
     fn add(self, p: &Poly) -> Poly {
-        let mut q = self.clone();
-        q += p;
-        q
+        match self.representation {
+            Representation::NttShoup => {
+                let mut q = self.clone();
+                if q.representation == Representation::NttShoup {
+                    q.coefficients_shoup
+                        .as_mut()
+                        .unwrap()
+                        .as_slice_mut()
+                        .unwrap()
+                        .zeroize();
+                    unsafe { q.override_representation(Representation::Ntt) }
+                }
+                q += p;
+                q
+            }
+            _ => {
+                let mut q = self.clone();
+                q += p;
+                q
+            }
+        }
     }
 }
 
@@ -72,10 +98,18 @@ impl SubAssign<&Poly> for Poly {
             Representation::NttShoup,
             "Cannot subtract from a polynomial in NttShoup representation"
         );
-        assert_eq!(
-            self.representation, p.representation,
-            "Incompatible representations"
-        );
+        if self.representation == Representation::Ntt {
+            assert!(
+                p.representation == Representation::Ntt
+                    || p.representation == Representation::NttShoup,
+                "Incompatible representations"
+            )
+        } else {
+            assert_eq!(
+                self.representation, p.representation,
+                "Incompatible representations"
+            );
+        }
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
         self.allow_variable_time_computations |= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
@@ -103,9 +137,27 @@ impl SubAssign<&Poly> for Poly {
 impl Sub<&Poly> for &Poly {
     type Output = Poly;
     fn sub(self, p: &Poly) -> Poly {
-        let mut q = self.clone();
-        q -= p;
-        q
+        match self.representation {
+            Representation::NttShoup => {
+                let mut q = self.clone();
+                if q.representation == Representation::NttShoup {
+                    q.coefficients_shoup
+                        .as_mut()
+                        .unwrap()
+                        .as_slice_mut()
+                        .unwrap()
+                        .zeroize();
+                    unsafe { q.override_representation(Representation::Ntt) }
+                }
+                q -= p;
+                q
+            }
+            _ => {
+                let mut q = self.clone();
+                q -= p;
+                q
+            }
+        }
     }
 }
 
@@ -281,6 +333,15 @@ impl Neg for &Poly {
     fn neg(self) -> Poly {
         assert!(!self.has_lazy_coefficients);
         let mut out = self.clone();
+        if out.representation == Representation::NttShoup {
+            out.coefficients_shoup
+                .as_mut()
+                .unwrap()
+                .as_slice_mut()
+                .unwrap()
+                .zeroize();
+            unsafe { out.override_representation(Representation::Ntt) }
+        }
         if self.allow_variable_time_computations {
             izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
                 .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
@@ -297,6 +358,15 @@ impl Neg for Poly {
 
     fn neg(mut self) -> Poly {
         assert!(!self.has_lazy_coefficients);
+        if self.representation == Representation::NttShoup {
+            self.coefficients_shoup
+                .as_mut()
+                .unwrap()
+                .as_slice_mut()
+                .unwrap()
+                .zeroize();
+            unsafe { self.override_representation(Representation::Ntt) }
+        }
         if self.allow_variable_time_computations {
             izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
                 .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
