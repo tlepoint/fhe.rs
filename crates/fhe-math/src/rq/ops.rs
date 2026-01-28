@@ -14,11 +14,16 @@ use zeroize::Zeroize;
 impl AddAssign<&Poly> for Poly {
     fn add_assign(&mut self, p: &Poly) {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        assert_ne!(
-            self.representation,
-            Representation::NttShoup,
-            "Cannot add to a polynomial in NttShoup representation"
-        );
+        if self.representation == Representation::NttShoup {
+            self.coefficients_shoup
+                .as_mut()
+                .unwrap()
+                .as_slice_mut()
+                .unwrap()
+                .zeroize();
+            unsafe { self.override_representation(Representation::Ntt) }
+        }
+
         if self.representation == Representation::Ntt {
             assert!(
                 p.representation == Representation::Ntt
