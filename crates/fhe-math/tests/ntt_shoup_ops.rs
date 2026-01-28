@@ -1,3 +1,5 @@
+//! Unit test for polynomial Shoup operations.
+
 use fhe_math::rq::{Context, Poly, Representation};
 use rand::rng;
 use std::sync::Arc;
@@ -16,8 +18,8 @@ fn test_ntt_shoup_add_sub_neg() {
         let mut q = p.clone();
         if *q.representation() == Representation::NttShoup {
             unsafe { q.override_representation(Representation::Ntt) };
-            // Note: override_representation handles shoup cleanup if needed or just switch enum
-            // But strict conversion:
+            // Note: override_representation handles shoup cleanup if needed or just switch
+            // enum But strict conversion:
             q.change_representation(Representation::Ntt);
         }
         q
@@ -37,8 +39,8 @@ fn test_ntt_shoup_add_sub_neg() {
 
     // Case 3: NttShoup + NttShoup (should work if we relaxed AddAssign correctly)
     // Wait, AddAssign on LHS=NttShoup is forbidden.
-    // But Add(&NttShoup, &NttShoup) -> converts LHS to Ntt, then adds RHS (NttShoup).
-    // So LHS becomes Ntt. Ntt += NttShoup. This should work now.
+    // But Add(&NttShoup, &NttShoup) -> converts LHS to Ntt, then adds RHS
+    // (NttShoup). So LHS becomes Ntt. Ntt += NttShoup. This should work now.
     let p_shoup2 = Poly::random(&ctx, Representation::NttShoup, &mut rng);
     let p_shoup2_as_ntt = to_ntt(&p_shoup2);
 
