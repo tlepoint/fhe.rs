@@ -5,7 +5,7 @@
 )]
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
-use fhe_math::rq::*;
+use fhe_math::rq::{traits::TryConvertFrom, *};
 use itertools::{Itertools, izip};
 use rand::rng;
 use std::{
@@ -292,5 +292,30 @@ pub fn rq_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(rq, rq_op_benchmark, rq_dot_product, rq_benchmark);
+pub fn rq_convert_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rq_convert");
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(1));
+
+    for degree in DEGREE {
+        for nmoduli in 1..=MODULI.len() {
+            let ctx = Arc::new(Context::new(&MODULI[..nmoduli], *degree).unwrap());
+            let v: Vec<u64> = (0..*degree as u64).collect();
+            let slice = v.as_slice();
+
+            group.bench_function(
+                BenchmarkId::new("try_convert_from_slice", format!("{}/{}", degree, nmoduli)),
+                |b| {
+                    b.iter(|| {
+                        Poly::try_convert_from(slice, &ctx, false, Representation::PowerBasis)
+                            .unwrap()
+                    });
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+criterion_group!(rq, rq_op_benchmark, rq_dot_product, rq_benchmark, rq_convert_benchmark);
 criterion_main!(rq);
