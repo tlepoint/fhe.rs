@@ -16,7 +16,7 @@ unused_imports = "warn"
 unused_must_use = "deny"
 
 [workspace.dependencies]
-clap = { version = "^4.5.55", features = ["derive"] }
+clap = { version = "^4.5.56", features = ["derive"] }
 tfhe-ntt = "^0.7.0"
 console = "^0.16.2"
 criterion = "^0.8.1"
