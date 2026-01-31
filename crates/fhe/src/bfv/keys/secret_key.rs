@@ -1,6 +1,8 @@
 //! Secret keys for the BFV encryption scheme
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, plaintext::PlaintextValues, parameters::PlaintextModulus};
+use crate::bfv::{
+    BfvParameters, Ciphertext, Plaintext, parameters::PlaintextModulus, plaintext::PlaintextValues,
+};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
@@ -250,12 +252,12 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                         m.reduce_vec(&mut w);
                     }
                     PlaintextValues::Small(w.into_boxed_slice())
-                },
+                }
                 PlaintextModulus::Large(_) => {
                     let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
-                            .into_iter()
-                            .map(|vi| vi + self.par.plaintext_big())
-                            .collect_vec();
+                        .into_iter()
+                        .map(|vi| vi + self.par.plaintext_big())
+                        .collect_vec();
 
                     let mut w = v[..self.par.degree()].to_vec();
                     let q_poly = d.as_ref().ctx().modulus();
@@ -273,13 +275,23 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                     // Wait, we need to generate poly_ntt.
                     // We can match again.
                     &[] // dummy
-                },
-                PlaintextValues::Large(v) => v
+                }
+                PlaintextValues::Large(v) => v,
             };
 
             let mut poly = match &value {
-                PlaintextValues::Small(v) => Poly::try_convert_from(v.as_ref(), ct[0].ctx(), false, Representation::PowerBasis)?,
-                PlaintextValues::Large(v) => Poly::try_convert_from(v.as_ref().as_ref(), ct[0].ctx(), false, Representation::PowerBasis)?
+                PlaintextValues::Small(v) => Poly::try_convert_from(
+                    v.as_ref(),
+                    ct[0].ctx(),
+                    false,
+                    Representation::PowerBasis,
+                )?,
+                PlaintextValues::Large(v) => Poly::try_convert_from(
+                    v.as_ref(),
+                    ct[0].ctx(),
+                    false,
+                    Representation::PowerBasis,
+                )?,
             };
 
             poly.change_representation(Representation::Ntt);

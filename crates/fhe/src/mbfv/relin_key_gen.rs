@@ -440,8 +440,12 @@ mod tests {
                     .unwrap();
 
                 // Create a couple random encrypted polynomials
-                let v1 = fhe_math::zq::Modulus::new(par.plaintext()).unwrap().random_vec(par.degree(), &mut rng);
-                let v2 = fhe_math::zq::Modulus::new(par.plaintext()).unwrap().random_vec(par.degree(), &mut rng);
+                let v1 = fhe_math::zq::Modulus::new(par.plaintext())
+                    .unwrap()
+                    .random_vec(par.degree(), &mut rng);
+                let v2 = fhe_math::zq::Modulus::new(par.plaintext())
+                    .unwrap()
+                    .random_vec(par.degree(), &mut rng);
                 let pt1 = Plaintext::try_encode(&v1, Encoding::simd_at_level(level), &par).unwrap();
                 let pt2 = Plaintext::try_encode(&v2, Encoding::simd_at_level(level), &par).unwrap();
                 let ct1 = public_key.try_encrypt(&pt1, &mut rng).unwrap();
@@ -463,7 +467,9 @@ mod tests {
                     .unwrap();
 
                 let mut expected = v1.clone();
-                fhe_math::zq::Modulus::new(par.plaintext()).unwrap().mul_vec(&mut expected, &v2);
+                fhe_math::zq::Modulus::new(par.plaintext())
+                    .unwrap()
+                    .mul_vec(&mut expected, &v2);
                 assert_eq!(
                     Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(pt.level)).unwrap(),
                     expected

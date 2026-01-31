@@ -27,6 +27,7 @@ pub(crate) enum PlaintextModulus {
 }
 
 impl PlaintextModulus {
+    #[allow(dead_code)]
     pub fn to_biguint(&self) -> BigUint {
         match self {
             Self::Small(m) => BigUint::from(**m),
@@ -37,8 +38,8 @@ impl PlaintextModulus {
     pub fn reduce_vec(&self, v: &mut [BigUint]) {
         match self {
             Self::Small(m) => {
-                 let modulus_big = BigUint::from(**m);
-                 v.iter_mut().for_each(|vi| *vi %= &modulus_big);
+                let modulus_big = BigUint::from(**m);
+                v.iter_mut().for_each(|vi| *vi %= &modulus_big);
             }
             Self::Large(m) => {
                 v.iter_mut().for_each(|vi| *vi %= m);
@@ -46,6 +47,7 @@ impl PlaintextModulus {
         }
     }
 
+    #[allow(dead_code)]
     pub fn div_ceil(&self, d: u64) -> u64 {
         match self {
             Self::Small(m) => (**m).div_ceil(d),
@@ -63,22 +65,21 @@ impl PlaintextModulus {
 
     // We need a scalar multiplication for Plaintext::to_poly
     pub fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
-         match self {
-             Self::Small(m) => {
-                 let m_big = BigUint::from(**m);
-                 a.iter_mut().for_each(|ai| {
-                     *ai = (ai as &BigUint * b) % &m_big;
-                 });
-             }
-             Self::Large(m) => {
-                 a.iter_mut().for_each(|ai| {
-                     *ai = (ai as &BigUint * b) % m;
-                 });
-             }
-         }
+        match self {
+            Self::Small(m) => {
+                let m_big = BigUint::from(**m);
+                a.iter_mut().for_each(|ai| {
+                    *ai = (ai as &BigUint * b) % &m_big;
+                });
+            }
+            Self::Large(m) => {
+                a.iter_mut().for_each(|ai| {
+                    *ai = (ai as &BigUint * b) % m;
+                });
+            }
+        }
     }
 }
-
 
 /// Parameters for the BFV encryption scheme.
 ///
@@ -151,7 +152,7 @@ impl BfvParameters {
     /// Panics if the modulus is too large.
     #[must_use]
     pub fn plaintext(&self) -> u64 {
-        self.plaintext_modulus.to_u64().expect("Plaintext modulus too large for u64")
+        self.plaintext_modulus.to_u64().unwrap()
     }
 
     /// Returns the plaintext modulus as BigUint
@@ -452,7 +453,7 @@ impl BfvParametersBuilder {
         }
 
         let plaintext_modulus_struct = if let Some(p) = self.plaintext.to_u64() {
-             PlaintextModulus::Small(Modulus::new(p).map_err(|e| {
+            PlaintextModulus::Small(Modulus::new(p).map_err(|e| {
                 Error::ParametersError(ParametersError::InvalidPlaintextModulus {
                     modulus: p,
                     reason: e.to_string(),
@@ -543,8 +544,13 @@ impl BfvParametersBuilder {
                 if let Some(inv) = q.inv(neg_t_mod_q) {
                     delta_rests.push(inv);
                 } else {
-                    println!("Failed to compute inverse: t={}, q={}, t_mod_q={}, neg_t_mod_q={}", self.plaintext, m, t_mod_q, neg_t_mod_q);
-                    panic!("Inverse failed");
+                    println!(
+                        "Failed to compute inverse: t={}, q={}, t_mod_q={}, neg_t_mod_q={}",
+                        self.plaintext, m, t_mod_q, neg_t_mod_q
+                    );
+                    Err(Error::MathError(fhe_math::Error::Default(
+                        "Inverse failed".to_string(),
+                    )))?;
                 }
             }
 
@@ -631,10 +637,7 @@ impl BfvParametersBuilder {
                 &node.poly_context,
                 &mul_1_ctx,
                 ScalingFactor::one(),
-                ScalingFactor::new(
-                    &self.plaintext,
-                    node.poly_context.modulus(),
-                ),
+                ScalingFactor::new(&self.plaintext, node.poly_context.modulus()),
             )?;
             node.mul_params.set(mp).unwrap();
         }
@@ -671,6 +674,7 @@ impl BfvParametersBuilder {
 }
 
 // Helper function for modular inverse of BigUint
+#[allow(dead_code)]
 fn mod_inverse(a: &BigUint, m: &BigUint) -> Option<BigUint> {
     use num_bigint::BigInt;
     use num_integer::Integer;
@@ -691,12 +695,11 @@ fn mod_inverse(a: &BigUint, m: &BigUint) -> Option<BigUint> {
     }
 }
 
-
 impl Serialize for BfvParameters {
     fn to_bytes(&self) -> Vec<u8> {
         let plaintext_u64 = self.plaintext_modulus.to_u64().unwrap_or(0);
         let plaintext_big = if plaintext_u64 == 0 {
-             Some(self.plaintext_modulus.to_bytes_le())
+            Some(self.plaintext_modulus.to_bytes_le())
         } else {
             None
         };
@@ -765,8 +768,8 @@ impl MultiplicationParameters {
 mod tests {
     use super::{BfvParameters, BfvParametersBuilder};
     use fhe_traits::{Deserialize, Serialize};
-    use std::error::Error;
     use num_bigint::BigUint;
+    use std::error::Error;
 
     #[test]
     fn default() {

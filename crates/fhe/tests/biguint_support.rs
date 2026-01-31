@@ -1,3 +1,4 @@
+#![allow(missing_docs, clippy::indexing_slicing)]
 use fhe::bfv::{BfvParametersBuilder, Ciphertext, Encoding, Plaintext, SecretKey};
 use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 use num_bigint::BigUint;
@@ -39,7 +40,8 @@ fn test_biguint_plaintext_encryption_decryption() -> Result<(), Box<dyn Error>> 
     let decrypted_pt = sk.try_decrypt(&ct)?;
 
     // Decode
-    let decrypted_values: Vec<BigUint> = Vec::<BigUint>::try_decode(&decrypted_pt, Encoding::poly())?;
+    let decrypted_values: Vec<BigUint> =
+        Vec::<BigUint>::try_decode(&decrypted_pt, Encoding::poly())?;
 
     assert_eq!(decrypted_values, values);
 
@@ -79,7 +81,8 @@ fn test_biguint_homomorphic_addition() -> Result<(), Box<dyn Error>> {
     let ct_res = &ct1 + &ct2;
 
     let decrypted_pt = sk.try_decrypt(&ct_res)?;
-    let decrypted_values: Vec<BigUint> = Vec::<BigUint>::try_decode(&decrypted_pt, Encoding::poly())?;
+    let decrypted_values: Vec<BigUint> =
+        Vec::<BigUint>::try_decode(&decrypted_pt, Encoding::poly())?;
 
     // 100 + (-50) = 50
     assert_eq!(decrypted_values[0], BigUint::from(50u32));

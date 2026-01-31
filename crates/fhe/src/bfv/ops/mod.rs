@@ -613,13 +613,10 @@ mod tests {
                             for i in 0..params.degree() {
                                 for j in 0..params.degree() {
                                     if i + j >= params.degree() {
-                                        c[(i + j) % params.degree()] = q.sub(
-                                            c[(i + j) % params.degree()],
-                                            q.mul(a[i], b[j]),
-                                        );
+                                        c[(i + j) % params.degree()] =
+                                            q.sub(c[(i + j) % params.degree()], q.mul(a[i], b[j]));
                                     } else {
-                                        c[i + j] = q
-                                            .add(c[i + j], q.mul(a[i], b[j]));
+                                        c[i + j] = q.add(c[i + j], q.mul(a[i], b[j]));
                                     }
                                 }
                             }

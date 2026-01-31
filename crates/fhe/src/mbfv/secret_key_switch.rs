@@ -7,7 +7,7 @@ use num_traits::ToPrimitive;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey, PlaintextValues};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext, PlaintextValues, SecretKey};
 use crate::{Error, Result};
 
 use super::Aggregate;
@@ -158,9 +158,9 @@ impl Aggregate<DecryptionShare> for Plaintext {
         let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
         let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
-                .into_iter()
-                .map(|vi| vi + ct.par.plaintext_big())
-                .collect_vec();
+            .into_iter()
+            .map(|vi| vi + ct.par.plaintext_big())
+            .collect_vec();
 
         let mut w = v[..ct.par.degree()].to_vec();
         let q_poly = d.as_ref().ctx().modulus();
@@ -168,11 +168,17 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         ct.par.plaintext.reduce_vec(&mut w);
 
-        let mut poly = Poly::try_convert_from(w.as_slice(), ct[0].ctx(), false, Representation::PowerBasis)?;
+        let mut poly =
+            Poly::try_convert_from(w.as_slice(), ct[0].ctx(), false, Representation::PowerBasis)?;
         poly.change_representation(Representation::Ntt);
 
         let value = match ct.par.plaintext {
-            crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(w.iter().map(|x| x.to_u64().unwrap()).collect::<Vec<_>>().into_boxed_slice()),
+            crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(
+                w.iter()
+                    .map(|x| x.to_u64().unwrap())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            ),
             crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(w.into_boxed_slice()),
         };
 

@@ -78,8 +78,15 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                     poly.change_representation(Representation::Ntt);
 
                     let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(v.into_boxed_slice()),
-                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(v.iter().map(|&x| BigUint::from(x)).collect::<Vec<_>>().into_boxed_slice()),
+                        crate::bfv::PlaintextModulus::Small(_) => {
+                            PlaintextValues::Small(v.into_boxed_slice())
+                        }
+                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(
+                            v.iter()
+                                .map(|&x| BigUint::from(x))
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice(),
+                        ),
                     };
 
                     Ok(Plaintext {
@@ -120,7 +127,10 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                         EncodingEnum::Simd => {
                             let mut v_u64 = vec![0u64; par.degree()];
                             for i in 0..slice.len() {
-                                v_u64[par.matrix_reps_index_map[i]] = slice[i].to_u64().ok_or(Error::DefaultError("Value too large for SIMD encoding".to_string()))?;
+                                v_u64[par.matrix_reps_index_map[i]] =
+                                    slice[i].to_u64().ok_or(Error::DefaultError(
+                                        "Value too large for SIMD encoding".to_string(),
+                                    ))?;
                             }
                             par.ntt_operator
                                 .as_ref()
@@ -133,13 +143,24 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                         }
                     };
 
-                    let mut poly =
-                        Poly::try_convert_from(v.as_slice(), ctx, false, Representation::PowerBasis)?;
+                    let mut poly = Poly::try_convert_from(
+                        v.as_slice(),
+                        ctx,
+                        false,
+                        Representation::PowerBasis,
+                    )?;
                     poly.change_representation(Representation::Ntt);
 
                     let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(v.iter().map(|x| x.to_u64().unwrap_or(0)).collect::<Vec<_>>().into_boxed_slice()),
-                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(v.iter().map(|x| BigUint::from(x.clone())).collect::<Vec<_>>().into_boxed_slice()),
+                        crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(
+                            v.iter()
+                                .map(|x| x.to_u64().unwrap_or(0))
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice(),
+                        ),
+                        crate::bfv::PlaintextModulus::Large(_) => {
+                            PlaintextValues::Large(v.into_boxed_slice())
+                        }
                     };
 
                     Ok(Plaintext {
@@ -196,14 +217,14 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
                     let value_enum = match par.plaintext {
                         crate::bfv::PlaintextModulus::Small(_) => {
-                            // If we are here, inputs are BigUint, but plaintext modulus is Small.
-                            // We should convert back to Small for storage efficiency if possible.
-                            // But `try_encode` for `&[BigUint]` implies we expect BigUints.
-                            // However, if the modulus is small, we should store as Small.
-                            let v_u64: Vec<u64> = v.iter().map(|x| x.to_u64().unwrap_or(0)).collect();
-                            PlaintextValues::Small(v_u64.into_boxed_slice())
-                        },
-                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(v.iter().map(|x| BigUint::from(x.clone())).collect::<Vec<_>>().into_boxed_slice()),
+                            PlaintextValues::Small(v.into_boxed_slice())
+                        }
+                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(
+                            v.iter()
+                                .map(|&x| BigUint::from(x))
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice(),
+                        ),
                     };
 
                     Ok(Plaintext {
@@ -236,7 +257,11 @@ mod tests {
                 let q = fhe_math::zq::Modulus::new(a).unwrap();
                 let a_vec = q.random_vec(params.degree() * i, &mut rng);
 
-                let plaintexts = PlaintextVec::try_encode(a_vec.as_slice(), Encoding::poly_at_level(0), &params)?;
+                let plaintexts = PlaintextVec::try_encode(
+                    a_vec.as_slice(),
+                    Encoding::poly_at_level(0),
+                    &params,
+                )?;
                 assert_eq!(plaintexts.0.len(), i);
 
                 for j in 0..i {
@@ -245,7 +270,11 @@ mod tests {
                 }
 
                 let plaintexts_vt = unsafe {
-                    PlaintextVec::try_encode_vt(a_vec.as_slice(), Encoding::poly_at_level(0), &params)?
+                    PlaintextVec::try_encode_vt(
+                        a_vec.as_slice(),
+                        Encoding::poly_at_level(0),
+                        &params,
+                    )?
                 };
                 assert_eq!(plaintexts_vt.0.len(), i);
                 for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
@@ -258,7 +287,8 @@ mod tests {
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts = PlaintextVec::try_encode(a_vec.as_slice(), Encoding::simd(), &params)?;
+                let plaintexts =
+                    PlaintextVec::try_encode(a_vec.as_slice(), Encoding::simd(), &params)?;
                 assert_eq!(plaintexts.0.len(), i);
 
                 for j in 0..i {
@@ -266,8 +296,9 @@ mod tests {
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts_vt =
-                    unsafe { PlaintextVec::try_encode_vt(a_vec.as_slice(), Encoding::simd(), &params)? };
+                let plaintexts_vt = unsafe {
+                    PlaintextVec::try_encode_vt(a_vec.as_slice(), Encoding::simd(), &params)?
+                };
                 assert_eq!(plaintexts_vt.0.len(), i);
                 for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
                     assert_eq!(pt.value, pt_vt.value);
