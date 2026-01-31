@@ -802,7 +802,7 @@ impl Modulus {
 
 #[cfg(test)]
 mod tests {
-    use super::{Modulus, primes};
+    use super::Modulus;
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
@@ -812,6 +812,10 @@ mod tests {
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
         any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p).ok())
+    }
+
+    fn valid_moduli_opt() -> impl Strategy<Value = Modulus> {
+        valid_moduli().prop_filter("filter moduli not supporting opt", |p| p.supports_opt)
     }
 
     fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
@@ -1093,39 +1097,21 @@ mod tests {
             let c = p.deserialize_vec(&b);
             prop_assert_eq!(a, c);
         }
-    }
 
-    // TODO: Make a proptest.
-    #[test]
-    fn mul_opt() {
-        let ntests = 100;
-        let mut rng = rand::rng();
+        #[test]
+        fn mul_opt(p in valid_moduli_opt(), mut a: u64, mut b: u64) {
+            a = p.reduce(a);
+            b = p.reduce(b);
 
-        for p in [4611686018326724609] {
-            let q = Modulus::new(p).unwrap();
-            assert!(primes::supports_opt(p));
-
-            assert_eq!(q.mul_opt(0, 1), 0);
-            assert_eq!(q.mul_opt(1, 1), 1);
-            assert_eq!(q.mul_opt(2 % p, 3 % p), 6 % p);
-            assert_eq!(q.mul_opt(p - 1, 1), p - 1);
-            assert_eq!(q.mul_opt(p - 1, 2 % p), p - 2);
+            prop_assert_eq!(p.mul_opt(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128));
+            unsafe { prop_assert_eq!(p.mul_opt_vt(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128)) }
 
             #[cfg(debug_assertions)]
             {
-                assert!(std::panic::catch_unwind(|| q.mul_opt(p, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(p << 1, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p << 1)).is_err());
-            }
-
-            for _ in 0..ntests {
-                let a = rng.next_u64() % p;
-                let b = rng.next_u64() % p;
-                assert_eq!(
-                    q.mul_opt(a, b),
-                    (((a as u128) * (b as u128)) % (p as u128)) as u64
-                );
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(*p, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(a, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(*p + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(a, *p + 1)).is_err());
             }
         }
     }
