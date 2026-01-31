@@ -816,11 +816,9 @@ mod tests {
     }
 
     fn prime_moduli() -> BoxedStrategy<Modulus> {
-        proptest::sample::select(vec![
-            2u64, 3, 17, 1987, 4611686018326724609,
-        ])
-        .prop_map(|p| Modulus::new(p).unwrap())
-        .boxed()
+        proptest::sample::select(vec![2u64, 3, 17, 1987, 4611686018326724609])
+            .prop_map(|p| Modulus::new(p).unwrap())
+            .boxed()
     }
 
     fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
@@ -1196,5 +1194,4 @@ mod tests {
             }
         }
     }
-
 }
