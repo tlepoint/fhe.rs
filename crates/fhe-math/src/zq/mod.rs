@@ -803,6 +803,7 @@ impl Modulus {
 #[cfg(test)]
 mod tests {
     use super::{Modulus, primes};
+    use fhe_util::is_prime;
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
@@ -812,6 +813,14 @@ mod tests {
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
         any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p).ok())
+    }
+
+    fn prime_moduli() -> BoxedStrategy<Modulus> {
+        proptest::sample::select(vec![
+            2u64, 3, 17, 1987, 4611686018326724609,
+        ])
+        .prop_map(|p| Modulus::new(p).unwrap())
+        .boxed()
     }
 
     fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
@@ -1093,6 +1102,27 @@ mod tests {
             let c = p.deserialize_vec(&b);
             prop_assert_eq!(a, c);
         }
+
+        #[test]
+        fn inv(p in prop_oneof![valid_moduli().boxed(), prime_moduli()], mut a: u64) {
+            a = p.reduce(a);
+            let b = p.inv(a);
+
+            if !is_prime(*p) || a == 0 {
+                prop_assert!(b.is_none());
+            } else {
+                prop_assert!(b.is_some());
+                prop_assert_eq!(p.mul(a, b.unwrap()), 1);
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                if is_prime(*p) {
+                    prop_assert!(std::panic::catch_unwind(|| p.inv(*p)).is_err());
+                    prop_assert!(std::panic::catch_unwind(|| p.inv(*p << 1)).is_err());
+                }
+            }
+        }
     }
 
     // TODO: Make a proptest.
@@ -1167,36 +1197,4 @@ mod tests {
         }
     }
 
-    // TODO: Make a proptest.
-    #[test]
-    fn inv() {
-        let ntests = 100;
-        let mut rng = rand::rng();
-
-        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-            let q = Modulus::new(p).unwrap();
-
-            assert!(q.inv(0).is_none());
-            assert_eq!(q.inv(1).unwrap(), 1);
-            assert_eq!(q.inv(p - 1).unwrap(), p - 1);
-
-            #[cfg(debug_assertions)]
-            {
-                assert!(std::panic::catch_unwind(|| q.inv(p)).is_err());
-                assert!(std::panic::catch_unwind(|| q.inv(p << 1)).is_err());
-            }
-
-            for _ in 0..ntests {
-                let a = rng.next_u64() % p;
-                let b = q.inv(a);
-
-                if a == 0 {
-                    assert!(b.is_none())
-                } else {
-                    assert!(b.is_some());
-                    assert_eq!(q.mul(a, b.unwrap()), 1)
-                }
-            }
-        }
-    }
 }
