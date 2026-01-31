@@ -463,15 +463,6 @@ impl Modulus {
             .dispatch(|| a.iter().map(|ai| self.center(*ai)).collect_vec())
     }
 
-    /// Center a vector in variable time.
-    ///
-    /// # Safety
-    /// This function is now constant time.
-    #[must_use]
-    pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
-        self.center_vec(a)
-    }
-
     /// Reduce a vector in place in variable time.
     ///
     /// # Safety
@@ -1117,7 +1108,6 @@ mod tests {
              for (ai, bi) in izip!(a.iter(), b.iter()) {
                  prop_assert_eq!(p.center(*ai), *bi);
              }
-             unsafe { prop_assert_eq!(p.center_vec_vt(&a), b); }
         }
     }
 
