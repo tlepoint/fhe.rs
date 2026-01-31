@@ -430,7 +430,7 @@ impl FheDecoder<Plaintext> for Vec<i64> {
             PlaintextValues::Small(_) => {
                 let v = Vec::<u64>::try_decode(pt, encoding)?;
                 if let PlaintextModulus::Small(ref m) = pt.par.plaintext {
-                    Ok(unsafe { m.center_vec(&v) })
+                    Ok(m.center_vec(&v))
                 } else {
                     unreachable!()
                 }

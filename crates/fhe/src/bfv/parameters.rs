@@ -59,9 +59,9 @@ impl PlaintextModulus {
         }
     }
 
-    // Helper to reduce BigUint vector to i64 (centered), returning as Vec<BigUint> or similar?
-    // The previous implementation used center_vec_vt returning Vec<i64>.
-    // If modulus is large, we can't fit in i64.
+    // Helper to reduce BigUint vector to i64 (centered), returning as Vec<BigUint>
+    // or similar? The previous implementation used center_vec_vt returning
+    // Vec<i64>. If modulus is large, we can't fit in i64.
 
     // We need a scalar multiplication for Plaintext::to_poly
     pub fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
