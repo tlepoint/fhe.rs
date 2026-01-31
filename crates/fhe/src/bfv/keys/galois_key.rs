@@ -173,7 +173,7 @@ mod tests {
         ] {
             for _ in 0..30 {
                 let sk = SecretKey::random(&params, &mut rng);
-                let v = params.plaintext.random_vec(params.degree(), &mut rng);
+                let v = fhe_math::zq::Modulus::new(params.plaintext()).unwrap().random_vec(params.degree(), &mut rng);
                 let row_size = params.degree() >> 1;
 
                 let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;

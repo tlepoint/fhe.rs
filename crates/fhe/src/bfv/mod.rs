@@ -25,6 +25,8 @@ pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::{Multiplicator, dot_product_scalar};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
+pub(crate) use parameters::PlaintextModulus;
 pub use plaintext::Plaintext;
+pub(crate) use plaintext::PlaintextValues;
 pub use plaintext_vec::PlaintextVec;
 pub use rgsw_ciphertext::RGSWCiphertext;

@@ -5,7 +5,6 @@ use fhe_math::{
     rq::{Context, Representation, scaler::Scaler},
     zq::primes::generate_prime,
 };
-use num_bigint::BigUint;
 
 use crate::{
     Error, Result,
@@ -121,7 +120,7 @@ impl Multiplicator {
             ScalingFactor::one(),
             ScalingFactor::one(),
             &extended_basis,
-            ScalingFactor::new(&BigUint::from(*rk.ksk.par.plaintext), ctx.modulus()),
+            ScalingFactor::new(rk.ksk.par.plaintext_big(), ctx.modulus()),
             rk.ksk.ciphertext_level,
             &rk.ksk.par,
         )?;
@@ -254,12 +253,13 @@ mod tests {
     fn mul() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
-            let values = par.plaintext.random_vec(par.degree(), &mut rng);
+            let values = q.random_vec(par.degree(), &mut rng);
             let mut expected = values.clone();
-            par.plaintext.mul_vec(&mut expected, &values);
+            q.mul_vec(&mut expected, &values);
 
             let sk = SecretKey::random(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
@@ -287,11 +287,12 @@ mod tests {
     fn mul_at_level() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
         for _ in 0..15 {
             for level in 0..2 {
-                let values = par.plaintext.random_vec(par.degree(), &mut rng);
+                let values = q.random_vec(par.degree(), &mut rng);
                 let mut expected = values.clone();
-                par.plaintext.mul_vec(&mut expected, &values);
+                q.mul_vec(&mut expected, &values);
 
                 let sk = SecretKey::random(&par, &mut rng);
                 let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
@@ -322,12 +323,13 @@ mod tests {
     fn mul_no_relin() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let par = BfvParameters::default_arc(6, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
-            let values = par.plaintext.random_vec(par.degree(), &mut rng);
+            let values = q.random_vec(par.degree(), &mut rng);
             let mut expected = values.clone();
-            par.plaintext.mul_vec(&mut expected, &values);
+            q.mul_vec(&mut expected, &values);
 
             let sk = SecretKey::random(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
@@ -359,6 +361,7 @@ mod tests {
 
         let mut rng = rng();
         let par = BfvParameters::default_arc(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
         let mut extended_basis = par.moduli().to_vec();
         extended_basis
             .push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());
@@ -371,9 +374,9 @@ mod tests {
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
-            let values = par.plaintext.random_vec(par.degree(), &mut rng);
+            let values = q.random_vec(par.degree(), &mut rng);
             let mut expected = values.clone();
-            par.plaintext.mul_vec(&mut expected, &values);
+            q.mul_vec(&mut expected, &values);
 
             let sk = SecretKey::random(&par, &mut rng);
             let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;

@@ -370,11 +370,12 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let zero = Ciphertext::zero(&params);
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
-                let b = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
+                let b = q.random_vec(params.degree(), &mut rng);
                 let mut c = a.clone();
-                params.plaintext.add_vec(&mut c, &b);
+                q.add_vec(&mut c, &b);
 
                 let sk = SecretKey::random(&params, &mut rng);
 
@@ -410,11 +411,12 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
-                let b = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
+                let b = q.random_vec(params.degree(), &mut rng);
                 let mut c = a.clone();
-                params.plaintext.add_vec(&mut c, &b);
+                q.add_vec(&mut c, &b);
 
                 let sk = SecretKey::random(&params, &mut rng);
 
@@ -462,13 +464,14 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let zero = Ciphertext::zero(&params);
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
                 let mut a_neg = a.clone();
-                params.plaintext.neg_vec(&mut a_neg);
-                let b = params.plaintext.random_vec(params.degree(), &mut rng);
+                q.neg_vec(&mut a_neg);
+                let b = q.random_vec(params.degree(), &mut rng);
                 let mut c = a.clone();
-                params.plaintext.sub_vec(&mut c, &b);
+                q.sub_vec(&mut c, &b);
 
                 let sk = SecretKey::random(&params, &mut rng);
 
@@ -509,13 +512,14 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
                 let mut a_neg = a.clone();
-                params.plaintext.neg_vec(&mut a_neg);
-                let b = params.plaintext.random_vec(params.degree(), &mut rng);
+                q.neg_vec(&mut a_neg);
+                let b = q.random_vec(params.degree(), &mut rng);
                 let mut c = a.clone();
-                params.plaintext.sub_vec(&mut c, &b);
+                q.sub_vec(&mut c, &b);
 
                 let sk = SecretKey::random(&params, &mut rng);
 
@@ -562,10 +566,11 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
                 let mut c = a.clone();
-                params.plaintext.neg_vec(&mut c);
+                q.neg_vec(&mut c);
 
                 let sk = SecretKey::random(&params, &mut rng);
                 for encoding in [Encoding::poly(), Encoding::simd()] {
@@ -595,9 +600,10 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
+            let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
-                let a = params.plaintext.random_vec(params.degree(), &mut rng);
-                let b = params.plaintext.random_vec(params.degree(), &mut rng);
+                let a = q.random_vec(params.degree(), &mut rng);
+                let b = q.random_vec(params.degree(), &mut rng);
 
                 let sk = SecretKey::random(&params, &mut rng);
                 for encoding in [Encoding::poly(), Encoding::simd()] {
@@ -607,21 +613,20 @@ mod tests {
                             for i in 0..params.degree() {
                                 for j in 0..params.degree() {
                                     if i + j >= params.degree() {
-                                        c[(i + j) % params.degree()] = params.plaintext.sub(
+                                        c[(i + j) % params.degree()] = q.sub(
                                             c[(i + j) % params.degree()],
-                                            params.plaintext.mul(a[i], b[j]),
+                                            q.mul(a[i], b[j]),
                                         );
                                     } else {
-                                        c[i + j] = params
-                                            .plaintext
-                                            .add(c[i + j], params.plaintext.mul(a[i], b[j]));
+                                        c[i + j] = q
+                                            .add(c[i + j], q.mul(a[i], b[j]));
                                     }
                                 }
                             }
                         }
                         EncodingEnum::Simd => {
                             c.clone_from(&a);
-                            params.plaintext.mul_vec(&mut c, &b);
+                            q.mul_vec(&mut c, &b);
                         }
                     }
 
@@ -652,13 +657,14 @@ mod tests {
             BfvParameters::default_arc(2, 16),
             BfvParameters::default_arc(8, 16),
         ] {
+            let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
             for _ in 0..1 {
                 // We will encode `values` in an Simd format, and check that the product is
                 // computed correctly.
-                let v1 = par.plaintext.random_vec(par.degree(), &mut rng);
-                let v2 = par.plaintext.random_vec(par.degree(), &mut rng);
+                let v1 = q.random_vec(par.degree(), &mut rng);
+                let v2 = q.random_vec(par.degree(), &mut rng);
                 let mut expected = v1.clone();
-                par.plaintext.mul_vec(&mut expected, &v2);
+                q.mul_vec(&mut expected, &v2);
 
                 let sk = SecretKey::random(&par, &mut rng);
                 let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &par)?;
@@ -674,7 +680,7 @@ mod tests {
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
                 let e = expected.clone();
-                par.plaintext.mul_vec(&mut expected, &e);
+                q.mul_vec(&mut expected, &e);
                 println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
                 let pt = sk.try_decrypt(&ct4)?;
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
@@ -687,12 +693,13 @@ mod tests {
     fn square() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let par = BfvParameters::default_arc(6, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
         for _ in 0..20 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
-            let v = par.plaintext.random_vec(par.degree(), &mut rng);
+            let v = q.random_vec(par.degree(), &mut rng);
             let mut expected = v.clone();
-            par.plaintext.mul_vec(&mut expected, &v);
+            q.mul_vec(&mut expected, &v);
 
             let sk = SecretKey::random(&par, &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &par)?;

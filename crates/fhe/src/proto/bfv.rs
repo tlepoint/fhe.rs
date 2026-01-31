@@ -62,6 +62,8 @@ pub struct Parameters {
     pub plaintext: u64,
     #[prost(uint32, tag = "4")]
     pub variance: u32,
+    #[prost(bytes = "vec", optional, tag = "5")]
+    pub plaintext_big: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PublicKey {

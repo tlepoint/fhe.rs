@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use fhe_math::{
-    rq::{Poly, Representation, traits::TryConvertFrom},
-    zq::Modulus,
-};
+use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
 use itertools::Itertools;
+use num_bigint::BigUint;
+use num_traits::ToPrimitive;
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey, PlaintextValues};
 use crate::{Error, Result};
 
 use super::Aggregate;
@@ -157,23 +156,29 @@ impl Aggregate<DecryptionShare> for Plaintext {
         // The true decryption part is done during SKS; all that is left is to scale
         let ctx_lvl = ct.par.context_level_at(ct.level)?;
         let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
-        let v = Zeroizing::new(
-            Vec::<u64>::try_from(d.as_ref())?
-                .iter_mut()
-                .map(|vi| *vi + *ct.par.plaintext)
-                .collect_vec(),
-        );
+
+        let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
+                .into_iter()
+                .map(|vi| vi + ct.par.plaintext_big())
+                .collect_vec();
+
         let mut w = v[..ct.par.degree()].to_vec();
-        let q = Modulus::new(ct.par.moduli[0]).map_err(Error::MathError)?;
-        q.reduce_vec(&mut w);
+        let q_poly = d.as_ref().ctx().modulus();
+        w.iter_mut().for_each(|wi| *wi %= q_poly);
+
         ct.par.plaintext.reduce_vec(&mut w);
 
-        let mut poly = Poly::try_convert_from(&w, ct[0].ctx(), false, Representation::PowerBasis)?;
+        let mut poly = Poly::try_convert_from(w.as_slice(), ct[0].ctx(), false, Representation::PowerBasis)?;
         poly.change_representation(Representation::Ntt);
+
+        let value = match ct.par.plaintext {
+            crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(w.iter().map(|x| x.to_u64().unwrap()).collect::<Vec<_>>().into_boxed_slice()),
+            crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(w.into_boxed_slice()),
+        };
 
         let pt = Plaintext {
             par: ct.par.clone(),
-            value: w.into_boxed_slice(),
+            value,
             encoding: None,
             poly_ntt: poly,
             level: ct.level,
@@ -232,8 +237,9 @@ mod tests {
                         .unwrap();
 
                     // Use it to encrypt a random polynomial
+                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
                     let pt1 = Plaintext::try_encode(
-                        &par.plaintext.random_vec(par.degree(), &mut rng),
+                        &q.random_vec(par.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &par,
                     )
@@ -276,8 +282,9 @@ mod tests {
                         PublicKey::from_shares(parties.iter().map(|p| p.pk_share.clone())).unwrap();
 
                     // Use it to encrypt a random polynomial ct1
+                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
                     let pt1 = Plaintext::try_encode(
-                        &par.plaintext.random_vec(par.degree(), &mut rng),
+                        &q.random_vec(par.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &par,
                     )
@@ -347,10 +354,11 @@ mod tests {
                         .unwrap();
 
                     // Parties encrypt two plaintexts
-                    let a = par.plaintext.random_vec(par.degree(), &mut rng);
-                    let b = par.plaintext.random_vec(par.degree(), &mut rng);
+                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+                    let a = q.random_vec(par.degree(), &mut rng);
+                    let b = q.random_vec(par.degree(), &mut rng);
                     let mut expected = a.clone();
-                    par.plaintext.add_vec(&mut expected, &b);
+                    q.add_vec(&mut expected, &b);
 
                     let pt_a =
                         Plaintext::try_encode(&a, Encoding::poly_at_level(level), &par).unwrap();

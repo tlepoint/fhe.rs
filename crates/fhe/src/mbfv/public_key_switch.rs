@@ -160,7 +160,7 @@ mod tests {
 
                     // Use it to encrypt a random polynomial ct1
                     let pt1 = Plaintext::try_encode(
-                        &par.plaintext.random_vec(par.degree(), &mut rng),
+                        &fhe_math::zq::Modulus::new(par.plaintext()).unwrap().random_vec(par.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &par,
                     )

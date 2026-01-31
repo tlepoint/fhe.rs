@@ -448,6 +448,7 @@ dependencies = [
  "log",
  "ndarray",
  "num-bigint",
+ "num-integer",
  "num-traits",
  "prost",
  "rand",

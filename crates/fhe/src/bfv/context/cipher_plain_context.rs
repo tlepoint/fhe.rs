@@ -1,4 +1,5 @@
 use fhe_math::rq::{Context, Poly, scaler::Scaler};
+use num_bigint::BigUint;
 use std::sync::Arc;
 
 /// Stores pre-computed values relating a ciphertext and plaintext context pair.
@@ -11,10 +12,10 @@ pub struct CipherPlainContext {
     pub(crate) delta: Poly,
 
     /// Q modulo the plaintext modulus
-    pub(crate) q_mod_t: u64,
+    pub(crate) q_mod_t: BigUint,
 
     /// Threshold for centered reduction (plaintext_modulus + 1) / 2
-    pub(crate) plain_threshold: u64,
+    pub(crate) plain_threshold: BigUint,
 
     /// Scaler to map a ciphertext polynomial to the plaintext context
     pub(crate) scaler: Scaler,
@@ -33,8 +34,8 @@ impl CipherPlainContext {
         plaintext_context: &Arc<Context>,
         ciphertext_context: &Arc<Context>,
         delta: Poly,
-        q_mod_t: u64,
-        plain_threshold: u64,
+        q_mod_t: BigUint,
+        plain_threshold: BigUint,
         scaler: Scaler,
     ) -> Arc<Self> {
         Arc::new(CipherPlainContext {
