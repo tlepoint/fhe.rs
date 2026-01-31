@@ -252,7 +252,40 @@ impl<'a> TryConvertFrom<&'a [u64]> for Poly {
     where
         R: Into<Option<Representation>>,
     {
-        Poly::try_convert_from(v.to_vec(), ctx, variable_time, representation)
+        let repr = representation.into();
+        match repr {
+            Some(Representation::PowerBasis) => {
+                if v.len() == ctx.q.len() * ctx.degree {
+                    Poly::try_convert_from(v.to_vec(), ctx, variable_time, repr)
+                } else if v.len() <= ctx.degree {
+                    let mut out = Self::zero(ctx, Representation::PowerBasis);
+                    if variable_time {
+                        unsafe {
+                            izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
+                                |(mut w, qi)| {
+                                    let wi = w.as_slice_mut().unwrap();
+                                    wi[..v.len()].copy_from_slice(v);
+                                    qi.reduce_vec_vt(wi);
+                                },
+                            );
+                            out.allow_variable_time_computations();
+                        }
+                    } else {
+                        izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
+                            |(mut w, qi)| {
+                                let wi = w.as_slice_mut().unwrap();
+                                wi[..v.len()].copy_from_slice(v);
+                                qi.reduce_vec(wi);
+                            },
+                        );
+                    }
+                    Ok(out)
+                } else {
+                    Err(Error::Default("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string()))
+                }
+            }
+            _ => Poly::try_convert_from(v.to_vec(), ctx, variable_time, repr),
+        }
     }
 }
 

@@ -440,34 +440,27 @@ impl Modulus {
             .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.reduce(*ai)))
     }
 
-    /// Center a value modulo p as i64 in variable time.
-    /// TODO: To test and to make constant time?
+    /// Center a value modulo p as i64 in constant time.
     ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being centered.
-    const unsafe fn center_vt(&self, a: u64) -> i64 {
+    /// The output is in the interval `[-p/2, p/2)`.
+    /// Aborts if `a >= p` in debug mode.
+    #[must_use]
+    pub const fn center(&self, a: u64) -> i64 {
         debug_assert!(a < self.p);
 
-        if a >= self.p >> 1 {
-            (a as i64) - (self.p as i64)
-        } else {
-            a as i64
-        }
+        let threshold = self.p >> 1;
+        let cond = a >= threshold;
+        let on_true = (a as i64).wrapping_sub(self.p as i64) as u64;
+        let on_false = a;
+
+        const_time_cond_select(on_true, on_false, cond) as i64
     }
 
-    /// Center a vector in variable time.
-    ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being centered.
+    /// Center a vector in constant time.
     #[must_use]
-    pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
-        self.arch.dispatch(|| {
-            a.iter()
-                .map(|ai| unsafe { self.center_vt(*ai) })
-                .collect_vec()
-        })
+    pub fn center_vec(&self, a: &[u64]) -> Vec<i64> {
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.center(*ai)).collect_vec())
     }
 
     /// Reduce a vector in place in variable time.
@@ -802,7 +795,7 @@ impl Modulus {
 
 #[cfg(test)]
 mod tests {
-    use super::{Modulus, primes};
+    use super::Modulus;
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
@@ -812,6 +805,10 @@ mod tests {
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
         any::<u64>().prop_filter_map("filter invalid moduli", |p| Modulus::new(p).ok())
+    }
+
+    fn valid_moduli_opt() -> impl Strategy<Value = Modulus> {
+        valid_moduli().prop_filter("filter moduli not supporting opt", |p| p.supports_opt)
     }
 
     fn vecs() -> BoxedStrategy<(Vec<u64>, Vec<u64>)> {
@@ -1093,76 +1090,71 @@ mod tests {
             let c = p.deserialize_vec(&b);
             prop_assert_eq!(a, c);
         }
-    }
 
-    // TODO: Make a proptest.
-    #[test]
-    fn mul_opt() {
-        let ntests = 100;
-        let mut rng = rand::rng();
+        #[test]
+        fn center(p in valid_moduli(), a: u64) {
+            let a = p.reduce(a);
+            let b = p.center(a);
+            if a >= *p >> 1 {
+                prop_assert_eq!(b, (a as i64) - (*p as i64));
+            } else {
+                prop_assert_eq!(b, a as i64);
+            }
+            prop_assert_eq!(p.reduce_i64(b), a);
+        }
 
-        for p in [4611686018326724609] {
-            let q = Modulus::new(p).unwrap();
-            assert!(primes::supports_opt(p));
+        #[test]
+        fn center_vec(p in valid_moduli(), a: Vec<u64>) {
+             let mut a = a.clone();
+             p.reduce_vec(&mut a);
+             let b = p.center_vec(&a);
+             prop_assert_eq!(b.len(), a.len());
+             for (ai, bi) in izip!(a.iter(), b.iter()) {
+                 prop_assert_eq!(p.center(*ai), *bi);
+             }
+      }
 
-            assert_eq!(q.mul_opt(0, 1), 0);
-            assert_eq!(q.mul_opt(1, 1), 1);
-            assert_eq!(q.mul_opt(2 % p, 3 % p), 6 % p);
-            assert_eq!(q.mul_opt(p - 1, 1), p - 1);
-            assert_eq!(q.mul_opt(p - 1, 2 % p), p - 2);
+        #[test]
+        fn mul_opt(p in valid_moduli_opt(), mut a: u64, mut b: u64) {
+            a = p.reduce(a);
+            b = p.reduce(b);
+
+            prop_assert_eq!(p.mul_opt(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128));
+            unsafe { prop_assert_eq!(p.mul_opt_vt(a, b) as u128, ((a as u128) * (b as u128)) % (*p as u128)) }
 
             #[cfg(debug_assertions)]
             {
-                assert!(std::panic::catch_unwind(|| q.mul_opt(p, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(p << 1, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p)).is_err());
-                assert!(std::panic::catch_unwind(|| q.mul_opt(0, p << 1)).is_err());
-            }
-
-            for _ in 0..ntests {
-                let a = rng.next_u64() % p;
-                let b = rng.next_u64() % p;
-                assert_eq!(
-                    q.mul_opt(a, b),
-                    (((a as u128) * (b as u128)) % (p as u128)) as u64
-                );
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(*p, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(a, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(*p + 1, a)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_opt(a, *p + 1)).is_err());
             }
         }
-    }
 
-    // TODO: Make a proptest.
-    #[test]
-    fn pow() {
-        let ntests = 10;
-        let mut rng = rand::rng();
+        #[test]
+        fn pow(p in valid_moduli(), mut a: u64, mut b: u64) {
+            a = p.reduce(a);
+            b = p.reduce(b);
 
-        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-            let q = Modulus::new(p).unwrap();
+            prop_assert_eq!(p.pow(a, 0), 1);
+            prop_assert_eq!(p.pow(a, 1), a);
+            if *p > 2 {
+                prop_assert_eq!(p.pow(a, 2), p.mul(a, a));
+            }
 
-            assert_eq!(q.pow(p - 1, 0), 1);
-            assert_eq!(q.pow(p - 1, 1), p - 1);
-            assert_eq!(q.pow(p - 1, 2 % p), 1);
-            assert_eq!(q.pow(1, p - 2), 1);
-            assert_eq!(q.pow(1, p - 1), 1);
+            let b_small = b % 1000;
+            let mut r = 1;
+            for _ in 0..b_small {
+                r = p.mul(r, a);
+            }
+            prop_assert_eq!(p.pow(a, b_small), r);
 
             #[cfg(debug_assertions)]
             {
-                assert!(std::panic::catch_unwind(|| q.pow(p, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.pow(p << 1, 1)).is_err());
-                assert!(std::panic::catch_unwind(|| q.pow(0, p)).is_err());
-                assert!(std::panic::catch_unwind(|| q.pow(0, p << 1)).is_err());
-            }
-
-            for _ in 0..ntests {
-                let a = rng.next_u64() % p;
-                let b = (rng.next_u64() % p) % 1000;
-                let mut c = b;
-                let mut r = 1;
-                while c > 0 {
-                    r = q.mul(r, a);
-                    c -= 1;
-                }
-                assert_eq!(q.pow(a, b), r);
+                prop_assert!(std::panic::catch_unwind(|| p.pow(*p, 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.pow(*p << 1, 1)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.pow(0, *p)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.pow(0, *p << 1)).is_err());
             }
         }
     }

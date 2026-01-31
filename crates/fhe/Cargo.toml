@@ -16,7 +16,6 @@ bench = false # Disable default bench (we use criterion)
 
 [features]
 tfhe-ntt = ["fhe-math/tfhe-ntt"]
-tfhe-ntt-nightly = ["fhe-math/tfhe-ntt-nightly"]
 
 [dependencies]
 fhe-math = { version = "=0.1.1", path = "../fhe-math" }

@@ -139,8 +139,8 @@ impl From<&GaloisKey> for GaloisKeyProto {
 
 impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
     fn try_convert_from(value: &GaloisKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
-        if value.ksk.is_some() {
-            let ksk = KeySwitchingKey::try_convert_from(value.ksk.as_ref().unwrap(), par)?;
+        if let Some(ksk) = &value.ksk {
+            let ksk = KeySwitchingKey::try_convert_from(ksk, par)?;
 
             let ctx = par.context_at_level(ksk.ciphertext_level)?;
             let element = SubstitutionExponent::new(ctx, value.exponent as usize)

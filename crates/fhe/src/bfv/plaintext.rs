@@ -430,7 +430,7 @@ impl FheDecoder<Plaintext> for Vec<i64> {
             PlaintextValues::Small(_) => {
                 let v = Vec::<u64>::try_decode(pt, encoding)?;
                 if let PlaintextModulus::Small(ref m) = pt.par.plaintext {
-                    Ok(unsafe { m.center_vec_vt(&v) })
+                    Ok(unsafe { m.center_vec(&v) })
                 } else {
                     unreachable!()
                 }
@@ -557,7 +557,7 @@ mod tests {
         let b = Vec::<u64>::try_decode(&plaintext?, Encoding::simd())?;
         assert_eq!(b, a_vec);
 
-        // center_vec_vt replacement logic for test
+        // center_vec replacement logic for test
         let mut a_signed = vec![];
         for x in &a_vec {
             if *x >= a / 2 {

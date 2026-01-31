@@ -16,8 +16,8 @@ unused_imports = "warn"
 unused_must_use = "deny"
 
 [workspace.dependencies]
-clap = { version = "^4.5.54", features = ["derive"] }
-tfhe-ntt = "^0.6.1"
+clap = { version = "^4.5.56", features = ["derive"] }
+tfhe-ntt = "^0.7.0"
 console = "^0.16.2"
 criterion = "^0.8.1"
 doc-comment = "^0.3.4"
@@ -37,7 +37,7 @@ pulp = "^0.22.2"
 rand = "^0.9.2"
 rand_chacha = "^0.9.0"
 sha2 = "^0.10.8"
-thiserror = "^2.0.17"
+thiserror = "^2.0.18"
 zeroize = "^1.8.2"
 zeroize_derive = "^1.4.3"
 
