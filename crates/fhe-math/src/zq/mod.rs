@@ -451,7 +451,7 @@ impl Modulus {
         let threshold = self.p >> 1;
         let cond = a >= threshold;
         let on_true = (a as i64).wrapping_sub(self.p as i64) as u64;
-        let on_false = a as u64;
+        let on_false = a;
 
         const_time_cond_select(on_true, on_false, cond) as i64
     }
@@ -459,18 +459,14 @@ impl Modulus {
     /// Center a vector in constant time.
     #[must_use]
     pub fn center_vec(&self, a: &[u64]) -> Vec<i64> {
-        self.arch.dispatch(|| {
-            a.iter()
-                .map(|ai| self.center(*ai))
-                .collect_vec()
-        })
+        self.arch
+            .dispatch(|| a.iter().map(|ai| self.center(*ai)).collect_vec())
     }
 
     /// Center a vector in variable time.
     ///
     /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the values being centered.
+    /// This function is now constant time.
     #[must_use]
     pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
         self.center_vec(a)
