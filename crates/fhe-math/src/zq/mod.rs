@@ -440,20 +440,30 @@ impl Modulus {
             .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.reduce(*ai)))
     }
 
-    /// Center a value modulo p as i64 in variable time.
-    /// TODO: To test and to make constant time?
+    /// Center a value modulo p as i64 in constant time.
     ///
-    /// # Safety
-    /// This function is not constant time and its timing may reveal information
-    /// about the value being centered.
-    const unsafe fn center_vt(&self, a: u64) -> i64 {
+    /// The output is in the interval `[-p/2, p/2)`.
+    /// Aborts if `a >= p` in debug mode.
+    #[must_use]
+    pub const fn center(&self, a: u64) -> i64 {
         debug_assert!(a < self.p);
 
-        if a >= self.p >> 1 {
-            (a as i64) - (self.p as i64)
-        } else {
-            a as i64
-        }
+        let threshold = self.p >> 1;
+        let cond = a >= threshold;
+        let on_true = (a as i64).wrapping_sub(self.p as i64) as u64;
+        let on_false = a as u64;
+
+        const_time_cond_select(on_true, on_false, cond) as i64
+    }
+
+    /// Center a vector in constant time.
+    #[must_use]
+    pub fn center_vec(&self, a: &[u64]) -> Vec<i64> {
+        self.arch.dispatch(|| {
+            a.iter()
+                .map(|ai| self.center(*ai))
+                .collect_vec()
+        })
     }
 
     /// Center a vector in variable time.
@@ -463,11 +473,7 @@ impl Modulus {
     /// about the values being centered.
     #[must_use]
     pub unsafe fn center_vec_vt(&self, a: &[u64]) -> Vec<i64> {
-        self.arch.dispatch(|| {
-            a.iter()
-                .map(|ai| unsafe { self.center_vt(*ai) })
-                .collect_vec()
-        })
+        self.center_vec(a)
     }
 
     /// Reduce a vector in place in variable time.
@@ -1092,6 +1098,30 @@ mod tests {
             let b = p.serialize_vec(&a);
             let c = p.deserialize_vec(&b);
             prop_assert_eq!(a, c);
+        }
+
+        #[test]
+        fn center(p in valid_moduli(), a: u64) {
+            let a = p.reduce(a);
+            let b = p.center(a);
+            if a >= *p >> 1 {
+                prop_assert_eq!(b, (a as i64) - (*p as i64));
+            } else {
+                prop_assert_eq!(b, a as i64);
+            }
+            prop_assert_eq!(p.reduce_i64(b), a);
+        }
+
+        #[test]
+        fn center_vec(p in valid_moduli(), a: Vec<u64>) {
+             let mut a = a.clone();
+             p.reduce_vec(&mut a);
+             let b = p.center_vec(&a);
+             prop_assert_eq!(b.len(), a.len());
+             for (ai, bi) in izip!(a.iter(), b.iter()) {
+                 prop_assert_eq!(p.center(*ai), *bi);
+             }
+             unsafe { prop_assert_eq!(p.center_vec_vt(&a), b); }
         }
     }
 
