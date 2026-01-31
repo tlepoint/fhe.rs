@@ -877,7 +877,7 @@ mod tests {
             for i in 1..=16 {
                 let p = Poly::small(&ctx, Representation::PowerBasis, i, &mut rng)?;
                 let coefficients = p.coefficients().to_slice().unwrap();
-                let v = unsafe { q.center_vec_vt(coefficients) };
+                let v = q.center_vec(coefficients);
 
                 assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * i as i64);
             }
@@ -889,7 +889,7 @@ mod tests {
         let mut rng = rand::rng();
         let p = Poly::small(&ctx, Representation::PowerBasis, 16, &mut rng)?;
         let coefficients = p.coefficients().to_slice().unwrap();
-        let v = unsafe { q.center_vec_vt(coefficients) };
+        let v = q.center_vec(coefficients);
         assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 32);
         assert_eq!(variance(&v).round(), 16.0);
 

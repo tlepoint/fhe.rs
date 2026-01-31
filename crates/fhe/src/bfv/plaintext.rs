@@ -258,7 +258,7 @@ impl FheDecoder<Plaintext> for Vec<i64> {
         E: Into<Option<Encoding>>,
     {
         let v = Vec::<u64>::try_decode(pt, encoding)?;
-        Ok(unsafe { pt.par.plaintext.center_vec_vt(&v) })
+        Ok(pt.par.plaintext.center_vec(&v))
     }
 
     type Error = Error;
@@ -322,7 +322,7 @@ mod tests {
         let b = Vec::<u64>::try_decode(&plaintext?, Encoding::simd())?;
         assert_eq!(b, a);
 
-        let a = unsafe { params.plaintext.center_vec_vt(&a) };
+        let a = params.plaintext.center_vec(&a);
         let plaintext = Plaintext::try_encode(&a, Encoding::poly(), &params);
         assert!(plaintext.is_ok());
         let b = Vec::<i64>::try_decode(&plaintext?, Encoding::poly())?;
