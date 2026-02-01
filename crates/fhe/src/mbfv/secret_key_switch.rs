@@ -173,7 +173,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
         poly.change_representation(Representation::Ntt);
 
         let value = match ct.par.plaintext {
-            crate::bfv::PlaintextModulus::Small(_) => PlaintextValues::Small(
+            crate::bfv::PlaintextModulus::Small { .. } => PlaintextValues::Small(
                 w.iter()
                     .map(|x| x.to_u64().unwrap())
                     .collect::<Vec<_>>()

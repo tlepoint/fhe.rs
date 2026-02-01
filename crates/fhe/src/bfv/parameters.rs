@@ -1,7 +1,7 @@
 //! Create parameters for the BFV encryption scheme
 
 use crate::bfv::{context::CipherPlainContext, context::ContextLevel};
-use crate::proto::bfv::Parameters;
+use crate::proto::bfv::{Parameters, parameters::PlaintextModulus as PlaintextModulusProto};
 use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
@@ -21,20 +21,34 @@ use std::sync::Arc;
 /// Enum to support both small (u64) and large (BigUint) plaintext moduli.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum PlaintextModulus {
-    Small(Modulus),
+    Small {
+        modulus: Modulus,
+        modulus_big: BigUint,
+    },
     Large(BigUint),
 }
 
 impl PlaintextModulus {
+    pub fn as_biguint(&self) -> &BigUint {
+        match self {
+            Self::Small { modulus_big, .. } => modulus_big,
+            Self::Large(m) => m,
+        }
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            Self::Small { modulus, .. } => Some(**modulus),
+            Self::Large(_) => None,
+        }
+    }
+
     pub fn reduce_vec(&self, v: &mut [BigUint]) {
         match self {
-            Self::Small(m) => {
-                let modulus_big = BigUint::from(**m);
-                v.iter_mut().for_each(|vi| *vi %= &modulus_big);
+            Self::Small { modulus_big, .. } => {
+                v.iter_mut().for_each(|vi| *vi %= modulus_big);
             }
-            Self::Large(m) => {
-                v.iter_mut().for_each(|vi| *vi %= m);
-            }
+            Self::Large(m) => v.iter_mut().for_each(|vi| *vi %= m),
         }
     }
 
@@ -45,17 +59,11 @@ impl PlaintextModulus {
     // We need a scalar multiplication for Plaintext::to_poly
     pub fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
         match self {
-            Self::Small(m) => {
-                let m_big = BigUint::from(**m);
-                a.iter_mut().for_each(|ai| {
-                    *ai = (ai as &BigUint * b) % &m_big;
-                });
+            Self::Small { modulus_big, .. } => {
+                a.iter_mut()
+                    .for_each(|ai| *ai = (ai as &BigUint * b) % modulus_big);
             }
-            Self::Large(m) => {
-                a.iter_mut().for_each(|ai| {
-                    *ai = (ai as &BigUint * b) % m;
-                });
-            }
+            Self::Large(m) => a.iter_mut().for_each(|ai| *ai = (ai as &BigUint * b) % m),
         }
     }
 }
@@ -69,9 +77,6 @@ impl PlaintextModulus {
 pub struct BfvParameters {
     /// Number of coefficients in a polynomial.
     polynomial_degree: usize,
-
-    /// Modulus of the plaintext.
-    plaintext_modulus: BigUint,
 
     /// Vector of coprime moduli q_i for the ciphertext.
     pub(crate) moduli: Box<[u64]>,
@@ -98,7 +103,7 @@ impl Debug for BfvParameters {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BfvParameters")
             .field("polynomial_degree", &self.polynomial_degree)
-            .field("plaintext_modulus", &self.plaintext_modulus)
+            .field("plaintext_modulus", &self.plaintext.as_biguint())
             .field("moduli", &self.moduli)
             .finish()
     }
@@ -131,13 +136,13 @@ impl BfvParameters {
     /// Panics if the modulus is too large.
     #[must_use]
     pub fn plaintext(&self) -> u64 {
-        self.plaintext_modulus.to_u64().unwrap()
+        self.plaintext.as_u64().unwrap()
     }
 
     /// Returns the plaintext modulus as BigUint
     #[must_use]
     pub fn plaintext_big(&self) -> &BigUint {
-        &self.plaintext_modulus
+        self.plaintext.as_biguint()
     }
 
     /// Returns the maximum level allowed by these parameters.
@@ -432,15 +437,19 @@ impl BfvParametersBuilder {
         }
 
         let plaintext_modulus_struct = if let Some(p) = self.plaintext.to_u64() {
-            PlaintextModulus::Small(Modulus::new(p).map_err(|e| {
-                Error::ParametersError(ParametersError::InvalidPlaintextModulus {
-                    modulus: p,
-                    reason: e.to_string(),
-                })
-            })?)
+            PlaintextModulus::Small {
+                modulus: Modulus::new(p).map_err(|e| {
+                    Error::ParametersError(ParametersError::InvalidPlaintextModulus {
+                        modulus: p,
+                        reason: e.to_string(),
+                    })
+                })?,
+                modulus_big: BigUint::from(p),
+            }
         } else {
             PlaintextModulus::Large(self.plaintext.clone())
         };
+        let plaintext_big = plaintext_modulus_struct.as_biguint();
 
         // Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is
         // specified.
@@ -468,7 +477,7 @@ impl BfvParametersBuilder {
 
         // Determine how many moduli needed for plaintext context
         // We need product of moduli > plaintext modulus.
-        let t_bits = self.plaintext.bits();
+        let t_bits = plaintext_big.bits();
         let mut accumulated_bits = 0;
         let mut plaintext_moduli_count = 0;
         for size in &moduli_sizes {
@@ -487,7 +496,9 @@ impl BfvParametersBuilder {
         // Create NTT operator for SIMD operations if possible
         // Only if plaintext modulus fits in u64 for now
         let ntt_operator = match &plaintext_modulus_struct {
-            PlaintextModulus::Small(m) => NttOperator::new(m, self.degree).map(Arc::new),
+            PlaintextModulus::Small { modulus, .. } => {
+                NttOperator::new(modulus, self.degree).map(Arc::new)
+            }
             PlaintextModulus::Large(_) => None,
         };
 
@@ -502,7 +513,7 @@ impl BfvParametersBuilder {
             let mut delta_rests = vec![];
             for m in level_moduli {
                 let q = Modulus::new(*m)?;
-                let t_mod_q = (&self.plaintext % *m).to_u64().unwrap();
+                let t_mod_q = (plaintext_big % *m).to_u64().unwrap();
                 let neg_t_mod_q = q.neg(t_mod_q);
                 if let Some(inv) = q.inv(neg_t_mod_q) {
                     delta_rests.push(inv);
@@ -524,11 +535,11 @@ impl BfvParametersBuilder {
             delta.change_representation(Representation::NttShoup);
 
             // Compute q_mod_t
-            let q_mod_t = rns.modulus() % &self.plaintext;
+            let q_mod_t = rns.modulus() % plaintext_big;
 
             // Compute plain_threshold
             let plain_threshold = match &plaintext_modulus_struct {
-                PlaintextModulus::Small(m) => BigUint::from((**m + 1) >> 1),
+                PlaintextModulus::Small { modulus, .. } => BigUint::from((**modulus + 1) >> 1),
                 PlaintextModulus::Large(m) => (m + 1u32) >> 1,
             };
 
@@ -536,7 +547,7 @@ impl BfvParametersBuilder {
             let scaler = Scaler::new(
                 &cipher_ctx,
                 &plaintext_context,
-                ScalingFactor::new(&self.plaintext, rns.modulus()),
+                ScalingFactor::new(plaintext_big, rns.modulus()),
             )?;
 
             let cipher_plain_ctx = CipherPlainContext::new_arc(
@@ -596,7 +607,7 @@ impl BfvParametersBuilder {
                 &node.poly_context,
                 &mul_1_ctx,
                 ScalingFactor::one(),
-                ScalingFactor::new(&self.plaintext, node.poly_context.modulus()),
+                ScalingFactor::new(plaintext_big, node.poly_context.modulus()),
             )?;
             node.mul_params.set(mp).unwrap();
         }
@@ -620,7 +631,6 @@ impl BfvParametersBuilder {
 
         Ok(BfvParameters {
             polynomial_degree: self.degree,
-            plaintext_modulus: self.plaintext.clone(),
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
@@ -634,19 +644,19 @@ impl BfvParametersBuilder {
 
 impl Serialize for BfvParameters {
     fn to_bytes(&self) -> Vec<u8> {
-        let plaintext_u64 = self.plaintext_modulus.to_u64().unwrap_or(0);
-        let plaintext_big = if plaintext_u64 == 0 {
-            Some(self.plaintext_modulus.to_bytes_le())
+        let plaintext_modulus = if let Some(plaintext_u64) = self.plaintext.as_u64() {
+            Some(PlaintextModulusProto::Plaintext(plaintext_u64))
         } else {
-            None
+            Some(PlaintextModulusProto::PlaintextBig(
+                self.plaintext.as_biguint().to_bytes_le(),
+            ))
         };
 
         Parameters {
             degree: self.polynomial_degree as u32,
-            plaintext: plaintext_u64,
             moduli: self.moduli.to_vec(),
             variance: self.variance as u32,
-            plaintext_big,
+            plaintext_modulus,
         }
         .encode_to_vec()
     }
@@ -660,10 +670,16 @@ impl Deserialize for BfvParameters {
             })
         })?;
 
-        let plaintext_modulus = if let Some(big_bytes) = params.plaintext_big {
-            BigUint::from_bytes_le(&big_bytes)
-        } else {
-            BigUint::from(params.plaintext)
+        let plaintext_modulus = match params.plaintext_modulus {
+            Some(PlaintextModulusProto::Plaintext(value)) => BigUint::from(value),
+            Some(PlaintextModulusProto::PlaintextBig(bytes)) => BigUint::from_bytes_le(&bytes),
+            None => {
+                return Err(Error::SerializationError(
+                    SerializationError::MissingField {
+                        field_name: "Parameters.plaintext_modulus".into(),
+                    },
+                ));
+            }
         };
 
         BfvParametersBuilder::new()
@@ -704,8 +720,10 @@ impl MultiplicationParameters {
 #[cfg(test)]
 mod tests {
     use super::{BfvParameters, BfvParametersBuilder};
+    use crate::proto::bfv::{Parameters, parameters::PlaintextModulus as PlaintextModulusProto};
     use fhe_traits::{Deserialize, Serialize};
     use num_bigint::BigUint;
+    use prost::Message;
     use std::error::Error;
 
     #[test]
@@ -778,6 +796,11 @@ mod tests {
             .set_variance(4)
             .build()?;
         let bytes = params.to_bytes();
+        let proto = Parameters::decode(bytes.as_slice())?;
+        assert!(matches!(
+            proto.plaintext_modulus,
+            Some(PlaintextModulusProto::Plaintext(2))
+        ));
         assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
 
         // Test with big plaintext
@@ -789,9 +812,33 @@ mod tests {
             .set_variance(4)
             .build()?;
         let bytes = params.to_bytes();
-        assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
+        let proto = Parameters::decode(bytes.as_slice())?;
+        let proto_plaintext_bytes = match &proto.plaintext_modulus {
+            Some(PlaintextModulusProto::PlaintextBig(bytes)) => bytes.as_slice(),
+            _ => return Err("expected plaintext_big variant".into()),
+        };
+        assert_eq!(
+            proto_plaintext_bytes,
+            params.plaintext_big().to_bytes_le().as_slice()
+        );
+        let decoded = BfvParameters::try_deserialize(&bytes)?;
+        assert_eq!(decoded, params);
+        assert_eq!(decoded.plaintext_big(), params.plaintext_big());
 
         Ok(())
+    }
+
+    #[test]
+    fn deserialize_missing_plaintext_modulus() {
+        let proto = Parameters {
+            degree: 16,
+            moduli: vec![4611686018427387617, 4611686018427387329],
+            variance: 4,
+            plaintext_modulus: None,
+        };
+        let bytes = proto.encode_to_vec();
+        let err = BfvParameters::try_deserialize(&bytes).unwrap_err();
+        assert!(format!("{err}").contains("Missing required field"));
     }
 
     #[test]

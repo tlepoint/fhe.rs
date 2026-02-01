@@ -240,7 +240,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
             let value = match self.par.plaintext {
-                PlaintextModulus::Small(_) => {
+                PlaintextModulus::Small { .. } => {
                     let mut v = Vec::<u64>::try_from(d.as_ref())?;
                     let plaintext_modulus = self.par.plaintext();
                     v.iter_mut().for_each(|vi| *vi += plaintext_modulus);
@@ -248,7 +248,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
 
                     let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
                     q.reduce_vec(&mut w);
-                    if let PlaintextModulus::Small(ref m) = self.par.plaintext {
+                    if let PlaintextModulus::Small { modulus: m, .. } = &self.par.plaintext {
                         m.reduce_vec(&mut w);
                     }
                     PlaintextValues::Small(w.into_boxed_slice())

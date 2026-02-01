@@ -78,7 +78,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                     poly.change_representation(Representation::Ntt);
 
                     let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small(_) => {
+                        crate::bfv::PlaintextModulus::Small { .. } => {
                             PlaintextValues::Small(v.into_boxed_slice())
                         }
                         crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(
@@ -151,12 +151,11 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                     )?;
                     poly.change_representation(Representation::Ntt);
 
-                    let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small(ref m) => {
-                            let modulus_big = BigUint::from(**m);
+                    let value_enum = match &par.plaintext {
+                        crate::bfv::PlaintextModulus::Small { modulus_big, .. } => {
                             PlaintextValues::Small(
                                 v.iter()
-                                    .map(|x| (x % &modulus_big).to_u64().unwrap())
+                                    .map(|x| (x % modulus_big).to_u64().unwrap())
                                     .collect::<Vec<_>>()
                                     .into_boxed_slice(),
                             )
@@ -219,7 +218,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                     poly.change_representation(Representation::Ntt);
 
                     let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small(_) => {
+                        crate::bfv::PlaintextModulus::Small { .. } => {
                             PlaintextValues::Small(v.into_boxed_slice())
                         }
                         crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(

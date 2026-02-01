@@ -75,7 +75,7 @@ impl Plaintext {
         let mut m = match &self.value {
             PlaintextValues::Small(v) => {
                 let mut m_v = Zeroizing::new(v.clone());
-                if let PlaintextModulus::Small(modulus) = &self.par.plaintext {
+                if let PlaintextModulus::Small { modulus, .. } = &self.par.plaintext {
                     let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
                     modulus.scalar_mul_vec(&mut m_v, q_mod_t);
                 } else {
@@ -104,7 +104,7 @@ impl Plaintext {
         let level = encoding.level;
         let ctx = par.context_at_level(level)?;
         let value = match par.plaintext {
-            PlaintextModulus::Small(_) => {
+            PlaintextModulus::Small { .. } => {
                 PlaintextValues::Small(vec![0u64; par.degree()].into_boxed_slice())
             }
             PlaintextModulus::Large(_) => {
@@ -255,12 +255,12 @@ impl<'a> FheEncoder<&'a [u64]> for Plaintext {
 impl<'a> FheEncoder<&'a [i64]> for Plaintext {
     type Error = Error;
     fn try_encode(value: &'a [i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-        match par.plaintext {
-            PlaintextModulus::Small(ref m) => {
+        match &par.plaintext {
+            PlaintextModulus::Small { modulus: m, .. } => {
                 let w = Zeroizing::new(m.reduce_vec_i64(value));
                 Plaintext::try_encode(w.as_ref() as &[u64], encoding, par)
             }
-            PlaintextModulus::Large(ref m) => {
+            PlaintextModulus::Large(m) => {
                 let modulus_int = BigInt::from_biguint(Sign::Plus, m.clone());
                 let v: Vec<BigUint> = value
                     .iter()
@@ -429,7 +429,7 @@ impl FheDecoder<Plaintext> for Vec<i64> {
         match &pt.value {
             PlaintextValues::Small(_) => {
                 let v = Vec::<u64>::try_decode(pt, encoding)?;
-                if let PlaintextModulus::Small(ref m) = pt.par.plaintext {
+                if let PlaintextModulus::Small { modulus: m, .. } = &pt.par.plaintext {
                     Ok(m.center_vec(&v))
                 } else {
                     unreachable!()
