@@ -1,4 +1,4 @@
-#![warn(missing_docs, unused_imports)]
+#![warn(missing_docs)]
 // Expect indexing in BFV cryptographic operations for performance
 #![expect(
     clippy::indexing_slicing,

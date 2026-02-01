@@ -13,7 +13,7 @@ use fhe_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_integer::Integer;
-use num_traits::{One, PrimInt as _, ToPrimitive, Zero};
+use num_traits::{PrimInt as _, ToPrimitive};
 use prost::Message;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -27,14 +27,6 @@ pub(crate) enum PlaintextModulus {
 }
 
 impl PlaintextModulus {
-    #[allow(dead_code)]
-    pub fn to_biguint(&self) -> BigUint {
-        match self {
-            Self::Small(m) => BigUint::from(**m),
-            Self::Large(m) => m.clone(),
-        }
-    }
-
     pub fn reduce_vec(&self, v: &mut [BigUint]) {
         match self {
             Self::Small(m) => {
@@ -43,18 +35,6 @@ impl PlaintextModulus {
             }
             Self::Large(m) => {
                 v.iter_mut().for_each(|vi| *vi %= m);
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn div_ceil(&self, d: u64) -> u64 {
-        match self {
-            Self::Small(m) => (**m).div_ceil(d),
-            Self::Large(m) => {
-                let (q, r) = m.div_rem(&BigUint::from(d));
-                let res = if r.is_zero() { q } else { q + 1u64 };
-                res.to_u64().unwrap_or(u64::MAX) // Should check overflow?
             }
         }
     }
@@ -523,31 +503,11 @@ impl BfvParametersBuilder {
             let mut delta_rests = vec![];
             for m in level_moduli {
                 let q = Modulus::new(*m)?;
-                // We need q^{-1} mod t if we are computing delta as inverse scaling?
-                // No, delta is Q/t usually.
-                // The code logic for Small is: q.inv(q.neg(*plaintext_modulus))
-                // This is q.inv(-t mod q).
-                // Let's call it inv_neg_t.
-                // inv_neg_t * (-t) = 1 mod q.
-                // inv_neg_t * (-1) * t = 1 mod q.
-                // -inv_neg_t = t^-1 mod q.
-
-                // So we need t^-1 mod q.
-                // Or (-t)^-1 mod q.
-
-                // If t is BigUint, t > q (likely).
-                // We compute t mod q.
-                // q is u64.
-
                 let t_mod_q = (&self.plaintext % *m).to_u64().unwrap();
                 let neg_t_mod_q = q.neg(t_mod_q);
                 if let Some(inv) = q.inv(neg_t_mod_q) {
                     delta_rests.push(inv);
                 } else {
-                    println!(
-                        "Failed to compute inverse: t={}, q={}, t_mod_q={}, neg_t_mod_q={}",
-                        self.plaintext, m, t_mod_q, neg_t_mod_q
-                    );
                     Err(Error::MathError(fhe_math::Error::Default(
                         "Inverse failed".to_string(),
                     )))?;
@@ -670,28 +630,6 @@ impl BfvParametersBuilder {
             plaintext: plaintext_modulus_struct,
             matrix_reps_index_map: matrix_reps_index_map.into(),
         })
-    }
-}
-
-// Helper function for modular inverse of BigUint
-#[allow(dead_code)]
-fn mod_inverse(a: &BigUint, m: &BigUint) -> Option<BigUint> {
-    use num_bigint::BigInt;
-    use num_integer::Integer;
-
-    let a_int = BigInt::from_biguint(num_bigint::Sign::Plus, a.clone());
-    let m_int = BigInt::from_biguint(num_bigint::Sign::Plus, m.clone());
-
-    let extended_gcd = a_int.extended_gcd_lcm(&m_int);
-    if !extended_gcd.0.gcd.is_one() {
-        return None;
-    }
-
-    let res = extended_gcd.0.x % &m_int;
-    if res < BigInt::zero() {
-        Some((res + &m_int).to_biguint().unwrap())
-    } else {
-        Some(res.to_biguint().unwrap())
     }
 }
 

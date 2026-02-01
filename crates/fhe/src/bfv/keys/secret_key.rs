@@ -268,18 +268,6 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 }
             };
 
-            let _poly_slice: &[BigUint] = match &value {
-                PlaintextValues::Small(_v) => {
-                    // This is inefficient but necessary if we want to call Poly::try_convert_from
-                    // which expects &[BigUint] for Large
-                    // But Poly::try_convert_from can take &[u64].
-                    // Wait, we need to generate poly_ntt.
-                    // We can match again.
-                    &[] // dummy
-                }
-                PlaintextValues::Large(v) => v,
-            };
-
             let mut poly = match &value {
                 PlaintextValues::Small(v) => Poly::try_convert_from(
                     v.as_ref(),
