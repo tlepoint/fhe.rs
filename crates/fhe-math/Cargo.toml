@@ -21,8 +21,8 @@ tfhe-ntt = []
 fhe-traits = { version = "=0.1.1", path = "../fhe-traits" }
 fhe-util = { version = "=0.1.1", path = "../fhe-util" }
 
-tfhe-ntt.workspace = true
 ethnum.workspace = true
+tfhe-ntt.workspace = true
 itertools.workspace = true
 ndarray.workspace = true
 num-bigint.workspace = true
@@ -35,7 +35,6 @@ rand_chacha.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 sha2.workspace = true
-num-complex.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

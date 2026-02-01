@@ -476,7 +476,6 @@ dependencies = [
  "ndarray",
  "num-bigint",
  "num-bigint-dig",
- "num-complex",
  "num-traits",
  "proptest",
  "prost",
@@ -796,7 +795,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
- "libm",
 ]
 
 [[package]]
