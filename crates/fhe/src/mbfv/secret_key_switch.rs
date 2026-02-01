@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -26,7 +26,7 @@ pub struct SecretKeySwitchShare {
     /// The original input ciphertext
     // Probably doesn't need to be Arc in real usage but w/e
     pub(crate) ct: Arc<Ciphertext>,
-    pub(crate) h_share: Poly,
+    pub(crate) h_share: Poly<Ntt>,
 }
 
 impl SecretKeySwitchShare {
@@ -56,29 +56,26 @@ impl SecretKeySwitchShare {
         }
 
         let par = sk_input_share.par.clone();
-        let mut s_in = Zeroizing::new(Poly::try_convert_from(
-            sk_input_share.coeffs.as_ref(),
-            ct[0].ctx(),
-            false,
-            Representation::PowerBasis,
-        )?);
-        s_in.change_representation(Representation::Ntt);
-        let mut s_out = Zeroizing::new(Poly::try_convert_from(
-            sk_output_share.coeffs.as_ref(),
-            ct[0].ctx(),
-            false,
-            Representation::PowerBasis,
-        )?);
-        s_out.change_representation(Representation::Ntt);
+        let s_in = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(
+                sk_input_share.coeffs.as_ref(),
+                ct[0].ctx(),
+                false,
+            )?
+            .into_ntt(),
+        );
+        let s_out = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(
+                sk_output_share.coeffs.as_ref(),
+                ct[0].ctx(),
+                false,
+            )?
+            .into_ntt(),
+        );
 
         // Sample error
         // TODO this should be exponential in ciphertext noise!
-        let e = Zeroizing::new(Poly::small(
-            ct[0].ctx(),
-            Representation::Ntt,
-            par.variance,
-            rng,
-        )?);
+        let e = Zeroizing::new(Poly::<Ntt>::small(ct[0].ctx(), par.variance, rng)?);
 
         // Create h_i share
         let mut h_share = s_in.as_ref() - s_out.as_ref();
@@ -151,7 +148,9 @@ impl Aggregate<DecryptionShare> for Plaintext {
         // Note: during SKS, c[1]*sk has already been added to c[0].
         let mut c = Zeroizing::new(ct[0].clone());
         c.disallow_variable_time_computations();
-        c.change_representation(Representation::PowerBasis);
+        let ctx = c.ctx().clone();
+        let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
+        let c = c_inner.into_power_basis();
 
         // The true decryption part is done during SKS; all that is left is to scale
         let ctx_lvl = ct.par.context_level_at(ct.level)?;
@@ -168,9 +167,8 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         ct.par.plaintext.reduce_vec(&mut w);
 
-        let mut poly =
-            Poly::try_convert_from(w.as_slice(), ct[0].ctx(), false, Representation::PowerBasis)?;
-        poly.change_representation(Representation::Ntt);
+        let poly =
+            Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt();
 
         let value = match ct.par.plaintext {
             crate::bfv::PlaintextModulus::Small { .. } => PlaintextValues::Small(

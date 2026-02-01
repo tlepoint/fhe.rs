@@ -4,7 +4,7 @@ use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RGSWCiphertextProto,
 };
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly};
+use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly};
 use fhe_traits::{
     DeserializeParametrized, FheCiphertext, FheEncrypter, FheParametrized, Serialize,
 };
@@ -104,17 +104,14 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         let level = pt.level;
         let ctx = self.par.context_at_level(level)?;
 
-        let mut m = Zeroizing::new(pt.poly_ntt.clone());
-        let mut m_s = Zeroizing::new(Poly::try_convert_from(
-            self.coeffs.as_ref(),
-            ctx,
-            false,
-            Representation::PowerBasis,
-        )?);
-        m_s.change_representation(Representation::Ntt);
-        *m_s.as_mut() *= m.as_ref();
-        m_s.change_representation(Representation::PowerBasis);
-        m.change_representation(Representation::PowerBasis);
+        let m = Zeroizing::new(pt.poly_ntt.clone().into_power_basis());
+        let mut m_s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ctx, false)?.into_ntt(),
+        );
+        *m_s.as_mut() *= pt.poly_ntt.as_ref();
+        let ctx = m_s.ctx().clone();
+        let m_s_inner = std::mem::replace(m_s.as_mut(), Poly::<Ntt>::zero(&ctx));
+        let m_s = Zeroizing::new(m_s_inner.into_power_basis());
 
         let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level, rng)?;
         let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level, rng)?;
@@ -137,17 +134,15 @@ impl Mul<&RGSWCiphertext> for &Ciphertext {
         );
         assert_eq!(self.len(), 2, "Ciphertext must have two parts");
 
-        let mut ct0 = self[0].clone();
-        let mut ct1 = self[1].clone();
-        ct0.change_representation(Representation::PowerBasis);
-        ct1.change_representation(Representation::PowerBasis);
+        let ct0 = self[0].clone().into_power_basis();
+        let ct1 = self[1].clone().into_power_basis();
 
-        let mut c0 = Poly::zero(&rhs.ksk0.ctx_ksk, Representation::Ntt);
-        let mut c1 = Poly::zero(&rhs.ksk0.ctx_ksk, Representation::Ntt);
+        let mut c0 = Poly::<Ntt>::zero(&rhs.ksk0.ctx_ksk);
+        let mut c1 = Poly::<Ntt>::zero(&rhs.ksk0.ctx_ksk);
         rhs.ksk0.key_switch_assign(&ct0, &mut c0, &mut c1).unwrap();
 
-        let mut c0p = Poly::zero(&rhs.ksk1.ctx_ksk, Representation::Ntt);
-        let mut c1p = Poly::zero(&rhs.ksk1.ctx_ksk, Representation::Ntt);
+        let mut c0p = Poly::<Ntt>::zero(&rhs.ksk1.ctx_ksk);
+        let mut c1p = Poly::<Ntt>::zero(&rhs.ksk1.ctx_ksk);
         rhs.ksk1
             .key_switch_assign(&ct1, &mut c0p, &mut c1p)
             .unwrap();

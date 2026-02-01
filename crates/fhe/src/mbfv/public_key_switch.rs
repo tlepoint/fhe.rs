@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use fhe_math::rq::traits::TryConvertFrom;
-use fhe_math::rq::{Poly, Representation};
+use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
@@ -18,9 +18,9 @@ use super::Aggregate;
 pub struct PublicKeySwitchShare {
     pub(crate) par: Arc<BfvParameters>,
     /// The first component of the input ciphertext
-    pub(crate) c0: Poly,
-    pub(crate) h0_share: Poly,
-    pub(crate) h1_share: Poly,
+    pub(crate) c0: Poly<Ntt>,
+    pub(crate) h0_share: Poly<Ntt>,
+    pub(crate) h1_share: Poly<Ntt>,
 }
 
 impl PublicKeySwitchShare {
@@ -50,19 +50,15 @@ impl PublicKeySwitchShare {
         }
         let ctx = par.context_at_level(ct.level)?;
 
-        let mut s = Zeroizing::new(Poly::try_convert_from(
-            sk_share.coeffs.as_ref(),
-            ctx,
-            false,
-            Representation::PowerBasis,
-        )?);
-        s.change_representation(Representation::Ntt);
+        let mut s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+        );
         s.disallow_variable_time_computations();
 
-        let u = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
+        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
         // TODO this should be exponential in ciphertext noise!
-        let e0 = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
-        let e1 = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
+        let e0 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
+        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
 
         let mut h0 = pk_ct[0].clone();
         h0.disallow_variable_time_computations();

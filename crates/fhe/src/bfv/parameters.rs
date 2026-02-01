@@ -6,7 +6,7 @@ use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
-    rq::{Context, Poly, Representation, scaler::Scaler, traits::TryConvertFrom},
+    rq::{Context, Poly, PowerBasis, scaler::Scaler, traits::TryConvertFrom},
     zq::{Modulus, primes::generate_prime},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
@@ -526,13 +526,12 @@ impl BfvParametersBuilder {
 
             // Use RnsContext to lift the delta values and create the scaling polynomial
             let rns = RnsContext::new(level_moduli)?;
-            let mut delta = Poly::try_convert_from(
+            let delta = Poly::<PowerBasis>::try_convert_from(
                 &[rns.lift((&delta_rests).into())],
                 &cipher_ctx,
                 true,
-                Representation::PowerBasis,
-            )?;
-            delta.change_representation(Representation::NttShoup);
+            )?
+            .into_ntt_shoup();
 
             // Compute q_mod_t
             let q_mod_t = rns.modulus() % plaintext_big;

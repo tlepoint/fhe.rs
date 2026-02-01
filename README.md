@@ -28,8 +28,8 @@ To install, add the following to your project's `Cargo.toml` file:
 
 ```toml
 [dependencies]
-fhe = "0.2"
-fhe-traits = "0.2"
+fhe = "0.2.0"
+fhe-traits = "0.1.1"
 ```
 
 ## Minimum supported version / toolchain

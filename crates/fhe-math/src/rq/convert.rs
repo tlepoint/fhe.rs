@@ -1,6 +1,9 @@
 //! Implementation of conversions from and to polynomials.
 
-use super::{Context, Poly, Representation, traits::TryConvertFrom};
+use super::{
+    Context, Ntt, NttShoup, Poly, PowerBasis, Representation, RepresentationTag,
+    traits::TryConvertFrom,
+};
 use crate::{
     Error, Result,
     proto::rq::{Representation as RepresentationProto, Rq},
@@ -8,34 +11,25 @@ use crate::{
 use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
-use std::borrow::Cow;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
-impl From<&Poly> for Rq {
-    fn from(p: &Poly) -> Self {
+impl<R: RepresentationTag> From<&Poly<R>> for Rq {
+    fn from(p: &Poly<R>) -> Self {
         assert!(!p.has_lazy_coefficients);
-
-        let needs_transform = p.representation != Representation::PowerBasis;
-        let q: Cow<'_, Poly> = if needs_transform {
-            let mut owned = p.clone();
-            owned.change_representation(Representation::PowerBasis);
-            Cow::Owned(owned)
-        } else {
-            Cow::Borrowed(p)
+        let q: Poly<PowerBasis> = match R::REPRESENTATION {
+            Representation::PowerBasis => Poly::<PowerBasis>::from_parts(p.clone()),
+            Representation::Ntt => Poly::<Ntt>::from_parts(p.clone()).into_power_basis(),
+            Representation::NttShoup => Poly::<NttShoup>::from_parts(p.clone()).into_power_basis(),
         };
 
         let mut proto = Rq::default();
-        match p.representation {
+        match R::REPRESENTATION {
             Representation::PowerBasis => {
-                proto.representation = RepresentationProto::Powerbasis as i32;
+                proto.representation = RepresentationProto::Powerbasis as i32
             }
-            Representation::Ntt => {
-                proto.representation = RepresentationProto::Ntt as i32;
-            }
-            Representation::NttShoup => {
-                proto.representation = RepresentationProto::Nttshoup as i32;
-            }
+            Representation::Ntt => proto.representation = RepresentationProto::Ntt as i32,
+            Representation::NttShoup => proto.representation = RepresentationProto::Nttshoup as i32,
         }
         let serialization: Vec<u8> = izip!(q.coefficients.outer_iter(), p.ctx.q.iter())
             .flat_map(|(v, qi)| qi.serialize_vec(v.as_slice().unwrap()))
@@ -47,265 +41,262 @@ impl From<&Poly> for Rq {
     }
 }
 
-impl TryConvertFrom<Vec<u64>> for Poly {
-    fn try_convert_from<R>(
-        mut v: Vec<u64>,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        let repr = representation.into();
-        match repr {
-            Some(Representation::Ntt) => {
-                if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
-                    Ok(Self {
-                        ctx: ctx.clone(),
-                        representation: repr.unwrap(),
-                        allow_variable_time_computations: variable_time,
-                        coefficients,
-                        coefficients_shoup: None,
-                        has_lazy_coefficients: false,
-                    })
-                } else {
-                    Err(Error::Default(
-                        "In Ntt representation, all coefficients must be specified".to_string(),
-                    ))
-                }
-            }
-            Some(Representation::NttShoup) => {
-                if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
-                    let mut p = Self {
-                        ctx: ctx.clone(),
-                        representation: repr.unwrap(),
-                        allow_variable_time_computations: variable_time,
-                        coefficients,
-                        coefficients_shoup: None,
-                        has_lazy_coefficients: false,
-                    };
-                    p.compute_coefficients_shoup();
-                    Ok(p)
-                } else {
-                    Err(Error::Default(
-                        "In NttShoup representation, all coefficients must be specified"
-                            .to_string(),
-                    ))
-                }
-            }
-            Some(Representation::PowerBasis) => {
-                if v.len() == ctx.q.len() * ctx.degree {
-                    let coefficients =
-                        Array2::from_shape_vec((ctx.q.len(), ctx.degree), v).unwrap();
-                    Ok(Self {
-                        ctx: ctx.clone(),
-                        representation: repr.unwrap(),
-                        allow_variable_time_computations: variable_time,
-                        coefficients,
-                        coefficients_shoup: None,
-                        has_lazy_coefficients: false,
-                    })
-                } else if v.len() <= ctx.degree {
-                    let mut out = Self::zero(ctx, repr.unwrap());
-                    if variable_time {
-                        unsafe {
-                            izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
-                                |(mut w, qi)| {
-                                    let wi = w.as_slice_mut().unwrap();
-                                    wi[..v.len()].copy_from_slice(&v);
-                                    qi.reduce_vec_vt(wi);
-                                },
-                            );
-                            out.allow_variable_time_computations();
-                        }
-                    } else {
-                        izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
-                            |(mut w, qi)| {
-                                let wi = w.as_slice_mut().unwrap();
-                                wi[..v.len()].copy_from_slice(&v);
-                                qi.reduce_vec(wi);
-                            },
-                        );
-                        v.zeroize();
-                    }
-                    Ok(out)
-                } else {
-                    Err(Error::Default("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string()))
-                }
-            }
-            None => Err(Error::Default(
-                "When converting from a vector, the representation needs to be specified"
-                    .to_string(),
-            )),
+fn parse_proto(
+    value: &Rq,
+    ctx: &Arc<Context>,
+    variable_time: bool,
+) -> Result<(Representation, Vec<u64>, bool)> {
+    let repr = value
+        .representation
+        .try_into()
+        .map_err(|_| Error::Default("Invalid representation".to_string()))?;
+    let representation_from_proto = match repr {
+        RepresentationProto::Powerbasis => Representation::PowerBasis,
+        RepresentationProto::Ntt => Representation::Ntt,
+        RepresentationProto::Nttshoup => Representation::NttShoup,
+        RepresentationProto::Unknown => {
+            return Err(Error::Default("Unknown representation".to_string()));
         }
+    };
+
+    let variable_time = variable_time || value.allow_variable_time;
+
+    let degree = value.degree as usize;
+    if !degree.is_multiple_of(8) || degree < 8 {
+        return Err(Error::Default("Invalid degree".to_string()));
+    }
+
+    let mut expected_nbytes = 0;
+    ctx.q
+        .iter()
+        .for_each(|qi| expected_nbytes += qi.serialization_length(degree));
+    if value.coefficients.len() != expected_nbytes {
+        return Err(Error::Default("Invalid coefficients".to_string()));
+    }
+
+    let mut index = 0;
+    let power_basis_coefficients: Vec<u64> = ctx
+        .q
+        .iter()
+        .flat_map(|qi| {
+            let size = qi.serialization_length(degree);
+            let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
+            index += size;
+            v
+        })
+        .collect();
+
+    Ok((
+        representation_from_proto,
+        power_basis_coefficients,
+        variable_time,
+    ))
+}
+
+impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
+    fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let (representation_from_proto, coefficients, variable_time) =
+            parse_proto(value, ctx, variable_time)?;
+        if representation_from_proto != Representation::PowerBasis {
+            return Err(Error::Default(
+                "The representation asked for does not match the representation in the serialization".to_string(),
+            ));
+        }
+        Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)
     }
 }
 
-impl TryConvertFrom<&Rq> for Poly {
-    fn try_convert_from<R>(
-        value: &Rq,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        let repr = value
-            .representation
-            .try_into()
-            .map_err(|_| Error::Default("Invalid representation".to_string()))?;
-        let representation_from_proto = match repr {
-            RepresentationProto::Powerbasis => Representation::PowerBasis,
-            RepresentationProto::Ntt => Representation::Ntt,
-            RepresentationProto::Nttshoup => Representation::NttShoup,
-            RepresentationProto::Unknown => {
-                return Err(Error::Default("Unknown representation".to_string()));
-            }
-        };
-
-        let variable_time = variable_time || value.allow_variable_time;
-
-        if let Some(r) = representation.into() as Option<Representation>
-            && r != representation_from_proto
-        {
-            return Err(Error::Default("The representation asked for does not match the representation in the serialization".to_string()));
+impl TryConvertFrom<&Rq> for Poly<Ntt> {
+    fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let (representation_from_proto, coefficients, variable_time) =
+            parse_proto(value, ctx, variable_time)?;
+        if representation_from_proto != Representation::Ntt {
+            return Err(Error::Default(
+                "The representation asked for does not match the representation in the serialization".to_string(),
+            ));
         }
+        let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
+        Ok(p.into_ntt())
+    }
+}
 
-        let degree = value.degree as usize;
-        if !degree.is_multiple_of(8) || degree < 8 {
-            return Err(Error::Default("Invalid degree".to_string()));
+impl TryConvertFrom<&Rq> for Poly<NttShoup> {
+    fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let (representation_from_proto, coefficients, variable_time) =
+            parse_proto(value, ctx, variable_time)?;
+        if representation_from_proto != Representation::NttShoup {
+            return Err(Error::Default(
+                "The representation asked for does not match the representation in the serialization".to_string(),
+            ));
         }
+        let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
+        Ok(p.into_ntt_shoup())
+    }
+}
 
-        let mut expected_nbytes = 0;
-        ctx.q
-            .iter()
-            .for_each(|qi| expected_nbytes += qi.serialization_length(degree));
-        if value.coefficients.len() != expected_nbytes {
-            return Err(Error::Default("Invalid coefficients".to_string()));
-        }
-
-        let mut index = 0;
-        let power_basis_coefficients: Vec<u64> = ctx
-            .q
-            .iter()
-            .flat_map(|qi| {
-                let size = qi.serialization_length(degree);
-                let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
-                index += size;
-                v
+impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
+    fn try_convert_from(mut v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if v.len() == ctx.q.len() * ctx.degree {
+            let coefficients = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v).unwrap();
+            Ok(Self {
+                ctx: ctx.clone(),
+                allow_variable_time_computations: variable_time,
+                coefficients,
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                _repr: std::marker::PhantomData,
             })
-            .collect();
-
-        let mut p = Poly::try_convert_from(
-            power_basis_coefficients,
-            ctx,
-            variable_time,
-            Representation::PowerBasis,
-        )?;
-        p.change_representation(representation_from_proto);
-        Ok(p)
+        } else if v.len() <= ctx.degree {
+            let mut out = Self::zero(ctx);
+            if variable_time {
+                unsafe {
+                    izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
+                        |(mut w, qi)| {
+                            let wi = w.as_slice_mut().unwrap();
+                            wi[..v.len()].copy_from_slice(&v);
+                            qi.reduce_vec_vt(wi);
+                        },
+                    );
+                    out.allow_variable_time_computations();
+                }
+            } else {
+                izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut w, qi)| {
+                    let wi = w.as_slice_mut().unwrap();
+                    wi[..v.len()].copy_from_slice(&v);
+                    qi.reduce_vec(wi);
+                });
+                v.zeroize();
+            }
+            Ok(out)
+        } else {
+            Err(Error::Default(
+                "In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string(),
+            ))
+        }
     }
 }
 
-impl TryConvertFrom<Array2<u64>> for Poly {
-    fn try_convert_from<R>(
-        a: Array2<u64>,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
+impl TryConvertFrom<Vec<u64>> for Poly<Ntt> {
+    fn try_convert_from(v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
+            Ok(Self {
+                ctx: ctx.clone(),
+                allow_variable_time_computations: variable_time,
+                coefficients,
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                _repr: std::marker::PhantomData,
+            })
+        } else {
+            Err(Error::Default(
+                "In Ntt representation, all coefficients must be specified".to_string(),
+            ))
+        }
+    }
+}
+
+impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
+    fn try_convert_from(v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
+            let mut p = Self {
+                ctx: ctx.clone(),
+                allow_variable_time_computations: variable_time,
+                coefficients,
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                _repr: std::marker::PhantomData,
+            };
+            p.compute_coefficients_shoup();
+            Ok(p)
+        } else {
+            Err(Error::Default(
+                "In NttShoup representation, all coefficients must be specified".to_string(),
+            ))
+        }
+    }
+}
+
+impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
+    fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if a.shape() != [ctx.q.len(), ctx.degree] {
             Err(Error::Default(
                 "The array of coefficient does not have the correct shape".to_string(),
             ))
-        } else if let Some(repr) = representation.into() {
-            let mut p = Self {
+        } else {
+            Ok(Self {
                 ctx: ctx.clone(),
-                representation: repr,
                 allow_variable_time_computations: variable_time,
                 coefficients: a,
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
-            };
-            if p.representation == Representation::NttShoup {
-                p.compute_coefficients_shoup()
-            }
-            Ok(p)
-        } else {
-            Err(Error::Default("When converting from a 2-dimensional array, the representation needs to be specified".to_string()))
+                _repr: std::marker::PhantomData,
+            })
         }
     }
 }
 
-impl<'a> TryConvertFrom<&'a [u64]> for Poly {
-    fn try_convert_from<R>(
-        v: &'a [u64],
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        let repr = representation.into();
-        match repr {
-            Some(Representation::PowerBasis) => {
-                if v.len() == ctx.q.len() * ctx.degree {
-                    Poly::try_convert_from(v.to_vec(), ctx, variable_time, repr)
-                } else if v.len() <= ctx.degree {
-                    let mut out = Self::zero(ctx, Representation::PowerBasis);
-                    if variable_time {
-                        unsafe {
-                            izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
-                                |(mut w, qi)| {
-                                    let wi = w.as_slice_mut().unwrap();
-                                    wi[..v.len()].copy_from_slice(v);
-                                    qi.reduce_vec_vt(wi);
-                                },
-                            );
-                            out.allow_variable_time_computations();
-                        }
-                    } else {
-                        izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
-                            |(mut w, qi)| {
-                                let wi = w.as_slice_mut().unwrap();
-                                wi[..v.len()].copy_from_slice(v);
-                                qi.reduce_vec(wi);
-                            },
-                        );
-                    }
-                    Ok(out)
-                } else {
-                    Err(Error::Default("In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string()))
-                }
-            }
-            _ => Poly::try_convert_from(v.to_vec(), ctx, variable_time, repr),
-        }
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [i64]> for Poly {
-    fn try_convert_from<R>(
-        v: &'a [i64],
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        if representation.into() != Some(Representation::PowerBasis) {
+impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
+    fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if a.shape() != [ctx.q.len(), ctx.degree] {
             Err(Error::Default(
-                "Converting signed integer require to import in PowerBasis representation"
-                    .to_string(),
+                "The array of coefficient does not have the correct shape".to_string(),
             ))
-        } else if v.len() <= ctx.degree {
-            let mut out = Self::zero(ctx, Representation::PowerBasis);
+        } else {
+            Ok(Self {
+                ctx: ctx.clone(),
+                allow_variable_time_computations: variable_time,
+                coefficients: a,
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                _repr: std::marker::PhantomData,
+            })
+        }
+    }
+}
+
+impl TryConvertFrom<Array2<u64>> for Poly<NttShoup> {
+    fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if a.shape() != [ctx.q.len(), ctx.degree] {
+            Err(Error::Default(
+                "The array of coefficient does not have the correct shape".to_string(),
+            ))
+        } else {
+            let mut p = Self {
+                ctx: ctx.clone(),
+                allow_variable_time_computations: variable_time,
+                coefficients: a,
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                _repr: std::marker::PhantomData,
+            };
+            p.compute_coefficients_shoup();
+            Ok(p)
+        }
+    }
+}
+
+impl<'a> TryConvertFrom<&'a [u64]> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a [u64], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::<PowerBasis>::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a> TryConvertFrom<&'a [u64]> for Poly<Ntt> {
+    fn try_convert_from(v: &'a [u64], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::<Ntt>::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a> TryConvertFrom<&'a [u64]> for Poly<NttShoup> {
+    fn try_convert_from(v: &'a [u64], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::<NttShoup>::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a> TryConvertFrom<&'a [i64]> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a [i64], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        if v.len() <= ctx.degree {
+            let mut out = Self::zero(ctx);
             if variable_time {
                 unsafe { out.allow_variable_time_computations() }
             }
@@ -319,135 +310,135 @@ impl<'a> TryConvertFrom<&'a [i64]> for Poly {
             });
             Ok(out)
         } else {
-            Err(Error::Default("In PowerBasis representation with signed integers, only `degree` coefficients can be specified".to_string()))
+            Err(Error::Default(
+                "In PowerBasis representation with signed integers, only `degree` coefficients can be specified".to_string(),
+            ))
         }
     }
 }
 
-impl<'a> TryConvertFrom<&'a Vec<i64>> for Poly {
-    fn try_convert_from<R>(
-        v: &'a Vec<i64>,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        Poly::try_convert_from(v.as_ref() as &[i64], ctx, variable_time, representation)
+impl<'a> TryConvertFrom<&'a Vec<i64>> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a Vec<i64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref() as &[i64], ctx, variable_time)
     }
 }
 
-impl<'a> TryConvertFrom<&'a [BigUint]> for Poly {
-    fn try_convert_from<R>(
-        v: &'a [BigUint],
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        let repr = representation.into();
-
+impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a [BigUint], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if v.len() > ctx.degree {
             Err(Error::Default(
                 "The slice contains too many big integers compared to the polynomial degree"
                     .to_string(),
             ))
-        } else if repr.is_some() {
+        } else {
             let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
 
             izip!(coefficients.axis_iter_mut(Axis(1)), v).for_each(|(mut c, vi)| {
                 c.assign(&ArrayView::from(&ctx.rns.project(vi)));
             });
 
-            let mut p = Self {
+            Ok(Self {
                 ctx: ctx.clone(),
-                representation: repr.unwrap(),
                 allow_variable_time_computations: variable_time,
                 coefficients,
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
-            };
-
-            match p.representation {
-                Representation::PowerBasis => Ok(p),
-                Representation::Ntt => Ok(p),
-                Representation::NttShoup => {
-                    p.compute_coefficients_shoup();
-                    Ok(p)
-                }
-            }
-        } else {
-            Err(Error::Default(
-                "When converting from a vector, the representation needs to be specified"
-                    .to_string(),
-            ))
+                _repr: std::marker::PhantomData,
+            })
         }
     }
 }
 
-impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly {
-    fn try_convert_from<R>(
-        v: &'a Vec<u64>,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        Poly::try_convert_from(v.to_vec(), ctx, variable_time, representation)
+impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<Ntt> {
+    fn try_convert_from(v: &'a [BigUint], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let p = Poly::<PowerBasis>::try_convert_from(v, ctx, variable_time)?;
+        Ok(p.into_ntt())
     }
 }
 
-impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly {
-    fn try_convert_from<R>(
-        v: &'a [u64; N],
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        Poly::try_convert_from(v.as_ref(), ctx, variable_time, representation)
+impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<NttShoup> {
+    fn try_convert_from(v: &'a [BigUint], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let p = Poly::<PowerBasis>::try_convert_from(v, ctx, variable_time)?;
+        Ok(p.into_ntt_shoup())
     }
 }
 
-impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly {
-    fn try_convert_from<R>(
+impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<Ntt> {
+    fn try_convert_from(v: &'a Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<NttShoup> {
+    fn try_convert_from(v: &'a Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.to_vec(), ctx, variable_time)
+    }
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a [u64; N], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
+    }
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<Ntt> {
+    fn try_convert_from(v: &'a [u64; N], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
+    }
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<NttShoup> {
+    fn try_convert_from(v: &'a [u64; N], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
+    }
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<PowerBasis> {
+    fn try_convert_from(
         v: &'a [BigUint; N],
         ctx: &Arc<Context>,
         variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        Poly::try_convert_from(v.as_ref(), ctx, variable_time, representation)
+    ) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
     }
 }
 
-impl<'a, const N: usize> TryConvertFrom<&'a [i64; N]> for Poly {
-    fn try_convert_from<R>(
-        v: &'a [i64; N],
+impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<Ntt> {
+    fn try_convert_from(
+        v: &'a [BigUint; N],
         ctx: &Arc<Context>,
         variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
-        Poly::try_convert_from(v.as_ref(), ctx, variable_time, representation)
+    ) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
     }
 }
 
-impl TryFrom<&Poly> for Vec<u64> {
+impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<NttShoup> {
+    fn try_convert_from(
+        v: &'a [BigUint; N],
+        ctx: &Arc<Context>,
+        variable_time: bool,
+    ) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
+    }
+}
+
+impl<'a, const N: usize> TryConvertFrom<&'a [i64; N]> for Poly<PowerBasis> {
+    fn try_convert_from(v: &'a [i64; N], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        Poly::try_convert_from(v.as_ref(), ctx, variable_time)
+    }
+}
+
+impl TryFrom<&Poly<PowerBasis>> for Vec<u64> {
     type Error = Error;
 
-    fn try_from(p: &Poly) -> Result<Self> {
+    fn try_from(p: &Poly<PowerBasis>) -> Result<Self> {
         p.coefficients
             .as_slice()
             .ok_or_else(|| {
@@ -457,8 +448,50 @@ impl TryFrom<&Poly> for Vec<u64> {
     }
 }
 
-impl From<&Poly> for Vec<BigUint> {
-    fn from(p: &Poly) -> Self {
+impl TryFrom<&Poly<Ntt>> for Vec<u64> {
+    type Error = Error;
+
+    fn try_from(p: &Poly<Ntt>) -> Result<Self> {
+        p.coefficients
+            .as_slice()
+            .ok_or_else(|| {
+                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
+            })
+            .map(|slice| slice.to_vec())
+    }
+}
+
+impl TryFrom<&Poly<NttShoup>> for Vec<u64> {
+    type Error = Error;
+
+    fn try_from(p: &Poly<NttShoup>) -> Result<Self> {
+        p.coefficients
+            .as_slice()
+            .ok_or_else(|| {
+                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
+            })
+            .map(|slice| slice.to_vec())
+    }
+}
+
+impl From<&Poly<PowerBasis>> for Vec<BigUint> {
+    fn from(p: &Poly<PowerBasis>) -> Self {
+        izip!(p.coefficients.axis_iter(Axis(1)))
+            .map(|c| p.ctx.rns.lift(c))
+            .collect_vec()
+    }
+}
+
+impl From<&Poly<Ntt>> for Vec<BigUint> {
+    fn from(p: &Poly<Ntt>) -> Self {
+        izip!(p.coefficients.axis_iter(Axis(1)))
+            .map(|c| p.ctx.rns.lift(c))
+            .collect_vec()
+    }
+}
+
+impl From<&Poly<NttShoup>> for Vec<BigUint> {
+    fn from(p: &Poly<NttShoup>) -> Self {
         izip!(p.coefficients.axis_iter(Axis(1)))
             .map(|c| p.ctx.rns.lift(c))
             .collect_vec()
@@ -467,12 +500,10 @@ impl From<&Poly> for Vec<BigUint> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::expect_used, reason = "bounds are validated before use")]
-
     use crate::{
         Error as CrateError,
         proto::rq::Rq,
-        rq::{Context, Poly, Representation, traits::TryConvertFrom},
+        rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom},
     };
     use num_bigint::BigUint;
     use rand::rng;
@@ -485,50 +516,34 @@ mod tests {
         let mut rng = rng();
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
-            let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
+            let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
             let proto = Rq::from(&p);
-            assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
             assert_eq!(
-                Poly::try_convert_from(&proto, &ctx, false, Representation::PowerBasis)?,
+                Poly::<PowerBasis>::try_convert_from(&proto, &ctx, false)?,
                 p
             );
             assert_eq!(
-				Poly::try_convert_from(&proto, &ctx, false, Representation::Ntt)
-					.expect_err("Should fail because of mismatched representations"),
-					CrateError::Default("The representation asked for does not match the representation in the serialization".to_string())
-			);
+                Poly::<Ntt>::try_convert_from(&proto, &ctx, false).unwrap_err(),
+                CrateError::Default(
+                    "The representation asked for does not match the representation in the serialization".to_string()
+                )
+            );
             assert_eq!(
-				Poly::try_convert_from(&proto, &ctx, false, Representation::NttShoup)
-					.expect_err("Should fail because of mismatched representations"),
-					CrateError::Default("The representation asked for does not match the representation in the serialization".to_string())
-			);
+                Poly::<NttShoup>::try_convert_from(&proto, &ctx, false).unwrap_err(),
+                CrateError::Default(
+                    "The representation asked for does not match the representation in the serialization".to_string()
+                )
+            );
         }
 
         let ctx = Arc::new(Context::new(MODULI, 16)?);
-        let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
+        let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        assert_eq!(Poly::try_convert_from(&proto, &ctx, false, None)?, p);
-        assert_eq!(
-            Poly::try_convert_from(&proto, &ctx, false, Representation::PowerBasis)?,
-            p
-        );
-        assert_eq!(
-			Poly::try_convert_from(&proto, &ctx, false, Representation::Ntt)
-				.expect_err("Should fail because of mismatched representations"),
-				CrateError::Default("The representation asked for does not match the representation in the serialization".to_string())
-		);
-        assert_eq!(
-			Poly::try_convert_from(&proto, &ctx, false, Representation::NttShoup)
-				.expect_err("Should fail because of mismatched representations"),
-				CrateError::Default("The representation asked for does not match the representation in the serialization".to_string())
-		);
+        assert_eq!(Poly::<Ntt>::try_convert_from(&proto, &ctx, false)?, p);
 
-        let ctx = Arc::new(Context::new(&MODULI[0..1], 16)?);
-        assert_eq!(
-            Poly::try_convert_from(&proto, &ctx, false, None)
-                .expect_err("Should fail because of incorrect context"),
-            CrateError::Default("Invalid coefficients".to_string())
-        );
+        let p = Poly::<NttShoup>::random(&ctx, &mut rng);
+        let proto = Rq::from(&p);
+        assert_eq!(Poly::<NttShoup>::try_convert_from(&proto, &ctx, false)?, p);
 
         Ok(())
     }
@@ -540,90 +555,35 @@ mod tests {
 
             // Power Basis
             assert_eq!(
-                Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(&[0u64], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::try_convert_from(&[0i64], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(&[0i64], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(&[0u64; 16], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::try_convert_from(&[0i64; 16], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(&[0i64; 16], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(
-                Poly::try_convert_from(
-                    &[0u64; 17], // One too many
-                    &ctx,
-                    false,
-                    Representation::PowerBasis,
-                )
-                .is_err()
-            );
+            assert!(Poly::<PowerBasis>::try_convert_from(&[0u64; 17], &ctx, false).is_err());
 
             // Ntt
-            assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
-            assert!(Poly::try_convert_from(&[0i64], &ctx, false, Representation::Ntt).is_err());
-            assert_eq!(
-                Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::Ntt)?,
-                Poly::zero(&ctx, Representation::Ntt)
-            );
-            assert!(Poly::try_convert_from(&[0i64; 16], &ctx, false, Representation::Ntt).is_err());
-            assert!(
-                Poly::try_convert_from(
-                    &[0u64; 17], // One too many
-                    &ctx,
-                    false,
-                    Representation::Ntt,
-                )
-                .is_err()
-            );
+            assert!(Poly::<Ntt>::try_convert_from(&[0u64], &ctx, false).is_err());
+            assert!(Poly::<Ntt>::try_convert_from(&[0u64; 16], &ctx, false).is_ok());
+            assert!(Poly::<Ntt>::try_convert_from(&[0u64; 17], &ctx, false).is_err());
         }
 
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         assert_eq!(
-            Poly::try_convert_from(
-                Vec::<u64>::default(),
-                &ctx,
-                false,
-                Representation::PowerBasis,
-            )?,
-            Poly::zero(&ctx, Representation::PowerBasis)
+            Poly::<PowerBasis>::try_convert_from(Vec::<u64>::default(), &ctx, false)?,
+            Poly::<PowerBasis>::zero(&ctx)
         );
-        assert!(
-            Poly::try_convert_from(Vec::<u64>::default(), &ctx, false, Representation::Ntt)
-                .is_err()
-        );
-
-        assert_eq!(
-            Poly::try_convert_from(&[0u64], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert!(Poly::try_convert_from(&[0u64], &ctx, false, Representation::Ntt).is_err());
-
-        assert_eq!(
-            Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert!(Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::Ntt).is_err());
-
-        assert!(
-            Poly::try_convert_from(&[0u64; 17], &ctx, false, Representation::PowerBasis).is_err()
-        );
-        assert!(Poly::try_convert_from(&[0u64; 17], &ctx, false, Representation::Ntt).is_err());
-
-        assert_eq!(
-            Poly::try_convert_from(&[0u64; 16], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert_eq!(
-            Poly::try_convert_from(&[0u64; 48], &ctx, false, Representation::Ntt)?,
-            Poly::zero(&ctx, Representation::Ntt)
-        );
+        assert!(Poly::<Ntt>::try_convert_from(Vec::<u64>::default(), &ctx, false).is_err());
 
         Ok(())
     }
@@ -633,65 +593,26 @@ mod tests {
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             assert_eq!(
-                Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(vec![], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt).is_err());
+            assert!(Poly::<Ntt>::try_convert_from(vec![], &ctx, false).is_err());
 
             assert_eq!(
-                Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(vec![0], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt).is_err());
+            assert!(Poly::<Ntt>::try_convert_from(vec![0], &ctx, false).is_err());
 
             assert_eq!(
-                Poly::try_convert_from(vec![0; 16], &ctx, false, Representation::PowerBasis)?,
-                Poly::zero(&ctx, Representation::PowerBasis)
+                Poly::<PowerBasis>::try_convert_from(vec![0; 16], &ctx, false)?,
+                Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::try_convert_from(vec![0; 16], &ctx, false, Representation::Ntt)?,
-                Poly::zero(&ctx, Representation::Ntt)
+                Poly::<Ntt>::try_convert_from(vec![0; 16], &ctx, false)?,
+                Poly::<Ntt>::zero(&ctx)
             );
-
-            assert!(
-                Poly::try_convert_from(vec![0; 17], &ctx, false, Representation::PowerBasis)
-                    .is_err()
-            );
-            assert!(Poly::try_convert_from(vec![0; 17], &ctx, false, Representation::Ntt).is_err());
         }
-
-        let ctx = Arc::new(Context::new(MODULI, 16)?);
-        assert_eq!(
-            Poly::try_convert_from(vec![], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert!(Poly::try_convert_from(vec![], &ctx, false, Representation::Ntt).is_err());
-
-        assert_eq!(
-            Poly::try_convert_from(vec![0], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert!(Poly::try_convert_from(vec![0], &ctx, false, Representation::Ntt).is_err());
-
-        assert_eq!(
-            Poly::try_convert_from(vec![0; 16], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert!(Poly::try_convert_from(vec![0; 16], &ctx, false, Representation::Ntt).is_err());
-
-        assert!(
-            Poly::try_convert_from(vec![0; 17], &ctx, false, Representation::PowerBasis).is_err()
-        );
-        assert!(Poly::try_convert_from(vec![0; 17], &ctx, false, Representation::Ntt).is_err());
-
-        assert_eq!(
-            Poly::try_convert_from(vec![0; 48], &ctx, false, Representation::PowerBasis)?,
-            Poly::zero(&ctx, Representation::PowerBasis)
-        );
-        assert_eq!(
-            Poly::try_convert_from(vec![0; 48], &ctx, false, Representation::Ntt)?,
-            Poly::zero(&ctx, Representation::Ntt)
-        );
 
         Ok(())
     }
@@ -699,32 +620,11 @@ mod tests {
     #[test]
     fn biguint() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        for _ in 0..100 {
-            for modulus in MODULI {
-                let ctx = Arc::new(Context::new(&[*modulus], 16)?);
-                let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
-                let p_coeffs = Vec::<BigUint>::from(&p);
-                let q = Poly::try_convert_from(
-                    p_coeffs.as_slice(),
-                    &ctx,
-                    false,
-                    Representation::PowerBasis,
-                )?;
-                assert_eq!(p, q);
-            }
-
-            let ctx = Arc::new(Context::new(MODULI, 16)?);
-            let p = Poly::random(&ctx, Representation::PowerBasis, &mut rng);
-            let p_coeffs = Vec::<BigUint>::from(&p);
-            assert_eq!(p_coeffs.len(), ctx.degree);
-            let q = Poly::try_convert_from(
-                p_coeffs.as_slice(),
-                &ctx,
-                false,
-                Representation::PowerBasis,
-            )?;
-            assert_eq!(p, q);
-        }
+        let ctx = Arc::new(Context::new(MODULI, 16)?);
+        let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
+        let values = Vec::<BigUint>::from(&p);
+        let p2 = Poly::<PowerBasis>::try_convert_from(values.as_slice(), &ctx, false)?;
+        assert_eq!(p, p2);
         Ok(())
     }
 }

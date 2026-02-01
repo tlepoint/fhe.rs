@@ -3,7 +3,7 @@ use crate::{
     Error, Result,
     bfv::{BfvParameters, Encoding, PlaintextVec, parameters::PlaintextModulus},
 };
-use fhe_math::rq::{Context, Poly, Representation, traits::TryConvertFrom};
+use fhe_math::rq::{Context, Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{ToPrimitive, Zero};
@@ -41,7 +41,7 @@ pub struct Plaintext {
     /// The encoding of the plaintext, if known
     pub(crate) encoding: Option<Encoding>,
     /// The plaintext as a polynomial.
-    pub(crate) poly_ntt: Poly,
+    pub(crate) poly_ntt: Poly<Ntt>,
     /// The level of the plaintext
     pub(crate) level: usize,
 }
@@ -68,11 +68,11 @@ impl FhePlaintext for Plaintext {
 }
 
 impl Plaintext {
-    pub(crate) fn to_poly(&self) -> Poly {
+    pub(crate) fn to_poly(&self) -> Poly<Ntt> {
         let ctx_lvl = self.par.context_level_at(self.level).unwrap();
         let ctx = &ctx_lvl.poly_context;
 
-        let mut m = match &self.value {
+        let m = match &self.value {
             PlaintextValues::Small(v) => {
                 let mut m_v = Zeroizing::new(v.clone());
                 if let PlaintextModulus::Small { modulus, .. } = &self.par.plaintext {
@@ -81,20 +81,18 @@ impl Plaintext {
                 } else {
                     unreachable!("PlaintextValues::Small but PlaintextModulus::Large");
                 }
-                Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis)
-                    .unwrap()
+                Poly::<PowerBasis>::try_convert_from(m_v.as_ref(), ctx, false).unwrap()
             }
             PlaintextValues::Large(v) => {
                 let mut m_v = v.clone();
                 self.par
                     .plaintext
                     .scalar_mul_vec(&mut m_v, &ctx_lvl.cipher_plain_context.q_mod_t);
-                Poly::try_convert_from(m_v.as_ref(), ctx, false, Representation::PowerBasis)
-                    .unwrap()
+                Poly::<PowerBasis>::try_convert_from(m_v.as_ref(), ctx, false).unwrap()
             }
         };
 
-        m.change_representation(Representation::Ntt);
+        let mut m = m.into_ntt();
         m *= &ctx_lvl.cipher_plain_context.delta;
         m
     }
@@ -111,7 +109,7 @@ impl Plaintext {
                 PlaintextValues::Large(vec![BigUint::zero(); par.degree()].into_boxed_slice())
             }
         };
-        let poly_ntt = Poly::zero(ctx, Representation::Ntt);
+        let poly_ntt = Poly::<Ntt>::zero(ctx);
         Ok(Self {
             par: par.clone(),
             value,
@@ -159,16 +157,12 @@ impl PartialEq for Plaintext {
 }
 
 // Conversions.
-impl TryConvertFrom<&Plaintext> for Poly {
-    fn try_convert_from<R>(
+impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
+    fn try_convert_from(
         pt: &Plaintext,
         ctx: &Arc<Context>,
         variable_time: bool,
-        _: R,
-    ) -> fhe_math::Result<Self>
-    where
-        R: Into<Option<Representation>>,
-    {
+    ) -> fhe_math::Result<Self> {
         if ctx
             != pt
                 .par
@@ -180,18 +174,12 @@ impl TryConvertFrom<&Plaintext> for Poly {
             ))
         } else {
             match &pt.value {
-                PlaintextValues::Small(v) => Poly::try_convert_from(
-                    v.as_ref(),
-                    ctx,
-                    variable_time,
-                    Representation::PowerBasis,
-                ),
-                PlaintextValues::Large(v) => Poly::try_convert_from(
-                    v.as_ref(),
-                    ctx,
-                    variable_time,
-                    Representation::PowerBasis,
-                ),
+                PlaintextValues::Small(v) => {
+                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ctx, variable_time)
+                }
+                PlaintextValues::Large(v) => {
+                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ctx, variable_time)
+                }
             }
         }
     }
@@ -463,7 +451,7 @@ mod tests {
     use super::{Encoding, Plaintext};
     use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
     use crate::bfv::plaintext::PlaintextValues;
-    use fhe_math::rq::{Poly, Representation};
+    use fhe_math::rq::{Ntt, Poly};
     use fhe_traits::{FheDecoder, FheEncoder};
     use num_bigint::BigUint;
     use num_traits::Zero;
@@ -656,7 +644,7 @@ mod tests {
         );
         assert_eq!(
             plaintext.poly_ntt,
-            Poly::zero(params.context_at_level(0)?, Representation::Ntt)
+            Poly::<Ntt>::zero(params.context_at_level(0)?)
         );
 
         Ok(())

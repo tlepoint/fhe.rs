@@ -1,6 +1,6 @@
 use std::{cmp::min, ops::Deref, sync::Arc};
 
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+use fhe_math::rq::{Poly, PowerBasis, traits::TryConvertFrom};
 use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
 use num_bigint::BigUint;
 use num_traits::{ToPrimitive, Zero};
@@ -73,9 +73,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                         }
                     };
 
-                    let mut poly =
-                        Poly::try_convert_from(&v, ctx, true, Representation::PowerBasis)?;
-                    poly.change_representation(Representation::Ntt);
+                    let poly = Poly::<PowerBasis>::try_convert_from(&v, ctx, true)?.into_ntt();
 
                     let value_enum = match par.plaintext {
                         crate::bfv::PlaintextModulus::Small { .. } => {
@@ -143,13 +141,8 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                         }
                     };
 
-                    let mut poly = Poly::try_convert_from(
-                        v.as_slice(),
-                        ctx,
-                        false,
-                        Representation::PowerBasis,
-                    )?;
-                    poly.change_representation(Representation::Ntt);
+                    let poly =
+                        Poly::<PowerBasis>::try_convert_from(v.as_slice(), ctx, false)?.into_ntt();
 
                     let value_enum = match &par.plaintext {
                         crate::bfv::PlaintextModulus::Small { modulus_big, .. } => {
@@ -213,9 +206,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                         }
                     };
 
-                    let mut poly =
-                        Poly::try_convert_from(&v, ctx, false, Representation::PowerBasis)?;
-                    poly.change_representation(Representation::Ntt);
+                    let poly = Poly::<PowerBasis>::try_convert_from(&v, ctx, false)?.into_ntt();
 
                     let value_enum = match par.plaintext {
                         crate::bfv::PlaintextModulus::Small { .. } => {

@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use fhe_math::rq::{Poly, Representation, dot_product as poly_dot_product, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, dot_product as poly_dot_product, traits::TryConvertFrom};
 use itertools::{Itertools, izip};
 use ndarray::{Array, Array2};
 
@@ -96,7 +96,7 @@ where
                 )
                 .map_err(Error::MathError)
             })
-            .collect::<Result<Vec<Poly>>>()?;
+            .collect::<Result<Vec<Poly<Ntt>>>>()?;
 
         Ok(Ciphertext {
             par: ct_first.par.clone(),
@@ -139,12 +139,7 @@ where
                     unsafe { *outij_coeff = q.reduce_u128_vt(*accij_coeff) }
                 }
             }
-            c.push(Poly::try_convert_from(
-                coeffs,
-                ctx,
-                true,
-                Representation::Ntt,
-            )?)
+            c.push(Poly::<Ntt>::try_convert_from(coeffs, ctx, true)?)
         }
 
         Ok(Ciphertext {

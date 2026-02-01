@@ -8,7 +8,7 @@ pub use mul::Multiplicator;
 
 use super::{Ciphertext, Plaintext};
 use crate::{Error, Result};
-use fhe_math::rq::{Poly, Representation};
+use fhe_math::rq::{Ntt, Poly};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::Arc;
 
@@ -273,11 +273,11 @@ impl Mul<&Ciphertext> for &Ciphertext {
             let self_c = self
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly>>>()
+                .collect::<Result<Vec<Poly<Ntt>>>>()
                 .unwrap();
 
             // Multiply
-            let mut c = vec![Poly::zero(&mp.to, Representation::Ntt); 2 * self_c.len() - 1];
+            let mut c = vec![Poly::<Ntt>::zero(&mp.to); 2 * self_c.len() - 1];
             for i in 0..self_c.len() {
                 for j in 0..self_c.len() {
                     c[i + j] += &(&self_c[i] * &self_c[j])
@@ -287,13 +287,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
             // Scale
             let c = c
                 .iter_mut()
-                .map(|ci| {
-                    ci.change_representation(Representation::PowerBasis);
-                    let mut ci = ci.scale(&mp.down_scaler).map_err(Error::MathError)?;
-                    ci.change_representation(Representation::Ntt);
-                    Ok(ci)
-                })
-                .collect::<Result<Vec<Poly>>>()
+                .map(|ci| ci.scale(&mp.down_scaler).map_err(Error::MathError))
+                .collect::<Result<Vec<Poly<Ntt>>>>()
                 .unwrap();
 
             Ciphertext {
@@ -313,17 +308,16 @@ impl Mul<&Ciphertext> for &Ciphertext {
             let self_c = self
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly>>>()
+                .collect::<Result<Vec<Poly<Ntt>>>>()
                 .unwrap();
             let other_c = rhs
                 .iter()
                 .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly>>>()
+                .collect::<Result<Vec<Poly<Ntt>>>>()
                 .unwrap();
 
             // Multiply
-            let mut c =
-                vec![Poly::zero(&mp.to, Representation::Ntt); self_c.len() + other_c.len() - 1];
+            let mut c = vec![Poly::<Ntt>::zero(&mp.to); self_c.len() + other_c.len() - 1];
             for i in 0..self_c.len() {
                 for j in 0..other_c.len() {
                     c[i + j] += &(&self_c[i] * &other_c[j])
@@ -333,13 +327,8 @@ impl Mul<&Ciphertext> for &Ciphertext {
             // Scale
             let c = c
                 .iter_mut()
-                .map(|ci| {
-                    ci.change_representation(Representation::PowerBasis);
-                    let mut ci = ci.scale(&mp.down_scaler).map_err(Error::MathError)?;
-                    ci.change_representation(Representation::Ntt);
-                    Ok(ci)
-                })
-                .collect::<Result<Vec<Poly>>>()
+                .map(|ci| ci.scale(&mp.down_scaler).map_err(Error::MathError))
+                .collect::<Result<Vec<Poly<Ntt>>>>()
                 .unwrap();
 
             Ciphertext {
