@@ -3,7 +3,7 @@
 use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{Poly, Representation};
+use fhe_math::rq::{Ntt, Poly};
 use fhe_traits::{
     DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
 };
@@ -23,14 +23,14 @@ pub struct Ciphertext {
     pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
 
     /// The ciphertext elements.
-    pub(crate) c: Vec<Poly>,
+    pub(crate) c: Vec<Poly<Ntt>>,
 
     /// The ciphertext level
     pub(crate) level: usize,
 }
 
 impl Deref for Ciphertext {
-    type Target = [Poly];
+    type Target = [Poly<Ntt>];
 
     fn deref(&self) -> &Self::Target {
         &self.c
@@ -48,7 +48,7 @@ impl Ciphertext {
     /// A ciphertext must contain at least two polynomials, and all polynomials
     /// must be in Ntt representation and with the same context.
     #[expect(clippy::expect_used, reason = "bounds are validated before use")]
-    pub fn new(c: Vec<Poly>, par: &Arc<BfvParameters>) -> Result<Self> {
+    pub fn new(c: Vec<Poly<Ntt>>, par: &Arc<BfvParameters>) -> Result<Self> {
         if c.len() < 2 {
             return Err(Error::TooFewValues {
                 actual: c.len(),
@@ -62,14 +62,8 @@ impl Ciphertext {
             .ctx();
         let level = par.level_of_context(ctx)?;
 
-        // Check that all polynomials have the expected representation and context.
+        // Check that all polynomials have the expected context.
         for ci in c.iter() {
-            if ci.representation() != &Representation::Ntt {
-                return Err(Error::MathError(fhe_math::Error::IncorrectRepresentation(
-                    *ci.representation(),
-                    Representation::Ntt,
-                )));
-            }
             if ci.ctx() != ctx {
                 return Err(Error::MathError(fhe_math::Error::InvalidContext));
             }
@@ -93,9 +87,9 @@ impl Ciphertext {
         if self.level < self.max_switchable_level() {
             self.seed = None;
             for ci in self.c.iter_mut() {
-                ci.change_representation(Representation::PowerBasis);
-                ci.switch_down()?;
-                ci.change_representation(Representation::Ntt);
+                let mut pb = ci.clone().into_power_basis();
+                pb.switch_down()?;
+                *ci = pb.into_ntt();
             }
             self.level += 1
         }
@@ -220,7 +214,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 
         let mut c = Vec::with_capacity(value.c.len() + 1);
         for cip in &value.c {
-            c.push(Poly::from_bytes(cip, ctx)?)
+            c.push(Poly::<Ntt>::from_bytes(cip, ctx)?)
         }
 
         let mut seed = None;
@@ -233,7 +227,7 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
                     ))
                 })?;
             seed = Some(try_seed);
-            let mut c1 = Poly::random_from_seed(ctx, Representation::Ntt, try_seed);
+            let mut c1 = Poly::<Ntt>::random_from_seed(ctx, try_seed);
             unsafe { c1.allow_variable_time_computations() }
             c.push(c1)
         }

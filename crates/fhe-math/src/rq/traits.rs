@@ -2,7 +2,7 @@
 
 //! Traits associated with polynomials.
 
-use super::{Context, Representation};
+use super::Context;
 use crate::Result;
 use std::sync::Arc;
 
@@ -16,17 +16,8 @@ pub trait TryConvertFrom<T>
 where
     Self: Sized,
 {
-    /// Attempt to convert the `value` into a polynomial with a specific context
-    /// and under a specific representation. The representation may optional and
-    /// be specified as `None`; this is useful for example when converting from
-    /// a value that encodes the representation (e.g., serialization, protobuf,
-    /// etc.).
-    fn try_convert_from<R>(
-        value: T,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-        representation: R,
-    ) -> Result<Self>
-    where
-        R: Into<Option<Representation>>;
+    /// Attempt to convert the `value` into a polynomial with a specific
+    /// context. Callers select the target representation via the `Self`
+    /// type.
+    fn try_convert_from(value: T, ctx: &Arc<Context>, variable_time: bool) -> Result<Self>;
 }

@@ -3,7 +3,7 @@
 use crate::bfv::{BfvParameters, Ciphertext, SecretKey, keys::GaloisKey, traits::TryConvertFrom};
 use crate::proto::bfv::{EvaluationKey as EvaluationKeyProto, GaloisKey as GaloisKeyProto};
 use crate::{Error, Result};
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom as TryConvertFromPoly};
+use fhe_math::rq::{NttShoup, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly};
 use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use prost::Message;
@@ -33,7 +33,7 @@ pub struct EvaluationKey {
     rot_to_gk_exponent: HashMap<usize, usize>,
 
     /// Monomials used in expansion
-    monomials: Vec<Poly>,
+    monomials: Vec<Poly<NttShoup>>,
 }
 
 impl EvaluationKey {
@@ -356,15 +356,10 @@ impl EvaluationKeyBuilder {
         for l in 0..self.sk.par.degree().ilog2() {
             let mut monomial = vec![0i64; self.sk.par.degree()];
             monomial[self.sk.par.degree() - (1 << l)] = -1;
-            let mut monomial = Poly::try_convert_from(
-                &monomial,
-                ciphertext_ctx,
-                true,
-                Representation::PowerBasis,
-            )?;
+            let mut monomial =
+                Poly::<PowerBasis>::try_convert_from(&monomial, ciphertext_ctx, true)?;
             unsafe { monomial.allow_variable_time_computations() }
-            monomial.change_representation(Representation::NttShoup);
-            ek.monomials.push(monomial);
+            ek.monomials.push(monomial.into_ntt_shoup());
         }
 
         for index in indices {
@@ -419,15 +414,10 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
         for l in 0..par.degree().ilog2() {
             let mut monomial = vec![0i64; par.degree()];
             monomial[par.degree() - (1 << l)] = -1;
-            let mut monomial = Poly::try_convert_from(
-                &monomial,
-                ciphertext_ctx,
-                true,
-                Representation::PowerBasis,
-            )?;
+            let mut monomial =
+                Poly::<PowerBasis>::try_convert_from(&monomial, ciphertext_ctx, true)?;
             unsafe { monomial.allow_variable_time_computations() }
-            monomial.change_representation(Representation::NttShoup);
-            monomials.push(monomial);
+            monomials.push(monomial.into_ntt_shoup());
         }
 
         Ok(EvaluationKey {

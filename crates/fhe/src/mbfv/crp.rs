@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use crate::Result;
 use crate::bfv::BfvParameters;
-use fhe_math::rq::Poly;
+use fhe_math::rq::{Ntt, Poly};
 use rand::{CryptoRng, RngCore};
 
 /// A polynomial sampled from a random _common reference string_.
 // TODO CRS->CRP implementation. For now just a random polynomial.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CommonRandomPoly {
-    pub(crate) poly: Poly,
+    pub(crate) poly: Poly<Ntt>,
 }
 
 impl CommonRandomPoly {
@@ -38,7 +38,7 @@ impl CommonRandomPoly {
         rng: &mut R,
     ) -> Result<Self> {
         let ctx = par.context_at_level(level)?;
-        let poly = Poly::random(ctx, fhe_math::rq::Representation::Ntt, rng);
+        let poly = Poly::<Ntt>::random(ctx, rng);
         Ok(Self { poly })
     }
 }

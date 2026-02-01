@@ -1,4 +1,4 @@
-use fhe_math::rq::{Context, Poly, scaler::Scaler};
+use fhe_math::rq::{Context, NttShoup, Poly, scaler::Scaler};
 use num_bigint::BigUint;
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CipherPlainContext {
     /// Scaling polynomial for the plaintext
-    pub(crate) delta: Poly,
+    pub(crate) delta: Poly<NttShoup>,
 
     /// Q modulo the plaintext modulus
     pub(crate) q_mod_t: BigUint,
@@ -33,7 +33,7 @@ impl CipherPlainContext {
     pub(crate) fn new_arc(
         plaintext_context: &Arc<Context>,
         ciphertext_context: &Arc<Context>,
-        delta: Poly,
+        delta: Poly<NttShoup>,
         q_mod_t: BigUint,
         plain_threshold: BigUint,
         scaler: Scaler,

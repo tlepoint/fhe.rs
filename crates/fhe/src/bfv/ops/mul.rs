@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use fhe_math::{
     rns::ScalingFactor,
-    rq::{Context, Representation, scaler::Scaler},
+    rq::{Context, scaler::Scaler},
     zq::primes::generate_prime,
 };
 
@@ -179,13 +179,10 @@ impl Multiplicator {
         let c11 = rhs[1].scale(&self.extender_rhs)?;
 
         // Multiply
-        let mut c0 = &c00 * &c10;
+        let c0 = &c00 * &c10;
         let mut c1 = &c00 * &c11;
         c1 += &(&c01 * &c10);
-        let mut c2 = &c01 * &c11;
-        c0.change_representation(Representation::PowerBasis);
-        c1.change_representation(Representation::PowerBasis);
-        c2.change_representation(Representation::PowerBasis);
+        let c2 = &c01 * &c11;
 
         // Scale
         let c0 = c0.scale(&self.down_scaler)?;
@@ -196,16 +193,16 @@ impl Multiplicator {
 
         // Relinearize
         if let Some(rk) = self.rk.as_ref() {
-            let (mut c0r, mut c1r) = rk.relinearizes_poly(&c[2])?;
+            let c2_pb = c[2].clone().into_power_basis();
+            let (mut c0r, mut c1r) = rk.relinearizes_poly(&c2_pb)?;
 
             if c0r.ctx() != c[0].ctx() {
-                c0r.change_representation(Representation::PowerBasis);
-                c1r.change_representation(Representation::PowerBasis);
-                c0r.switch_down_to(c[0].ctx())?;
-                c1r.switch_down_to(c[1].ctx())?;
-            } else {
-                c[0].change_representation(Representation::Ntt);
-                c[1].change_representation(Representation::Ntt);
+                let mut c0r_pb = c0r.into_power_basis();
+                let mut c1r_pb = c1r.into_power_basis();
+                c0r_pb.switch_down_to(c[0].ctx())?;
+                c1r_pb.switch_down_to(c[1].ctx())?;
+                c0r = c0r_pb.into_ntt();
+                c1r = c1r_pb.into_ntt();
             }
 
             c[0] += &c0r;
@@ -224,9 +221,6 @@ impl Multiplicator {
 
         if self.mod_switch {
             c.switch_down()?;
-        } else {
-            c.iter_mut()
-                .for_each(|p| p.change_representation(Representation::Ntt));
         }
 
         Ok(c)

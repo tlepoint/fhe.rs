@@ -18,7 +18,7 @@ mod util;
 
 use clap::Parser;
 use fhe::bfv;
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
@@ -255,8 +255,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ctx = params.context_at_level(2)?;
         let ct = bfv::Ciphertext::new(
             vec![
-                Poly::try_convert_from(poly0, ctx, true, Representation::Ntt)?,
-                Poly::try_convert_from(poly1, ctx, true, Representation::Ntt)?,
+                Poly::<Ntt>::try_convert_from(poly0, ctx, true)?,
+                Poly::<Ntt>::try_convert_from(poly1, ctx, true)?,
             ],
             &params,
         )?;

@@ -2,7 +2,7 @@
 
 //! Polynomial scaler.
 
-use super::{Context, Poly, Representation};
+use super::{Context, Poly, Representation, ScaleRepresentation};
 use crate::{
     Error, Result,
     rns::{RnsScaler, ScalingFactor},
@@ -10,6 +10,7 @@ use crate::{
 use itertools::izip;
 use ndarray::{Array2, Axis, s};
 use std::borrow::Cow;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Context extender.
@@ -48,17 +49,12 @@ impl Scaler {
     }
 
     /// Scale a polynomial
-    pub(crate) fn scale(&self, p: &Poly) -> Result<Poly> {
+    pub(crate) fn scale<R: ScaleRepresentation>(&self, p: &Poly<R>) -> Result<Poly<R>> {
         if p.ctx.as_ref() != self.from.as_ref() {
             Err(Error::Default(
                 "The input polynomial does not have the correct context".to_string(),
             ))
         } else {
-            let mut representation = p.representation;
-            if representation == Representation::NttShoup {
-                representation = Representation::Ntt;
-            }
-
             let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));
 
             if self.number_common_moduli > 0 {
@@ -68,7 +64,7 @@ impl Scaler {
             }
 
             if self.number_common_moduli < self.to.q.len() {
-                let needs_transform = p.representation != Representation::PowerBasis;
+                let needs_transform = R::REPRESENTATION != Representation::PowerBasis;
                 let p_coefficients_powerbasis: Cow<'_, Array2<u64>> = if needs_transform {
                     let mut owned = p.coefficients.clone();
                     // Backward NTT
@@ -120,11 +116,11 @@ impl Scaler {
 
             Ok(Poly {
                 ctx: self.to.clone(),
-                representation,
                 allow_variable_time_computations: p.allow_variable_time_computations,
                 coefficients: new_coefficients,
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
+                _repr: PhantomData,
             })
         }
     }
@@ -133,7 +129,7 @@ impl Scaler {
 #[cfg(test)]
 mod tests {
     use super::{Scaler, ScalingFactor};
-    use crate::rq::{Context, Poly, Representation};
+    use crate::rq::{Context, Ntt, Poly, PowerBasis};
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
@@ -168,7 +164,7 @@ mod tests {
                 let scaler = Scaler::new(&from, &to, ScalingFactor::new(&n, &d))?;
 
                 for _ in 0..ntests {
-                    let mut poly = Poly::random(&from, Representation::PowerBasis, &mut rng);
+                    let poly = Poly::<PowerBasis>::random(&from, &mut rng);
                     let poly_biguint = Vec::<BigUint>::from(&poly);
 
                     let scaled_poly = scaler.scale(&poly)?;
@@ -195,10 +191,9 @@ mod tests {
                         .collect_vec();
                     assert_eq!(expected, scaled_biguint);
 
-                    poly.change_representation(Representation::Ntt);
-                    let mut scaled_poly = scaler.scale(&poly)?;
-                    scaled_poly.change_representation(Representation::PowerBasis);
-                    let scaled_biguint = Vec::<BigUint>::from(&scaled_poly);
+                    let poly_ntt: Poly<Ntt> = poly.clone().into_ntt();
+                    let scaled_poly = scaler.scale(&poly_ntt)?;
+                    let scaled_biguint = Vec::<BigUint>::from(&scaled_poly.to_power_basis());
                     assert_eq!(expected, scaled_biguint);
                 }
             }

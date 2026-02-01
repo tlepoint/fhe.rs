@@ -6,7 +6,7 @@ use crate::bfv::{
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
-    rq::{Poly, Representation, traits::TryConvertFrom},
+    rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom},
     zq::Modulus,
 };
 use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncrypter, FheParametrized, Serialize};
@@ -65,13 +65,10 @@ impl SecretKey {
         let m = Zeroizing::new(plaintext.to_poly());
 
         // Let's create a secret key with the ciphertext context
-        let mut s = Zeroizing::new(Poly::try_convert_from(
-            self.coeffs.as_ref(),
-            ct[0].ctx(),
-            false,
-            Representation::PowerBasis,
-        )?);
-        s.change_representation(Representation::Ntt);
+        let s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
+                .into_ntt(),
+        );
         let mut si = s.clone();
 
         // Let's disable variable time computations
@@ -86,11 +83,13 @@ impl SecretKey {
             *si.as_mut() *= s.as_ref();
         }
         *c.as_mut() -= &m;
-        c.change_representation(Representation::PowerBasis);
+        let ctx = c.ctx().clone();
+        let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
+        let c = c_inner.into_power_basis();
 
         let ciphertext_modulus = ct[0].ctx().modulus();
         let mut noise = 0usize;
-        for coeff in Vec::<BigUint>::from(c.as_ref()) {
+        for coeff in Vec::<BigUint>::from(&c) {
             noise = std::cmp::max(
                 noise,
                 std::cmp::min(coeff.bits(), (ciphertext_modulus - &coeff).bits()) as usize,
@@ -102,30 +101,24 @@ impl SecretKey {
 
     pub(crate) fn encrypt_poly<R: RngCore + CryptoRng>(
         &self,
-        p: &Poly,
+        p: &Poly<Ntt>,
         rng: &mut R,
     ) -> Result<Ciphertext> {
-        assert_eq!(p.representation(), &Representation::Ntt);
-
         let level = self.par.level_of_context(p.ctx())?;
 
         let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
         rand::rng().fill(&mut seed);
 
         // Let's create a secret key with the ciphertext context
-        let mut s = Zeroizing::new(Poly::try_convert_from(
-            self.coeffs.as_ref(),
-            p.ctx(),
-            false,
-            Representation::PowerBasis,
-        )?);
-        s.change_representation(Representation::Ntt);
+        let s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), p.ctx(), false)?.into_ntt(),
+        );
 
-        let mut a = Poly::random_from_seed(p.ctx(), Representation::Ntt, seed);
+        let mut a = Poly::<Ntt>::random_from_seed(p.ctx(), seed);
         let a_s = Zeroizing::new(&a * s.as_ref());
 
-        let mut b = Poly::small(p.ctx(), Representation::Ntt, self.par.variance, rng)
-            .map_err(Error::MathError)?;
+        let mut b =
+            Poly::<Ntt>::small(p.ctx(), self.par.variance, rng).map_err(Error::MathError)?;
         b -= &a_s;
         b += p;
 
@@ -211,13 +204,10 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             ))
         } else {
             // Let's create a secret key with the ciphertext context
-            let mut s = Zeroizing::new(Poly::try_convert_from(
-                self.coeffs.as_ref(),
-                ct[0].ctx(),
-                false,
-                Representation::PowerBasis,
-            )?);
-            s.change_representation(Representation::Ntt);
+            let s = Zeroizing::new(
+                Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
+                    .into_ntt(),
+            );
             let mut si = s.clone();
 
             let mut c = Zeroizing::new(ct[0].clone());
@@ -234,10 +224,11 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                     *si.as_mut() *= s.as_ref();
                 }
             }
-            c.change_representation(Representation::PowerBasis);
-
             let ctx_lvl = self.par.context_level_at(ct.level).unwrap();
-            let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
+            let ctx = c.ctx().clone();
+            let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
+            let c_pb = c_inner.into_power_basis();
+            let d = Zeroizing::new(c_pb.scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
             let value = match self.par.plaintext {
                 PlaintextModulus::Small { .. } => {
@@ -268,22 +259,15 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 }
             };
 
-            let mut poly = match &value {
-                PlaintextValues::Small(v) => Poly::try_convert_from(
-                    v.as_ref(),
-                    ct[0].ctx(),
-                    false,
-                    Representation::PowerBasis,
-                )?,
-                PlaintextValues::Large(v) => Poly::try_convert_from(
-                    v.as_ref(),
-                    ct[0].ctx(),
-                    false,
-                    Representation::PowerBasis,
-                )?,
-            };
-
-            poly.change_representation(Representation::Ntt);
+            let poly = match &value {
+                PlaintextValues::Small(v) => {
+                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
+                }
+                PlaintextValues::Large(v) => {
+                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
+                }
+            }
+            .into_ntt();
 
             let pt = Plaintext {
                 par: self.par.clone(),

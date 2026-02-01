@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::Error;
 use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
 use crate::errors::Result;
-use fhe_math::rq::{Poly, Representation, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
@@ -16,7 +16,7 @@ use super::{Aggregate, CommonRandomPoly};
 pub struct PublicKeyShare {
     pub(crate) par: Arc<BfvParameters>,
     pub(crate) crp: CommonRandomPoly,
-    pub(crate) p0_share: Poly,
+    pub(crate) p0_share: Poly<Ntt>,
 }
 
 impl PublicKeyShare {
@@ -39,20 +39,15 @@ impl PublicKeyShare {
         let ctx = par.context_at_level(0)?;
 
         // Convert secret key to usable polynomial
-        let mut s = Zeroizing::new(Poly::try_convert_from(
-            sk_share.coeffs.as_ref(),
-            ctx,
-            false,
-            Representation::PowerBasis,
-        )?);
-        s.change_representation(Representation::Ntt);
+        let s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+        );
 
         // Sample error
-        let e = Zeroizing::new(Poly::small(ctx, Representation::Ntt, par.variance, rng)?);
+        let e = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
         // Create p0_i share
         let mut p0_share = -crp.poly.clone();
         p0_share.disallow_variable_time_computations();
-        p0_share.change_representation(Representation::Ntt);
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
         unsafe { p0_share.allow_variable_time_computations() }

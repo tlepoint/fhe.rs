@@ -4,7 +4,7 @@ use crate::bfv::traits::TryConvertFrom;
 use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext};
 use crate::proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto};
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{Poly, Representation};
+use fhe_math::rq::{Ntt, Poly};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
 use prost::Message;
 use rand::{CryptoRng, RngCore};
@@ -61,24 +61,9 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         };
 
         let ctx = self.par.context_at_level(ct.level)?;
-        let u = Zeroizing::new(Poly::small(
-            ctx,
-            Representation::Ntt,
-            self.par.variance,
-            rng,
-        )?);
-        let e1 = Zeroizing::new(Poly::small(
-            ctx,
-            Representation::Ntt,
-            self.par.variance,
-            rng,
-        )?);
-        let e2 = Zeroizing::new(Poly::small(
-            ctx,
-            Representation::Ntt,
-            self.par.variance,
-            rng,
-        )?);
+        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
+        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
+        let e2 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
 
         let m = Zeroizing::new(pt.to_poly());
         let mut c0 = u.as_ref() * &ct[0];

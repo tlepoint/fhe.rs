@@ -5,7 +5,7 @@ use crate::bfv::{BfvParameters, Ciphertext, SecretKey, traits::TryConvertFrom};
 use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
 use crate::{Error, Result};
 use fhe_math::rq::{
-    Poly, Representation, SubstitutionExponent, switcher::Switcher,
+    Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher,
     traits::TryConvertFrom as TryConvertFromPoly,
 };
 use rand::{CryptoRng, RngCore};
@@ -37,15 +37,13 @@ impl GaloisKey {
             SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
 
         let switcher_up = Switcher::new(ctx_ciphertext, ctx_galois_key)?;
-        let s = Zeroizing::new(Poly::try_convert_from(
+        let s = Zeroizing::new(Poly::<PowerBasis>::try_convert_from(
             sk.coeffs.as_ref(),
             ctx_ciphertext,
             false,
-            Representation::PowerBasis,
         )?);
         let s_sub = Zeroizing::new(s.substitute(&ciphertext_exponent)?);
-        let mut s_sub_switched_up = Zeroizing::new(s_sub.switch(&switcher_up)?);
-        s_sub_switched_up.change_representation(Representation::PowerBasis);
+        let s_sub_switched_up = Zeroizing::new(s_sub.switch(&switcher_up)?);
 
         let ksk = KeySwitchingKey::new(
             sk,
@@ -66,17 +64,16 @@ impl GaloisKey {
         // assert_eq!(ct.par, self.ksk.par);
         assert_eq!(ct.len(), 2);
 
-        let mut c2 = ct[1].substitute(&self.element)?;
-        c2.change_representation(Representation::PowerBasis);
+        let c2 = ct[1].substitute(&self.element)?.into_power_basis();
         let (mut c0, mut c1) = self.ksk.key_switch(&c2)?;
 
         if c0.ctx() != ct[0].ctx() {
-            c0.change_representation(Representation::PowerBasis);
-            c1.change_representation(Representation::PowerBasis);
-            c0.switch_down_to(ct[0].ctx())?;
-            c1.switch_down_to(ct[1].ctx())?;
-            c0.change_representation(Representation::Ntt);
-            c1.change_representation(Representation::Ntt);
+            let mut c0_pb = c0.into_power_basis();
+            let mut c1_pb = c1.into_power_basis();
+            c0_pb.switch_down_to(ct[0].ctx())?;
+            c1_pb.switch_down_to(ct[1].ctx())?;
+            c0 = c0_pb.into_ntt();
+            c1 = c1_pb.into_ntt();
         }
 
         c0 += &ct[0].substitute(&self.element)?;
@@ -95,8 +92,8 @@ impl GaloisKey {
 
         if out.len() != 2 || out[0].ctx() != ct[0].ctx() || out[1].ctx() != ct[1].ctx() {
             out.c = vec![
-                Poly::zero(ct[0].ctx(), Representation::Ntt),
-                Poly::zero(ct[1].ctx(), Representation::Ntt),
+                Poly::<Ntt>::zero(ct[0].ctx()),
+                Poly::<Ntt>::zero(ct[1].ctx()),
             ];
         }
         out.par = ct.par.clone();
@@ -110,17 +107,16 @@ impl GaloisKey {
         out0.zeroize();
         out1.zeroize();
 
-        let mut c2 = ct[1].substitute(&self.element)?;
-        c2.change_representation(Representation::PowerBasis);
+        let c2 = ct[1].substitute(&self.element)?.into_power_basis();
         self.ksk.key_switch_assign(&c2, out0, out1)?;
 
         if out0.ctx() != ct[0].ctx() {
-            out0.change_representation(Representation::PowerBasis);
-            out1.change_representation(Representation::PowerBasis);
-            out0.switch_down_to(ct[0].ctx())?;
-            out1.switch_down_to(ct[1].ctx())?;
-            out0.change_representation(Representation::Ntt);
-            out1.change_representation(Representation::Ntt);
+            let mut out0_pb = out0.clone().into_power_basis();
+            let mut out1_pb = out1.clone().into_power_basis();
+            out0_pb.switch_down_to(ct[0].ctx())?;
+            out1_pb.switch_down_to(ct[1].ctx())?;
+            *out0 = out0_pb.into_ntt();
+            *out1 = out1_pb.into_ntt();
         }
 
         *out0 += &ct[0].substitute(&self.element)?;
