@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.1"
+version = "0.2.0"
 
 [lints]
 workspace = true
@@ -18,7 +18,7 @@ bench = false # Disable default bench (we use criterion)
 tfhe-ntt = ["fhe-math/tfhe-ntt"]
 
 [dependencies]
-fhe-math = { version = "=0.1.1", path = "../fhe-math" }
+fhe-math = { version = "=0.2.0", path = "../fhe-math" }
 fhe-traits = { version = "=0.1.1", path = "../fhe-traits" }
 fhe-util = { version = "=0.1.1", path = "../fhe-util" }
 
@@ -44,6 +44,9 @@ itertools.workspace = true
 log.workspace = true
 ndarray.workspace = true
 rand.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
 
 [[bench]]
 name = "bfv"

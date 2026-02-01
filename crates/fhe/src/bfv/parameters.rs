@@ -1,7 +1,7 @@
 //! Create parameters for the BFV encryption scheme
 
 use crate::bfv::{context::CipherPlainContext, context::ContextLevel};
-use crate::proto::bfv::Parameters;
+use crate::proto::bfv::{Parameters, parameters::PlaintextModulus as PlaintextModulusProto};
 use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
@@ -18,6 +18,56 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+/// Enum to support both small (u64) and large (BigUint) plaintext moduli.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) enum PlaintextModulus {
+    Small {
+        modulus: Modulus,
+        modulus_big: BigUint,
+    },
+    Large(BigUint),
+}
+
+impl PlaintextModulus {
+    pub fn as_biguint(&self) -> &BigUint {
+        match self {
+            Self::Small { modulus_big, .. } => modulus_big,
+            Self::Large(m) => m,
+        }
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            Self::Small { modulus, .. } => Some(**modulus),
+            Self::Large(_) => None,
+        }
+    }
+
+    pub fn reduce_vec(&self, v: &mut [BigUint]) {
+        match self {
+            Self::Small { modulus_big, .. } => {
+                v.iter_mut().for_each(|vi| *vi %= modulus_big);
+            }
+            Self::Large(m) => v.iter_mut().for_each(|vi| *vi %= m),
+        }
+    }
+
+    // Helper to reduce BigUint vector to i64 (centered), returning as Vec<BigUint>
+    // or similar? The previous implementation used center_vec_vt returning
+    // Vec<i64>. If modulus is large, we can't fit in i64.
+
+    // We need a scalar multiplication for Plaintext::to_poly
+    pub fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
+        match self {
+            Self::Small { modulus_big, .. } => {
+                a.iter_mut()
+                    .for_each(|ai| *ai = (ai as &BigUint * b) % modulus_big);
+            }
+            Self::Large(m) => a.iter_mut().for_each(|ai| *ai = (ai as &BigUint * b) % m),
+        }
+    }
+}
+
 /// Parameters for the BFV encryption scheme.
 ///
 /// This struct consolidates all parameter-specific data and pre-computed values
@@ -27,9 +77,6 @@ use std::sync::Arc;
 pub struct BfvParameters {
     /// Number of coefficients in a polynomial.
     polynomial_degree: usize,
-
-    /// Modulus of the plaintext.
-    plaintext_modulus: u64,
 
     /// Vector of coprime moduli q_i for the ciphertext.
     pub(crate) moduli: Box<[u64]>,
@@ -46,8 +93,8 @@ pub struct BfvParameters {
     /// NTT operator for SIMD plaintext operations, if possible
     pub(crate) ntt_operator: Option<Arc<NttOperator>>,
 
-    /// Plaintext Modulus as a Modulus type
-    pub(crate) plaintext: Modulus,
+    /// Plaintext Modulus as a Modulus type or BigUint
+    pub(crate) plaintext: PlaintextModulus,
 
     pub(crate) matrix_reps_index_map: Box<[usize]>,
 }
@@ -56,14 +103,8 @@ impl Debug for BfvParameters {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BfvParameters")
             .field("polynomial_degree", &self.polynomial_degree)
-            .field("plaintext_modulus", &self.plaintext_modulus)
+            .field("plaintext_modulus", &self.plaintext.as_biguint())
             .field("moduli", &self.moduli)
-            // .field("moduli_sizes", &self.moduli_sizes)
-            // .field("variance", &self.variance)
-            // .field("ctx", &self.ctx)
-            // .field("op", &self.op)
-            // .field("plaintext", &self.plaintext)
-            // .field("matrix_reps_index_map", &self.matrix_reps_index_map)
             .finish()
     }
 }
@@ -91,10 +132,17 @@ impl BfvParameters {
         &self.moduli_sizes
     }
 
-    /// Returns the plaintext modulus
+    /// Returns the plaintext modulus if it fits in u64.
+    /// Panics if the modulus is too large.
     #[must_use]
-    pub const fn plaintext(&self) -> u64 {
-        self.plaintext_modulus
+    pub fn plaintext(&self) -> u64 {
+        self.plaintext.as_u64().unwrap()
+    }
+
+    /// Returns the plaintext modulus as BigUint
+    #[must_use]
+    pub fn plaintext_big(&self) -> &BigUint {
+        self.plaintext.as_biguint()
     }
 
     /// Returns the maximum level allowed by these parameters.
@@ -266,7 +314,7 @@ impl BfvParameters {
 #[derive(Debug)]
 pub struct BfvParametersBuilder {
     degree: usize,
-    plaintext: u64,
+    plaintext: BigUint,
     variance: usize,
     ciphertext_moduli: Vec<u64>,
     ciphertext_moduli_sizes: Vec<usize>,
@@ -296,9 +344,14 @@ impl BfvParametersBuilder {
         self
     }
 
-    /// Sets the plaintext modulus. Returns an error if the plaintext is not
-    /// between 2 and 2^62 - 1.
+    /// Sets the plaintext modulus.
     pub fn set_plaintext_modulus(&mut self, plaintext: u64) -> &mut Self {
+        self.plaintext = BigUint::from(plaintext);
+        self
+    }
+
+    /// Sets the plaintext modulus as BigUint.
+    pub fn set_plaintext_modulus_biguint(&mut self, plaintext: BigUint) -> &mut Self {
         self.plaintext = plaintext;
         self
     }
@@ -383,14 +436,20 @@ impl BfvParametersBuilder {
             ));
         }
 
-        // This checks that the plaintext modulus is valid.
-        // TODO: Check bound on the plaintext modulus.
-        let plaintext_modulus = Modulus::new(self.plaintext).map_err(|e| {
-            Error::ParametersError(ParametersError::InvalidPlaintextModulus {
-                modulus: self.plaintext,
-                reason: e.to_string(),
-            })
-        })?;
+        let plaintext_modulus_struct = if let Some(p) = self.plaintext.to_u64() {
+            PlaintextModulus::Small {
+                modulus: Modulus::new(p).map_err(|e| {
+                    Error::ParametersError(ParametersError::InvalidPlaintextModulus {
+                        modulus: p,
+                        reason: e.to_string(),
+                    })
+                })?,
+                modulus_big: BigUint::from(p),
+            }
+        } else {
+            PlaintextModulus::Large(self.plaintext.clone())
+        };
+        let plaintext_big = plaintext_modulus_struct.as_biguint();
 
         // Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is
         // specified.
@@ -416,11 +475,32 @@ impl BfvParametersBuilder {
             .map(|m| 64 - m.leading_zeros() as usize)
             .collect_vec();
 
-        // Create plaintext context using the first ciphertext modulus
-        let plaintext_context = Context::new_arc(&moduli[..1], self.degree)?;
+        // Determine how many moduli needed for plaintext context
+        // We need product of moduli > plaintext modulus.
+        let t_bits = plaintext_big.bits();
+        let mut accumulated_bits = 0;
+        let mut plaintext_moduli_count = 0;
+        for size in &moduli_sizes {
+            accumulated_bits += size;
+            plaintext_moduli_count += 1;
+            if accumulated_bits as u64 >= t_bits + 60 {
+                break;
+            }
+        }
+        plaintext_moduli_count = std::cmp::max(plaintext_moduli_count, 1);
+        plaintext_moduli_count = std::cmp::min(plaintext_moduli_count, moduli.len());
+
+        // Create plaintext context using sufficient moduli
+        let plaintext_context = Context::new_arc(&moduli[..plaintext_moduli_count], self.degree)?;
 
         // Create NTT operator for SIMD operations if possible
-        let ntt_operator = NttOperator::new(&plaintext_modulus, self.degree).map(Arc::new);
+        // Only if plaintext modulus fits in u64 for now
+        let ntt_operator = match &plaintext_modulus_struct {
+            PlaintextModulus::Small { modulus, .. } => {
+                NttOperator::new(modulus, self.degree).map(Arc::new)
+            }
+            PlaintextModulus::Large(_) => None,
+        };
 
         // Create cipher-plain bridge contexts
         let mut cipher_plain_contexts = Vec::with_capacity(moduli.len());
@@ -433,7 +513,15 @@ impl BfvParametersBuilder {
             let mut delta_rests = vec![];
             for m in level_moduli {
                 let q = Modulus::new(*m)?;
-                delta_rests.push(q.inv(q.neg(*plaintext_modulus)).unwrap())
+                let t_mod_q = (plaintext_big % *m).to_u64().unwrap();
+                let neg_t_mod_q = q.neg(t_mod_q);
+                if let Some(inv) = q.inv(neg_t_mod_q) {
+                    delta_rests.push(inv);
+                } else {
+                    Err(Error::MathError(fhe_math::Error::Default(
+                        "Inverse failed".to_string(),
+                    )))?;
+                }
             }
 
             // Use RnsContext to lift the delta values and create the scaling polynomial
@@ -447,16 +535,19 @@ impl BfvParametersBuilder {
             delta.change_representation(Representation::NttShoup);
 
             // Compute q_mod_t
-            let q_mod_t = (rns.modulus() % *plaintext_modulus).to_u64().unwrap();
+            let q_mod_t = rns.modulus() % plaintext_big;
 
             // Compute plain_threshold
-            let plain_threshold = self.plaintext.div_ceil(2);
+            let plain_threshold = match &plaintext_modulus_struct {
+                PlaintextModulus::Small { modulus, .. } => BigUint::from((**modulus + 1) >> 1),
+                PlaintextModulus::Large(m) => (m + 1u32) >> 1,
+            };
 
             // Scaler from ciphertext to plaintext context
             let scaler = Scaler::new(
                 &cipher_ctx,
                 &plaintext_context,
-                ScalingFactor::new(&BigUint::from(*plaintext_modulus), rns.modulus()),
+                ScalingFactor::new(plaintext_big, rns.modulus()),
             )?;
 
             let cipher_plain_ctx = CipherPlainContext::new_arc(
@@ -516,10 +607,7 @@ impl BfvParametersBuilder {
                 &node.poly_context,
                 &mul_1_ctx,
                 ScalingFactor::one(),
-                ScalingFactor::new(
-                    &BigUint::from(*plaintext_modulus),
-                    node.poly_context.modulus(),
-                ),
+                ScalingFactor::new(plaintext_big, node.poly_context.modulus()),
             )?;
             node.mul_params.set(mp).unwrap();
         }
@@ -543,13 +631,12 @@ impl BfvParametersBuilder {
 
         Ok(BfvParameters {
             polynomial_degree: self.degree,
-            plaintext_modulus: self.plaintext,
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
             context_chain,
             ntt_operator,
-            plaintext: plaintext_modulus,
+            plaintext: plaintext_modulus_struct,
             matrix_reps_index_map: matrix_reps_index_map.into(),
         })
     }
@@ -557,11 +644,19 @@ impl BfvParametersBuilder {
 
 impl Serialize for BfvParameters {
     fn to_bytes(&self) -> Vec<u8> {
+        let plaintext_modulus = if let Some(plaintext_u64) = self.plaintext.as_u64() {
+            Some(PlaintextModulusProto::Plaintext(plaintext_u64))
+        } else {
+            Some(PlaintextModulusProto::PlaintextBig(
+                self.plaintext.as_biguint().to_bytes_le(),
+            ))
+        };
+
         Parameters {
             degree: self.polynomial_degree as u32,
-            plaintext: self.plaintext_modulus,
             moduli: self.moduli.to_vec(),
             variance: self.variance as u32,
+            plaintext_modulus,
         }
         .encode_to_vec()
     }
@@ -574,9 +669,22 @@ impl Deserialize for BfvParameters {
                 message: "Parameters decode".into(),
             })
         })?;
+
+        let plaintext_modulus = match params.plaintext_modulus {
+            Some(PlaintextModulusProto::Plaintext(value)) => BigUint::from(value),
+            Some(PlaintextModulusProto::PlaintextBig(bytes)) => BigUint::from_bytes_le(&bytes),
+            None => {
+                return Err(Error::SerializationError(
+                    SerializationError::MissingField {
+                        field_name: "Parameters.plaintext_modulus".into(),
+                    },
+                ));
+            }
+        };
+
         BfvParametersBuilder::new()
             .set_degree(params.degree as usize)
-            .set_plaintext_modulus(params.plaintext)
+            .set_plaintext_modulus_biguint(plaintext_modulus)
             .set_moduli(&params.moduli)
             .set_variance(params.variance as usize)
             .build()
@@ -612,7 +720,10 @@ impl MultiplicationParameters {
 #[cfg(test)]
 mod tests {
     use super::{BfvParameters, BfvParametersBuilder};
+    use crate::proto::bfv::{Parameters, parameters::PlaintextModulus as PlaintextModulusProto};
     use fhe_traits::{Deserialize, Serialize};
+    use num_bigint::BigUint;
+    use prost::Message;
     use std::error::Error;
 
     #[test]
@@ -663,6 +774,20 @@ mod tests {
     }
 
     #[test]
+    fn big_plaintext_modulus() -> Result<(), Box<dyn Error>> {
+        // Use a 128-bit prime
+        let p = BigUint::parse_bytes(b"340282366920938463463374607431768211507", 10).unwrap();
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus_biguint(p.clone())
+            .set_moduli_sizes(&[62, 62, 62, 62, 62]) // Large enough for product > p
+            .build()?;
+
+        assert_eq!(params.plaintext_big(), &p);
+        Ok(())
+    }
+
+    #[test]
     fn serialize() -> Result<(), Box<dyn Error>> {
         let params = BfvParametersBuilder::new()
             .set_degree(16)
@@ -671,8 +796,49 @@ mod tests {
             .set_variance(4)
             .build()?;
         let bytes = params.to_bytes();
+        let proto = Parameters::decode(bytes.as_slice())?;
+        assert!(matches!(
+            proto.plaintext_modulus,
+            Some(PlaintextModulusProto::Plaintext(2))
+        ));
         assert_eq!(BfvParameters::try_deserialize(&bytes)?, params);
+
+        // Test with big plaintext
+        let p = BigUint::parse_bytes(b"340282366920938463463374607431768211507", 10).unwrap();
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus_biguint(p)
+            .set_moduli_sizes(&[62, 62, 62, 62, 62])
+            .set_variance(4)
+            .build()?;
+        let bytes = params.to_bytes();
+        let proto = Parameters::decode(bytes.as_slice())?;
+        let proto_plaintext_bytes = match &proto.plaintext_modulus {
+            Some(PlaintextModulusProto::PlaintextBig(bytes)) => bytes.as_slice(),
+            _ => return Err("expected plaintext_big variant".into()),
+        };
+        assert_eq!(
+            proto_plaintext_bytes,
+            params.plaintext_big().to_bytes_le().as_slice()
+        );
+        let decoded = BfvParameters::try_deserialize(&bytes)?;
+        assert_eq!(decoded, params);
+        assert_eq!(decoded.plaintext_big(), params.plaintext_big());
+
         Ok(())
+    }
+
+    #[test]
+    fn deserialize_missing_plaintext_modulus() {
+        let proto = Parameters {
+            degree: 16,
+            moduli: vec![4611686018427387617, 4611686018427387329],
+            variance: 4,
+            plaintext_modulus: None,
+        };
+        let bytes = proto.encode_to_vec();
+        let err = BfvParameters::try_deserialize(&bytes).unwrap_err();
+        assert!(format!("{err}").contains("Missing required field"));
     }
 
     #[test]

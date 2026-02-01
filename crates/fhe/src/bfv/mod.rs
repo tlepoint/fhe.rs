@@ -1,4 +1,4 @@
-#![warn(missing_docs, unused_imports)]
+#![warn(missing_docs)]
 // Expect indexing in BFV cryptographic operations for performance
 #![expect(
     clippy::indexing_slicing,
@@ -24,7 +24,9 @@ pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::{Multiplicator, dot_product_scalar};
+pub(crate) use parameters::PlaintextModulus;
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;
+pub(crate) use plaintext::PlaintextValues;
 pub use plaintext_vec::PlaintextVec;
 pub use rgsw_ciphertext::RGSWCiphertext;

@@ -267,7 +267,9 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
             let ct = sk.try_encrypt(&pt, &mut rng)?;
             let ct_proto = CiphertextProto::from(&ct);
@@ -288,7 +290,9 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
             let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
             let ct_bytes = ct.to_bytes();
@@ -305,7 +309,9 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
             let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
             let mut ct3 = &ct * &ct;
@@ -343,7 +349,9 @@ mod tests {
             BfvParameters::default_arc(6, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
             let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 
@@ -364,7 +372,9 @@ mod tests {
         let mut rng = rng();
         let params = BfvParameters::default_arc(2, 16);
         let sk = SecretKey::random(&params, &mut rng);
-        let v = params.plaintext.random_vec(params.degree(), &mut rng);
+        let v = fhe_math::zq::Modulus::new(params.plaintext())
+            .unwrap()
+            .random_vec(params.degree(), &mut rng);
         let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
         let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
 

@@ -180,14 +180,18 @@ mod tests {
             for size in 1..128 {
                 let ct = (0..size)
                     .map(|_| {
-                        let v = params.plaintext.random_vec(params.degree(), &mut rng);
+                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
+                            .random_vec(params.degree(), &mut rng);
                         let pt = Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap();
                         sk.try_encrypt(&pt, &mut rng).unwrap()
                     })
                     .collect_vec();
                 let pt = (0..size)
                     .map(|_| {
-                        let v = params.plaintext.random_vec(params.degree(), &mut rng);
+                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
+                            .random_vec(params.degree(), &mut rng);
                         Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap()
                     })
                     .collect_vec();

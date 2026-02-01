@@ -188,7 +188,9 @@ mod tests {
                     let pk = PublicKey::new(&sk, &mut rng);
 
                     let pt = Plaintext::try_encode(
-                        &params.plaintext.random_vec(params.degree(), &mut rng),
+                        &fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
+                            .random_vec(params.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &params,
                     )?;

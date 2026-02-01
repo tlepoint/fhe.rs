@@ -551,9 +551,11 @@ mod tests {
                         .enable_inner_sum()?
                         .build(&mut rng)?;
 
-                        let v = params.plaintext.random_vec(params.degree(), &mut rng);
-                        let expected = params
-                            .plaintext
+                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
+                            .random_vec(params.degree(), &mut rng);
+                        let expected = fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
                             .reduce_u128(v.iter().map(|vi| *vi as u128).sum());
 
                         let pt = Plaintext::try_encode(
@@ -595,7 +597,9 @@ mod tests {
                         .enable_row_rotation()?
                         .build(&mut rng)?;
 
-                        let v = params.plaintext.random_vec(params.degree(), &mut rng);
+                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                            .unwrap()
+                            .random_vec(params.degree(), &mut rng);
                         let row_size = params.degree() >> 1;
                         let mut expected = vec![0u64; params.degree()];
                         expected[..row_size].copy_from_slice(&v[row_size..]);
@@ -642,7 +646,9 @@ mod tests {
                             .enable_column_rotation(i)?
                             .build(&mut rng)?;
 
-                            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+                            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                                .unwrap()
+                                .random_vec(params.degree(), &mut rng);
                             let row_size = params.degree() >> 1;
                             let mut expected = vec![0u64; params.degree()];
                             expected[..row_size - i].copy_from_slice(&v[i..row_size]);
@@ -699,7 +705,9 @@ mod tests {
 
                             assert!(ek.supports_expansion(i));
                             assert!(!ek.supports_expansion(i + 1));
-                            let v = params.plaintext.random_vec(1 << i, &mut rng);
+                            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                                .unwrap()
+                                .random_vec(1 << i, &mut rng);
                             let pt = Plaintext::try_encode(
                                 &v,
                                 Encoding::poly_at_level(ciphertext_level),
@@ -711,7 +719,9 @@ mod tests {
                             assert_eq!(ct2.len(), 1 << i);
                             for (vi, ct2i) in izip!(&v, &ct2) {
                                 let mut expected = vec![0u64; params.degree()];
-                                expected[0] = params.plaintext.mul(*vi, (1 << i) as u64);
+                                expected[0] = fhe_math::zq::Modulus::new(params.plaintext())
+                                    .unwrap()
+                                    .mul(*vi, (1 << i) as u64);
                                 let pt = sk.try_decrypt(ct2i)?;
                                 assert_eq!(
                                     expected,

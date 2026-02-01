@@ -40,7 +40,10 @@ message EvaluationKey {
 message Parameters {
     uint32 degree = 1;
     repeated uint64 moduli = 2;
-    uint64 plaintext = 3;
+    oneof plaintext_modulus {
+        uint64 plaintext = 3;
+        bytes plaintext_big = 5;
+    }
     uint32 variance = 4;
 }
 

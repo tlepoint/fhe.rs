@@ -1,6 +1,8 @@
 //! Secret keys for the BFV encryption scheme
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
+use crate::bfv::{
+    BfvParameters, Ciphertext, Plaintext, parameters::PlaintextModulus, plaintext::PlaintextValues,
+};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
@@ -237,25 +239,55 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let ctx_lvl = self.par.context_level_at(ct.level).unwrap();
             let d = Zeroizing::new(c.scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
-            // TODO: Can we handle plaintext moduli that are BigUint?
-            let v = Zeroizing::new(
-                Vec::<u64>::try_from(d.as_ref())?
-                    .iter_mut()
-                    .map(|vi| *vi + *self.par.plaintext)
-                    .collect_vec(),
-            );
-            let mut w = v[..self.par.degree()].to_vec();
-            let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
-            q.reduce_vec(&mut w);
-            self.par.plaintext.reduce_vec(&mut w);
+            let value = match self.par.plaintext {
+                PlaintextModulus::Small { .. } => {
+                    let mut v = Vec::<u64>::try_from(d.as_ref())?;
+                    let plaintext_modulus = self.par.plaintext();
+                    v.iter_mut().for_each(|vi| *vi += plaintext_modulus);
+                    let mut w = v[..self.par.degree()].to_vec();
 
-            let mut poly =
-                Poly::try_convert_from(&w, ct[0].ctx(), false, Representation::PowerBasis)?;
+                    let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
+                    q.reduce_vec(&mut w);
+                    if let PlaintextModulus::Small { modulus: m, .. } = &self.par.plaintext {
+                        m.reduce_vec(&mut w);
+                    }
+                    PlaintextValues::Small(w.into_boxed_slice())
+                }
+                PlaintextModulus::Large(_) => {
+                    let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
+                        .into_iter()
+                        .map(|vi| vi + self.par.plaintext_big())
+                        .collect_vec();
+
+                    let mut w = v[..self.par.degree()].to_vec();
+                    let q_poly = d.as_ref().ctx().modulus();
+                    w.iter_mut().for_each(|wi| *wi %= q_poly);
+
+                    self.par.plaintext.reduce_vec(&mut w);
+                    PlaintextValues::Large(w.into_boxed_slice())
+                }
+            };
+
+            let mut poly = match &value {
+                PlaintextValues::Small(v) => Poly::try_convert_from(
+                    v.as_ref(),
+                    ct[0].ctx(),
+                    false,
+                    Representation::PowerBasis,
+                )?,
+                PlaintextValues::Large(v) => Poly::try_convert_from(
+                    v.as_ref(),
+                    ct[0].ctx(),
+                    false,
+                    Representation::PowerBasis,
+                )?,
+            };
+
             poly.change_representation(Representation::Ntt);
 
             let pt = Plaintext {
                 par: self.par.clone(),
-                value: w.into_boxed_slice(),
+                value,
                 encoding: None,
                 poly_ntt: poly,
                 level: ct.level,
@@ -299,9 +331,10 @@ mod tests {
             for level in 0..params.max_level() {
                 for _ in 0..20 {
                     let sk = SecretKey::random(&params, &mut rng);
+                    let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
 
                     let pt = Plaintext::try_encode(
-                        &params.plaintext.random_vec(params.degree(), &mut rng),
+                        &q.random_vec(params.degree(), &mut rng),
                         Encoding::poly_at_level(level),
                         &params,
                     )?;

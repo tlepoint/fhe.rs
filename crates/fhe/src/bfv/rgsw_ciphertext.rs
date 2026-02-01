@@ -187,8 +187,12 @@ mod tests {
             BfvParameters::default_arc(8, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v1 = params.plaintext.random_vec(params.degree(), &mut rng);
-            let v2 = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v1 = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
+            let v2 = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
 
             let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &params)?;
             let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &params)?;
@@ -219,7 +223,9 @@ mod tests {
             BfvParameters::default_arc(5, 16),
         ] {
             let sk = SecretKey::random(&params, &mut rng);
-            let v = params.plaintext.random_vec(params.degree(), &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext())
+                .unwrap()
+                .random_vec(params.degree(), &mut rng);
             let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
             let ct: RGSWCiphertext = sk.try_encrypt(&pt, &mut rng)?;
 
