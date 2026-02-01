@@ -12,7 +12,6 @@ use fhe_math::{
 use fhe_traits::{Deserialize, FheParameters, Serialize};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_integer::Integer;
 use num_traits::{PrimInt as _, ToPrimitive};
 use prost::Message;
 use std::collections::HashMap;
@@ -529,8 +528,8 @@ impl BfvParametersBuilder {
 
             // Compute plain_threshold
             let plain_threshold = match &plaintext_modulus_struct {
-                PlaintextModulus::Small(m) => BigUint::from((**m).div_ceil(2)),
-                PlaintextModulus::Large(m) => m.div_ceil(&BigUint::from(2u64)),
+                PlaintextModulus::Small(m) => BigUint::from((**m + 1) >> 1),
+                PlaintextModulus::Large(m) => (m + 1u32) >> 1,
             };
 
             // Scaler from ciphertext to plaintext context

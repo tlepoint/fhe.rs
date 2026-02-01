@@ -33,7 +33,6 @@ zeroize.workspace = true
 zeroize_derive.workspace = true
 ndarray.workspace = true
 thiserror.workspace = true
-num-integer = "0.1.46"
 
 [dev-dependencies]
 clap.workspace = true
