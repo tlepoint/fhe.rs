@@ -807,7 +807,7 @@ mod tests {
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
-    use rand::{RngCore, rng};
+    use rand::rng;
 
     // Utility functions for the proptests.
 
