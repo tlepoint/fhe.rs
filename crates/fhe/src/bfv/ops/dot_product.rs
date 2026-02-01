@@ -58,21 +58,28 @@ where
     I: Iterator<Item = &'a Ciphertext> + Clone,
     J: Iterator<Item = &'a Plaintext> + Clone,
 {
-    let count = min(ct.clone().count(), pt.clone().count());
+    let ct_vec: Vec<&'a Ciphertext> = ct.collect();
+    let pt_vec: Vec<&'a Plaintext> = pt.collect();
+
+    let count = min(ct_vec.len(), pt_vec.len());
     if count == 0 {
         return Err(Error::DefaultError(
             "At least one iterator is empty".to_string(),
         ));
     }
-    let ct_first = ct.clone().next().unwrap();
+    let ct_first = ct_vec[0];
     let ctx = ct_first[0].ctx();
 
-    if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
+    if izip!(
+        ct_vec.iter().cloned().take(count),
+        pt_vec.iter().cloned().take(count)
+    )
+    .any(|(cti, pti)| {
         cti.par != ct_first.par || pti.par != ct_first.par || cti.len() != ct_first.len()
     }) {
         return Err(Error::DefaultError("Mismatched parameters".to_string()));
     }
-    if ct.clone().any(|cti| cti.len() != ct_first.len()) {
+    if ct_vec.iter().cloned().any(|cti| cti.len() != ct_first.len()) {
         return Err(Error::DefaultError(
             "Mismatched number of parts in the ciphertexts".to_string(),
         ));
@@ -91,8 +98,16 @@ where
         let c = (0..ct_first.len())
             .map(|i| {
                 poly_dot_product(
-                    ct.clone().map(|cti| unsafe { cti.get_unchecked(i) }),
-                    pt.clone().map(|pti| &pti.poly_ntt),
+                    ct_vec
+                        .iter()
+                        .cloned()
+                        .take(count)
+                        .map(|cti| unsafe { cti.get_unchecked(i) }),
+                    pt_vec
+                        .iter()
+                        .cloned()
+                        .take(count)
+                        .map(|pti| &pti.poly_ntt),
                 )
                 .map_err(Error::MathError)
             })
@@ -106,7 +121,10 @@ where
         })
     } else {
         let mut acc = Array::zeros((ct_first.len(), ctx.moduli().len(), ct_first.par.degree()));
-        for (ciphertext, plaintext) in izip!(ct, pt) {
+        for (ciphertext, plaintext) in izip!(
+            ct_vec.iter().cloned().take(count),
+            pt_vec.iter().cloned().take(count)
+        ) {
             let pt_coefficients = plaintext.poly_ntt.coefficients();
             for (mut acci, ci) in izip!(acc.outer_iter_mut(), ciphertext.iter()) {
                 let ci_coefficients = ci.coefficients();
