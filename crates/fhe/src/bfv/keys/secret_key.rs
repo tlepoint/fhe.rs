@@ -85,11 +85,11 @@ impl SecretKey {
         *c.as_mut() -= &m;
         let ctx = c.ctx().clone();
         let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
-        let c = c_inner.into_power_basis();
+        let c = Zeroizing::new(c_inner.into_power_basis());
 
         let ciphertext_modulus = ct[0].ctx().modulus();
         let mut noise = 0usize;
-        for coeff in Vec::<BigUint>::from(&c) {
+        for coeff in Vec::<BigUint>::from(c.as_ref()) {
             noise = std::cmp::max(
                 noise,
                 std::cmp::min(coeff.bits(), (ciphertext_modulus - &coeff).bits()) as usize,
@@ -227,8 +227,8 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             let ctx_lvl = self.par.context_level_at(ct.level).unwrap();
             let ctx = c.ctx().clone();
             let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
-            let c_pb = c_inner.into_power_basis();
-            let d = Zeroizing::new(c_pb.scale(&ctx_lvl.cipher_plain_context.scaler)?);
+            let c_pb = Zeroizing::new(c_inner.into_power_basis());
+            let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
             let value = match self.par.plaintext {
                 PlaintextModulus::Small { .. } => {
@@ -330,6 +330,27 @@ mod tests {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn measure_noise_within_modulus_bits() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(1, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
+
+        let pt = Plaintext::try_encode(
+            &q.random_vec(params.degree(), &mut rng),
+            Encoding::poly_at_level(0),
+            &params,
+        )?;
+        let ct = sk.try_encrypt(&pt, &mut rng)?;
+        let noise = unsafe { sk.measure_noise(&ct)? };
+
+        let modulus_bits = ct[0].ctx().modulus().bits() as usize;
+        assert!(noise <= modulus_bits);
 
         Ok(())
     }
