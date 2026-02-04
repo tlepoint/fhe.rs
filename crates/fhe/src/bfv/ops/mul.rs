@@ -107,7 +107,7 @@ impl Multiplicator {
         let n_moduli = (modulus_size + 60).div_ceil(62);
 
         let mut extended_basis = Vec::with_capacity(ctx.moduli().len() + n_moduli);
-        extended_basis.append(&mut ctx.moduli().to_vec());
+        extended_basis.extend_from_slice(ctx.moduli());
         let mut upper_bound = 1 << 62;
         while extended_basis.len() != ctx.moduli().len() + n_moduli {
             upper_bound = generate_prime(62, 2 * rk.ksk.par.degree() as u64, upper_bound).unwrap();
