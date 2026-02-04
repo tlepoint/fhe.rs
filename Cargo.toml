@@ -19,7 +19,7 @@ unused_must_use = "deny"
 clap = { version = "^4.5.56", features = ["derive"] }
 tfhe-ntt = "^0.7.0"
 console = "^0.16.2"
-criterion = "^0.8.1"
+criterion = "^0.8.2"
 doc-comment = "^0.3.4"
 env_logger = "^0.11.8"
 ethnum = "^1.5.2"
