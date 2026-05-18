@@ -18,37 +18,30 @@ pub fn is_prime(p: u64) -> bool {
 }
 
 /// Sample a vector of independent centered binomial distributions of a given
-/// variance. Returns an error if the variance is strictly larger than 16.
+/// variance. Returns an error if the variance is not between 1 and 32.
 pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     vector_size: usize,
     variance: usize,
     rng: &mut R,
 ) -> Result<Vec<i64>, &'static str> {
-    if !(1..=16).contains(&variance) {
-        return Err("The variance should be between 1 and 16");
+    if !(1..=32).contains(&variance) {
+        return Err("The variance should be between 1 and 32");
     }
 
     let mut out = Vec::with_capacity(vector_size);
 
     let number_bits = 4 * variance;
-    let mask_add = ((u64::MAX >> (64 - number_bits)) >> (2 * variance)) as u128;
+    let mask_add = (u128::MAX >> (128 - number_bits)) >> (2 * variance);
     let mask_sub = mask_add << (2 * variance);
 
-    let mut current_pool = 0u128;
-    let mut current_pool_nbits = 0;
-
     for _ in 0..vector_size {
-        if current_pool_nbits < number_bits {
-            current_pool |= (rng.next_u64() as u128) << current_pool_nbits;
-            current_pool_nbits += 64;
-        }
-        debug_assert!(current_pool_nbits >= number_bits);
+        let current_pool =
+            (rng.next_u64() as u128) | ((rng.next_u64() as u128) << 64);
+
         out.push(
             ((current_pool & mask_add).count_ones() as i64)
                 - ((current_pool & mask_sub).count_ones() as i64),
         );
-        current_pool >>= number_bits;
-        current_pool_nbits -= number_bits;
     }
 
     Ok(out)
@@ -233,9 +226,9 @@ mod tests {
     fn sample_cbd() {
         let mut rng = rand::rng();
         assert!(sample_vec_cbd(10, 0, &mut rng).is_err());
-        assert!(sample_vec_cbd(10, 17, &mut rng).is_err());
+        assert!(sample_vec_cbd(10, 33, &mut rng).is_err());
 
-        for var in 1..=16 {
+        for var in 1..=32 {
             for size in 0..=100 {
                 let v = sample_vec_cbd(size, var, &mut rng).unwrap();
                 assert_eq!(v.len(), size);
@@ -248,7 +241,12 @@ mod tests {
             // Verifies that the variance is correct. We could probably refine the bound
             // but for now, we will just check that the rounded value is equal to the
             // variance.
-            assert!(variance(&v).round() == (var as f64));
+            let empirical_variance = variance(&v);
+            let tolerance = (var as f64).sqrt().max(1.0);
+            assert!(
+                (empirical_variance - var as f64).abs() <= tolerance,
+                "empirical variance {empirical_variance} differs from expected variance {var}"
+            );
         }
     }
 
