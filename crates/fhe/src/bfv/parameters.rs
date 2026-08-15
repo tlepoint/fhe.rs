@@ -372,8 +372,7 @@ impl BfvParametersBuilder {
         self
     }
 
-    /// Sets the error variance. Returns an error if the variance is not between
-    /// one and sixteen.
+    /// Sets the error variance. Valid variances are between one and thirty-two.
     pub fn set_variance(&mut self, variance: usize) -> &mut Self {
         self.variance = variance;
         self

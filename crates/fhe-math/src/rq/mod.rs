@@ -259,15 +259,15 @@ impl<R: RepresentationTag> Poly<R> {
     /// Generate a small polynomial and convert into the specified
     /// representation.
     ///
-    /// Returns an error if the variance does not belong to [1, ..., 16].
+    /// Returns an error if the variance does not belong to [1, ..., 32].
     pub fn small<T: RngCore + CryptoRng>(
         ctx: &Arc<Context>,
         variance: usize,
         rng: &mut T,
     ) -> Result<Self> {
-        if !(1..=16).contains(&variance) {
+        if !(1..=32).contains(&variance) {
             return Err(Error::Default(
-                "The variance should be an integer between 1 and 16".to_string(),
+                "The variance should be an integer between 1 and 32".to_string(),
             ));
         }
 
@@ -857,16 +857,16 @@ mod tests {
             assert!(e.is_err());
             assert_eq!(
                 e.unwrap_err().to_string(),
-                "The variance should be an integer between 1 and 16"
+                "The variance should be an integer between 1 and 32"
             );
-            let e = Poly::<PowerBasis>::small(&ctx, 17, &mut rng);
+            let e = Poly::<PowerBasis>::small(&ctx, 33, &mut rng);
             assert!(e.is_err());
             assert_eq!(
                 e.unwrap_err().to_string(),
-                "The variance should be an integer between 1 and 16"
+                "The variance should be an integer between 1 and 32"
             );
 
-            for i in 1..=16 {
+            for i in 1..=32 {
                 let p = Poly::<PowerBasis>::small(&ctx, i, &mut rng)?;
                 let coefficients = p.coefficients().to_slice().unwrap();
                 let v = q.center_vec(coefficients);

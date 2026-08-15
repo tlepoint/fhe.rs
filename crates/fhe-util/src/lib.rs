@@ -18,37 +18,48 @@ pub fn is_prime(p: u64) -> bool {
 }
 
 /// Sample a vector of independent centered binomial distributions of a given
-/// variance. Returns an error if the variance is strictly larger than 16.
+/// variance. Returns an error if the variance is not between 1 and 32.
 pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     vector_size: usize,
     variance: usize,
     rng: &mut R,
 ) -> Result<Vec<i64>, &'static str> {
-    if !(1..=16).contains(&variance) {
-        return Err("The variance should be between 1 and 16");
+    if !(1..=32).contains(&variance) {
+        return Err("The variance should be between 1 and 32");
     }
 
     let mut out = Vec::with_capacity(vector_size);
 
     let number_bits = 4 * variance;
-    let mask_add = ((u64::MAX >> (64 - number_bits)) >> (2 * variance)) as u128;
+    let mask_add = (u128::MAX >> (128 - number_bits)) >> (2 * variance);
     let mask_sub = mask_add << (2 * variance);
+    let sample = |pool: u128| {
+        ((pool & mask_add).count_ones() as i64) - ((pool & mask_sub).count_ones() as i64)
+    };
 
-    let mut current_pool = 0u128;
-    let mut current_pool_nbits = 0;
+    // For variances 1 through 16, one sample needs at most 64 bits. Reuse any
+    // remaining bits from each random word when generating the next sample.
+    if number_bits <= 64 {
+        let mut current_pool = 0u128;
+        let mut current_pool_nbits = 0;
 
-    for _ in 0..vector_size {
-        if current_pool_nbits < number_bits {
-            current_pool |= (rng.next_u64() as u128) << current_pool_nbits;
-            current_pool_nbits += 64;
+        for _ in 0..vector_size {
+            if current_pool_nbits < number_bits {
+                current_pool |= (rng.next_u64() as u128) << current_pool_nbits;
+                current_pool_nbits += 64;
+            }
+            debug_assert!(current_pool_nbits >= number_bits);
+            out.push(sample(current_pool));
+            current_pool >>= number_bits;
+            current_pool_nbits -= number_bits;
         }
-        debug_assert!(current_pool_nbits >= number_bits);
-        out.push(
-            ((current_pool & mask_add).count_ones() as i64)
-                - ((current_pool & mask_sub).count_ones() as i64),
-        );
-        current_pool >>= number_bits;
-        current_pool_nbits -= number_bits;
+    } else {
+        // For variances 17 through 32, one sample needs 68 to 128 bits, so
+        // combine two random words for every sample.
+        for _ in 0..vector_size {
+            let current_pool = (rng.next_u64() as u128) | ((rng.next_u64() as u128) << 64);
+            out.push(sample(current_pool));
+        }
     }
 
     Ok(out)
@@ -203,7 +214,8 @@ mod tests {
     )]
 
     use itertools::Itertools;
-    use rand::Rng as RngCore;
+    use rand::{CryptoRng, Rng as RngCore, TryCryptoRng, TryRng};
+    use std::convert::Infallible;
 
     use crate::variance;
 
@@ -211,6 +223,31 @@ mod tests {
         inverse, is_prime, sample_vec_cbd, transcode_bidirectional, transcode_from_bytes,
         transcode_to_bytes,
     };
+
+    struct CountingRng<R> {
+        inner: R,
+        next_u64_calls: usize,
+    }
+
+    impl<R: RngCore> TryRng for CountingRng<R> {
+        type Error = Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Ok(self.inner.next_u32())
+        }
+
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            self.next_u64_calls += 1;
+            Ok(self.inner.next_u64())
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            self.inner.fill_bytes(dst);
+            Ok(())
+        }
+    }
+
+    impl<R: RngCore + CryptoRng> TryCryptoRng for CountingRng<R> {}
 
     #[test]
     fn prime() {
@@ -233,9 +270,9 @@ mod tests {
     fn sample_cbd() {
         let mut rng = rand::rng();
         assert!(sample_vec_cbd(10, 0, &mut rng).is_err());
-        assert!(sample_vec_cbd(10, 17, &mut rng).is_err());
+        assert!(sample_vec_cbd(10, 33, &mut rng).is_err());
 
-        for var in 1..=16 {
+        for var in 1..=32 {
             for size in 0..=100 {
                 let v = sample_vec_cbd(size, var, &mut rng).unwrap();
                 assert_eq!(v.len(), size);
@@ -245,10 +282,40 @@ mod tests {
             let v = sample_vec_cbd(100000, var, &mut rng).unwrap();
             assert!(v.iter().map(|vi| vi.abs()).max().unwrap() <= 2 * var as i64);
 
-            // Verifies that the variance is correct. We could probably refine the bound
-            // but for now, we will just check that the rounded value is equal to the
-            // variance.
-            assert!(variance(&v).round() == (var as f64));
+            // The standard error is proportional to the variance and is well below 5%
+            // for 100,000 samples.
+            let empirical_variance = variance(&v);
+            let tolerance = var as f64 * 0.05;
+            assert!(
+                (empirical_variance - var as f64).abs() <= tolerance,
+                "empirical variance {empirical_variance} differs from expected variance {var}"
+            );
+        }
+    }
+
+    #[test]
+    fn sample_cbd_rng_consumption() {
+        const VECTOR_SIZE: usize = 128;
+
+        for variance in 1..=16 {
+            let mut rng = CountingRng {
+                inner: rand::rng(),
+                next_u64_calls: 0,
+            };
+            sample_vec_cbd(VECTOR_SIZE, variance, &mut rng).unwrap();
+            assert_eq!(
+                rng.next_u64_calls,
+                (VECTOR_SIZE * 4 * variance).div_ceil(64)
+            );
+        }
+
+        for variance in 17..=32 {
+            let mut rng = CountingRng {
+                inner: rand::rng(),
+                next_u64_calls: 0,
+            };
+            sample_vec_cbd(VECTOR_SIZE, variance, &mut rng).unwrap();
+            assert_eq!(rng.next_u64_calls, 2 * VECTOR_SIZE);
         }
     }
 
