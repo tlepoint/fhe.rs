@@ -10,6 +10,7 @@ use fhe_math::{
     zq::{Modulus, primes::generate_prime},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
+use fhe_util::is_prime;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{PrimInt as _, ToPrimitive};
@@ -311,6 +312,11 @@ impl BfvParameters {
 }
 
 /// Builder for parameters for the Bfv encryption scheme.
+///
+/// [`Self::build`] validates the structural and arithmetic invariants required
+/// by the implementation. It does not estimate the security of arbitrary
+/// parameter sets. Use [`BfvParameters::default_parameters_128`] when a
+/// preselected 128-bit parameter set is appropriate.
 #[derive(Debug)]
 pub struct BfvParametersBuilder {
     degree: usize,
@@ -321,6 +327,11 @@ pub struct BfvParametersBuilder {
 }
 
 impl BfvParametersBuilder {
+    const MIN_DEGREE: usize = 8;
+    const MAX_DEGREE: usize = 65536;
+    const MIN_VARIANCE: usize = 1;
+    const MAX_VARIANCE: usize = 32;
+
     /// Creates a new instance of the builder
     #[expect(
         clippy::new_without_default,
@@ -337,8 +348,8 @@ impl BfvParametersBuilder {
         }
     }
 
-    /// Sets the polynomial degree. Returns an error if the degree is not
-    /// a power of two larger or equal to 8.
+    /// Sets the polynomial degree. [`Self::build`] returns an error unless the
+    /// degree is a power of two between 8 and 65536, inclusive.
     pub fn set_degree(&mut self, degree: usize) -> &mut Self {
         self.degree = degree;
         self
@@ -421,6 +432,130 @@ impl BfvParametersBuilder {
         Ok(moduli)
     }
 
+    fn gcd(mut a: u64, mut b: u64) -> u64 {
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        a
+    }
+
+    fn validate_configuration(&self) -> Result<()> {
+        if !(Self::MIN_DEGREE..=Self::MAX_DEGREE).contains(&self.degree)
+            || !self.degree.is_power_of_two()
+        {
+            return Err(Error::ParametersError(
+                ParametersError::invalid_degree_with_bounds(self.degree),
+            ));
+        }
+
+        if !(Self::MIN_VARIANCE..=Self::MAX_VARIANCE).contains(&self.variance) {
+            return Err(Error::ParametersError(ParametersError::InvalidVariance {
+                variance: self.variance,
+                min: Self::MIN_VARIANCE,
+                max: Self::MAX_VARIANCE,
+            }));
+        }
+
+        if !self.ciphertext_moduli.is_empty() && !self.ciphertext_moduli_sizes.is_empty() {
+            return Err(Error::ParametersError(ParametersError::ConflictingParameters {
+                conflict:
+                    "Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified"
+                        .into(),
+            }));
+        }
+        if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
+            return Err(Error::ParametersError(ParametersError::MissingParameter {
+                parameter: "ciphertext_moduli or ciphertext_moduli_sizes".into(),
+            }));
+        }
+
+        Ok(())
+    }
+
+    fn validate_moduli(&self, moduli: &[u64], plaintext: &BigUint) -> Result<()> {
+        for (index, modulus) in moduli.iter().copied().enumerate() {
+            Modulus::new(modulus).map_err(|error| {
+                Error::ParametersError(ParametersError::InvalidCiphertextModulus {
+                    index,
+                    modulus,
+                    reason: error.to_string(),
+                })
+            })?;
+
+            let indices = moduli
+                .iter()
+                .enumerate()
+                .filter_map(|(i, candidate)| (*candidate == modulus).then_some(i))
+                .collect_vec();
+            if indices.len() > 1 {
+                return Err(Error::ParametersError(ParametersError::DuplicateModuli {
+                    modulus,
+                    indices,
+                }));
+            }
+        }
+
+        for (i, modulus1) in moduli.iter().copied().enumerate() {
+            for modulus2 in moduli.iter().copied().skip(i + 1) {
+                let gcd = Self::gcd(modulus1, modulus2);
+                if gcd != 1 {
+                    return Err(Error::ParametersError(ParametersError::ModuliNotCoprime {
+                        modulus1,
+                        modulus2,
+                        gcd,
+                    }));
+                }
+            }
+        }
+
+        for (index, modulus) in moduli.iter().copied().enumerate() {
+            if modulus % (2 * self.degree as u64) != 1 || !is_prime(modulus) {
+                return Err(Error::ParametersError(
+                    ParametersError::CiphertextModulusNotNttFriendly {
+                        index,
+                        modulus,
+                        degree: self.degree,
+                    },
+                ));
+            }
+        }
+
+        let ciphertext_modulus = moduli
+            .iter()
+            .map(|m| BigUint::from(*m))
+            .product::<BigUint>();
+        if plaintext >= &ciphertext_modulus {
+            return Err(Error::ParametersError(
+                ParametersError::PlaintextModulusExceedsCiphertextModulus {
+                    plaintext_modulus: plaintext.to_string(),
+                    ciphertext_modulus: ciphertext_modulus.to_string(),
+                },
+            ));
+        }
+
+        for (index, modulus) in moduli.iter().copied().enumerate() {
+            let plaintext_mod_modulus = (plaintext % modulus).to_u64().ok_or_else(|| {
+                Error::ParametersError(ParametersError::InvalidPlaintextModulus {
+                    modulus,
+                    reason: "failed to reduce plaintext modulus".into(),
+                })
+            })?;
+            let gcd = Self::gcd(plaintext_mod_modulus, modulus);
+            if gcd != 1 {
+                return Err(Error::ParametersError(
+                    ParametersError::PlaintextModulusNotCoprime {
+                        plaintext_modulus: plaintext.to_string(),
+                        ciphertext_modulus: modulus,
+                        index,
+                        gcd,
+                    },
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Build a new `BfvParameters` inside an `Arc`.
     pub fn build_arc(&self) -> Result<Arc<BfvParameters>> {
         self.build().map(Arc::new)
@@ -428,12 +563,7 @@ impl BfvParametersBuilder {
 
     /// Build a new `BfvParameters`.
     pub fn build(&self) -> Result<BfvParameters> {
-        // Check that the degree is a power of 2 (and large enough).
-        if self.degree < 8 || !self.degree.is_power_of_two() {
-            return Err(Error::ParametersError(
-                ParametersError::invalid_degree_with_bounds(self.degree),
-            ));
-        }
+        self.validate_configuration()?;
 
         let plaintext_modulus_struct = if let Some(p) = self.plaintext.to_u64() {
             PlaintextModulus::Small {
@@ -450,23 +580,12 @@ impl BfvParametersBuilder {
         };
         let plaintext_big = plaintext_modulus_struct.as_biguint();
 
-        // Check that one of `ciphertext_moduli` and `ciphertext_moduli_sizes` is
-        // specified.
-        if !self.ciphertext_moduli.is_empty() && !self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::ConflictingParameters {
-                conflict: "Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified".into(),
-            }));
-        } else if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::MissingParameter {
-                parameter: "ciphertext_moduli or ciphertext_moduli_sizes".into(),
-            }));
-        }
-
         // Get or generate the moduli
         let mut moduli = self.ciphertext_moduli.clone();
         if !self.ciphertext_moduli_sizes.is_empty() {
             moduli = Self::generate_moduli(&self.ciphertext_moduli_sizes, self.degree)?
         }
+        self.validate_moduli(&moduli, plaintext_big)?;
 
         // Recomputes the moduli sizes
         let moduli_sizes = moduli
@@ -585,7 +704,15 @@ impl BfvParametersBuilder {
         let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
         let mut upper_bound = 1 << 62;
         while extended_basis.len() != moduli.len() + 1 {
-            upper_bound = generate_prime(62, 2 * self.degree as u64, upper_bound).unwrap();
+            upper_bound =
+                generate_prime(62, 2 * self.degree as u64, upper_bound).ok_or_else(|| {
+                    Error::ParametersError(ParametersError::NotEnoughPrimes {
+                        size: 62,
+                        degree: self.degree,
+                        needed: moduli.len() + 1,
+                        available: extended_basis.len(),
+                    })
+                })?;
             if !extended_basis.contains(&upper_bound) && !moduli.contains(&upper_bound) {
                 extended_basis.push(upper_bound)
             }
@@ -719,6 +846,7 @@ impl MultiplicationParameters {
 mod tests {
     use super::{BfvParameters, BfvParametersBuilder};
     use crate::proto::bfv::{Parameters, parameters::PlaintextModulus as PlaintextModulusProto};
+    use crate::{Error as FheError, ParametersError};
     use fhe_traits::{Deserialize, Serialize};
     use num_bigint::BigUint;
     use prost::Message;
@@ -837,6 +965,171 @@ mod tests {
         let bytes = proto.encode_to_vec();
         let err = BfvParameters::try_deserialize(&bytes).unwrap_err();
         assert!(format!("{err}").contains("Missing required field"));
+    }
+
+    #[test]
+    fn rejects_invalid_degree() {
+        for degree in [0, 10, 131072] {
+            let err = BfvParametersBuilder::new()
+                .set_degree(degree)
+                .set_plaintext_modulus(2)
+                .set_moduli(&[97])
+                .build()
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                FheError::ParametersError(ParametersError::InvalidDegree {
+                    degree: actual,
+                    min: 8,
+                    max: 65536,
+                }) if actual == degree
+            ));
+        }
+    }
+
+    #[test]
+    fn validates_variance_bounds() -> Result<(), Box<dyn Error>> {
+        for variance in [0, 33] {
+            let err = BfvParametersBuilder::new()
+                .set_degree(16)
+                .set_plaintext_modulus(2)
+                .set_moduli(&[97])
+                .set_variance(variance)
+                .build()
+                .unwrap_err();
+            assert!(matches!(
+                err,
+                FheError::ParametersError(ParametersError::InvalidVariance {
+                    variance: actual,
+                    min: 1,
+                    max: 32,
+                }) if actual == variance
+            ));
+        }
+
+        for variance in [1, 32] {
+            BfvParametersBuilder::new()
+                .set_degree(16)
+                .set_plaintext_modulus(2)
+                .set_moduli(&[97])
+                .set_variance(variance)
+                .build()?;
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn deserialization_rejects_invalid_variance() {
+        let proto = Parameters {
+            degree: 16,
+            moduli: vec![97],
+            variance: 33,
+            plaintext_modulus: Some(PlaintextModulusProto::Plaintext(2)),
+        };
+        let err = BfvParameters::try_deserialize(&proto.encode_to_vec()).unwrap_err();
+        assert!(matches!(
+            err,
+            FheError::ParametersError(ParametersError::InvalidVariance {
+                variance: 33,
+                min: 1,
+                max: 32,
+            })
+        ));
+    }
+
+    #[test]
+    fn validates_explicit_ciphertext_moduli() {
+        let invalid = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(2)
+            .set_moduli(&[1])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            invalid,
+            FheError::ParametersError(ParametersError::InvalidCiphertextModulus {
+                index: 0,
+                modulus: 1,
+                ..
+            })
+        ));
+
+        let duplicate = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(2)
+            .set_moduli(&[97, 97])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            duplicate,
+            FheError::ParametersError(ParametersError::DuplicateModuli {
+                modulus: 97,
+                indices,
+            }) if indices == [0, 1]
+        ));
+
+        let not_coprime = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(2)
+            .set_moduli(&[9, 15])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            not_coprime,
+            FheError::ParametersError(ParametersError::ModuliNotCoprime {
+                modulus1: 9,
+                modulus2: 15,
+                gcd: 3,
+            })
+        ));
+
+        let not_ntt_friendly = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(2)
+            .set_moduli(&[17])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            not_ntt_friendly,
+            FheError::ParametersError(ParametersError::CiphertextModulusNotNttFriendly {
+                index: 0,
+                modulus: 17,
+                degree: 16,
+            })
+        ));
+    }
+
+    #[test]
+    fn validates_plaintext_against_ciphertext_moduli() {
+        let too_large = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(98)
+            .set_moduli(&[97])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            too_large,
+            FheError::ParametersError(
+                ParametersError::PlaintextModulusExceedsCiphertextModulus { .. }
+            )
+        ));
+
+        let not_coprime = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(194)
+            .set_moduli(&[97, 193])
+            .build()
+            .unwrap_err();
+        assert!(matches!(
+            not_coprime,
+            FheError::ParametersError(ParametersError::PlaintextModulusNotCoprime {
+                ciphertext_modulus: 97,
+                index: 0,
+                gcd: 97,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -301,6 +301,28 @@ pub enum ParametersError {
         index: usize,
     },
 
+    /// Indicates that the plaintext modulus is not smaller than the complete
+    /// ciphertext modulus.
+    #[error(
+        "Plaintext modulus {plaintext_modulus} must be smaller than ciphertext modulus {ciphertext_modulus}"
+    )]
+    PlaintextModulusExceedsCiphertextModulus {
+        plaintext_modulus: String,
+        ciphertext_modulus: String,
+    },
+
+    /// Indicates that the plaintext modulus is not coprime with a ciphertext
+    /// modulus.
+    #[error(
+        "Plaintext modulus {plaintext_modulus} and ciphertext modulus {ciphertext_modulus} at index {index} are not coprime (gcd = {gcd})"
+    )]
+    PlaintextModulusNotCoprime {
+        plaintext_modulus: String,
+        ciphertext_modulus: u64,
+        index: usize,
+        gcd: u64,
+    },
+
     /// Indicates insecure parameters according to standard
     #[error(
         "Parameters provide insufficient security: estimated security level {actual} bits, minimum required {minimum} bits"
