@@ -36,7 +36,9 @@ impl<R: RepresentationTag> From<&Poly<R>> for Rq {
             .collect();
         proto.coefficients = serialization;
         proto.degree = p.ctx.degree as u32;
-        proto.allow_variable_time = p.allow_variable_time_computations;
+        // Timing policy is local execution state, not serialized data. In
+        // particular, untrusted bytes must not authorize variable-time work.
+        proto.allow_variable_time = false;
         proto
     }
 }
@@ -58,8 +60,6 @@ fn parse_proto(
             return Err(Error::Default("Unknown representation".to_string()));
         }
     };
-
-    let variable_time = variable_time || value.allow_variable_time;
 
     let degree = value.degree as usize;
     if !degree.is_multiple_of(8) || degree < 8 {
@@ -157,7 +157,9 @@ impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
                             qi.reduce_vec_vt(wi);
                         },
                     );
-                    out.allow_variable_time_computations();
+                    out.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                        fhe_traits::PublicData::assert_public(),
+                    ));
                 }
             } else {
                 izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut w, qi)| {
@@ -298,7 +300,9 @@ impl<'a> TryConvertFrom<&'a [i64]> for Poly<PowerBasis> {
         if v.len() <= ctx.degree {
             let mut out = Self::zero(ctx);
             if variable_time {
-                unsafe { out.allow_variable_time_computations() }
+                out.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                    fhe_traits::PublicData::assert_public(),
+                ));
             }
             izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut w, qi)| {
                 let wi = w.as_slice_mut().unwrap();

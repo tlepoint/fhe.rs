@@ -10,7 +10,7 @@
 #![allow(dead_code, unused_imports, unused_macros)]
 
 use fhe::bfv;
-use fhe_traits::FheEncoder;
+use fhe_traits::{FheEncoder, FheEncoderVariableTime};
 use fhe_util::transcode_from_bytes;
 use std::{cmp::min, fmt, sync::Arc, time::Duration};
 
@@ -113,11 +113,18 @@ pub fn encode_database(
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
 
-    let mut preprocessed_database =
-        vec![
-            bfv::Plaintext::zero(bfv::Encoding::poly_at_level(level), &par).unwrap();
-            dimension_1 * dimension_2
-        ];
+    // The server database and its padding are public. Explicitly opt into
+    // variable-time encoding so public PIR arithmetic retains its optimized
+    // path without changing the constant-time default for other plaintexts.
+    let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+    let public_zero = bfv::Plaintext::try_encode_vt(
+        &[] as &[u64],
+        bfv::Encoding::poly_at_level(level),
+        &par,
+        variable_time,
+    )
+    .unwrap();
+    let mut preprocessed_database = vec![public_zero; dimension_1 * dimension_2];
     (0..number_rows).for_each(|i| {
         let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
         for j in 0..number_elements_per_plaintext {
@@ -126,9 +133,13 @@ pub fn encode_database(
             }
         }
         let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
-        preprocessed_database[i] =
-            bfv::Plaintext::try_encode(&pt_values, bfv::Encoding::poly_at_level(level), &par)
-                .unwrap();
+        preprocessed_database[i] = bfv::Plaintext::try_encode_vt(
+            pt_values.as_slice(),
+            bfv::Encoding::poly_at_level(level),
+            &par,
+            variable_time,
+        )
+        .unwrap();
     });
     (preprocessed_database, (dimension_1, dimension_2))
 }

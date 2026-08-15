@@ -7,6 +7,34 @@ use std::sync::Arc;
 
 use rand::{CryptoRng, Rng as RngCore};
 
+/// Evidence that the caller has classified data as public.
+///
+/// Constructing this value is an explicit assertion: using it for secret data
+/// may expose information through timing, but does not violate Rust's memory
+/// safety guarantees.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PublicData(());
+
+impl PublicData {
+    /// Assert that the data involved in an operation is public.
+    #[must_use]
+    pub const fn assert_public() -> Self {
+        Self(())
+    }
+}
+
+/// Permission to use variable-time algorithms on data classified as public.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VariableTime(PublicData);
+
+impl VariableTime {
+    /// Create variable-time permission from an explicit public-data assertion.
+    #[must_use]
+    pub const fn new(public_data: PublicData) -> Self {
+        Self(public_data)
+    }
+}
+
 /// The homomorphic encryption parameters.
 pub trait FheParameters {}
 
@@ -65,14 +93,15 @@ where
     /// The type of error returned.
     type Error;
 
-    /// Attempt to encode a value using a specified encoding.
-    /// # Safety
-    /// This encoding runs in variable time and may leak information about the
-    /// value.
-    unsafe fn try_encode_vt(
+    /// Attempt to encode public values using a variable-time algorithm.
+    ///
+    /// Passing [`VariableTime`] asserts that `value` is public. Classifying
+    /// secret values as public may expose them through timing.
+    fn try_encode_vt(
         value: V,
         encoding: Self::Encoding,
         par: &Arc<Self::Parameters>,
+        variable_time: VariableTime,
     ) -> Result<Self, Self::Error>;
 }
 

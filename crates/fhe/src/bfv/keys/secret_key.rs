@@ -123,10 +123,9 @@ impl SecretKey {
         b += p;
 
         // It is now safe to enable variable time computations.
-        unsafe {
-            a.allow_variable_time_computations();
-            b.allow_variable_time_computations()
-        }
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        a.allow_variable_time_computations(variable_time);
+        b.allow_variable_time_computations(variable_time);
 
         Ok(Ciphertext {
             par: self.par.clone(),

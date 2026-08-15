@@ -12,7 +12,7 @@ impl AddAssign<&Poly<PowerBasis>> for Poly<PowerBasis> {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
                 self.coefficients.outer_iter_mut(),
@@ -57,7 +57,7 @@ impl SubAssign<&Poly<PowerBasis>> for Poly<PowerBasis> {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
                 self.coefficients.outer_iter_mut(),
@@ -94,7 +94,7 @@ impl AddAssign<&Poly<Ntt>> for Poly<Ntt> {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
                 self.coefficients.outer_iter_mut(),
@@ -139,7 +139,7 @@ impl SubAssign<&Poly<Ntt>> for Poly<Ntt> {
         assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
         if self.allow_variable_time_computations {
             izip!(
                 self.coefficients.outer_iter_mut(),
@@ -179,7 +179,7 @@ impl MulAssign<&Poly<Ntt>> for Poly<Ntt> {
             "Cannot multiply lazy coefficients by an Ntt polynomial"
         );
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
 
         if self.allow_variable_time_computations {
             unsafe {
@@ -209,7 +209,7 @@ impl MulAssign<&Poly<NttShoup>> for Poly<Ntt> {
     fn mul_assign(&mut self, p: &Poly<NttShoup>) {
         assert!(!p.has_lazy_coefficients);
         debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-        self.allow_variable_time_computations |= p.allow_variable_time_computations;
+        self.allow_variable_time_computations &= p.allow_variable_time_computations;
 
         if self.allow_variable_time_computations {
             izip!(
@@ -456,6 +456,12 @@ where
     }
 
     let p_first = p.clone().next().unwrap();
+    // A dot product may use variable-time reductions only when every input is
+    // public. One constant-time operand conservatively downgrades the result.
+    let allow_variable_time_computations =
+        p.clone().zip(q.clone()).take(count).all(|(pi, qi)| {
+            pi.allow_variable_time_computations && qi.allow_variable_time_computations
+        });
 
     // Initialize the accumulator
     let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
@@ -497,7 +503,7 @@ where
                     let qj = &*q_ptr.offset(j);
                     *num_acc_ptr.offset(j) += 1;
                     if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
-                        if p_first.allow_variable_time_computations {
+                        if allow_variable_time_computations {
                             for i in j * degree..(j + 1) * degree {
                                 *acc_ptr.offset(i) = qj.reduce_u128_vt(*acc_ptr.offset(i)) as u128;
                             }
@@ -530,7 +536,7 @@ where
         p_first.ctx.q.iter()
     )
     .for_each(|(mut coeffsj, accj, m)| {
-        if p_first.allow_variable_time_computations {
+        if allow_variable_time_computations {
             izip!(coeffsj.iter_mut(), accj.iter())
                 .for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
         } else {
@@ -541,7 +547,7 @@ where
 
     Ok(Poly {
         ctx: p_first.ctx.clone(),
-        allow_variable_time_computations: p_first.allow_variable_time_computations,
+        allow_variable_time_computations,
         coefficients: coeffs,
         coefficients_shoup: None,
         has_lazy_coefficients: false,
@@ -777,6 +783,30 @@ mod tests {
                 assert_eq!(r, expected);
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn dot_product_requires_all_operands_to_allow_variable_time() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let ctx = Arc::new(Context::new(&MODULI[..1], 16)?);
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let mut p = (0..2)
+            .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
+            .collect_vec();
+        let mut q = (0..2)
+            .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
+            .collect_vec();
+
+        p.iter_mut()
+            .chain(q.iter_mut())
+            .for_each(|poly| poly.allow_variable_time_computations(variable_time));
+        let all_public = dot_product(p.iter(), q.iter())?;
+        assert!(all_public.allows_variable_time_computations());
+
+        q[1].disallow_variable_time_computations();
+        let mixed = dot_product(p.iter(), q.iter())?;
+        assert!(!mixed.allows_variable_time_computations());
         Ok(())
     }
 

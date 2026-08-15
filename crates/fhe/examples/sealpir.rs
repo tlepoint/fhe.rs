@@ -18,7 +18,7 @@ mod util;
 
 use clap::Parser;
 use fhe::bfv;
-use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly};
 use fhe_traits::{
     DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
     FheEncrypter, Serialize,
@@ -190,13 +190,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     64 - params.moduli()[0].leading_zeros() as usize,
                     plaintext_modulus.ilog2() as usize,
                 ));
-                unsafe {
-                    bfv::PlaintextVec::try_encode_vt(
-                        &pt_values,
-                        bfv::Encoding::poly_at_level(1),
-                        &params,
-                    )
-                }
+                bfv::PlaintextVec::try_encode_vt(
+                    &pt_values,
+                    bfv::Encoding::poly_at_level(1),
+                    &params,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )
             })
             .collect::<fhe::Result<Vec<bfv::PlaintextVec>>>()?;
         (0..fold[0].len())
@@ -255,8 +254,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ctx = params.context_at_level(2)?;
         let ct = bfv::Ciphertext::new(
             vec![
-                Poly::<Ntt>::try_convert_from(poly0, ctx, true)?,
-                Poly::<Ntt>::try_convert_from(poly1, ctx, true)?,
+                Poly::<Ntt>::try_convert_from_public(
+                    poly0,
+                    ctx,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?,
+                Poly::<Ntt>::try_convert_from_public(
+                    poly1,
+                    ctx,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?,
             ],
             &params,
         )?;

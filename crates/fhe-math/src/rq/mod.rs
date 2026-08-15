@@ -121,7 +121,7 @@ impl SubstitutionExponent {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Poly<R: RepresentationTag> {
     ctx: Arc<Context>,
     has_lazy_coefficients: bool,
@@ -130,6 +130,19 @@ pub struct Poly<R: RepresentationTag> {
     coefficients_shoup: Option<Array2<u64>>,
     _repr: PhantomData<R>,
 }
+
+impl<R: RepresentationTag> PartialEq for Poly<R> {
+    fn eq(&self, other: &Self) -> bool {
+        // Variable-time permission is local execution policy, not part of the
+        // polynomial's mathematical value.
+        self.ctx == other.ctx
+            && self.has_lazy_coefficients == other.has_lazy_coefficients
+            && self.coefficients == other.coefficients
+            && self.coefficients_shoup == other.coefficients_shoup
+    }
+}
+
+impl<R: RepresentationTag> Eq for Poly<R> {}
 
 // Implements zeroization of polynomials
 impl<R: RepresentationTag> Zeroize for Poly<R> {
@@ -154,6 +167,22 @@ impl<R: RepresentationTag> AsMut<Poly<R>> for Poly<R> {
 }
 
 impl<R: RepresentationTag> Poly<R> {
+    /// Convert explicitly public values into a polynomial using variable-time
+    /// reduction when available.
+    ///
+    /// Passing [`fhe_traits::VariableTime`] asserts that `value` is public.
+    /// Classifying secret values as public may expose them through timing.
+    pub fn try_convert_from_public<T>(
+        value: T,
+        ctx: &Arc<Context>,
+        _variable_time: fhe_traits::VariableTime,
+    ) -> Result<Self>
+    where
+        Self: traits::TryConvertFrom<T>,
+    {
+        Self::try_convert_from(value, ctx, true)
+    }
+
     /// Creates a polynomial holding the constant 0.
     #[must_use]
     pub fn zero(ctx: &Arc<Context>) -> Self {
@@ -173,14 +202,19 @@ impl<R: RepresentationTag> Poly<R> {
         }
     }
 
-    /// Enable variable time computations when this polynomial is involved.
+    /// Enable variable-time computations for this public polynomial.
     ///
-    /// # Safety
-    ///
-    /// By default, this is marked as unsafe, but is usually safe when only
-    /// public data is processed.
-    pub unsafe fn allow_variable_time_computations(&mut self) {
+    /// Passing [`fhe_traits::VariableTime`] asserts that every coefficient is
+    /// public. Classifying secret coefficients as public may expose them
+    /// through timing.
+    pub fn allow_variable_time_computations(&mut self, _variable_time: fhe_traits::VariableTime) {
         self.allow_variable_time_computations = true
+    }
+
+    /// Return whether this polynomial permits variable-time computations.
+    #[must_use]
+    pub const fn allows_variable_time_computations(&self) -> bool {
+        self.allow_variable_time_computations
     }
 
     /// Disable variable time computations when this polynomial is involved.
@@ -319,7 +353,9 @@ impl<R: RepresentationTag> Poly<R> {
     pub fn substitute(&self, i: &SubstitutionExponent) -> Result<Poly<R>> {
         let mut q = Poly::<R>::zero(&self.ctx);
         if self.allow_variable_time_computations {
-            unsafe { q.allow_variable_time_computations() }
+            q.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                fhe_traits::PublicData::assert_public(),
+            ));
         }
         match R::REPRESENTATION {
             Representation::Ntt | Representation::NttShoup => {
@@ -511,13 +547,14 @@ impl Poly<Ntt> {
     /// Create a polynomial which can only be multiplied by a polynomial in
     /// NttShoup representation. All other operations may panic.
     ///
-    /// # Safety
-    /// This operation also creates a polynomial that allows variable time
-    /// operations.
+    /// Passing [`fhe_traits::VariableTime`] asserts that the coefficients are
+    /// public. Classifying secret coefficients as public may expose them
+    /// through timing.
     #[must_use]
-    pub unsafe fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+    pub fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
         power_basis_coefficients: &[u64],
         ctx: &Arc<Context>,
+        _variable_time: fhe_traits::VariableTime,
     ) -> Poly<Ntt> {
         let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
         izip!(coefficients.outer_iter_mut(), ctx.q.iter(), ctx.ops.iter()).for_each(
@@ -771,12 +808,13 @@ mod tests {
     #[test]
     fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
         let mut rng = rand::rng();
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let mut p = Poly::<PowerBasis>::random(&ctx, &mut rng);
             assert!(!p.allow_variable_time_computations);
 
-            unsafe { p.allow_variable_time_computations() }
+            p.allow_variable_time_computations(variable_time);
             assert!(p.allow_variable_time_computations);
 
             let q = p.clone();
@@ -790,28 +828,29 @@ mod tests {
         let mut p = Poly::<PowerBasis>::random(&ctx, &mut rng);
         assert!(!p.allow_variable_time_computations);
 
-        unsafe { p.allow_variable_time_computations() }
+        p.allow_variable_time_computations(variable_time);
         assert!(p.allow_variable_time_computations);
 
         let q = p.clone();
         assert!(q.allow_variable_time_computations);
 
-        // Allowing variable time propagates.
+        // Variable-time permission propagates only when every operand permits
+        // it. Mixing public and potentially secret data is constant-time.
         let mut p = Poly::<Ntt>::random(&ctx, &mut rng);
-        unsafe { p.allow_variable_time_computations() }
+        p.allow_variable_time_computations(variable_time);
         let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
 
         assert!(!q.allow_variable_time_computations);
         q *= &p;
-        assert!(q.allow_variable_time_computations);
+        assert!(!q.allow_variable_time_computations);
 
-        q.disallow_variable_time_computations();
+        q.allow_variable_time_computations(variable_time);
         q += &p;
         assert!(q.allow_variable_time_computations);
 
         q.disallow_variable_time_computations();
         q -= &p;
-        assert!(q.allow_variable_time_computations);
+        assert!(!q.allow_variable_time_computations);
 
         q = -&p;
         assert!(q.allow_variable_time_computations);
@@ -828,11 +867,12 @@ mod tests {
             .map(|i| (i as u64).wrapping_mul(modulus).wrapping_add(i as u64))
             .collect();
 
-        let poly = unsafe {
+        let poly =
             Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                &coeffs, &ctx,
-            )
-        };
+                &coeffs,
+                &ctx,
+                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+            );
 
         assert_eq!(poly.representation(), Representation::Ntt);
         assert!(poly.allow_variable_time_computations);

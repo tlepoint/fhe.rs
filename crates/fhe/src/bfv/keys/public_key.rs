@@ -73,10 +73,9 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         c1 += &e2;
 
         // It is now safe to enable variable time computations.
-        unsafe {
-            c0.allow_variable_time_computations();
-            c1.allow_variable_time_computations()
-        }
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        c0.allow_variable_time_computations(variable_time);
+        c1.allow_variable_time_computations(variable_time);
 
         Ok(Ciphertext {
             par: self.par.clone(),

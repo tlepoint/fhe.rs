@@ -45,6 +45,27 @@ pub struct KeySwitchingKey {
 }
 
 impl KeySwitchingKey {
+    fn permits_variable_time_with(&self, p: &Poly<PowerBasis>) -> bool {
+        p.allows_variable_time_computations()
+            && self
+                .c0
+                .iter()
+                .chain(self.c1.iter())
+                .all(Poly::allows_variable_time_computations)
+    }
+
+    fn configure_accumulators(&self, p: &Poly<PowerBasis>, c0: &mut Poly<Ntt>, c1: &mut Poly<Ntt>) {
+        if self.permits_variable_time_with(p) {
+            let variable_time =
+                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+            c0.allow_variable_time_computations(variable_time);
+            c1.allow_variable_time_computations(variable_time);
+        } else {
+            c0.disallow_variable_time_computations();
+            c1.disallow_variable_time_computations();
+        }
+    }
+
     /// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial
     /// `from`.
     pub fn new<R: RngCore + CryptoRng>(
@@ -112,11 +133,12 @@ impl KeySwitchingKey {
     ) -> Vec<Poly<NttShoup>> {
         let mut c1 = Vec::with_capacity(size);
         let mut rng = ChaCha8Rng::from_seed(seed);
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
         (0..size).for_each(|_| {
             let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
             rng.fill(&mut seed_i);
             let mut a = Poly::<NttShoup>::random_from_seed(ctx, seed_i);
-            unsafe { a.allow_variable_time_computations() }
+            a.allow_variable_time_computations(variable_time);
             c1.push(a);
         });
         c1
@@ -160,7 +182,9 @@ impl KeySwitchingKey {
                 b += &g_i_from;
 
                 // It is now safe to enable variable time computations.
-                unsafe { b.allow_variable_time_computations() }
+                b.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                    fhe_traits::PublicData::assert_public(),
+                ));
                 Ok(b.into_ntt_shoup())
             })
             .collect::<Result<Vec<Poly<NttShoup>>>>()?;
@@ -202,7 +226,9 @@ impl KeySwitchingKey {
                 b += &(from * &power);
 
                 // It is now safe to enable variable time computations.
-                unsafe { b.allow_variable_time_computations() }
+                b.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                    fhe_traits::PublicData::assert_public(),
+                ));
                 Ok(b.into_ntt_shoup())
             })
             .collect::<Result<Vec<Poly<NttShoup>>>>()?;
@@ -223,16 +249,17 @@ impl KeySwitchingKey {
         }
         let mut c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
         let mut c1 = Poly::<Ntt>::zero(&self.ctx_ksk);
+        self.configure_accumulators(p, &mut c0, &mut c1);
         let p_coefficients = p.coefficients();
         for (c2_i_coefficients, c0_i, c1_i) in
             izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
         {
-            let mut c2_i = unsafe {
+            let mut c2_i =
                 Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                     c2_i_coefficients.as_slice().unwrap(),
                     &self.ctx_ksk,
-                )
-            };
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                );
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -270,17 +297,18 @@ impl KeySwitchingKey {
         } else {
             c1.zeroize();
         }
+        self.configure_accumulators(p, c0, c1);
 
         let p_coefficients = p.coefficients();
         for (c2_i_coefficients, c0_i, c1_i) in
             izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
         {
-            let mut c2_i = unsafe {
+            let mut c2_i =
                 Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                     c2_i_coefficients.as_slice().unwrap(),
                     &self.ctx_ksk,
-                )
-            };
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                );
             *c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             *c1 += &c2_i;
@@ -314,13 +342,14 @@ impl KeySwitchingKey {
 
         let mut c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
         let mut c1 = Poly::<Ntt>::zero(&self.ctx_ksk);
+        self.configure_accumulators(p, &mut c0, &mut c1);
         for (c2_i_coefficients, c0_i, c1_i) in izip!(c2i.iter(), self.c0.iter(), self.c1.iter()) {
-            let mut c2_i = unsafe {
+            let mut c2_i =
                 Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                     c2_i_coefficients.as_slice(),
                     &self.ctx_ksk,
-                )
-            };
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                );
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -395,7 +424,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             Some(unwrapped.unwrap())
         };
 
-        let c1 = if let Some(seed) = seed {
+        let mut c1 = if let Some(seed) = seed {
             Self::generate_c1(&ctx_ksk, seed, value.c0.len())
         } else {
             value
@@ -405,11 +434,19 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
                 .collect::<Result<Vec<Poly<NttShoup>>>>()?
         };
 
-        let c0 = value
+        let mut c0 = value
             .c0
             .iter()
             .map(|c0i| Poly::<NttShoup>::from_bytes(c0i, &ctx_ksk).map_err(Error::MathError))
             .collect::<Result<Vec<Poly<NttShoup>>>>()?;
+
+        // Key-switching keys are public cryptographic material. Grant timing
+        // permission at this trusted type boundary; the polynomial wire flag
+        // itself remains ignored.
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        c0.iter_mut()
+            .chain(c1.iter_mut())
+            .for_each(|poly| poly.allow_variable_time_computations(variable_time));
 
         Ok(Self {
             par: par.clone(),
@@ -512,7 +549,10 @@ mod tests {
             let ctx = params.context_at_level(0)?;
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
-            let input = Poly::<PowerBasis>::random(ctx, &mut rng);
+            let mut input = Poly::<PowerBasis>::random(ctx, &mut rng);
+            input.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                fhe_traits::PublicData::assert_public(),
+            ));
 
             let (c0, c1) = ksk.key_switch(&input)?;
 
@@ -522,6 +562,13 @@ mod tests {
 
             assert_eq!(c0, a0);
             assert_eq!(c1, a1);
+            assert!(c0.allows_variable_time_computations());
+            assert!(c1.allows_variable_time_computations());
+
+            input.disallow_variable_time_computations();
+            ksk.key_switch_assign(&input, &mut a0, &mut a1)?;
+            assert!(!a0.allows_variable_time_computations());
+            assert!(!a1.allows_variable_time_computations());
         }
         Ok(())
     }
@@ -572,7 +619,15 @@ mod tests {
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let ksk_proto = KeySwitchingKeyProto::from(&ksk);
-            assert_eq!(ksk, KeySwitchingKey::try_convert_from(&ksk_proto, &params)?);
+            let decoded = KeySwitchingKey::try_convert_from(&ksk_proto, &params)?;
+            assert_eq!(ksk, decoded);
+            assert!(
+                decoded
+                    .c0
+                    .iter()
+                    .chain(decoded.c1.iter())
+                    .all(Poly::allows_variable_time_computations)
+            );
         }
         Ok(())
     }

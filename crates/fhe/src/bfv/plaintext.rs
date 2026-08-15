@@ -4,7 +4,9 @@ use crate::{
     bfv::{BfvParameters, Encoding, PlaintextVec, parameters::PlaintextModulus},
 };
 use fhe_math::rq::{Context, Ntt, Poly, PowerBasis, traits::TryConvertFrom};
-use fhe_traits::{FheDecoder, FheEncoder, FheParametrized, FhePlaintext};
+use fhe_traits::{
+    FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext, VariableTime,
+};
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
@@ -240,6 +242,26 @@ impl<'a> FheEncoder<&'a [u64]> for Plaintext {
     }
 }
 
+impl<'a> FheEncoderVariableTime<&'a [u64]> for Plaintext {
+    type Error = Error;
+
+    fn try_encode_vt(
+        value: &'a [u64],
+        encoding: Encoding,
+        par: &Arc<BfvParameters>,
+        variable_time: VariableTime,
+    ) -> Result<Self> {
+        if value.len() > par.degree() {
+            return Err(Error::TooManyValues {
+                actual: value.len(),
+                limit: par.degree(),
+            });
+        }
+        let v = PlaintextVec::try_encode_vt(value, encoding, par, variable_time)?;
+        Ok(v[0].clone())
+    }
+}
+
 impl<'a> FheEncoder<&'a [i64]> for Plaintext {
     type Error = Error;
     fn try_encode(value: &'a [i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
@@ -452,7 +474,7 @@ mod tests {
     use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
     use crate::bfv::plaintext::PlaintextValues;
     use fhe_math::rq::{Ntt, Poly};
-    use fhe_traits::{FheDecoder, FheEncoder};
+    use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
     use num_bigint::BigUint;
     use num_traits::Zero;
     use rand::rng;
@@ -503,6 +525,26 @@ mod tests {
         let plaintext = Plaintext::try_encode(&a_vec, Encoding::simd(), &params);
         assert!(plaintext.is_err());
 
+        Ok(())
+    }
+
+    #[test]
+    fn try_encode_variable_time_marks_public_plaintexts() -> Result<(), Box<dyn Error>> {
+        let params = BfvParameters::default_arc(1, 16);
+        let values = [1u64, 2, 3, 4];
+        let encoding = Encoding::poly();
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+
+        let constant_time = Plaintext::try_encode(&values, encoding.clone(), &params)?;
+        let public =
+            Plaintext::try_encode_vt(values.as_slice(), encoding.clone(), &params, variable_time)?;
+        assert_eq!(constant_time, public);
+        assert!(!constant_time.poly_ntt.allows_variable_time_computations());
+        assert!(public.poly_ntt.allows_variable_time_computations());
+
+        let public_zero =
+            Plaintext::try_encode_vt(&[] as &[u64], encoding, &params, variable_time)?;
+        assert!(public_zero.poly_ntt.allows_variable_time_computations());
         Ok(())
     }
 

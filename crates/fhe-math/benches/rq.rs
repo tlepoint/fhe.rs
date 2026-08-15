@@ -38,10 +38,13 @@ macro_rules! bench_op {
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
-            let p = Poly::<Ntt>::random(&ctx, &mut rng);
+            let mut p = Poly::<Ntt>::random(&ctx, &mut rng);
             let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
-                unsafe { q.allow_variable_time_computations() }
+                let variable_time =
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                p.allow_variable_time_computations(variable_time);
+                q.allow_variable_time_computations(variable_time);
             }
 
             group.bench_function(
@@ -66,10 +69,11 @@ macro_rules! bench_op_unary {
 
         for degree in DEGREE {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
-            let p = Poly::<Ntt>::random(&ctx, &mut rng);
-            let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
+            let mut p = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
-                unsafe { q.allow_variable_time_computations() }
+                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                    fhe_traits::PublicData::assert_public(),
+                ));
             }
 
             group.bench_function(
@@ -97,7 +101,10 @@ macro_rules! bench_op_assign {
             let mut p = Poly::<Ntt>::random(&ctx, &mut rng);
             let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
-                unsafe { q.allow_variable_time_computations() }
+                let variable_time =
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                p.allow_variable_time_computations(variable_time);
+                q.allow_variable_time_computations(variable_time);
             }
 
             group.bench_function(
@@ -247,11 +254,13 @@ pub fn rq_benchmark(c: &mut Criterion) {
                 },
             );
 
-            unsafe {
+            {
+                let variable_time =
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
                 let mut q_vt = q.clone();
-                q_vt.allow_variable_time_computations();
+                q_vt.allow_variable_time_computations(variable_time);
                 let mut p_vt = p.clone();
-                p_vt.allow_variable_time_computations();
+                p_vt.allow_variable_time_computations(variable_time);
 
                 group.bench_function(
                     BenchmarkId::new(
@@ -264,7 +273,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
                 );
 
                 let mut p_pb_vt = Poly::<PowerBasis>::random(&ctx, &mut rng);
-                p_pb_vt.allow_variable_time_computations();
+                p_pb_vt.allow_variable_time_computations(variable_time);
 
                 group.bench_function(
                     BenchmarkId::new(
@@ -279,7 +288,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
                 );
 
                 let mut p_ntt_vt = Poly::<Ntt>::random(&ctx, &mut rng);
-                p_ntt_vt.allow_variable_time_computations();
+                p_ntt_vt.allow_variable_time_computations(variable_time);
                 group.bench_function(
                     BenchmarkId::new(
                         "change_representation/Ntt_to_PowerBasis_vt",

@@ -67,6 +67,19 @@ where
     let ct_first = ct.clone().next().unwrap();
     let ctx = ct_first[0].ctx();
 
+    // Variable-time reductions are permitted only when every ciphertext and
+    // plaintext polynomial in the dot product has been classified as public.
+    let allow_variable_time_computations =
+        ct.clone()
+            .zip(pt.clone())
+            .take(count)
+            .all(|(ciphertext, plaintext)| {
+                ciphertext
+                    .iter()
+                    .all(Poly::allows_variable_time_computations)
+                    && plaintext.poly_ntt.allows_variable_time_computations()
+            });
+
     if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
         cti.par != ct_first.par || pti.par != ct_first.par || cti.len() != ct_first.len()
     }) {
@@ -136,10 +149,18 @@ where
                 ctx.moduli_operators()
             ) {
                 for (outij_coeff, accij_coeff) in izip!(outij.iter_mut(), accij.iter()) {
-                    unsafe { *outij_coeff = q.reduce_u128_vt(*accij_coeff) }
+                    if allow_variable_time_computations {
+                        unsafe { *outij_coeff = q.reduce_u128_vt(*accij_coeff) }
+                    } else {
+                        *outij_coeff = q.reduce_u128(*accij_coeff)
+                    }
                 }
             }
-            c.push(Poly::<Ntt>::try_convert_from(coeffs, ctx, true)?)
+            c.push(Poly::<Ntt>::try_convert_from(
+                coeffs,
+                ctx,
+                allow_variable_time_computations,
+            )?)
         }
 
         Ok(Ciphertext {
@@ -192,10 +213,29 @@ mod tests {
                     .collect_vec();
 
                 let r = dot_product_scalar(ct.iter(), pt.iter())?;
+                assert!(
+                    r.iter()
+                        .all(|poly| !poly.allows_variable_time_computations())
+                );
 
                 let mut expected = Ciphertext::zero(&params);
                 izip!(&ct, &pt).for_each(|(cti, pti)| expected += &(cti * pti));
                 assert_eq!(r, expected);
+
+                let variable_time =
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                let mut public_pt = pt.clone();
+                public_pt.iter_mut().for_each(|plaintext| {
+                    plaintext
+                        .poly_ntt
+                        .allow_variable_time_computations(variable_time)
+                });
+                let public_result = dot_product_scalar(ct.iter(), public_pt.iter())?;
+                assert!(
+                    public_result
+                        .iter()
+                        .all(|poly| poly.allows_variable_time_computations())
+                );
             }
         }
         Ok(())

@@ -50,7 +50,9 @@ impl PublicKeyShare {
         p0_share.disallow_variable_time_computations();
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
-        unsafe { p0_share.allow_variable_time_computations() }
+        p0_share.allow_variable_time_computations(fhe_traits::VariableTime::new(
+            fhe_traits::PublicData::assert_public(),
+        ));
 
         Ok(Self { par, crp, p0_share })
     }

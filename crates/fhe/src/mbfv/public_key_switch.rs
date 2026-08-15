@@ -72,10 +72,9 @@ impl PublicKeySwitchShare {
         h1 *= u.as_ref();
         h1 += e1.as_ref();
 
-        unsafe {
-            h0.allow_variable_time_computations();
-            h1.allow_variable_time_computations();
-        }
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        h0.allow_variable_time_computations(variable_time);
+        h1.allow_variable_time_computations(variable_time);
 
         Ok(Self {
             par,

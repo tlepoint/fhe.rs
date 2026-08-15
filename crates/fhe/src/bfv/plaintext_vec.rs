@@ -1,7 +1,7 @@
 use std::{cmp::min, ops::Deref, sync::Arc};
 
 use fhe_math::rq::{Poly, PowerBasis, traits::TryConvertFrom};
-use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext};
+use fhe_traits::{FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext, VariableTime};
 use num_bigint::BigUint;
 use num_traits::{ToPrimitive, Zero};
 use zeroize_derive::{Zeroize, ZeroizeOnDrop};
@@ -37,13 +37,18 @@ impl FheParametrized for PlaintextVec {
 impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
     type Error = Error;
 
-    unsafe fn try_encode_vt(
+    fn try_encode_vt(
         value: &[u64],
         encoding: Encoding,
         par: &Arc<BfvParameters>,
+        variable_time: VariableTime,
     ) -> Result<Self> {
         if value.is_empty() {
-            return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
+            let mut plaintext = Plaintext::zero(encoding, par)?;
+            plaintext
+                .poly_ntt
+                .allow_variable_time_computations(variable_time);
+            return Ok(PlaintextVec(vec![plaintext]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
             return Err(Error::EncodingNotSupported {
@@ -73,7 +78,8 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                         }
                     };
 
-                    let poly = Poly::<PowerBasis>::try_convert_from(&v, ctx, true)?.into_ntt();
+                    let poly = Poly::<PowerBasis>::try_convert_from_public(&v, ctx, variable_time)?
+                        .into_ntt();
 
                     let value_enum = match par.plaintext {
                         crate::bfv::PlaintextModulus::Small { .. } => {
@@ -262,13 +268,12 @@ mod tests {
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts_vt = unsafe {
-                    PlaintextVec::try_encode_vt(
-                        a_vec.as_slice(),
-                        Encoding::poly_at_level(0),
-                        &params,
-                    )?
-                };
+                let plaintexts_vt = PlaintextVec::try_encode_vt(
+                    a_vec.as_slice(),
+                    Encoding::poly_at_level(0),
+                    &params,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?;
                 assert_eq!(plaintexts_vt.0.len(), i);
                 for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
                     assert_eq!(pt.value, pt_vt.value);
@@ -289,9 +294,12 @@ mod tests {
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts_vt = unsafe {
-                    PlaintextVec::try_encode_vt(a_vec.as_slice(), Encoding::simd(), &params)?
-                };
+                let plaintexts_vt = PlaintextVec::try_encode_vt(
+                    a_vec.as_slice(),
+                    Encoding::simd(),
+                    &params,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?;
                 assert_eq!(plaintexts_vt.0.len(), i);
                 for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
                     assert_eq!(pt.value, pt_vt.value);
@@ -314,7 +322,12 @@ mod tests {
             Err(crate::Error::EncodingNotSupported { .. })
         ));
         assert!(matches!(
-            unsafe { PlaintextVec::try_encode_vt(a.as_slice(), Encoding::simd(), &params) },
+            PlaintextVec::try_encode_vt(
+                a.as_slice(),
+                Encoding::simd(),
+                &params,
+                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+            ),
             Err(crate::Error::EncodingNotSupported { .. })
         ));
         Ok(())

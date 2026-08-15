@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_variable_time_flag_propagates() -> Result<(), Box<dyn Error>> {
+    fn deserialize_variable_time_flag_is_ignored() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -130,7 +130,7 @@ mod tests {
         proto.allow_variable_time = true;
         let bytes = proto.encode_to_vec();
         let decoded = Poly::<PowerBasis>::from_bytes(&bytes, &ctx)?;
-        assert!(decoded.allow_variable_time_computations);
+        assert!(!decoded.allow_variable_time_computations);
         Ok(())
     }
 }

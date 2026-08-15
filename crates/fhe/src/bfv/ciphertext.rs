@@ -228,9 +228,17 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
                 })?;
             seed = Some(try_seed);
             let mut c1 = Poly::<Ntt>::random_from_seed(ctx, try_seed);
-            unsafe { c1.allow_variable_time_computations() }
+            c1.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                fhe_traits::PublicData::assert_public(),
+            ));
             c.push(c1)
         }
+
+        // Ciphertexts are public once received. Grant timing permission only
+        // at this trusted type boundary; polynomial wire data cannot grant it.
+        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        c.iter_mut()
+            .for_each(|ci| ci.allow_variable_time_computations(variable_time));
 
         Ok(Ciphertext {
             par: par.clone(),
