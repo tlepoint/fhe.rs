@@ -24,7 +24,7 @@ use fhe_util::sample_vec_cbd;
 use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView2, Axis, s};
 pub use ops::dot_product;
-use rand::{CryptoRng, RngCore, SeedableRng};
+use rand::{CryptoRng, Rng as RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sha2::{Digest, Sha256};
 use std::marker::PhantomData;
@@ -633,7 +633,7 @@ mod tests {
     use itertools::Itertools;
     use num_bigint::BigUint;
     use num_traits::{One, Zero};
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::{error::Error, sync::Arc};
 

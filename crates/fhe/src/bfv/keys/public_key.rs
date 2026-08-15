@@ -7,7 +7,7 @@ use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{Ntt, Poly};
 use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
 use prost::Message;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use std::borrow::Cow;
 use std::sync::Arc;
 use zeroize::Zeroizing;

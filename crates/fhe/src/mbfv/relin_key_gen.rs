@@ -7,7 +7,7 @@ use crate::errors::Result;
 use fhe_math::rns::RnsContext;
 use fhe_math::rq::{Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom};
 use itertools::izip;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
 use super::round::{R1, R1Aggregated, R2, Round};

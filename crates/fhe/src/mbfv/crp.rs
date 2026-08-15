@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::Result;
 use crate::bfv::BfvParameters;
 use fhe_math::rq::{Ntt, Poly};
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 
 /// A polynomial sampled from a random _common reference string_.
 // TODO CRS->CRP implementation. For now just a random polynomial.

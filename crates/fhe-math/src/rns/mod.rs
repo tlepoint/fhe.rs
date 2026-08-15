@@ -154,7 +154,7 @@ mod tests {
     use super::RnsContext;
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
-    use rand::RngCore;
+    use rand::Rng as RngCore;
 
     #[test]
     fn constructor() {

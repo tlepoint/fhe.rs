@@ -361,7 +361,7 @@ mod tests {
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
     use num_traits::{ToPrimitive, Zero};
-    use rand::{RngCore, rng};
+    use rand::{Rng as RngCore, rng};
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {

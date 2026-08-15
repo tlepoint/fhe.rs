@@ -6,7 +6,7 @@
 #[cfg(test)]
 extern crate proptest;
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 
 use num_bigint_dig::{BigUint, ModInverse, prime::probably_prime};
 use num_traits::{PrimInt, cast::ToPrimitive};
@@ -203,7 +203,7 @@ mod tests {
     )]
 
     use itertools::Itertools;
-    use rand::RngCore;
+    use rand::Rng as RngCore;
 
     use crate::variance;
 

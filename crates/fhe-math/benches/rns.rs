@@ -2,7 +2,7 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe_math::rns::{RnsContext, RnsScaler, ScalingFactor};
 use num_bigint::BigUint;
-use rand::{RngCore, rng};
+use rand::{Rng as RngCore, rng};
 use std::sync::Arc;
 
 pub fn rns_benchmark(c: &mut Criterion) {

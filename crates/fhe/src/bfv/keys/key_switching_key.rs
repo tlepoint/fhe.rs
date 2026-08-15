@@ -12,7 +12,7 @@ use fhe_math::{
 use fhe_traits::{DeserializeWithContext, Serialize};
 use itertools::{Itertools, izip};
 use num_bigint::BigUint;
-use rand::{CryptoRng, Rng, RngCore, SeedableRng};
+use rand::{CryptoRng, Rng as RngCore, RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};

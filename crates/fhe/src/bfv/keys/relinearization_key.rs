@@ -13,7 +13,7 @@ use fhe_math::rq::{
 };
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use prost::Message;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
 /// Relinearization key for the BFV encryption scheme.

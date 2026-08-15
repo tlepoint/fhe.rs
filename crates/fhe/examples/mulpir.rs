@@ -23,7 +23,7 @@ use fhe_traits::{
 };
 use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
-use rand::{RngCore, rng};
+use rand::{Rng as RngCore, rng};
 use std::{error::Error, time::Instant};
 use util::{
     encode_database, generate_database, number_elements_per_plaintext,

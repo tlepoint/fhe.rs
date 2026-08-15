@@ -7,7 +7,7 @@
 
 use crate::zq::Modulus;
 use itertools::Itertools;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::iter::successors;
 

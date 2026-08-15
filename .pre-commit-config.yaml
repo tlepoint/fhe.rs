@@ -2,7 +2,7 @@
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: check-merge-conflict
@@ -15,7 +15,7 @@ repos:
       - id: trailing-whitespace
       - id: forbid-submodules
   - repo: https://github.com/crate-ci/typos
-    rev: v1.16.17
+    rev: v1.49.0
     hooks:
       - id: typos
   - repo: local

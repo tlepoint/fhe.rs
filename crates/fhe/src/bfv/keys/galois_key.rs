@@ -8,7 +8,7 @@ use fhe_math::rq::{
     Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher,
     traits::TryConvertFrom as TryConvertFromPoly,
 };
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 

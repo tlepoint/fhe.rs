@@ -7,7 +7,7 @@ use fhe_math::rq::{NttShoup, Poly, PowerBasis, traits::TryConvertFrom as TryConv
 use fhe_math::zq::Modulus;
 use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
 use prost::Message;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -382,7 +382,7 @@ impl EvaluationKeyBuilder {
 impl From<&EvaluationKey> for EvaluationKeyProto {
     fn from(ek: &EvaluationKey) -> Self {
         let mut proto = EvaluationKeyProto::default();
-        for (_, gk) in ek.gk.iter() {
+        for gk in ek.gk.values() {
             proto.gk.push(GaloisKeyProto::from(gk))
         }
         proto.ciphertext_level = ek.ciphertext_level as u32;

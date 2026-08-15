@@ -4,7 +4,7 @@ use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
 use crate::bfv::{BfvParameters, Ciphertext, Plaintext, PlaintextValues, SecretKey};

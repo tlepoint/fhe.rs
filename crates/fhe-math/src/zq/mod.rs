@@ -18,7 +18,7 @@ use itertools::{Itertools, izip};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
-use rand::{CryptoRng, Rng, RngCore, distr::Uniform};
+use rand::{CryptoRng, Rng as RngCore, RngExt, distr::Uniform};
 
 /// cond ? on_true : on_false
 const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
@@ -799,7 +799,7 @@ mod tests {
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
-    use rand::{RngCore, rng};
+    use rand::{Rng as RngCore, rng};
 
     // Utility functions for the proptests.
 

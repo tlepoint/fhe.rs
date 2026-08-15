@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 
 /// The homomorphic encryption parameters.
 pub trait FheParameters {}

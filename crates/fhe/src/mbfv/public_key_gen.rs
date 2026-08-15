@@ -4,7 +4,7 @@ use crate::Error;
 use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
 use crate::errors::Result;
 use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
 use super::{Aggregate, CommonRandomPoly};
