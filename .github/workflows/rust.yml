@@ -15,11 +15,15 @@ name: Test
 
 jobs:
   check:
-    name: Check
+    name: Check (${{ matrix.features }})
     env:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [default, all]
     steps:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -32,13 +36,18 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --workspace ${{ matrix.features == 'all' && '--all-features' || '' }}
 
   test:
-    name: Test Suite
+    name: Test Suite (${{ matrix.features }})
     env:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [default, all]
     steps:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -51,3 +60,4 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --workspace ${{ matrix.features == 'all' && '--all-features' || '' }}

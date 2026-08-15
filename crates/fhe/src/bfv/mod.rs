@@ -21,6 +21,7 @@ pub mod traits;
 pub use ciphertext::Ciphertext;
 pub use context::{CipherPlainContext, ContextLevel};
 pub use encoding::Encoding;
+#[cfg(feature = "experimental-mbfv")]
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::{Multiplicator, dot_product_scalar};

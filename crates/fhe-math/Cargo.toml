@@ -15,14 +15,14 @@ workspace = true
 bench = false  # Disable default bench (we use criterion)
 
 [features]
-tfhe-ntt = []
+tfhe-ntt = ["dep:tfhe-ntt"]
 
 [dependencies]
 fhe-traits = { version = "=0.1.1", path = "../fhe-traits" }
 fhe-util = { version = "=0.1.1", path = "../fhe-util" }
 
 ethnum.workspace = true
-tfhe-ntt.workspace = true
+tfhe-ntt = { workspace = true, optional = true }
 itertools.workspace = true
 ndarray.workspace = true
 num-bigint.workspace = true

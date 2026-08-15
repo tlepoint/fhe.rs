@@ -37,6 +37,7 @@ impl NttOperator {
     /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
     /// Returns None if the modulus does not support the NTT for this specific
     /// size.
+    #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
         let native_operator = native::NttOperator::new(p, size)?;
         let tfhe_operator = Plan::try_new(size, p.p);

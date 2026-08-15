@@ -18,6 +18,13 @@ Add the following to your `Cargo.toml`:
 fhe = "0.2.0"
 ```
 
+## Cargo features
+
+* `tfhe-ntt` enables the accelerated NTT implementation from `tfhe-ntt`.
+* `experimental-mbfv` exposes the incomplete multiparty BFV APIs. These APIs
+  have additional unresolved security requirements and must not be used in
+  production or to protect sensitive data.
+
 ## Example
 
 Below is a simple example using BFV of an homomorphic multiplication.

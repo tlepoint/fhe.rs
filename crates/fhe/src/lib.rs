@@ -5,6 +5,7 @@
 mod errors;
 
 pub mod bfv;
+#[cfg(feature = "experimental-mbfv")]
 pub mod mbfv;
 pub mod proto;
 pub use errors::{Error, ParametersError, Result, SerializationError};

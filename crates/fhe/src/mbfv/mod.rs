@@ -4,8 +4,18 @@
     reason = "performance or example code relies on validated indices"
 )]
 
-//! The Multiparty BFV scheme, as described by Christian Mouchet et. al.
-//! in [Multiparty Homomorphic Encryption from Ring-Learning-with-Errors](https://eprint.iacr.org/2020/304.pdf).
+//! Experimental implementation of the Multiparty BFV scheme, as described by
+//! Christian Mouchet et. al. in [Multiparty Homomorphic Encryption from
+//! Ring-Learning-with-Errors](https://eprint.iacr.org/2020/304.pdf).
+//!
+//! # Security warning
+//!
+//! This module is incomplete and has not been independently audited. In
+//! particular, common-reference-string generation and the noise flooding
+//! required by the key-switching protocols are not fully implemented. It must
+//! not be used in production or to protect sensitive data.
+//!
+//! The module is available only with the `experimental-mbfv` Cargo feature.
 
 mod aggregate;
 mod crp;

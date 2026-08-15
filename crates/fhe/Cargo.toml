@@ -15,6 +15,7 @@ workspace = true
 bench = false # Disable default bench (we use criterion)
 
 [features]
+experimental-mbfv = []
 tfhe-ntt = ["fhe-math/tfhe-ntt"]
 
 [dependencies]
@@ -77,3 +78,4 @@ name = "rgsw"
 
 [[example]]
 name = "voting"
+required-features = ["experimental-mbfv"]
