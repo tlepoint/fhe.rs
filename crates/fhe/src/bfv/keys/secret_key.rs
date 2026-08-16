@@ -187,7 +187,7 @@ impl FheEncrypter<Plaintext, Ciphertext> for SecretKey {
         pt: &Plaintext,
         rng: &mut R,
     ) -> Result<Ciphertext> {
-        assert!(Arc::ptr_eq(&self.par, &pt.par));
+        pt.validate_for(&self.par)?;
         let m = Zeroizing::new(pt.to_poly());
         self.encrypt_poly(m.as_ref(), rng)
     }
@@ -197,87 +197,82 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
     type Error = Error;
 
     fn try_decrypt(&self, ct: &Ciphertext) -> Result<Plaintext> {
-        if !Arc::ptr_eq(&self.par, &ct.par) {
-            Err(Error::DefaultError(
-                "Incompatible BFV parameters".to_string(),
-            ))
-        } else {
-            // Let's create a secret key with the ciphertext context
-            let s = Zeroizing::new(
-                Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
-                    .into_ntt(),
-            );
-            let mut si = s.clone();
+        ct.validate_for(&self.par)?;
+        // Let's create a secret key with the ciphertext context
+        let s = Zeroizing::new(
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
+                .into_ntt(),
+        );
+        let mut si = s.clone();
 
-            let mut c = Zeroizing::new(ct[0].clone());
-            c.disallow_variable_time_computations();
+        let mut c = Zeroizing::new(ct[0].clone());
+        c.disallow_variable_time_computations();
 
-            // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
-            // s^k is computed on-the-fly
-            for i in 1..ct.len() {
-                let mut cis = Zeroizing::new(ct[i].clone());
-                cis.disallow_variable_time_computations();
-                *cis.as_mut() *= si.as_ref();
-                *c.as_mut() += &cis;
-                if i + 1 < ct.len() {
-                    *si.as_mut() *= s.as_ref();
-                }
+        // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
+        // s^k is computed on-the-fly
+        for i in 1..ct.len() {
+            let mut cis = Zeroizing::new(ct[i].clone());
+            cis.disallow_variable_time_computations();
+            *cis.as_mut() *= si.as_ref();
+            *c.as_mut() += &cis;
+            if i + 1 < ct.len() {
+                *si.as_mut() *= s.as_ref();
             }
-            let ctx_lvl = self.par.context_level_at(ct.level).unwrap();
-            let ctx = c.ctx().clone();
-            let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
-            let c_pb = Zeroizing::new(c_inner.into_power_basis());
-            let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
-
-            let value = match self.par.plaintext {
-                PlaintextModulus::Small { .. } => {
-                    let mut v = Vec::<u64>::try_from(d.as_ref())?;
-                    let plaintext_modulus = self.par.plaintext();
-                    v.iter_mut().for_each(|vi| *vi += plaintext_modulus);
-                    let mut w = v[..self.par.degree()].to_vec();
-
-                    let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
-                    q.reduce_vec(&mut w);
-                    if let PlaintextModulus::Small { modulus: m, .. } = &self.par.plaintext {
-                        m.reduce_vec(&mut w);
-                    }
-                    PlaintextValues::Small(w.into_boxed_slice())
-                }
-                PlaintextModulus::Large(_) => {
-                    let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
-                        .into_iter()
-                        .map(|vi| vi + self.par.plaintext_big())
-                        .collect_vec();
-
-                    let mut w = v[..self.par.degree()].to_vec();
-                    let q_poly = d.as_ref().ctx().modulus();
-                    w.iter_mut().for_each(|wi| *wi %= q_poly);
-
-                    self.par.plaintext.reduce_vec(&mut w);
-                    PlaintextValues::Large(w.into_boxed_slice())
-                }
-            };
-
-            let poly = match &value {
-                PlaintextValues::Small(v) => {
-                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
-                }
-                PlaintextValues::Large(v) => {
-                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
-                }
-            }
-            .into_ntt();
-
-            let pt = Plaintext {
-                par: self.par.clone(),
-                value,
-                encoding: None,
-                poly_ntt: poly,
-                level: ct.level,
-            };
-
-            Ok(pt)
         }
+        let ctx_lvl = self.par.context_level_at(ct.level)?;
+        let ctx = c.ctx().clone();
+        let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
+        let c_pb = Zeroizing::new(c_inner.into_power_basis());
+        let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
+
+        let value = match self.par.plaintext {
+            PlaintextModulus::Small { .. } => {
+                let mut v = Vec::<u64>::try_from(d.as_ref())?;
+                let plaintext_modulus = self.par.plaintext();
+                v.iter_mut().for_each(|vi| *vi += plaintext_modulus);
+                let mut w = v[..self.par.degree()].to_vec();
+
+                let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
+                q.reduce_vec(&mut w);
+                if let PlaintextModulus::Small { modulus: m, .. } = &self.par.plaintext {
+                    m.reduce_vec(&mut w);
+                }
+                PlaintextValues::Small(w.into_boxed_slice())
+            }
+            PlaintextModulus::Large(_) => {
+                let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
+                    .into_iter()
+                    .map(|vi| vi + self.par.plaintext_big())
+                    .collect_vec();
+
+                let mut w = v[..self.par.degree()].to_vec();
+                let q_poly = d.as_ref().ctx().modulus();
+                w.iter_mut().for_each(|wi| *wi %= q_poly);
+
+                self.par.plaintext.reduce_vec(&mut w);
+                PlaintextValues::Large(w.into_boxed_slice())
+            }
+        };
+
+        let poly = match &value {
+            PlaintextValues::Small(v) => {
+                Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
+            }
+            PlaintextValues::Large(v) => {
+                Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
+            }
+        }
+        .into_ntt();
+
+        let pt = Plaintext {
+            par: self.par.clone(),
+            value,
+            encoding: None,
+            poly_ntt: poly,
+            level: ct.level,
+        };
+
+        Ok(pt)
     }
 }
 
@@ -330,6 +325,23 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn encrypt_decrypt_reject_invalid_inputs() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(1, 16);
+        let other_params = BfvParameters::default_arc(1, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let other_pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &other_params)?;
+        let encrypted: crate::Result<crate::bfv::Ciphertext> = sk.try_encrypt(&other_pt, &mut rng);
+
+        assert!(encrypted.is_err());
+        assert!(matches!(
+            sk.try_decrypt(&crate::bfv::Ciphertext::zero(&params)),
+            Err(crate::Error::InvalidCiphertext { .. })
+        ));
         Ok(())
     }
 

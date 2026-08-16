@@ -1,5 +1,3 @@
-use std::cmp::min;
-
 use fhe_math::rq::{Ntt, Poly, dot_product as poly_dot_product, traits::TryConvertFrom};
 use itertools::{Itertools, izip};
 use ndarray::{Array, Array2};
@@ -50,22 +48,36 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 }
 
 /// Compute the dot product between an iterator of [`Ciphertext`] and an
-/// iterator of [`Plaintext`]. Returns an error if the iterator counts are 0, if
-/// the parameters don't match, or if the ciphertexts have different
-/// number of parts.
+/// iterator of [`Plaintext`]. Returns an error if either iterator is empty, the
+/// iterator lengths differ, the parameters or levels do not match, or the
+/// ciphertexts have different numbers of parts.
 pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext>
 where
     I: Iterator<Item = &'a Ciphertext> + Clone,
     J: Iterator<Item = &'a Plaintext> + Clone,
 {
-    let count = min(ct.clone().count(), pt.clone().count());
-    if count == 0 {
-        return Err(Error::DefaultError(
-            "At least one iterator is empty".to_string(),
-        ));
+    let ct_count = ct.clone().count();
+    let pt_count = pt.clone().count();
+    if ct_count == 0 || pt_count == 0 {
+        return Err(Error::TooFewValues {
+            actual: 0,
+            minimum: 1,
+        });
     }
-    let ct_first = ct.clone().next().unwrap();
-    let ctx = ct_first[0].ctx();
+    if ct_count != pt_count {
+        return Err(Error::DimensionMismatch {
+            operation: "dot product".to_string(),
+            expected: format!("{ct_count} plaintexts"),
+            actual: format!("{pt_count} plaintexts"),
+        });
+    }
+    let count = ct_count;
+    let ct_first = ct.clone().next().ok_or(Error::TooFewValues {
+        actual: 0,
+        minimum: 1,
+    })?;
+    ct_first.validate_for(&ct_first.par)?;
+    let ctx = ct_first.par.context_at_level(ct_first.level)?;
 
     // Variable-time reductions are permitted only when every ciphertext and
     // plaintext polynomial in the dot product has been classified as public.
@@ -80,15 +92,16 @@ where
                     && plaintext.poly_ntt.allows_variable_time_computations()
             });
 
-    if izip!(ct.clone(), pt.clone()).any(|(cti, pti)| {
-        cti.par != ct_first.par || pti.par != ct_first.par || cti.len() != ct_first.len()
-    }) {
-        return Err(Error::DefaultError("Mismatched parameters".to_string()));
-    }
-    if ct.clone().any(|cti| cti.len() != ct_first.len()) {
-        return Err(Error::DefaultError(
-            "Mismatched number of parts in the ciphertexts".to_string(),
-        ));
+    for (cti, pti) in ct.clone().zip(pt.clone()) {
+        cti.validate_for_context(&ct_first.par, ct_first.level, ctx)?;
+        pti.validate_for_context(&ct_first.par, ct_first.level, ctx)?;
+        if cti.len() != ct_first.len() {
+            return Err(Error::DimensionMismatch {
+                operation: "ciphertext dot product".to_string(),
+                expected: format!("{} polynomial parts", ct_first.len()),
+                actual: format!("{} polynomial parts", cti.len()),
+            });
+        }
     }
 
     let max_acc = ctx
@@ -238,6 +251,25 @@ mod tests {
                 );
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn dot_product_scalar_rejects_mismatched_inputs() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(1, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &params)?;
+        let ct = sk.try_encrypt(&pt, &mut rng)?;
+
+        assert!(matches!(
+            dot_product_scalar([&ct].into_iter(), [&pt, &pt].into_iter()),
+            Err(crate::Error::DimensionMismatch { .. })
+        ));
+        assert!(matches!(
+            dot_product_scalar([&Ciphertext::zero(&params)].into_iter(), [&pt].into_iter()),
+            Err(crate::Error::InvalidCiphertext { .. })
+        ));
         Ok(())
     }
 }

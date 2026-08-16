@@ -444,18 +444,34 @@ fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 }
 
 /// Compute the dot product between two iterators of polynomials in Ntt
-/// representation. Returns an error if either iterator is empty.
+/// representation. Returns an error if either iterator is empty, the iterator
+/// lengths differ, or the polynomial contexts do not match.
 pub fn dot_product<'a, 'b, I, J>(p: I, q: J) -> Result<Poly<Ntt>>
 where
     I: Iterator<Item = &'a Poly<Ntt>> + Clone,
     J: Iterator<Item = &'b Poly<Ntt>> + Clone,
 {
-    let count = std::cmp::min(p.clone().count(), q.clone().count());
-    if count == 0 {
+    let p_count = p.clone().count();
+    let q_count = q.clone().count();
+    if p_count == 0 || q_count == 0 {
         return Err(Error::Default("At least one iterator is empty".to_string()));
     }
+    if p_count != q_count {
+        return Err(Error::Default(format!(
+            "Mismatched iterator lengths: found {p_count} and {q_count}"
+        )));
+    }
+    let count = p_count;
 
-    let p_first = p.clone().next().unwrap();
+    let p_first = p
+        .clone()
+        .next()
+        .ok_or_else(|| Error::Default("The first iterator is empty".to_string()))?;
+    if p.clone().any(|poly| poly.ctx() != p_first.ctx())
+        || q.clone().any(|poly| poly.ctx() != p_first.ctx())
+    {
+        return Err(Error::InvalidContext);
+    }
     // A dot product may use variable-time reductions only when every input is
     // public. One constant-time operand conservatively downgrades the result.
     let allow_variable_time_computations =
@@ -807,6 +823,30 @@ mod tests {
         q[1].disallow_variable_time_computations();
         let mixed = dot_product(p.iter(), q.iter())?;
         assert!(!mixed.allows_variable_time_computations());
+        Ok(())
+    }
+
+    #[test]
+    fn dot_product_rejects_mismatched_inputs() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let ctx = Arc::new(Context::new(&MODULI[..1], 16)?);
+        let other_ctx = Arc::new(Context::new(&MODULI[1..2], 16)?);
+        let p = [Poly::<Ntt>::random(&ctx, &mut rng)];
+        let q = [
+            Poly::<Ntt>::random(&ctx, &mut rng),
+            Poly::<Ntt>::random(&ctx, &mut rng),
+        ];
+
+        assert!(matches!(
+            dot_product(p.iter(), q.iter()),
+            Err(crate::Error::Default(message)) if message.contains("Mismatched iterator lengths")
+        ));
+
+        let q = [Poly::<Ntt>::random(&other_ctx, &mut rng)];
+        assert_eq!(
+            dot_product(p.iter(), q.iter()),
+            Err(crate::Error::InvalidContext)
+        );
         Ok(())
     }
 

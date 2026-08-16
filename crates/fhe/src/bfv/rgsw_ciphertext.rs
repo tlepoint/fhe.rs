@@ -101,6 +101,7 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         pt: &Plaintext,
         rng: &mut R,
     ) -> Result<RGSWCiphertext> {
+        pt.validate_for(&self.par)?;
         let level = pt.level;
         let ctx = self.par.context_at_level(level)?;
 
@@ -207,6 +208,19 @@ mod tests {
             assert_eq!(expected, sk.try_decrypt(&ct3)?);
             assert_eq!(expected, sk.try_decrypt(&ct4)?);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn encryption_rejects_mismatched_parameters() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(1, 16);
+        let other_params = BfvParameters::default_arc(1, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &other_params)?;
+        let encrypted: crate::Result<RGSWCiphertext> = sk.try_encrypt(&pt, &mut rng);
+
+        assert!(encrypted.is_err());
         Ok(())
     }
 

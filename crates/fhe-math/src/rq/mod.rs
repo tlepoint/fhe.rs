@@ -493,7 +493,9 @@ impl Poly<PowerBasis> {
         for _ in 0..niterations {
             self.switch_down()?;
         }
-        assert_eq!(&self.ctx, context);
+        if &self.ctx != context {
+            return Err(Error::InvalidContext);
+        }
         Ok(())
     }
 

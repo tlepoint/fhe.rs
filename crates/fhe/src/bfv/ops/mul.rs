@@ -7,7 +7,7 @@ use fhe_math::{
 };
 
 use crate::{
-    Error, Result,
+    Error, ParametersError, Result,
     bfv::{BfvParameters, Ciphertext, keys::RelinearizationKey},
 };
 
@@ -110,7 +110,15 @@ impl Multiplicator {
         extended_basis.append(&mut ctx.moduli().to_vec());
         let mut upper_bound = 1 << 62;
         while extended_basis.len() != ctx.moduli().len() + n_moduli {
-            upper_bound = generate_prime(62, 2 * rk.ksk.par.degree() as u64, upper_bound).unwrap();
+            upper_bound = generate_prime(62, 2 * rk.ksk.par.degree() as u64, upper_bound)
+                .ok_or_else(|| {
+                    Error::ParametersError(ParametersError::NotEnoughPrimes {
+                        size: 62,
+                        degree: rk.ksk.par.degree(),
+                        needed: n_moduli,
+                        available: extended_basis.len() - ctx.moduli().len(),
+                    })
+                })?;
             if !extended_basis.contains(&upper_bound) && !ctx.moduli().contains(&upper_bound) {
                 extended_basis.push(upper_bound)
             }
@@ -156,11 +164,8 @@ impl Multiplicator {
 
     /// Multiply two ciphertexts using the defined multiplication strategy.
     pub fn multiply(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Result<Ciphertext> {
-        if lhs.par != self.par || rhs.par != self.par {
-            return Err(Error::DefaultError(
-                "Ciphertexts do not have the same parameters".to_string(),
-            ));
-        }
+        lhs.validate_for(&self.par)?;
+        rhs.validate_for(&self.par)?;
         if lhs.level != self.level || rhs.level != self.level {
             return Err(Error::DefaultError(
                 "Ciphertexts are not at expected level".to_string(),

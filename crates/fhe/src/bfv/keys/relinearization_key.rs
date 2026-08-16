@@ -69,14 +69,17 @@ impl RelinearizationKey {
     /// Relinearizes the supplied `(c0, c1, c2)` ciphertext in place, reducing
     /// it to two components.
     pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
+        ct.validate_for(&self.ksk.par)?;
         if ct.len() != 3 {
-            Err(Error::DefaultError(
-                "Only supports relinearization of ciphertext with 3 parts".to_string(),
-            ))
+            Err(Error::InvalidCiphertext {
+                reason: format!("relinearization requires 3 polynomials, found {}", ct.len()),
+            })
         } else if ct.level != self.ksk.ciphertext_level {
-            Err(Error::DefaultError(
-                "Ciphertext has incorrect level".to_string(),
-            ))
+            Err(Error::InvalidLevel {
+                level: ct.level,
+                min_level: self.ksk.ciphertext_level,
+                max_level: self.ksk.ciphertext_level,
+            })
         } else {
             let c2 = ct[2].clone().into_power_basis();
             let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;

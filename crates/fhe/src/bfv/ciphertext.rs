@@ -3,7 +3,7 @@
 use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{Ntt, Poly};
+use fhe_math::rq::{Context, Ntt, Poly};
 use fhe_traits::{
     DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
 };
@@ -77,22 +77,76 @@ impl Ciphertext {
         })
     }
 
+    /// Validate the structure and context of a ciphertext used as an input.
+    #[inline]
+    pub(crate) fn validate_for(&self, par: &Arc<BfvParameters>) -> Result<()> {
+        if !Arc::ptr_eq(&self.par, par) {
+            return Err(Error::context_mismatch(&self.par, par));
+        }
+        let expected_ctx = par.context_at_level(self.level)?;
+        self.validate_context(self.level, expected_ctx)
+    }
+
+    /// Validate against a context that the caller has already resolved.
+    #[inline]
+    pub(crate) fn validate_for_context(
+        &self,
+        par: &Arc<BfvParameters>,
+        expected_level: usize,
+        expected_ctx: &Arc<Context>,
+    ) -> Result<()> {
+        if !Arc::ptr_eq(&self.par, par) {
+            return Err(Error::context_mismatch(&self.par, par));
+        }
+        self.validate_context(expected_level, expected_ctx)
+    }
+
+    #[inline]
+    fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
+        if self.c.len() < 2 {
+            return Err(Error::InvalidCiphertext {
+                reason: format!("expected at least 2 polynomials, found {}", self.c.len()),
+            });
+        }
+        if self.level != expected_level {
+            return Err(Error::InvalidLevel {
+                level: self.level,
+                min_level: expected_level,
+                max_level: expected_level,
+            });
+        }
+        if self
+            .c
+            .iter()
+            .any(|poly| !Arc::ptr_eq(poly.ctx(), expected_ctx) && poly.ctx() != expected_ctx)
+        {
+            return Err(Error::InvalidCiphertext {
+                reason: "polynomial context does not match the ciphertext level".to_string(),
+            });
+        }
+        Ok(())
+    }
+
     /// Truncate the underlying vector of polynomials.
     pub(crate) fn truncate(&mut self, len: usize) {
         self.c.truncate(len)
     }
 
-    /// Switch to the next level in the chain
+    /// Switch to the next level in the chain.
+    ///
+    /// Returns an error if the ciphertext is already at the last level.
     pub fn switch_down(&mut self) -> Result<()> {
-        if self.level < self.max_switchable_level() {
-            self.seed = None;
-            for ci in self.c.iter_mut() {
-                let mut pb = ci.clone().into_power_basis();
-                pb.switch_down()?;
-                *ci = pb.into_ntt();
-            }
-            self.level += 1
+        if self.level >= self.max_switchable_level() {
+            return Err(fhe_math::Error::NoMoreContext.into());
         }
+
+        self.seed = None;
+        for ci in self.c.iter_mut() {
+            let mut pb = ci.clone().into_power_basis();
+            pb.switch_down()?;
+            *ci = pb.into_ntt();
+        }
+        self.level += 1;
         Ok(())
     }
 
@@ -365,6 +419,22 @@ mod tests {
             assert_eq!(decrypted.value, pt.value);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn switch_down_from_last_level_returns_error() -> Result<(), Box<dyn StdError>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(2, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &params)?;
+        let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        ct.switch_to_level(params.max_level())?;
+
+        assert!(matches!(
+            ct.switch_down(),
+            Err(FheError::MathError(fhe_math::Error::NoMoreContext))
+        ));
         Ok(())
     }
 

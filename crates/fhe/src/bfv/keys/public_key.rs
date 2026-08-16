@@ -49,6 +49,16 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         pt: &Plaintext,
         rng: &mut R,
     ) -> Result<Ciphertext> {
+        pt.validate_for(&self.par)?;
+        self.c.validate_for(&self.par)?;
+        if pt.level < self.c.level {
+            return Err(Error::InvalidLevel {
+                level: pt.level,
+                min_level: self.c.level,
+                max_level: self.par.max_level(),
+            });
+        }
+
         let needs_switch = self.c.level != pt.level;
         let ct: Cow<'_, Ciphertext> = if needs_switch {
             let mut owned = self.c.clone();
@@ -187,6 +197,19 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn encrypt_rejects_mismatched_parameters() -> Result<(), Box<dyn Error>> {
+        let mut rng = rng();
+        let params = BfvParameters::default_arc(1, 16);
+        let other_params = BfvParameters::default_arc(1, 16);
+        let sk = SecretKey::random(&params, &mut rng);
+        let pk = PublicKey::new(&sk, &mut rng);
+        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &other_params)?;
+
+        assert!(pk.try_encrypt(&pt, &mut rng).is_err());
         Ok(())
     }
 

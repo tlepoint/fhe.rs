@@ -70,6 +70,45 @@ impl FhePlaintext for Plaintext {
 }
 
 impl Plaintext {
+    #[inline]
+    pub(crate) fn validate_for(&self, par: &Arc<BfvParameters>) -> Result<()> {
+        if !Arc::ptr_eq(&self.par, par) {
+            return Err(Error::context_mismatch(&self.par, par));
+        }
+        let expected_ctx = par.context_at_level(self.level)?;
+        self.validate_context(self.level, expected_ctx)
+    }
+
+    #[inline]
+    pub(crate) fn validate_for_context(
+        &self,
+        par: &Arc<BfvParameters>,
+        expected_level: usize,
+        expected_ctx: &Arc<Context>,
+    ) -> Result<()> {
+        if !Arc::ptr_eq(&self.par, par) {
+            return Err(Error::context_mismatch(&self.par, par));
+        }
+        self.validate_context(expected_level, expected_ctx)
+    }
+
+    #[inline]
+    fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
+        if self.level != expected_level {
+            return Err(Error::InvalidLevel {
+                level: self.level,
+                min_level: expected_level,
+                max_level: expected_level,
+            });
+        }
+        if !Arc::ptr_eq(self.poly_ntt.ctx(), expected_ctx) && self.poly_ntt.ctx() != expected_ctx {
+            return Err(Error::InvalidPlaintext {
+                reason: "polynomial context does not match the plaintext level".to_string(),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn to_poly(&self) -> Poly<Ntt> {
         let ctx_lvl = self.par.context_level_at(self.level).unwrap();
         let ctx = &ctx_lvl.poly_context;
