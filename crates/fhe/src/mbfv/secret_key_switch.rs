@@ -3,7 +3,6 @@ use std::sync::Arc;
 use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
@@ -176,15 +175,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
         let poly =
             Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt();
 
-        let value = match ct.par.plaintext {
-            crate::bfv::PlaintextModulus::Small { .. } => PlaintextValues::Small(
-                w.iter()
-                    .map(|x| x.to_u64().unwrap())
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-            ),
-            crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(w.into_boxed_slice()),
-        };
+        let value = PlaintextValues::from_reduced_biguint(&ct.par.plaintext, w);
 
         let pt = Plaintext {
             par: ct.par.clone(),

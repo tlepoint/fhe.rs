@@ -78,17 +78,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                     let poly = Poly::<PowerBasis>::try_convert_from_public(&v, ctx, variable_time)?
                         .into_ntt();
 
-                    let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small { .. } => {
-                            PlaintextValues::Small(v.into_boxed_slice())
-                        }
-                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(
-                            v.iter()
-                                .map(|&x| BigUint::from(x))
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice(),
-                        ),
-                    };
+                    let value_enum = PlaintextValues::from_u64(&par.plaintext, v);
 
                     Ok(Plaintext {
                         par: par.clone(),
@@ -141,19 +131,7 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                     let poly =
                         Poly::<PowerBasis>::try_convert_from(v.as_slice(), ctx, false)?.into_ntt();
 
-                    let value_enum = match &par.plaintext {
-                        crate::bfv::PlaintextModulus::Small { modulus_big, .. } => {
-                            PlaintextValues::Small(
-                                v.iter()
-                                    .map(|x| (x % modulus_big).to_u64().unwrap())
-                                    .collect::<Vec<_>>()
-                                    .into_boxed_slice(),
-                            )
-                        }
-                        crate::bfv::PlaintextModulus::Large(_) => {
-                            PlaintextValues::Large(v.into_boxed_slice())
-                        }
-                    };
+                    let value_enum = PlaintextValues::from_biguint(&par.plaintext, v);
 
                     Ok(Plaintext {
                         par: par.clone(),
@@ -200,17 +178,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
 
                     let poly = Poly::<PowerBasis>::try_convert_from(&v, ctx, false)?.into_ntt();
 
-                    let value_enum = match par.plaintext {
-                        crate::bfv::PlaintextModulus::Small { .. } => {
-                            PlaintextValues::Small(v.into_boxed_slice())
-                        }
-                        crate::bfv::PlaintextModulus::Large(_) => PlaintextValues::Large(
-                            v.iter()
-                                .map(|&x| BigUint::from(x))
-                                .collect::<Vec<_>>()
-                                .into_boxed_slice(),
-                        ),
-                    };
+                    let value_enum = PlaintextValues::from_u64(&par.plaintext, v);
 
                     Ok(Plaintext {
                         par: par.clone(),

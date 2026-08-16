@@ -19,53 +19,67 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-/// Enum to support both small (u64) and large (BigUint) plaintext moduli.
+/// A plaintext modulus with an optional machine-word fast path.
+///
+/// The `BigUint` value is canonical. `small` caches the equivalent `Modulus`
+/// when it fits, allowing performance-sensitive encoding and decryption to
+/// keep using specialized `u64` arithmetic without exposing two independent
+/// representations to the rest of the BFV implementation.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) enum PlaintextModulus {
-    Small {
-        modulus: Modulus,
-        modulus_big: BigUint,
-    },
-    Large(BigUint),
+pub(crate) struct PlaintextModulus {
+    value: BigUint,
+    small: Option<Modulus>,
 }
 
 impl PlaintextModulus {
-    pub fn as_biguint(&self) -> &BigUint {
-        match self {
-            Self::Small { modulus_big, .. } => modulus_big,
-            Self::Large(m) => m,
-        }
+    fn try_new(value: BigUint) -> Result<Self> {
+        let small = value
+            .to_u64()
+            .map(|modulus| {
+                Modulus::new(modulus).map_err(|source| {
+                    Error::ParametersError(ParametersError::InvalidPlaintextModulus {
+                        modulus,
+                        source,
+                    })
+                })
+            })
+            .transpose()?;
+        Ok(Self { value, small })
     }
 
-    pub fn as_u64(&self) -> Option<u64> {
-        match self {
-            Self::Small { modulus, .. } => Some(**modulus),
-            Self::Large(_) => None,
-        }
+    pub(crate) fn as_biguint(&self) -> &BigUint {
+        &self.value
     }
 
-    pub fn reduce_vec(&self, v: &mut [BigUint]) {
-        match self {
-            Self::Small { modulus_big, .. } => {
-                v.iter_mut().for_each(|vi| *vi %= modulus_big);
-            }
-            Self::Large(m) => v.iter_mut().for_each(|vi| *vi %= m),
-        }
+    pub(crate) fn as_u64(&self) -> Option<u64> {
+        self.small.as_ref().map(|modulus| **modulus)
     }
 
-    // Helper to reduce BigUint vector to i64 (centered), returning as Vec<BigUint>
-    // or similar? The previous implementation used center_vec_vt returning
-    // Vec<i64>. If modulus is large, we can't fit in i64.
+    pub(crate) fn small(&self) -> Option<&Modulus> {
+        self.small.as_ref()
+    }
 
-    // We need a scalar multiplication for Plaintext::to_poly
-    pub fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
-        match self {
-            Self::Small { modulus_big, .. } => {
-                a.iter_mut()
-                    .for_each(|ai| *ai = (ai as &BigUint * b) % modulus_big);
-            }
-            Self::Large(m) => a.iter_mut().for_each(|ai| *ai = (ai as &BigUint * b) % m),
-        }
+    pub(crate) fn is_small(&self) -> bool {
+        self.small.is_some()
+    }
+
+    pub(crate) fn reduce_vec(&self, v: &mut [BigUint]) {
+        v.iter_mut().for_each(|vi| *vi %= &self.value);
+    }
+
+    pub(crate) fn scalar_mul_vec(&self, a: &mut [BigUint], b: &BigUint) {
+        a.iter_mut()
+            .for_each(|ai| *ai = (ai as &BigUint * b) % &self.value);
+    }
+
+    fn ntt_operator(&self, degree: usize) -> Option<Arc<NttOperator>> {
+        self.small
+            .as_ref()
+            .and_then(|modulus| NttOperator::new(modulus, degree).map(Arc::new))
+    }
+
+    fn upper_half_threshold(&self) -> BigUint {
+        (&self.value + 1u32) >> 1
     }
 }
 
@@ -560,19 +574,7 @@ impl BfvParametersBuilder {
     pub fn build(&self) -> Result<BfvParameters> {
         self.validate_configuration()?;
 
-        let plaintext_modulus_struct = if let Some(p) = self.plaintext.to_u64() {
-            PlaintextModulus::Small {
-                modulus: Modulus::new(p).map_err(|e| {
-                    Error::ParametersError(ParametersError::InvalidPlaintextModulus {
-                        modulus: p,
-                        source: e,
-                    })
-                })?,
-                modulus_big: BigUint::from(p),
-            }
-        } else {
-            PlaintextModulus::Large(self.plaintext.clone())
-        };
+        let plaintext_modulus_struct = PlaintextModulus::try_new(self.plaintext.clone())?;
         let plaintext_big = plaintext_modulus_struct.as_biguint();
 
         // Get or generate the moduli
@@ -606,14 +608,8 @@ impl BfvParametersBuilder {
         // Create plaintext context using sufficient moduli
         let plaintext_context = Context::new_arc(&moduli[..plaintext_moduli_count], self.degree)?;
 
-        // Create NTT operator for SIMD operations if possible
-        // Only if plaintext modulus fits in u64 for now
-        let ntt_operator = match &plaintext_modulus_struct {
-            PlaintextModulus::Small { modulus, .. } => {
-                NttOperator::new(modulus, self.degree).map(Arc::new)
-            }
-            PlaintextModulus::Large(_) => None,
-        };
+        // SIMD currently uses the cached machine-word representation.
+        let ntt_operator = plaintext_modulus_struct.ntt_operator(self.degree);
 
         // Create cipher-plain bridge contexts
         let mut cipher_plain_contexts = Vec::with_capacity(moduli.len());
@@ -651,10 +647,7 @@ impl BfvParametersBuilder {
             let q_mod_t = rns.modulus() % plaintext_big;
 
             // Compute plain_threshold
-            let plain_threshold = match &plaintext_modulus_struct {
-                PlaintextModulus::Small { modulus, .. } => BigUint::from((**modulus + 1) >> 1),
-                PlaintextModulus::Large(m) => (m + 1u32) >> 1,
-            };
+            let plain_threshold = plaintext_modulus_struct.upper_half_threshold();
 
             // Scaler from ciphertext to plaintext context
             let scaler = Scaler::new(
@@ -853,6 +846,8 @@ mod tests {
         let params = BfvParameters::default_arc(1, 16);
         assert_eq!(params.moduli.len(), 1);
         assert_eq!(params.degree(), 16);
+        assert!(params.plaintext.is_small());
+        assert_eq!(params.plaintext.as_u64(), Some(params.plaintext()));
 
         let params = BfvParameters::default_arc(2, 16);
         assert_eq!(params.moduli.len(), 2);
@@ -906,6 +901,8 @@ mod tests {
             .build()?;
 
         assert_eq!(params.plaintext_big(), &p);
+        assert!(!params.plaintext.is_small());
+        assert_eq!(params.plaintext.as_u64(), None);
         Ok(())
     }
 

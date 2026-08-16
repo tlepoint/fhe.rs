@@ -1,8 +1,6 @@
 //! Secret keys for the BFV encryption scheme
 
-use crate::bfv::{
-    BfvParameters, Ciphertext, Plaintext, parameters::PlaintextModulus, plaintext::PlaintextValues,
-};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext, plaintext::PlaintextValues};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
@@ -226,21 +224,18 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
         let c_pb = Zeroizing::new(c_inner.into_power_basis());
         let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
-        let value = match self.par.plaintext {
-            PlaintextModulus::Small { .. } => {
+        let value = match self.par.plaintext.small() {
+            Some(plaintext_modulus) => {
                 let mut v = Vec::<u64>::try_from(d.as_ref())?;
-                let plaintext_modulus = self.par.plaintext();
-                v.iter_mut().for_each(|vi| *vi += plaintext_modulus);
+                v.iter_mut().for_each(|vi| *vi += **plaintext_modulus);
                 let mut w = v[..self.par.degree()].to_vec();
 
                 let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
                 q.reduce_vec(&mut w);
-                if let PlaintextModulus::Small { modulus: m, .. } = &self.par.plaintext {
-                    m.reduce_vec(&mut w);
-                }
+                plaintext_modulus.reduce_vec(&mut w);
                 PlaintextValues::Small(w.into_boxed_slice())
             }
-            PlaintextModulus::Large(_) => {
+            None => {
                 let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
                     .into_iter()
                     .map(|vi| vi + self.par.plaintext_big())
@@ -255,15 +250,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
             }
         };
 
-        let poly = match &value {
-            PlaintextValues::Small(v) => {
-                Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
-            }
-            PlaintextValues::Large(v) => {
-                Poly::<PowerBasis>::try_convert_from(v.as_ref(), ct[0].ctx(), false)?
-            }
-        }
-        .into_ntt();
+        let poly = value.try_to_power_basis(ct[0].ctx(), false)?.into_ntt();
 
         let pt = Plaintext {
             par: self.par.clone(),

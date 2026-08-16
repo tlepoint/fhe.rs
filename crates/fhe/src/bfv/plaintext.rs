@@ -33,6 +33,74 @@ impl Zeroize for PlaintextValues {
     }
 }
 
+impl PlaintextValues {
+    pub(crate) fn zero(modulus: &PlaintextModulus, degree: usize) -> Self {
+        if modulus.is_small() {
+            Self::Small(vec![0u64; degree].into_boxed_slice())
+        } else {
+            Self::Large(vec![BigUint::zero(); degree].into_boxed_slice())
+        }
+    }
+
+    pub(crate) fn from_u64(modulus: &PlaintextModulus, values: Vec<u64>) -> Self {
+        if modulus.is_small() {
+            Self::Small(values.into_boxed_slice())
+        } else {
+            Self::Large(
+                values
+                    .into_iter()
+                    .map(BigUint::from)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        }
+    }
+
+    pub(crate) fn from_biguint(modulus: &PlaintextModulus, values: Vec<BigUint>) -> Self {
+        if modulus.is_small() {
+            Self::Small(
+                values
+                    .iter()
+                    .map(|value| (value % modulus.as_biguint()).to_u64().unwrap())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        } else {
+            Self::Large(values.into_boxed_slice())
+        }
+    }
+
+    #[cfg(feature = "experimental-mbfv")]
+    pub(crate) fn from_reduced_biguint(modulus: &PlaintextModulus, values: Vec<BigUint>) -> Self {
+        if modulus.is_small() {
+            Self::Small(
+                values
+                    .iter()
+                    .map(|value| value.to_u64().unwrap())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        } else {
+            Self::Large(values.into_boxed_slice())
+        }
+    }
+
+    pub(crate) fn try_to_power_basis(
+        &self,
+        ctx: &Arc<Context>,
+        variable_time: bool,
+    ) -> fhe_math::Result<Poly<PowerBasis>> {
+        match self {
+            Self::Small(values) => {
+                Poly::<PowerBasis>::try_convert_from(values.as_ref(), ctx, variable_time)
+            }
+            Self::Large(values) => {
+                Poly::<PowerBasis>::try_convert_from(values.as_ref(), ctx, variable_time)
+            }
+        }
+    }
+}
+
 /// A plaintext object, that encodes a vector according to a specific encoding.
 #[derive(Debug, Clone, Eq)]
 pub struct Plaintext {
@@ -123,12 +191,11 @@ impl Plaintext {
         let m = match &self.value {
             PlaintextValues::Small(v) => {
                 let mut m_v = Zeroizing::new(v.clone());
-                if let PlaintextModulus::Small { modulus, .. } = &self.par.plaintext {
-                    let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
-                    modulus.scalar_mul_vec(&mut m_v, q_mod_t);
-                } else {
-                    unreachable!("PlaintextValues::Small but PlaintextModulus::Large");
-                }
+                let Some(modulus) = self.par.plaintext.small() else {
+                    unreachable!("small plaintext values require the u64 modulus fast path");
+                };
+                let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
+                modulus.scalar_mul_vec(&mut m_v, q_mod_t);
                 Poly::<PowerBasis>::try_convert_from(m_v.as_ref(), ctx, false).unwrap()
             }
             PlaintextValues::Large(v) => {
@@ -149,14 +216,7 @@ impl Plaintext {
     pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
         let level = encoding.level;
         let ctx = par.context_at_level(level)?;
-        let value = match par.plaintext {
-            PlaintextModulus::Small { .. } => {
-                PlaintextValues::Small(vec![0u64; par.degree()].into_boxed_slice())
-            }
-            PlaintextModulus::Large(_) => {
-                PlaintextValues::Large(vec![BigUint::zero(); par.degree()].into_boxed_slice())
-            }
-        };
+        let value = PlaintextValues::zero(&par.plaintext, par.degree());
         let poly_ntt = Poly::<Ntt>::zero(ctx);
         Ok(Self {
             par: par.clone(),
@@ -219,14 +279,7 @@ impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
         {
             Err(fhe_math::Error::PolynomialContextMismatch)
         } else {
-            match &pt.value {
-                PlaintextValues::Small(v) => {
-                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ctx, variable_time)
-                }
-                PlaintextValues::Large(v) => {
-                    Poly::<PowerBasis>::try_convert_from(v.as_ref(), ctx, variable_time)
-                }
-            }
+            pt.value.try_to_power_basis(ctx, variable_time)
         }
     }
 }
@@ -312,13 +365,13 @@ impl<'a> FheEncoderVariableTime<&'a [u64]> for Plaintext {
 impl<'a> FheEncoder<&'a [i64]> for Plaintext {
     type Error = Error;
     fn try_encode(value: &'a [i64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-        match &par.plaintext {
-            PlaintextModulus::Small { modulus: m, .. } => {
+        match par.plaintext.small() {
+            Some(m) => {
                 let w = Zeroizing::new(m.reduce_vec_i64(value));
                 Plaintext::try_encode(w.as_ref() as &[u64], encoding, par)
             }
-            PlaintextModulus::Large(m) => {
-                let modulus_int = BigInt::from_biguint(Sign::Plus, m.clone());
+            None => {
+                let modulus_int = BigInt::from_biguint(Sign::Plus, par.plaintext_big().clone());
                 let v: Vec<BigUint> = value
                     .iter()
                     .map(|&x| {
@@ -479,11 +532,10 @@ impl FheDecoder<Plaintext> for Vec<i64> {
         match &pt.value {
             PlaintextValues::Small(_) => {
                 let v = Vec::<u64>::try_decode(pt, encoding)?;
-                if let PlaintextModulus::Small { modulus: m, .. } = &pt.par.plaintext {
-                    Ok(m.center_vec(&v))
-                } else {
-                    unreachable!()
-                }
+                let Some(modulus) = pt.par.plaintext.small() else {
+                    unreachable!("small plaintext values require the u64 modulus fast path");
+                };
+                Ok(modulus.center_vec(&v))
             }
             PlaintextValues::Large(_) => {
                 let v = Vec::<BigUint>::try_decode(pt, encoding)?;
