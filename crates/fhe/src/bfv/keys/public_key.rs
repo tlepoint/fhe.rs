@@ -51,18 +51,19 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
     ) -> Result<Ciphertext> {
         pt.validate_for(&self.par)?;
         self.c.validate_for(&self.par)?;
-        if pt.level < self.c.level {
+        let plaintext_level = pt.level();
+        if plaintext_level < self.c.level {
             return Err(Error::InvalidLevel {
-                level: pt.level,
+                level: plaintext_level,
                 min_level: self.c.level,
                 max_level: self.par.max_level(),
             });
         }
 
-        let needs_switch = self.c.level != pt.level;
+        let needs_switch = self.c.level != plaintext_level;
         let ct: Cow<'_, Ciphertext> = if needs_switch {
             let mut owned = self.c.clone();
-            while owned.level != pt.level {
+            while owned.level != plaintext_level {
                 owned.switch_down()?;
             }
             Cow::Owned(owned)

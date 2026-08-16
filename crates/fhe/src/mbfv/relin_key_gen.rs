@@ -450,7 +450,7 @@ mod tests {
                     .unwrap()
                     .mul_vec(&mut expected, &v2);
                 assert_eq!(
-                    Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(pt.level)).unwrap(),
+                    Vec::<u64>::try_decode(&pt, Encoding::simd_at_level(pt.level())).unwrap(),
                     expected
                 );
             }

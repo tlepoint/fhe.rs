@@ -323,8 +323,9 @@ mod tests {
         BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, traits::TryConvertFrom,
     };
     use crate::proto::bfv::Ciphertext as CiphertextProto;
-    use fhe_traits::FheDecrypter;
-    use fhe_traits::{DeserializeParametrized, FheEncoder, FheEncrypter, Serialize};
+    use fhe_traits::{
+        DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
+    };
     use rand::rng;
     use std::error::Error as StdError;
 
@@ -429,7 +430,10 @@ mod tests {
             assert_eq!(ct.level, params.max_level());
 
             let decrypted = sk.try_decrypt(&ct)?;
-            assert_eq!(decrypted.value, pt.value);
+            assert_eq!(
+                Vec::<u64>::try_decode(&decrypted, Encoding::simd())?,
+                Vec::<u64>::try_decode(&pt, Encoding::simd())?
+            );
         }
 
         Ok(())

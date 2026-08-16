@@ -1,6 +1,6 @@
 //! Secret keys for the BFV encryption scheme
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, plaintext::PlaintextValues};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
@@ -224,7 +224,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
         let c_pb = Zeroizing::new(c_inner.into_power_basis());
         let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
-        let value = match self.par.plaintext.small() {
+        let poly = match self.par.plaintext.small() {
             Some(plaintext_modulus) => {
                 let mut v = Vec::<u64>::try_from(d.as_ref())?;
                 v.iter_mut().for_each(|vi| *vi += **plaintext_modulus);
@@ -233,7 +233,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
                 q.reduce_vec(&mut w);
                 plaintext_modulus.reduce_vec(&mut w);
-                PlaintextValues::Small(w.into_boxed_slice())
+                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt()
             }
             None => {
                 let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
@@ -246,18 +246,14 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 w.iter_mut().for_each(|wi| *wi %= q_poly);
 
                 self.par.plaintext.reduce_vec(&mut w);
-                PlaintextValues::Large(w.into_boxed_slice())
+                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt()
             }
         };
 
-        let poly = value.try_to_power_basis(ct[0].ctx(), false)?.into_ntt();
-
         let pt = Plaintext {
             par: self.par.clone(),
-            value,
             encoding: None,
             poly_ntt: poly,
-            level: ct.level,
         };
 
         Ok(pt)

@@ -1,11 +1,12 @@
 //! Plaintext type in the BFV encryption scheme.
 use crate::{
     Error, Result,
-    bfv::{BfvParameters, Encoding, PlaintextVec, parameters::PlaintextModulus},
+    bfv::{BfvParameters, Encoding, PlaintextVec},
 };
 use fhe_math::rq::{Context, Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use fhe_traits::{
-    FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext, VariableTime,
+    FheDecoder, FheEncoder, FheEncoderVariableTime, FheParametrized, FhePlaintext, PublicData,
+    VariableTime,
 };
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::{ToPrimitive, Zero};
@@ -14,91 +15,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::encoding::EncodingEnum;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PlaintextValues {
-    Small(Box<[u64]>),
-    Large(Box<[BigUint]>),
-}
-
-impl Zeroize for PlaintextValues {
-    fn zeroize(&mut self) {
-        match self {
-            Self::Small(v) => v.zeroize(),
-            Self::Large(v) => {
-                for x in v.iter_mut() {
-                    *x = BigUint::zero();
-                }
-            }
-        }
-    }
-}
-
-impl PlaintextValues {
-    pub(crate) fn zero(modulus: &PlaintextModulus, degree: usize) -> Self {
-        if modulus.is_small() {
-            Self::Small(vec![0u64; degree].into_boxed_slice())
-        } else {
-            Self::Large(vec![BigUint::zero(); degree].into_boxed_slice())
-        }
-    }
-
-    pub(crate) fn from_u64(modulus: &PlaintextModulus, values: Vec<u64>) -> Self {
-        if modulus.is_small() {
-            Self::Small(values.into_boxed_slice())
-        } else {
-            Self::Large(
-                values
-                    .into_iter()
-                    .map(BigUint::from)
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-            )
-        }
-    }
-
-    pub(crate) fn from_biguint(modulus: &PlaintextModulus, values: Vec<BigUint>) -> Self {
-        if modulus.is_small() {
-            Self::Small(
-                values
-                    .iter()
-                    .map(|value| (value % modulus.as_biguint()).to_u64().unwrap())
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-            )
-        } else {
-            Self::Large(values.into_boxed_slice())
-        }
-    }
-
-    #[cfg(feature = "experimental-mbfv")]
-    pub(crate) fn from_reduced_biguint(modulus: &PlaintextModulus, values: Vec<BigUint>) -> Self {
-        if modulus.is_small() {
-            Self::Small(
-                values
-                    .iter()
-                    .map(|value| value.to_u64().unwrap())
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-            )
-        } else {
-            Self::Large(values.into_boxed_slice())
-        }
-    }
-
-    pub(crate) fn try_to_power_basis(
-        &self,
-        ctx: &Arc<Context>,
-        variable_time: bool,
-    ) -> fhe_math::Result<Poly<PowerBasis>> {
-        match self {
-            Self::Small(values) => {
-                Poly::<PowerBasis>::try_convert_from(values.as_ref(), ctx, variable_time)
-            }
-            Self::Large(values) => {
-                Poly::<PowerBasis>::try_convert_from(values.as_ref(), ctx, variable_time)
-            }
-        }
-    }
+enum PlaintextCoefficients {
+    Small(Vec<u64>),
+    Large(Vec<BigUint>),
 }
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
@@ -106,19 +25,14 @@ impl PlaintextValues {
 pub struct Plaintext {
     /// The parameters of the underlying BFV encryption scheme.
     pub(crate) par: Arc<BfvParameters>,
-    /// The value after encoding.
-    pub(crate) value: PlaintextValues,
     /// The encoding of the plaintext, if known
     pub(crate) encoding: Option<Encoding>,
-    /// The plaintext as a polynomial.
+    /// Canonical plaintext representation.
     pub(crate) poly_ntt: Poly<Ntt>,
-    /// The level of the plaintext
-    pub(crate) level: usize,
 }
 
 impl Zeroize for Plaintext {
     fn zeroize(&mut self) {
-        self.value.zeroize();
         self.poly_ntt.zeroize();
     }
 }
@@ -146,8 +60,9 @@ impl Plaintext {
                 right: crate::ParameterSource::Parameters,
             });
         }
-        let expected_ctx = par.context_at_level(self.level)?;
-        self.validate_context(self.level, expected_ctx)
+        let level = self.level();
+        let expected_ctx = par.context_at_level(level)?;
+        self.validate_context(level, expected_ctx)
     }
 
     #[inline]
@@ -168,9 +83,10 @@ impl Plaintext {
 
     #[inline]
     fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
-        if self.level != expected_level {
+        let level = self.level();
+        if level != expected_level {
             return Err(Error::InvalidLevel {
-                level: self.level,
+                level,
                 min_level: expected_level,
                 max_level: expected_level,
             });
@@ -184,26 +100,94 @@ impl Plaintext {
         Ok(())
     }
 
+    fn coefficients(&self) -> PlaintextCoefficients {
+        let poly = Zeroizing::new(self.poly_ntt.clone().into_power_basis());
+        match self.par.plaintext.small() {
+            Some(modulus)
+                if self
+                    .poly_ntt
+                    .ctx()
+                    .moduli()
+                    .first()
+                    .is_some_and(|ciphertext_modulus| **modulus < *ciphertext_modulus) =>
+            {
+                let coefficients = Vec::<u64>::try_from(poly.as_ref()).unwrap();
+                let mut values = coefficients[..self.par.degree()].to_vec();
+                modulus.reduce_vec(&mut values);
+                PlaintextCoefficients::Small(values)
+            }
+            Some(_) => {
+                let mut values = Vec::<BigUint>::from(poly.as_ref());
+                self.par.plaintext.reduce_vec(&mut values);
+                PlaintextCoefficients::Small(
+                    values
+                        .into_iter()
+                        .map(|value| value.to_u64().unwrap())
+                        .collect(),
+                )
+            }
+            None => {
+                let mut values = Vec::<BigUint>::from(poly.as_ref());
+                self.par.plaintext.reduce_vec(&mut values);
+                PlaintextCoefficients::Large(values)
+            }
+        }
+    }
+
+    fn resolve_encoding<O>(&self, encoding: O) -> Result<Encoding>
+    where
+        O: Into<Option<Encoding>>,
+    {
+        match (self.encoding.as_ref(), encoding.into()) {
+            (None, None) => Err(crate::PlaintextError::MissingEncoding.into()),
+            (Some(stored), Some(provided)) if stored != &provided => {
+                Err(crate::EncodingError::Mismatch {
+                    found: provided,
+                    expected: stored.clone(),
+                }
+                .into())
+            }
+            (Some(stored), _) => Ok(stored.clone()),
+            (None, Some(provided)) => Ok(provided),
+        }
+    }
+
+    fn decode_simd_u64(&self, mut values: Vec<u64>) -> Result<Vec<u64>> {
+        let op = self
+            .par
+            .ntt_operator
+            .as_ref()
+            .ok_or(crate::EncodingError::SimdUnavailable)?;
+        op.forward(&mut values);
+        let reordered = self
+            .par
+            .matrix_reps_index_map
+            .iter()
+            .map(|&index| values[index])
+            .collect();
+        values.zeroize();
+        Ok(reordered)
+    }
+
     pub(crate) fn to_poly(&self) -> Poly<Ntt> {
-        let ctx_lvl = self.par.context_level_at(self.level).unwrap();
+        let ctx_lvl = self.par.context_level_at(self.level()).unwrap();
         let ctx = &ctx_lvl.poly_context;
 
-        let m = match &self.value {
-            PlaintextValues::Small(v) => {
-                let mut m_v = Zeroizing::new(v.clone());
+        let m = match self.coefficients() {
+            PlaintextCoefficients::Small(values) => {
+                let mut values = Zeroizing::new(values);
                 let Some(modulus) = self.par.plaintext.small() else {
                     unreachable!("small plaintext values require the u64 modulus fast path");
                 };
                 let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
-                modulus.scalar_mul_vec(&mut m_v, q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(m_v.as_ref(), ctx, false).unwrap()
+                modulus.scalar_mul_vec(&mut values, q_mod_t);
+                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx, false).unwrap()
             }
-            PlaintextValues::Large(v) => {
-                let mut m_v = v.clone();
+            PlaintextCoefficients::Large(mut values) => {
                 self.par
                     .plaintext
-                    .scalar_mul_vec(&mut m_v, &ctx_lvl.cipher_plain_context.q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(m_v.as_ref(), ctx, false).unwrap()
+                    .scalar_mul_vec(&mut values, &ctx_lvl.cipher_plain_context.q_mod_t);
+                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx, false).unwrap()
             }
         };
 
@@ -214,23 +198,19 @@ impl Plaintext {
 
     /// Generate a zero plaintext.
     pub fn zero(encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
-        let level = encoding.level;
-        let ctx = par.context_at_level(level)?;
-        let value = PlaintextValues::zero(&par.plaintext, par.degree());
+        let ctx = par.context_at_level(encoding.level)?;
         let poly_ntt = Poly::<Ntt>::zero(ctx);
         Ok(Self {
             par: par.clone(),
-            value,
             encoding: Some(encoding),
             poly_ntt,
-            level,
         })
     }
 
     /// Returns the level of this plaintext.
     #[must_use]
     pub fn level(&self) -> usize {
-        self.par.level_of_context(self.poly_ntt.ctx()).unwrap()
+        self.par.moduli().len() - self.poly_ntt.ctx().moduli().len()
     }
 }
 
@@ -240,23 +220,17 @@ impl PartialEq for Plaintext {
     fn eq(&self, other: &Self) -> bool {
         let Self {
             par,
-            value,
             encoding,
             poly_ntt,
-            level,
         } = self;
         let Self {
             par: other_par,
-            value: other_value,
             encoding: other_encoding,
             poly_ntt: other_poly_ntt,
-            level: other_level,
         } = other;
 
         let mut eq = par == other_par;
-        eq &= value == other_value;
         eq &= poly_ntt == other_poly_ntt;
-        eq &= level == other_level;
         if encoding.is_some() && other_encoding.is_some() {
             eq &= encoding == other_encoding;
         }
@@ -279,7 +253,15 @@ impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
         {
             Err(fhe_math::Error::PolynomialContextMismatch)
         } else {
-            pt.value.try_to_power_basis(ctx, variable_time)
+            let mut poly = pt.poly_ntt.clone();
+            if variable_time {
+                poly.allow_variable_time_computations(VariableTime::new(
+                    PublicData::assert_public(),
+                ));
+            } else {
+                poly.disallow_variable_time_computations();
+            }
+            Ok(poly.into_power_basis())
         }
     }
 }
@@ -394,59 +376,28 @@ impl FheDecoder<Plaintext> for Vec<BigUint> {
     where
         O: Into<Option<Encoding>>,
     {
-        // First convert to Vec<BigUint> regardless of internal storage
-        let w = match &pt.value {
-            PlaintextValues::Small(v) => v.iter().map(|&x| BigUint::from(x)).collect::<Vec<_>>(),
-            PlaintextValues::Large(v) => v.to_vec(),
+        let encoding = pt.resolve_encoding(encoding)?;
+        let values = match pt.coefficients() {
+            PlaintextCoefficients::Small(values) => values.into_iter().map(BigUint::from).collect(),
+            PlaintextCoefficients::Large(values) => values,
         };
 
-        // Standard decoding logic (e.g. check encoding match)
-        let encoding = encoding.into();
-        let enc: Encoding;
-        if pt.encoding.is_none() && encoding.is_none() {
-            return Err(crate::PlaintextError::MissingEncoding.into());
-        } else if pt.encoding.is_some() {
-            enc = pt.encoding.as_ref().unwrap().clone();
-            if let Some(arg_enc) = encoding
-                && arg_enc != enc
-            {
-                return Err(crate::EncodingError::Mismatch {
-                    found: arg_enc,
-                    expected: enc,
-                }
-                .into());
-            }
-        } else {
-            enc = encoding.unwrap();
-            if let Some(pt_enc) = pt.encoding.as_ref()
-                && pt_enc != &enc
-            {
-                return Err(crate::EncodingError::Mismatch {
-                    found: pt_enc.clone(),
-                    expected: enc,
-                }
-                .into());
-            }
-        }
-
-        match enc.encoding {
-            EncodingEnum::Poly => Ok(w),
+        match encoding.encoding {
+            EncodingEnum::Poly => Ok(values),
             EncodingEnum::Simd => {
-                if let Some(op) = &pt.par.ntt_operator {
-                    // NTT operator works on u64.
-                    // If ntt_operator exists, it means we are in Small modulus case.
-                    let mut w_u64: Vec<u64> = w.iter().map(|x| x.to_u64().unwrap()).collect();
-                    op.forward(&mut w_u64);
-                    let mut w_reordered = w_u64.clone();
-                    for i in 0..pt.par.degree() {
-                        w_reordered[i] = w_u64[pt.par.matrix_reps_index_map[i]]
-                    }
-                    w_u64.zeroize();
-
-                    Ok(w_reordered.into_iter().map(BigUint::from).collect())
-                } else {
-                    Err(crate::EncodingError::SimdUnavailable.into())
-                }
+                let values = values
+                    .into_iter()
+                    .map(|value| {
+                        value
+                            .to_u64()
+                            .ok_or(crate::PlaintextError::ValueTooLargeForU64)
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                Ok(pt
+                    .decode_simd_u64(values)?
+                    .into_iter()
+                    .map(BigUint::from)
+                    .collect())
             }
         }
     }
@@ -458,66 +409,22 @@ impl FheDecoder<Plaintext> for Vec<u64> {
     where
         O: Into<Option<Encoding>>,
     {
-        // Optimized path for Small values
-        match &pt.value {
-            PlaintextValues::Small(v) => {
-                // Copied logic for validation
-                let encoding = encoding.into();
-                let enc: Encoding;
-                if pt.encoding.is_none() && encoding.is_none() {
-                    return Err(crate::PlaintextError::MissingEncoding.into());
-                } else if pt.encoding.is_some() {
-                    enc = pt.encoding.as_ref().unwrap().clone();
-                    if let Some(arg_enc) = encoding
-                        && arg_enc != enc
-                    {
-                        return Err(crate::EncodingError::Mismatch {
-                            found: arg_enc,
-                            expected: enc,
-                        }
-                        .into());
-                    }
-                } else {
-                    enc = encoding.unwrap();
-                    if let Some(pt_enc) = pt.encoding.as_ref()
-                        && pt_enc != &enc
-                    {
-                        return Err(crate::EncodingError::Mismatch {
-                            found: pt_enc.clone(),
-                            expected: enc,
-                        }
-                        .into());
-                    }
-                }
+        let encoding = pt.resolve_encoding(encoding)?;
+        let values = match pt.coefficients() {
+            PlaintextCoefficients::Small(values) => values,
+            PlaintextCoefficients::Large(values) => values
+                .into_iter()
+                .map(|value| {
+                    value
+                        .to_u64()
+                        .ok_or(crate::PlaintextError::ValueTooLargeForU64.into())
+                })
+                .collect::<Result<Vec<_>>>()?,
+        };
 
-                let mut w = v.to_vec();
-
-                match enc.encoding {
-                    EncodingEnum::Poly => Ok(w),
-                    EncodingEnum::Simd => {
-                        if let Some(op) = &pt.par.ntt_operator {
-                            op.forward(&mut w);
-                            let mut w_reordered = w.clone();
-                            for i in 0..pt.par.degree() {
-                                w_reordered[i] = w[pt.par.matrix_reps_index_map[i]]
-                            }
-                            w.zeroize();
-                            Ok(w_reordered)
-                        } else {
-                            Err(crate::EncodingError::SimdUnavailable.into())
-                        }
-                    }
-                }
-            }
-            PlaintextValues::Large(_) => {
-                let v = Vec::<BigUint>::try_decode(pt, encoding)?;
-                v.iter()
-                    .map(|x| {
-                        x.to_u64()
-                            .ok_or(crate::PlaintextError::ValueTooLargeForU64.into())
-                    })
-                    .collect()
-            }
+        match encoding.encoding {
+            EncodingEnum::Poly => Ok(values),
+            EncodingEnum::Simd => pt.decode_simd_u64(values),
         }
     }
 
@@ -529,31 +436,26 @@ impl FheDecoder<Plaintext> for Vec<i64> {
     where
         E: Into<Option<Encoding>>,
     {
-        match &pt.value {
-            PlaintextValues::Small(_) => {
-                let v = Vec::<u64>::try_decode(pt, encoding)?;
-                let Some(modulus) = pt.par.plaintext.small() else {
-                    unreachable!("small plaintext values require the u64 modulus fast path");
-                };
-                Ok(modulus.center_vec(&v))
-            }
-            PlaintextValues::Large(_) => {
-                let v = Vec::<BigUint>::try_decode(pt, encoding)?;
-                let modulus_big = pt.par.plaintext_big();
-                let modulus_int = BigInt::from_biguint(Sign::Plus, modulus_big.clone());
-                let half_modulus = modulus_big / 2u32;
+        if let Some(modulus) = pt.par.plaintext.small() {
+            let values = Vec::<u64>::try_decode(pt, encoding)?;
+            Ok(modulus.center_vec(&values))
+        } else {
+            let values = Vec::<BigUint>::try_decode(pt, encoding)?;
+            let modulus_big = pt.par.plaintext_big();
+            let modulus_int = BigInt::from_biguint(Sign::Plus, modulus_big.clone());
+            let half_modulus = modulus_big / 2u32;
 
-                Ok(v.iter()
-                    .map(|x| {
-                        if x >= &half_modulus {
-                            let x_int = BigInt::from_biguint(Sign::Plus, x.clone());
-                            (x_int - &modulus_int).to_i64().unwrap()
-                        } else {
-                            x.to_i64().unwrap()
-                        }
-                    })
-                    .collect())
-            }
+            Ok(values
+                .iter()
+                .map(|value| {
+                    if value >= &half_modulus {
+                        let value_int = BigInt::from_biguint(Sign::Plus, value.clone());
+                        (value_int - &modulus_int).to_i64().unwrap()
+                    } else {
+                        value.to_i64().unwrap()
+                    }
+                })
+                .collect())
         }
     }
 
@@ -564,7 +466,6 @@ impl FheDecoder<Plaintext> for Vec<i64> {
 mod tests {
     use super::{Encoding, Plaintext};
     use crate::bfv::parameters::{BfvParameters, BfvParametersBuilder};
-    use crate::bfv::plaintext::PlaintextValues;
     use fhe_math::rq::{Ntt, Poly};
     use fhe_traits::{FheDecoder, FheEncoder, FheEncoderVariableTime};
     use num_bigint::BigUint;
@@ -587,12 +488,8 @@ mod tests {
         let plaintext = Plaintext::try_encode(&[0u64; 17], Encoding::poly(), &params);
         assert!(plaintext.is_err());
 
-        let plaintext = Plaintext::try_encode(&a_vec, Encoding::poly(), &params);
-        assert!(plaintext.is_ok());
-        // Verify it used Small variant
-        if let PlaintextValues::Large(_) = plaintext.unwrap().value {
-            println!("Expected Small variant");
-        }
+        let plaintext = Plaintext::try_encode(&a_vec, Encoding::poly(), &params)?;
+        assert_eq!(Vec::<u64>::try_decode(&plaintext, Encoding::poly())?, a_vec);
 
         let plaintext = Plaintext::try_encode(&a_vec, Encoding::simd(), &params);
         assert!(plaintext.is_ok());
@@ -652,11 +549,6 @@ mod tests {
 
         let vals = vec![p_val.clone() - 1u32, BigUint::from(123u32)];
         let plaintext = Plaintext::try_encode(&vals, Encoding::poly(), &params)?;
-
-        // Verify it used Large variant
-        if let PlaintextValues::Small(_) = plaintext.value {
-            println!("Expected Large variant");
-        }
 
         let decoded: Vec<BigUint> = Vec::<BigUint>::try_decode(&plaintext, Encoding::poly())?;
         assert_eq!(decoded[0], p_val - 1u32);
@@ -770,10 +662,6 @@ mod tests {
         let params = BfvParameters::default_arc(1, 16);
         let plaintext = Plaintext::zero(Encoding::poly(), &params)?;
 
-        assert_eq!(
-            plaintext.value,
-            PlaintextValues::Small(vec![0u64; 16].into_boxed_slice())
-        );
         assert_eq!(
             plaintext.poly_ntt,
             Poly::<Ntt>::zero(params.context_at_level(0)?)

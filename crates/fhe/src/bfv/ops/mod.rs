@@ -90,7 +90,7 @@ impl AddAssign<&Plaintext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
         assert!(!self.is_empty());
-        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.level, rhs.level());
 
         let poly = rhs.to_poly();
         self[0] += &poly;
@@ -185,7 +185,7 @@ impl SubAssign<&Plaintext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
         assert!(!self.is_empty());
-        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.level, rhs.level());
 
         let poly = rhs.to_poly();
         self.c[0] -= &poly;
@@ -230,7 +230,7 @@ impl MulAssign<&Plaintext> for Ciphertext {
     fn mul_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
         if !self.is_empty() {
-            assert_eq!(self.level, rhs.level);
+            assert_eq!(self.level, rhs.level());
             self.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
         }
         self.seed = None

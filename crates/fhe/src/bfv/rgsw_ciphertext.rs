@@ -100,7 +100,7 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         rng: &mut R,
     ) -> Result<RGSWCiphertext> {
         pt.validate_for(&self.par)?;
-        let level = pt.level;
+        let level = pt.level();
         let ctx = self.par.context_at_level(level)?;
 
         let m = Zeroizing::new(pt.poly_ntt.clone().into_power_basis());
@@ -112,8 +112,8 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
         let m_s_inner = std::mem::replace(m_s.as_mut(), Poly::<Ntt>::zero(&ctx));
         let m_s = Zeroizing::new(m_s_inner.into_power_basis());
 
-        let ksk0 = KeySwitchingKey::new(self, &m, pt.level, pt.level, rng)?;
-        let ksk1 = KeySwitchingKey::new(self, &m_s, pt.level, pt.level, rng)?;
+        let ksk0 = KeySwitchingKey::new(self, &m, level, level, rng)?;
+        let ksk1 = KeySwitchingKey::new(self, &m_s, level, level, rng)?;
 
         Ok(RGSWCiphertext { ksk0, ksk1 })
     }

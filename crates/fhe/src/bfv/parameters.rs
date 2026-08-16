@@ -59,10 +59,6 @@ impl PlaintextModulus {
         self.small.as_ref()
     }
 
-    pub(crate) fn is_small(&self) -> bool {
-        self.small.is_some()
-    }
-
     pub(crate) fn reduce_vec(&self, v: &mut [BigUint]) {
         v.iter_mut().for_each(|vi| *vi %= &self.value);
     }
@@ -832,7 +828,7 @@ mod tests {
         let params = BfvParameters::default_arc(1, 16);
         assert_eq!(params.moduli.len(), 1);
         assert_eq!(params.degree(), 16);
-        assert!(params.plaintext.is_small());
+        assert!(params.plaintext.small().is_some());
         assert_eq!(params.plaintext.as_u64(), Some(params.plaintext()));
 
         let params = BfvParameters::default_arc(2, 16);
@@ -887,7 +883,7 @@ mod tests {
             .build()?;
 
         assert_eq!(params.plaintext_big(), &p);
-        assert!(!params.plaintext.is_small());
+        assert!(params.plaintext.small().is_none());
         assert_eq!(params.plaintext.as_u64(), None);
         Ok(())
     }

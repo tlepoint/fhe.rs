@@ -6,7 +6,7 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, PlaintextValues, SecretKey};
+use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
 use crate::{Error, Result};
 
 use super::Aggregate;
@@ -175,14 +175,10 @@ impl Aggregate<DecryptionShare> for Plaintext {
         let poly =
             Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt();
 
-        let value = PlaintextValues::from_reduced_biguint(&ct.par.plaintext, w);
-
         let pt = Plaintext {
             par: ct.par.clone(),
-            value,
             encoding: None,
             poly_ntt: poly,
-            level: ct.level,
         };
 
         Ok(pt)

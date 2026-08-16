@@ -27,6 +27,5 @@ pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKe
 pub use ops::{Multiplicator, dot_product_scalar};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;
-pub(crate) use plaintext::PlaintextValues;
 pub use plaintext_vec::PlaintextVec;
 pub use rgsw_ciphertext::RGSWCiphertext;
