@@ -102,8 +102,8 @@ pub struct BfvParameters {
     /// Error variance
     pub(crate) variance: usize,
 
-    /// Head of the context chain for modulus switching
-    pub(crate) context_chain: Arc<ContextLevel>,
+    /// Precomputed contexts indexed by modulus-switching level.
+    pub(crate) context_levels: Vec<ContextLevel>,
 
     /// NTT operator for SIMD plaintext operations, if possible
     pub(crate) ntt_operator: Option<Arc<NttOperator>>,
@@ -163,64 +163,54 @@ impl BfvParameters {
     /// Returns the maximum level allowed by these parameters.
     #[must_use]
     pub fn max_level(&self) -> usize {
-        self.moduli.len() - 1
+        self.context_levels.len() - 1
     }
 
     /// Returns the context corresponding to the level.
     pub fn context_at_level(&self, level: usize) -> Result<&Arc<Context>> {
-        let mut current: &ContextLevel = &self.context_chain;
-        while current.level < level {
-            current = current
-                .next
-                .get()
-                .ok_or_else(|| Error::InvalidLevel {
-                    level,
-                    min_level: 0,
-                    max_level: self.max_level(),
-                })?
-                .as_ref();
-        }
-        if current.level == level {
-            Ok(&current.poly_context)
-        } else {
-            Err(Error::InvalidLevel {
+        self.context_levels
+            .get(level)
+            .map(|context_level| &context_level.poly_context)
+            .ok_or_else(|| Error::InvalidLevel {
                 level,
                 min_level: 0,
                 max_level: self.max_level(),
             })
-        }
     }
 
     /// Returns the level of a given context
     pub fn level_of_context(&self, ctx: &Arc<Context>) -> Result<usize> {
-        self.context_chain
-            .poly_context
-            .niterations_to(ctx)
-            .map_err(Error::MathError)
-    }
-
-    /// Return head of context chain
-    #[must_use]
-    pub fn context_chain(&self) -> Arc<ContextLevel> {
-        self.context_chain.clone()
-    }
-
-    /// Get context level at a specific depth
-    pub fn context_level_at(&self, level: usize) -> Result<Arc<ContextLevel>> {
-        let mut current = self.context_chain.clone();
-        while current.level < level {
-            match current.next.get() {
-                Some(n) => current = n.clone(),
-                None => {
-                    return Err(Error::InvalidLevel {
-                        level,
-                        min_level: 0,
-                        max_level: self.max_level(),
-                    });
-                }
-            }
+        let level = self
+            .moduli
+            .len()
+            .checked_sub(ctx.moduli().len())
+            .ok_or(Error::MathError(fhe_math::Error::ContextNotReachable))?;
+        let context_level = self
+            .context_levels
+            .get(level)
+            .ok_or(Error::MathError(fhe_math::Error::ContextNotReachable))?;
+        if Arc::ptr_eq(&context_level.poly_context, ctx) || &context_level.poly_context == ctx {
+            Ok(level)
+        } else {
+            Err(Error::MathError(fhe_math::Error::ContextNotReachable))
         }
-        Ok(current)
+    }
+
+    /// Return all contexts in modulus-switching order.
+    #[must_use]
+    pub fn context_levels(&self) -> &[ContextLevel] {
+        &self.context_levels
+    }
+
+    /// Get the precomputed data for a specific modulus-switching level.
+    pub fn context_level_at(&self, level: usize) -> Result<&ContextLevel> {
+        self.context_levels
+            .get(level)
+            .ok_or_else(|| Error::InvalidLevel {
+                level,
+                min_level: 0,
+                max_level: self.max_level(),
+            })
     }
 
     /// Iterator over default parameters providing about 128 bits of security
@@ -614,7 +604,7 @@ impl BfvParametersBuilder {
         // Create cipher-plain bridge contexts
         let mut cipher_plain_contexts = Vec::with_capacity(moduli.len());
 
-        // Build contexts in reverse order to establish the chain
+        // Build ciphertext/plaintext bridges for every modulus-switching level.
         for i in (0..moduli.len()).rev() {
             let level_moduli = &moduli[..moduli.len() - i];
             let cipher_ctx = Context::new_arc(level_moduli, self.degree)?;
@@ -671,24 +661,6 @@ impl BfvParametersBuilder {
         // Reverse to get correct order (level 0 first)
         cipher_plain_contexts.reverse();
 
-        // Build linked context chain
-        let nodes: Vec<Arc<ContextLevel>> = cipher_plain_contexts
-            .iter()
-            .enumerate()
-            .map(|(lvl, cp_ctx)| {
-                Arc::new(ContextLevel::new(
-                    cp_ctx.ciphertext_context.clone(),
-                    cp_ctx.clone(),
-                    lvl,
-                ))
-            })
-            .collect();
-        for i in 0..nodes.len() - 1 {
-            let (prev, rest) = nodes.split_at(i + 1);
-            ContextLevel::chain(&prev[i], &rest[0]);
-        }
-        let context_chain = nodes.first().unwrap().clone();
-
         // Create n+1 moduli of 62 bits for multiplication.
         let mut extended_basis = Vec::with_capacity(moduli.len() + 1);
         let mut upper_bound = 1 << 62;
@@ -707,24 +679,38 @@ impl BfvParametersBuilder {
             }
         }
 
-        // Compute multiplication parameters for each level
-        for (i, node) in nodes.iter().enumerate() {
-            // For the first multiplication, we want to extend to a context that
-            // is ~60 bits larger.
-            let modulus_size = moduli_sizes[..moduli_sizes.len() - i].iter().sum::<usize>();
-            let n_moduli = (modulus_size + 60).div_ceil(62);
-            let mut mul_1_moduli = vec![];
-            mul_1_moduli.append(&mut moduli[..moduli_sizes.len() - i].to_vec());
-            mul_1_moduli.append(&mut extended_basis[..n_moduli].to_vec());
-            let mul_1_ctx = Context::new_arc(&mul_1_moduli, self.degree)?;
-            let mp = MultiplicationParameters::new(
-                &node.poly_context,
-                &mul_1_ctx,
-                ScalingFactor::one(),
-                ScalingFactor::new(plaintext_big, node.poly_context.modulus()),
-            )?;
-            node.mul_params.set(mp).unwrap();
-        }
+        // Build a fully initialized context for each level. The vector index is
+        // the level, so lookups do not need to walk or initialize a chain.
+        let context_levels = cipher_plain_contexts
+            .into_iter()
+            .enumerate()
+            .map(|(level, cipher_plain_context)| {
+                let poly_context = cipher_plain_context.ciphertext_context.clone();
+
+                // For the first multiplication, extend to a context that is
+                // approximately 60 bits larger.
+                let modulus_size = moduli_sizes[..moduli_sizes.len() - level]
+                    .iter()
+                    .sum::<usize>();
+                let n_moduli = (modulus_size + 60).div_ceil(62);
+                let mut multiplication_moduli = moduli[..moduli_sizes.len() - level].to_vec();
+                multiplication_moduli.extend_from_slice(&extended_basis[..n_moduli]);
+                let multiplication_context = Context::new_arc(&multiplication_moduli, self.degree)?;
+                let mul_params = MultiplicationParameters::new(
+                    &poly_context,
+                    &multiplication_context,
+                    ScalingFactor::one(),
+                    ScalingFactor::new(plaintext_big, poly_context.modulus()),
+                )?;
+
+                Ok(ContextLevel::new(
+                    poly_context,
+                    cipher_plain_context,
+                    level,
+                    mul_params,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // We use the same code as SEAL
         // https://github.com/microsoft/SEAL/blob/82b07db635132e297282649e2ab5908999089ad2/native/src/seal/batchencoder.cpp
@@ -748,7 +734,7 @@ impl BfvParametersBuilder {
             moduli: moduli.into(),
             moduli_sizes: moduli_sizes.into(),
             variance: self.variance,
-            context_chain,
+            context_levels,
             ntt_operator,
             plaintext: plaintext_modulus_struct,
             matrix_reps_index_map: matrix_reps_index_map.into(),

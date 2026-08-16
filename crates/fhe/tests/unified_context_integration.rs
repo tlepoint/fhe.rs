@@ -16,7 +16,7 @@ fn test_unified_context_api() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(params.degree(), 16);
     assert_eq!(params.plaintext(), 1153);
     assert_eq!(params.max_level(), 1);
-    assert_eq!(params.context_chain().iter_chain().count(), 2);
+    assert_eq!(params.context_levels().len(), 2);
 
     // Test level-based access
     let ctx_level_0 = params.context_at_level(0)?;
@@ -24,10 +24,15 @@ fn test_unified_context_api() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(ctx_level_0.moduli().len(), 2); // Full modulus chain
     assert_eq!(ctx_level_1.moduli().len(), 1); // Reduced modulus chain
 
-    // Verify context chaining
-    let head = params.context_chain();
-    assert!(head.next.get().is_some());
-    assert!(head.next.get().unwrap().next.get().is_none());
+    // Verify the level table is ordered and fully initialized.
+    let levels = params.context_levels();
+    let head = levels.first().ok_or("missing first context level")?;
+    let last = levels.last().ok_or("missing last context level")?;
+    assert_eq!(head.level(), 0);
+    assert_eq!(last.level(), 1);
+    assert!(head.can_switch_down());
+    assert!(!last.can_switch_down());
+    assert_eq!(head.max_level(), params.max_level());
 
     Ok(())
 }
@@ -42,6 +47,7 @@ fn test_unified_context_error_handling() -> Result<(), Box<dyn std::error::Error
 
     // Test invalid level access
     assert!(params.context_at_level(2).is_err());
+    assert!(params.context_level_at(2).is_err());
 
     Ok(())
 }
@@ -59,8 +65,12 @@ fn test_context_consistency() -> Result<(), Box<dyn std::error::Error>> {
         let ctx = params.context_at_level(level)?;
         let level_ctx = params.context_level_at(level)?;
 
+        assert_eq!(level_ctx.level(), level);
+        assert_eq!(params.level_of_context(ctx)?, level);
+
         // Verify cipher-plain context points to correct ciphertext context
         assert_eq!(&level_ctx.poly_context, ctx);
+        assert!(std::sync::Arc::ptr_eq(&level_ctx.poly_context, ctx));
 
         // Verify modulus chain decreases
         let expected_moduli_count = params.moduli().len() - level;
