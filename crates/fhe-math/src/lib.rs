@@ -11,7 +11,7 @@ pub mod rns;
 pub mod rq;
 pub mod zq;
 
-pub use errors::{Error, Result};
+pub use errors::{Error, PolynomialSerializationError, Result};
 
 #[cfg(test)]
 #[macro_use]

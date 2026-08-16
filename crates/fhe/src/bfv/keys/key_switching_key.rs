@@ -2,7 +2,7 @@
 
 use crate::bfv::{BfvParameters, SecretKey, traits::TryConvertFrom as BfvTryConvertFrom};
 use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
-use crate::{Error, Result};
+use crate::{Error, Result, SerializationError};
 use fhe_math::rq::Context;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::{
@@ -80,9 +80,10 @@ impl KeySwitchingKey {
         let ctx_ciphertext = par.context_at_level(ciphertext_level)?.clone();
 
         if from.ctx() != &ctx_ksk {
-            return Err(Error::DefaultError(
-                "Incorrect context for polynomial from".to_string(),
-            ));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Polynomial,
+                right: crate::ParameterSource::KeySwitchingKey,
+            });
         }
 
         let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
@@ -152,7 +153,7 @@ impl KeySwitchingKey {
         rng: &mut R,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(Error::DefaultError("Empty number of c1's".to_string()));
+            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
 
         let size = c1.len();
@@ -201,7 +202,7 @@ impl KeySwitchingKey {
         log_base: usize,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(Error::DefaultError("Empty number of c1's".to_string()));
+            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
         let s = Zeroizing::new(
             Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx(), false)?
@@ -243,9 +244,10 @@ impl KeySwitchingKey {
         }
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
-            return Err(Error::DefaultError(
-                "The input polynomial does not have the correct context.".to_string(),
-            ));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Polynomial,
+                right: crate::ParameterSource::KeySwitchingKey,
+            });
         }
         let mut c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
         let mut c1 = Poly::<Ntt>::zero(&self.ctx_ksk);
@@ -282,9 +284,10 @@ impl KeySwitchingKey {
         }
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
-            return Err(Error::DefaultError(
-                "The input polynomial does not have the correct context.".to_string(),
-            ));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Polynomial,
+                right: crate::ParameterSource::KeySwitchingKey,
+            });
         }
         if c0.ctx().as_ref() != self.ctx_ksk.as_ref() {
             *c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
@@ -319,9 +322,10 @@ impl KeySwitchingKey {
     /// Key switch a polynomial.
     fn key_switch_decomposition(&self, p: &Poly<PowerBasis>) -> Result<(Poly<Ntt>, Poly<Ntt>)> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
-            return Err(Error::DefaultError(
-                "The input polynomial does not have the correct context.".to_string(),
-            ));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Polynomial,
+                right: crate::ParameterSource::KeySwitchingKey,
+            });
         }
 
         let log_modulus = p
@@ -391,8 +395,12 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
         let log_base = value.log_base as usize;
         if log_base != 0 {
             if ksk_level != par.max_level() || ciphertext_level != par.max_level() {
-                return Err(Error::DefaultError(
-                    "A decomposition size is specified but the levels are not maximal".to_string(),
+                return Err(Error::SerializationError(
+                    SerializationError::InvalidKeySwitchingDecompositionLevels {
+                        ciphertext_level,
+                        key_level: ksk_level,
+                        expected: par.max_level(),
+                    },
                 ));
             } else {
                 let log_modulus: usize =
@@ -404,24 +412,35 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
         }
 
         if value.c0.len() != c0_size {
-            return Err(Error::DefaultError(
-                "Incorrect number of values in c0".to_string(),
+            return Err(Error::SerializationError(
+                SerializationError::WrongPolynomialCount {
+                    component: crate::SerializedPolynomialComponent::KeySwitchingKeyC0,
+                    expected: c0_size,
+                    actual: value.c0.len(),
+                },
             ));
         }
 
         let seed = if value.seed.is_empty() {
             if value.c1.len() != c0_size {
-                return Err(Error::DefaultError(
-                    "Incorrect number of values in c1".to_string(),
+                return Err(Error::SerializationError(
+                    SerializationError::WrongPolynomialCount {
+                        component: crate::SerializedPolynomialComponent::KeySwitchingKeyC1,
+                        expected: c0_size,
+                        actual: value.c1.len(),
+                    },
                 ));
             }
             None
         } else {
-            let unwrapped = <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone());
-            if unwrapped.is_err() {
-                return Err(Error::DefaultError("Invalid seed".to_string()));
-            }
-            Some(unwrapped.unwrap())
+            Some(
+                <ChaCha8Rng as SeedableRng>::Seed::try_from(value.seed.clone()).map_err(|_| {
+                    Error::SerializationError(SerializationError::InvalidKeySwitchingSeedLength {
+                        actual: value.seed.len(),
+                        expected: std::mem::size_of::<<ChaCha8Rng as SeedableRng>::Seed>(),
+                    })
+                })?,
+            )
         };
 
         let mut c1 = if let Some(seed) = seed {

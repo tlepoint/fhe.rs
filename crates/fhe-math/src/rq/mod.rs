@@ -99,9 +99,10 @@ impl SubstitutionExponent {
     pub fn new(ctx: &Arc<Context>, exponent: usize) -> Result<Self> {
         let exponent = exponent % (2 * ctx.degree);
         if exponent & 1 == 0 {
-            return Err(Error::Default(
-                "The exponent should be odd modulo 2 * degree".to_string(),
-            ));
+            return Err(Error::InvalidSubstitutionExponent {
+                exponent,
+                degree: ctx.degree,
+            });
         }
         let mut power = (exponent - 1) / 2;
         let mask = ctx.degree - 1;
@@ -300,14 +301,20 @@ impl<R: RepresentationTag> Poly<R> {
         rng: &mut T,
     ) -> Result<Self> {
         if !(1..=32).contains(&variance) {
-            return Err(Error::Default(
-                "The variance should be an integer between 1 and 32".to_string(),
-            ));
+            return Err(Error::InvalidVariance {
+                variance,
+                minimum: 1,
+                maximum: 32,
+            });
         }
 
-        let coeffs = Zeroizing::new(
-            sample_vec_cbd(ctx.degree, variance, rng).map_err(|e| Error::Default(e.to_string()))?,
-        );
+        let coeffs = Zeroizing::new(sample_vec_cbd(ctx.degree, variance, rng).map_err(|_| {
+            Error::InvalidVariance {
+                variance,
+                minimum: 1,
+                maximum: 32,
+            }
+        })?);
         let p = Poly::<PowerBasis>::try_convert_from(coeffs.as_ref() as &[i64], ctx, false)?;
         if R::REPRESENTATION == Representation::PowerBasis {
             Ok(Poly::from_parts(p))
@@ -494,7 +501,7 @@ impl Poly<PowerBasis> {
             self.switch_down()?;
         }
         if &self.ctx != context {
-            return Err(Error::InvalidContext);
+            return Err(Error::ContextNotReachable);
         }
         Ok(())
     }
@@ -896,16 +903,22 @@ mod tests {
             let q = Modulus::new(*modulus).unwrap();
 
             let e = Poly::<PowerBasis>::small(&ctx, 0, &mut rng);
-            assert!(e.is_err());
             assert_eq!(
-                e.unwrap_err().to_string(),
-                "The variance should be an integer between 1 and 32"
+                e.unwrap_err(),
+                crate::Error::InvalidVariance {
+                    variance: 0,
+                    minimum: 1,
+                    maximum: 32,
+                }
             );
             let e = Poly::<PowerBasis>::small(&ctx, 33, &mut rng);
-            assert!(e.is_err());
             assert_eq!(
-                e.unwrap_err().to_string(),
-                "The variance should be an integer between 1 and 32"
+                e.unwrap_err(),
+                crate::Error::InvalidVariance {
+                    variance: 33,
+                    minimum: 1,
+                    maximum: 32,
+                }
             );
 
             for i in 1..=32 {

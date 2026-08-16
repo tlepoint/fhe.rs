@@ -26,7 +26,10 @@ impl Scaler {
     /// Create a scaler from a context `from` to a context `to`.
     pub fn new(from: &Arc<Context>, to: &Arc<Context>, factor: ScalingFactor) -> Result<Self> {
         if from.degree != to.degree {
-            return Err(Error::Default("Incompatible degrees".to_string()));
+            return Err(Error::DegreeMismatch {
+                found: from.degree,
+                expected: to.degree,
+            });
         }
 
         let number_common_moduli = if factor.is_one {
@@ -51,9 +54,7 @@ impl Scaler {
     /// Scale a polynomial
     pub(crate) fn scale<R: ScaleRepresentation>(&self, p: &Poly<R>) -> Result<Poly<R>> {
         if p.ctx.as_ref() != self.from.as_ref() {
-            Err(Error::Default(
-                "The input polynomial does not have the correct context".to_string(),
-            ))
+            Err(Error::PolynomialContextMismatch)
         } else {
             let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));
 

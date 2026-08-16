@@ -44,7 +44,7 @@ impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
         let ksk0 = KeySwitchingKey::try_convert_from(
             value.ksk0.as_ref().ok_or(Error::SerializationError(
                 SerializationError::MissingField {
-                    field_name: "ksk0".into(),
+                    field: crate::SerializedField::RgswKeySwitchingKey0,
                 },
             ))?,
             par,
@@ -52,7 +52,7 @@ impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
         let ksk1 = KeySwitchingKey::try_convert_from(
             value.ksk1.as_ref().ok_or(Error::SerializationError(
                 SerializationError::MissingField {
-                    field_name: "ksk1".into(),
+                    field: crate::SerializedField::RgswKeySwitchingKey1,
                 },
             ))?,
             par,
@@ -62,9 +62,7 @@ impl TryConvertFrom<&RGSWCiphertextProto> for RGSWCiphertext {
             || ksk1.ciphertext_level != ksk1.ksk_level
         {
             return Err(Error::SerializationError(
-                SerializationError::InvalidFormat {
-                    reason: "Inconsistent key switching levels".into(),
-                },
+                SerializationError::InconsistentKeySwitchingLevels,
             ));
         }
 
@@ -77,8 +75,8 @@ impl DeserializeParametrized for RGSWCiphertext {
 
     fn from_bytes(bytes: &[u8], par: &std::sync::Arc<Self::Parameters>) -> Result<Self> {
         let proto = Message::decode(bytes).map_err(|_| {
-            Error::SerializationError(SerializationError::ProtobufError {
-                message: "RGSW ciphertext decode".into(),
+            Error::SerializationError(SerializationError::Decode {
+                object: crate::SerializedObject::RgswCiphertext,
             })
         })?;
         RGSWCiphertext::try_convert_from(&proto, par)

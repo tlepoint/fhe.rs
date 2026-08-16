@@ -73,7 +73,10 @@ impl Plaintext {
     #[inline]
     pub(crate) fn validate_for(&self, par: &Arc<BfvParameters>) -> Result<()> {
         if !Arc::ptr_eq(&self.par, par) {
-            return Err(Error::context_mismatch(&self.par, par));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Plaintext,
+                right: crate::ParameterSource::Parameters,
+            });
         }
         let expected_ctx = par.context_at_level(self.level)?;
         self.validate_context(self.level, expected_ctx)
@@ -87,7 +90,10 @@ impl Plaintext {
         expected_ctx: &Arc<Context>,
     ) -> Result<()> {
         if !Arc::ptr_eq(&self.par, par) {
-            return Err(Error::context_mismatch(&self.par, par));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Plaintext,
+                right: crate::ParameterSource::Parameters,
+            });
         }
         self.validate_context(expected_level, expected_ctx)
     }
@@ -102,9 +108,10 @@ impl Plaintext {
             });
         }
         if !Arc::ptr_eq(self.poly_ntt.ctx(), expected_ctx) && self.poly_ntt.ctx() != expected_ctx {
-            return Err(Error::InvalidPlaintext {
-                reason: "polynomial context does not match the plaintext level".to_string(),
-            });
+            return Err(crate::PlaintextError::PolynomialContextMismatch {
+                level: expected_level,
+            }
+            .into());
         }
         Ok(())
     }
@@ -208,11 +215,9 @@ impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
             != pt
                 .par
                 .context_at_level(pt.level())
-                .map_err(|e| fhe_math::Error::Default(e.to_string()))?
+                .map_err(|_| fhe_math::Error::ContextNotReachable)?
         {
-            Err(fhe_math::Error::Default(
-                "Incompatible contexts".to_string(),
-            ))
+            Err(fhe_math::Error::PolynomialContextMismatch)
         } else {
             match &pt.value {
                 PlaintextValues::Small(v) => {
@@ -256,10 +261,11 @@ impl<'a> FheEncoder<&'a [BigUint]> for Plaintext {
         par: &Arc<BfvParameters>,
     ) -> Result<Self> {
         if value.len() > par.degree() {
-            return Err(Error::TooManyValues {
+            return Err(crate::PlaintextError::TooManyValues {
                 actual: value.len(),
-                limit: par.degree(),
-            });
+                maximum: par.degree(),
+            }
+            .into());
         }
 
         let v = PlaintextVec::try_encode(value, encoding, par)?;
@@ -271,10 +277,11 @@ impl<'a> FheEncoder<&'a [u64]> for Plaintext {
     type Error = Error;
     fn try_encode(value: &'a [u64], encoding: Encoding, par: &Arc<BfvParameters>) -> Result<Self> {
         if value.len() > par.degree() {
-            return Err(Error::TooManyValues {
+            return Err(crate::PlaintextError::TooManyValues {
                 actual: value.len(),
-                limit: par.degree(),
-            });
+                maximum: par.degree(),
+            }
+            .into());
         }
         let v = PlaintextVec::try_encode(value, encoding, par)?;
         Ok(v[0].clone())
@@ -291,10 +298,11 @@ impl<'a> FheEncoderVariableTime<&'a [u64]> for Plaintext {
         variable_time: VariableTime,
     ) -> Result<Self> {
         if value.len() > par.degree() {
-            return Err(Error::TooManyValues {
+            return Err(crate::PlaintextError::TooManyValues {
                 actual: value.len(),
-                limit: par.degree(),
-            });
+                maximum: par.degree(),
+            }
+            .into());
         }
         let v = PlaintextVec::try_encode_vt(value, encoding, par, variable_time)?;
         Ok(v[0].clone())
@@ -343,28 +351,28 @@ impl FheDecoder<Plaintext> for Vec<BigUint> {
         let encoding = encoding.into();
         let enc: Encoding;
         if pt.encoding.is_none() && encoding.is_none() {
-            return Err(Error::InvalidPlaintext {
-                reason: "No encoding specified".into(),
-            });
+            return Err(crate::PlaintextError::MissingEncoding.into());
         } else if pt.encoding.is_some() {
             enc = pt.encoding.as_ref().unwrap().clone();
             if let Some(arg_enc) = encoding
                 && arg_enc != enc
             {
-                return Err(Error::EncodingMismatch {
-                    found: arg_enc.into(),
-                    expected: enc.into(),
-                });
+                return Err(crate::EncodingError::Mismatch {
+                    found: arg_enc,
+                    expected: enc,
+                }
+                .into());
             }
         } else {
             enc = encoding.unwrap();
             if let Some(pt_enc) = pt.encoding.as_ref()
                 && pt_enc != &enc
             {
-                return Err(Error::EncodingMismatch {
-                    found: pt_enc.into(),
-                    expected: enc.into(),
-                });
+                return Err(crate::EncodingError::Mismatch {
+                    found: pt_enc.clone(),
+                    expected: enc,
+                }
+                .into());
             }
         }
 
@@ -384,10 +392,7 @@ impl FheDecoder<Plaintext> for Vec<BigUint> {
 
                     Ok(w_reordered.into_iter().map(BigUint::from).collect())
                 } else {
-                    Err(Error::EncodingNotSupported {
-                        encoding: EncodingEnum::Simd.to_string(),
-                        reason: "NTT operator not available".into(),
-                    })
+                    Err(crate::EncodingError::SimdUnavailable.into())
                 }
             }
         }
@@ -407,28 +412,28 @@ impl FheDecoder<Plaintext> for Vec<u64> {
                 let encoding = encoding.into();
                 let enc: Encoding;
                 if pt.encoding.is_none() && encoding.is_none() {
-                    return Err(Error::InvalidPlaintext {
-                        reason: "No encoding specified".into(),
-                    });
+                    return Err(crate::PlaintextError::MissingEncoding.into());
                 } else if pt.encoding.is_some() {
                     enc = pt.encoding.as_ref().unwrap().clone();
                     if let Some(arg_enc) = encoding
                         && arg_enc != enc
                     {
-                        return Err(Error::EncodingMismatch {
-                            found: arg_enc.into(),
-                            expected: enc.into(),
-                        });
+                        return Err(crate::EncodingError::Mismatch {
+                            found: arg_enc,
+                            expected: enc,
+                        }
+                        .into());
                     }
                 } else {
                     enc = encoding.unwrap();
                     if let Some(pt_enc) = pt.encoding.as_ref()
                         && pt_enc != &enc
                     {
-                        return Err(Error::EncodingMismatch {
-                            found: pt_enc.into(),
-                            expected: enc.into(),
-                        });
+                        return Err(crate::EncodingError::Mismatch {
+                            found: pt_enc.clone(),
+                            expected: enc,
+                        }
+                        .into());
                     }
                 }
 
@@ -446,10 +451,7 @@ impl FheDecoder<Plaintext> for Vec<u64> {
                             w.zeroize();
                             Ok(w_reordered)
                         } else {
-                            Err(Error::EncodingNotSupported {
-                                encoding: EncodingEnum::Simd.to_string(),
-                                reason: "NTT operator not available".into(),
-                            })
+                            Err(crate::EncodingError::SimdUnavailable.into())
                         }
                     }
                 }
@@ -458,9 +460,8 @@ impl FheDecoder<Plaintext> for Vec<u64> {
                 let v = Vec::<BigUint>::try_decode(pt, encoding)?;
                 v.iter()
                     .map(|x| {
-                        x.to_u64().ok_or(Error::DefaultError(
-                            "Plaintext value too large for u64".to_string(),
-                        ))
+                        x.to_u64()
+                            .ok_or(crate::PlaintextError::ValueTooLargeForU64.into())
                     })
                     .collect()
             }
@@ -686,19 +687,19 @@ mod tests {
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::EncodingMismatch {
-                found: Encoding::simd().into(),
-                expected: Encoding::poly().into(),
-            }
+            crate::Error::Encoding(crate::EncodingError::Mismatch {
+                found: Encoding::simd(),
+                expected: Encoding::poly(),
+            })
         );
         let e = Vec::<u64>::try_decode(&plaintext, Encoding::poly_at_level(1));
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::EncodingMismatch {
-                found: Encoding::poly_at_level(1).into(),
-                expected: Encoding::poly().into(),
-            }
+            crate::Error::Encoding(crate::EncodingError::Mismatch {
+                found: Encoding::poly_at_level(1),
+                expected: Encoding::poly(),
+            })
         );
 
         plaintext.encoding = None;
@@ -706,9 +707,7 @@ mod tests {
         assert!(e.is_err());
         assert_eq!(
             e.unwrap_err(),
-            crate::Error::InvalidPlaintext {
-                reason: "No encoding specified".into(),
-            }
+            crate::Error::Plaintext(crate::PlaintextError::MissingEncoding)
         );
 
         Ok(())

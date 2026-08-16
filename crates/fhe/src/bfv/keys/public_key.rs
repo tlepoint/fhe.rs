@@ -115,16 +115,17 @@ impl DeserializeParametrized for PublicKey {
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
         let proto: PublicKeyProto = Message::decode(bytes).map_err(|_| {
-            Error::SerializationError(SerializationError::ProtobufError {
-                message: "PublicKey decode".into(),
+            Error::SerializationError(SerializationError::Decode {
+                object: crate::SerializedObject::PublicKey,
             })
         })?;
         if let Some(proto_c) = &proto.c {
             let mut c = Ciphertext::try_convert_from(proto_c, par)?;
             if c.level != 0 {
                 Err(Error::SerializationError(
-                    SerializationError::InvalidFormat {
-                        reason: "ciphertext level must be 0".into(),
+                    SerializationError::InvalidPublicKeyLevel {
+                        actual: c.level,
+                        expected: 0,
                     },
                 ))
             } else {
@@ -140,7 +141,7 @@ impl DeserializeParametrized for PublicKey {
         } else {
             Err(Error::SerializationError(
                 SerializationError::MissingField {
-                    field_name: "c".into(),
+                    field: crate::SerializedField::PublicKeyCiphertext,
                 },
             ))
         }

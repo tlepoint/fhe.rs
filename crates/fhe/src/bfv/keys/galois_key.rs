@@ -3,7 +3,7 @@
 use super::key_switching_key::KeySwitchingKey;
 use crate::bfv::{BfvParameters, Ciphertext, SecretKey, traits::TryConvertFrom};
 use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
-use crate::{Error, Result};
+use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{
     Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher,
     traits::TryConvertFrom as TryConvertFromPoly,
@@ -125,12 +125,12 @@ impl GaloisKey {
     fn validate_ciphertext(&self, ct: &Ciphertext) -> Result<()> {
         ct.validate_for(&self.ksk.par)?;
         if ct.len() != 2 {
-            return Err(Error::InvalidCiphertext {
-                reason: format!(
-                    "Galois operations require 2 polynomials, found {}",
-                    ct.len()
-                ),
-            });
+            return Err(crate::CiphertextError::InvalidPolynomialCount {
+                operation: crate::CiphertextOperation::Galois,
+                actual: ct.len(),
+                expected: 2,
+            }
+            .into());
         }
         if ct.level != self.ksk.ciphertext_level {
             return Err(Error::InvalidLevel {
@@ -163,7 +163,11 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 
             Ok(GaloisKey { element, ksk })
         } else {
-            Err(Error::DefaultError("Invalid serialization".to_string()))
+            Err(Error::SerializationError(
+                SerializationError::MissingField {
+                    field: crate::SerializedField::GaloisKeySwitchingKey,
+                },
+            ))
         }
     }
 }
@@ -263,12 +267,12 @@ mod tests {
 
         assert!(matches!(
             gk.relinearize(&invalid),
-            Err(crate::Error::InvalidCiphertext { .. })
+            Err(crate::Error::Ciphertext(_))
         ));
         let mut out = Ciphertext::zero(&params);
         assert!(matches!(
             gk.relinearize_into(&invalid, &mut out),
-            Err(crate::Error::InvalidCiphertext { .. })
+            Err(crate::Error::Ciphertext(_))
         ));
         Ok(())
     }

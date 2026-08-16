@@ -50,10 +50,11 @@ impl Ciphertext {
     #[expect(clippy::expect_used, reason = "bounds are validated before use")]
     pub fn new(c: Vec<Poly<Ntt>>, par: &Arc<BfvParameters>) -> Result<Self> {
         if c.len() < 2 {
-            return Err(Error::TooFewValues {
+            return Err(crate::CiphertextError::TooFewPolynomials {
                 actual: c.len(),
                 minimum: 2,
-            });
+            }
+            .into());
         }
 
         let ctx = c
@@ -65,7 +66,7 @@ impl Ciphertext {
         // Check that all polynomials have the expected context.
         for ci in c.iter() {
             if ci.ctx() != ctx {
-                return Err(Error::MathError(fhe_math::Error::InvalidContext));
+                return Err(crate::CiphertextError::PolynomialContextMismatch { level: 0 }.into());
             }
         }
 
@@ -81,7 +82,10 @@ impl Ciphertext {
     #[inline]
     pub(crate) fn validate_for(&self, par: &Arc<BfvParameters>) -> Result<()> {
         if !Arc::ptr_eq(&self.par, par) {
-            return Err(Error::context_mismatch(&self.par, par));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Ciphertext,
+                right: crate::ParameterSource::Parameters,
+            });
         }
         let expected_ctx = par.context_at_level(self.level)?;
         self.validate_context(self.level, expected_ctx)
@@ -96,7 +100,10 @@ impl Ciphertext {
         expected_ctx: &Arc<Context>,
     ) -> Result<()> {
         if !Arc::ptr_eq(&self.par, par) {
-            return Err(Error::context_mismatch(&self.par, par));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Ciphertext,
+                right: crate::ParameterSource::Parameters,
+            });
         }
         self.validate_context(expected_level, expected_ctx)
     }
@@ -104,9 +111,11 @@ impl Ciphertext {
     #[inline]
     fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
         if self.c.len() < 2 {
-            return Err(Error::InvalidCiphertext {
-                reason: format!("expected at least 2 polynomials, found {}", self.c.len()),
-            });
+            return Err(crate::CiphertextError::TooFewPolynomials {
+                actual: self.c.len(),
+                minimum: 2,
+            }
+            .into());
         }
         if self.level != expected_level {
             return Err(Error::InvalidLevel {
@@ -120,9 +129,10 @@ impl Ciphertext {
             .iter()
             .any(|poly| !Arc::ptr_eq(poly.ctx(), expected_ctx) && poly.ctx() != expected_ctx)
         {
-            return Err(Error::InvalidCiphertext {
-                reason: "polynomial context does not match the ciphertext level".to_string(),
-            });
+            return Err(crate::CiphertextError::PolynomialContextMismatch {
+                level: expected_level,
+            }
+            .into());
         }
         Ok(())
     }
@@ -194,8 +204,8 @@ impl Serialize for Ciphertext {
 impl DeserializeParametrized for Ciphertext {
     fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
         let ctp = Message::decode(bytes).map_err(|_| {
-            Error::SerializationError(SerializationError::ProtobufError {
-                message: "Ciphertext decode".into(),
+            Error::SerializationError(SerializationError::Decode {
+                object: crate::SerializedObject::Ciphertext,
             })
         })?;
         Ciphertext::try_convert_from(&ctp, par)
@@ -251,9 +261,12 @@ impl From<&Ciphertext> for CiphertextProto {
 impl TryConvertFrom<&CiphertextProto> for Ciphertext {
     fn try_convert_from(value: &CiphertextProto, par: &Arc<BfvParameters>) -> Result<Self> {
         if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
-            return Err(Error::InvalidCiphertext {
-                reason: "Not enough polynomials".into(),
-            });
+            return Err(Error::SerializationError(
+                SerializationError::InvalidCiphertextPolynomialCount {
+                    actual: value.c.len(),
+                    seed_present: !value.seed.is_empty(),
+                },
+            ));
         }
 
         if value.level as usize > par.max_level() {

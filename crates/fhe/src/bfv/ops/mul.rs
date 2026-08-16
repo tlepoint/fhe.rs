@@ -141,9 +141,10 @@ impl Multiplicator {
     pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
         let rk_ctx = self.par.context_at_level(rk.ksk.ciphertext_level)?;
         if rk_ctx != &self.base_ctx {
-            return Err(Error::DefaultError(
-                "Invalid relinearization key context".to_string(),
-            ));
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::RelinearizationKey,
+                right: crate::ParameterSource::Multiplicator,
+            });
         }
         self.rk = Some(rk.clone());
         Ok(())
@@ -153,9 +154,7 @@ impl Multiplicator {
     /// applicable).
     pub fn enable_mod_switching(&mut self) -> Result<()> {
         if self.par.context_at_level(self.par.max_level())? == &self.base_ctx {
-            Err(Error::DefaultError(
-                "Cannot modulo switch as this is already the last level".to_string(),
-            ))
+            Err(fhe_math::Error::NoMoreContext.into())
         } else {
             self.mod_switch = true;
             Ok(())
@@ -166,15 +165,27 @@ impl Multiplicator {
     pub fn multiply(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Result<Ciphertext> {
         lhs.validate_for(&self.par)?;
         rhs.validate_for(&self.par)?;
-        if lhs.level != self.level || rhs.level != self.level {
-            return Err(Error::DefaultError(
-                "Ciphertexts are not at expected level".to_string(),
-            ));
+        if lhs.level != self.level {
+            return Err(Error::InvalidLevel {
+                level: lhs.level,
+                min_level: self.level,
+                max_level: self.level,
+            });
+        }
+        if rhs.level != self.level {
+            return Err(Error::InvalidLevel {
+                level: rhs.level,
+                min_level: self.level,
+                max_level: self.level,
+            });
         }
         if lhs.len() != 2 || rhs.len() != 2 {
-            return Err(Error::DefaultError(
-                "Multiplication can only be performed on ciphertexts of size 2".to_string(),
-            ));
+            return Err(crate::CiphertextError::MultiplicationPolynomialCount {
+                left: lhs.len(),
+                right: rhs.len(),
+                expected: 2,
+            }
+            .into());
         }
 
         // Extend

@@ -454,23 +454,21 @@ where
     let p_count = p.clone().count();
     let q_count = q.clone().count();
     if p_count == 0 || q_count == 0 {
-        return Err(Error::Default("At least one iterator is empty".to_string()));
+        return Err(Error::EmptyDotProduct);
     }
     if p_count != q_count {
-        return Err(Error::Default(format!(
-            "Mismatched iterator lengths: found {p_count} and {q_count}"
-        )));
+        return Err(Error::DotProductLengthMismatch {
+            left: p_count,
+            right: q_count,
+        });
     }
     let count = p_count;
 
-    let p_first = p
-        .clone()
-        .next()
-        .ok_or_else(|| Error::Default("The first iterator is empty".to_string()))?;
+    let p_first = p.clone().next().ok_or(Error::EmptyDotProduct)?;
     if p.clone().any(|poly| poly.ctx() != p_first.ctx())
         || q.clone().any(|poly| poly.ctx() != p_first.ctx())
     {
-        return Err(Error::InvalidContext);
+        return Err(Error::PolynomialContextMismatch);
     }
     // A dot product may use variable-time reductions only when every input is
     // public. One constant-time operand conservatively downgrades the result.
@@ -839,13 +837,13 @@ mod tests {
 
         assert!(matches!(
             dot_product(p.iter(), q.iter()),
-            Err(crate::Error::Default(message)) if message.contains("Mismatched iterator lengths")
+            Err(crate::Error::DotProductLengthMismatch { left: 1, right: 2 })
         ));
 
         let q = [Poly::<Ntt>::random(&other_ctx, &mut rng)];
         assert_eq!(
             dot_product(p.iter(), q.iter()),
-            Err(crate::Error::InvalidContext)
+            Err(crate::Error::PolynomialContextMismatch)
         );
         Ok(())
     }

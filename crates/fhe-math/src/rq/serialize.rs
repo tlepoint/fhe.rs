@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::{Context, Poly, RepresentationTag, traits::TryConvertFrom};
-use crate::{Error, proto::rq::Rq};
+use crate::{Error, PolynomialSerializationError, proto::rq::Rq};
 use fhe_traits::{DeserializeWithContext, Serialize};
 use prost::Message;
 
@@ -21,20 +21,23 @@ where
     type Context = Context;
 
     fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Self::Error> {
-        let rq: Rq = Message::decode(bytes).map_err(|e| Error::Serialization(e.to_string()))?;
+        let rq: Rq = Message::decode(bytes).map_err(|_| PolynomialSerializationError::Decode)?;
         Poly::try_convert_from(&rq, ctx, false)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, sync::Arc};
+    use std::{error::Error as StdError, sync::Arc};
 
     use fhe_traits::{DeserializeWithContext, Serialize};
     use rand::rng;
 
-    use crate::proto::rq::{Representation as RepresentationProto, Rq};
     use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom};
+    use crate::{
+        Error, PolynomialSerializationError,
+        proto::rq::{Representation as RepresentationProto, Rq},
+    };
     use prost::Message;
 
     const Q: &[u64; 3] = &[
@@ -44,7 +47,7 @@ mod tests {
     ];
 
     #[test]
-    fn serialize() -> Result<(), Box<dyn Error>> {
+    fn serialize() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
 
         for qi in Q {
@@ -69,7 +72,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_unknown_representation_rejected() -> Result<(), Box<dyn Error>> {
+    fn deserialize_unknown_representation_rejected() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -77,12 +80,15 @@ mod tests {
         proto.representation = RepresentationProto::Unknown as i32;
         let bytes = proto.encode_to_vec();
         let err = Poly::<PowerBasis>::from_bytes(&bytes, &ctx).unwrap_err();
-        assert!(err.to_string().contains("Unknown representation"));
+        assert_eq!(
+            err,
+            Error::PolynomialSerialization(PolynomialSerializationError::UnknownRepresentation)
+        );
         Ok(())
     }
 
     #[test]
-    fn deserialize_invalid_degree_rejected() -> Result<(), Box<dyn Error>> {
+    fn deserialize_invalid_degree_rejected() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -90,12 +96,17 @@ mod tests {
         proto.degree = 6;
         let bytes = proto.encode_to_vec();
         let err = Poly::<PowerBasis>::from_bytes(&bytes, &ctx).unwrap_err();
-        assert!(err.to_string().contains("Invalid degree"));
+        assert_eq!(
+            err,
+            Error::PolynomialSerialization(PolynomialSerializationError::InvalidDegree {
+                degree: 6
+            })
+        );
         Ok(())
     }
 
     #[test]
-    fn deserialize_invalid_coefficients_rejected() -> Result<(), Box<dyn Error>> {
+    fn deserialize_invalid_coefficients_rejected() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -103,26 +114,35 @@ mod tests {
         proto.coefficients.clear();
         let bytes = proto.encode_to_vec();
         let err = Poly::<PowerBasis>::from_bytes(&bytes, &ctx).unwrap_err();
-        assert!(err.to_string().contains("Invalid coefficients"));
+        assert!(matches!(
+            err,
+            Error::PolynomialSerialization(PolynomialSerializationError::InvalidCoefficientCount {
+                actual: 0,
+                expected: _
+            })
+        ));
         Ok(())
     }
 
     #[test]
-    fn deserialize_representation_mismatch_rejected() -> Result<(), Box<dyn Error>> {
+    fn deserialize_representation_mismatch_rejected() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
         let err = Poly::<PowerBasis>::try_convert_from(&proto, &ctx, false).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("representation asked for does not match")
+        assert_eq!(
+            err,
+            Error::PolynomialSerialization(PolynomialSerializationError::RepresentationMismatch {
+                found: crate::rq::Representation::Ntt,
+                expected: crate::rq::Representation::PowerBasis,
+            })
         );
         Ok(())
     }
 
     #[test]
-    fn deserialize_variable_time_flag_is_ignored() -> Result<(), Box<dyn Error>> {
+    fn deserialize_variable_time_flag_is_ignored() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);

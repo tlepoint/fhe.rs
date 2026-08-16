@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::Error;
 use crate::bfv::{BfvParameters, KeySwitchingKey, RelinearizationKey, SecretKey};
 use crate::errors::Result;
 use fhe_math::rns::RnsContext;
@@ -82,14 +81,13 @@ impl<'a, 'b> RelinKeyGenerator<'a, 'b> {
         let par = sk_share.par.clone();
         let ctx = par.context_at_level(0)?;
         if ctx.moduli().len() == 1 {
-            Err(Error::DefaultError(
-                "These parameters do not support key switching".to_string(),
-            ))
+            Err(crate::EvaluationKeyError::KeySwitchingNotSupported.into())
         } else if crp.len() != ctx.moduli().len() {
-            Err(Error::DefaultError(
-                "The size of the CRP polynomial vector must equal the number of ciphertext moduli."
-                    .to_string(),
-            ))
+            Err(crate::MultipartyError::InvalidCommonRandomPolynomialCount {
+                actual: crp.len(),
+                expected: ctx.moduli().len(),
+            }
+            .into())
         } else {
             let u = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
             Ok(Self { sk_share, crp, u })
@@ -120,11 +118,13 @@ impl RelinKeyShare<R1> {
     ) -> Result<Self> {
         let par = sk_share.par.clone();
 
-        if crp.len() != par.context_at_level(0)?.moduli().len() {
-            Err(Error::DefaultError(
-                "The size of the CRP polynomial vector must equal the number of ciphertext moduli."
-                    .to_string(),
-            ))
+        let expected_crp_count = par.context_at_level(0)?.moduli().len();
+        if crp.len() != expected_crp_count {
+            Err(crate::MultipartyError::InvalidCommonRandomPolynomialCount {
+                actual: crp.len(),
+                expected: expected_crp_count,
+            }
+            .into())
         } else {
             let h0 = Self::generate_h0(sk_share, crp, u, rng)?;
             let h1 = Self::generate_h1(sk_share, crp, rng)?;
@@ -203,10 +203,7 @@ impl Aggregate<RelinKeyShare<R1>> for RelinKeyShare<R1Aggregated> {
         T: IntoIterator<Item = RelinKeyShare<R1>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues {
-            actual: 0,
-            minimum: 1,
-        })?;
+        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
         let mut h0 = share.h0;
         let mut h1 = share.h1;
         for sh in shares {
@@ -305,15 +302,12 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
         T: IntoIterator<Item = RelinKeyShare<R2>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues {
-            actual: 0,
-            minimum: 1,
-        })?;
+        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
         let par = share.par.clone();
         let ctx = par.context_at_level(0)?.clone();
-        let r1 = share.last_round.ok_or(Error::DefaultError(
-            "Shares from round 2 should include a copy for the round 1 aggregation.".to_string(),
-        ))?;
+        let r1 = share
+            .last_round
+            .ok_or(crate::MultipartyError::MissingRelinearizationRoundOneShare)?;
 
         let mut h0 = share.h0;
         let mut h1 = share.h1;

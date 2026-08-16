@@ -41,9 +41,7 @@ impl Context {
     /// supports the NTT of size `degree`.
     pub fn new(moduli: &[u64], degree: usize) -> Result<Self> {
         if !degree.is_power_of_two() || degree < 8 {
-            Err(Error::Default(
-                "The degree is not a power of two larger or equal to 8".to_string(),
-            ))
+            Err(Error::InvalidPolynomialDegree { degree, minimum: 8 })
         } else {
             let rns = Arc::new(RnsContext::new(moduli)?);
             let (q, ops): (Vec<Modulus>, Vec<NttOperator>) = moduli
@@ -51,8 +49,9 @@ impl Context {
                 .map(|modulus| {
                     let qi = Modulus::new(*modulus)?;
                     NttOperator::new(&qi, degree)
-                        .ok_or_else(|| {
-                            Error::Default("Impossible to construct a Ntt operator".to_string())
+                        .ok_or(Error::NttOperatorUnavailable {
+                            modulus: *modulus,
+                            degree,
                         })
                         .map(|op| (qi, op))
                 })
@@ -136,16 +135,17 @@ impl Context {
         if found {
             Ok(niterations)
         } else {
-            Err(Error::InvalidContext)
+            Err(Error::ContextNotReachable)
         }
     }
 
     /// Returns the context after `i` iterations.
     pub fn context_at_level(&self, i: usize) -> Result<Arc<Self>> {
         if i >= self.moduli.len() {
-            Err(Error::Default(
-                "No context at the specified level".to_string(),
-            ))
+            Err(Error::InvalidContextLevel {
+                level: i,
+                max_level: self.moduli.len().saturating_sub(1),
+            })
         } else {
             let mut current_ctx = Arc::new(self.clone());
             for _ in 0..i {
@@ -223,7 +223,7 @@ mod tests {
             context
                 .niterations_to(&Arc::new(Context::new(&MODULI[1..], 16)?))
                 .err(),
-            Some(crate::Error::InvalidContext)
+            Some(crate::Error::ContextNotReachable)
         );
 
         for i in 1..MODULI.len() {

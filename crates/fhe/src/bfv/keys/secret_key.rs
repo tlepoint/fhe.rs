@@ -155,15 +155,16 @@ impl DeserializeParametrized for SecretKey {
 
     fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
         let proto: SecretKeyProto = Message::decode(bytes).map_err(|_| {
-            Error::SerializationError(SerializationError::ProtobufError {
-                message: "SecretKey decode".into(),
+            Error::SerializationError(SerializationError::Decode {
+                object: crate::SerializedObject::SecretKey,
             })
         })?;
 
         if proto.coeffs.len() != par.degree() {
             return Err(Error::SerializationError(
-                SerializationError::InvalidFormat {
-                    reason: "SecretKey coeffs length and parameters degree mismatch".into(),
+                SerializationError::InvalidSecretKeyCoefficientCount {
+                    actual: proto.coeffs.len(),
+                    expected: par.degree(),
                 },
             ));
         }
@@ -340,7 +341,7 @@ mod tests {
         assert!(encrypted.is_err());
         assert!(matches!(
             sk.try_decrypt(&crate::bfv::Ciphertext::zero(&params)),
-            Err(crate::Error::InvalidCiphertext { .. })
+            Err(crate::Error::Ciphertext(_))
         ));
         Ok(())
     }
@@ -392,7 +393,9 @@ mod tests {
 
         assert!(matches!(
             err,
-            crate::Error::SerializationError(crate::SerializationError::InvalidFormat { .. })
+            crate::Error::SerializationError(
+                crate::SerializationError::InvalidSecretKeyCoefficientCount { .. }
+            )
         ));
     }
 }

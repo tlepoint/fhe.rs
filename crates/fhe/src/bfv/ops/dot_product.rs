@@ -59,23 +59,20 @@ where
     let ct_count = ct.clone().count();
     let pt_count = pt.clone().count();
     if ct_count == 0 || pt_count == 0 {
-        return Err(Error::TooFewValues {
-            actual: 0,
-            minimum: 1,
-        });
+        return Err(crate::DotProductError::EmptyInput.into());
     }
     if ct_count != pt_count {
-        return Err(Error::DimensionMismatch {
-            operation: "dot product".to_string(),
-            expected: format!("{ct_count} plaintexts"),
-            actual: format!("{pt_count} plaintexts"),
-        });
+        return Err(crate::DotProductError::OperandCountMismatch {
+            ciphertexts: ct_count,
+            plaintexts: pt_count,
+        }
+        .into());
     }
     let count = ct_count;
-    let ct_first = ct.clone().next().ok_or(Error::TooFewValues {
-        actual: 0,
-        minimum: 1,
-    })?;
+    let ct_first = ct
+        .clone()
+        .next()
+        .ok_or(crate::DotProductError::EmptyInput)?;
     ct_first.validate_for(&ct_first.par)?;
     let ctx = ct_first.par.context_at_level(ct_first.level)?;
 
@@ -96,11 +93,11 @@ where
         cti.validate_for_context(&ct_first.par, ct_first.level, ctx)?;
         pti.validate_for_context(&ct_first.par, ct_first.level, ctx)?;
         if cti.len() != ct_first.len() {
-            return Err(Error::DimensionMismatch {
-                operation: "ciphertext dot product".to_string(),
-                expected: format!("{} polynomial parts", ct_first.len()),
-                actual: format!("{} polynomial parts", cti.len()),
-            });
+            return Err(crate::DotProductError::CiphertextPolynomialCountMismatch {
+                actual: cti.len(),
+                expected: ct_first.len(),
+            }
+            .into());
         }
     }
 
@@ -264,11 +261,13 @@ mod tests {
 
         assert!(matches!(
             dot_product_scalar([&ct].into_iter(), [&pt, &pt].into_iter()),
-            Err(crate::Error::DimensionMismatch { .. })
+            Err(crate::Error::DotProduct(
+                crate::DotProductError::OperandCountMismatch { .. }
+            ))
         ));
         assert!(matches!(
             dot_product_scalar([&Ciphertext::zero(&params)].into_iter(), [&pt].into_iter()),
-            Err(crate::Error::InvalidCiphertext { .. })
+            Err(crate::Error::Ciphertext(_))
         ));
         Ok(())
     }

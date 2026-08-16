@@ -51,10 +51,7 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
             return Ok(PlaintextVec(vec![plaintext]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
-            return Err(Error::EncodingNotSupported {
-                encoding: EncodingEnum::Simd.to_string(),
-                reason: "NTT operator not available".into(),
-            });
+            return Err(crate::EncodingError::SimdUnavailable.into());
         }
         let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
@@ -70,10 +67,10 @@ impl FheEncoderVariableTime<&[u64]> for PlaintextVec {
                             for i in 0..slice.len() {
                                 v[par.matrix_reps_index_map[i]] = slice[i];
                             }
-                            let ntt_operator =
-                                par.ntt_operator.as_ref().ok_or(Error::InvalidPlaintext {
-                                    reason: "No Ntt operator".into(),
-                                })?;
+                            let ntt_operator = par
+                                .ntt_operator
+                                .as_ref()
+                                .ok_or(crate::PlaintextError::NttOperatorUnavailable)?;
                             unsafe { ntt_operator.backward_vt(v.as_mut_ptr()) };
                         }
                     };
@@ -113,10 +110,7 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
-            return Err(Error::EncodingNotSupported {
-                encoding: EncodingEnum::Simd.to_string(),
-                reason: "NTT operator not available".into(),
-            });
+            return Err(crate::EncodingError::SimdUnavailable.into());
         }
         let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
@@ -131,16 +125,13 @@ impl FheEncoder<&[BigUint]> for PlaintextVec {
                         EncodingEnum::Simd => {
                             let mut v_u64 = vec![0u64; par.degree()];
                             for i in 0..slice.len() {
-                                v_u64[par.matrix_reps_index_map[i]] =
-                                    slice[i].to_u64().ok_or(Error::DefaultError(
-                                        "Value too large for SIMD encoding".to_string(),
-                                    ))?;
+                                v_u64[par.matrix_reps_index_map[i]] = slice[i]
+                                    .to_u64()
+                                    .ok_or(crate::PlaintextError::ValueTooLargeForU64)?;
                             }
                             par.ntt_operator
                                 .as_ref()
-                                .ok_or(Error::InvalidPlaintext {
-                                    reason: "No Ntt operator".into(),
-                                })?
+                                .ok_or(crate::PlaintextError::NttOperatorUnavailable)?
                                 .backward(&mut v_u64);
 
                             v = v_u64.into_iter().map(BigUint::from).collect();
@@ -184,10 +175,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
             return Ok(PlaintextVec(vec![Plaintext::zero(encoding, par)?]));
         }
         if encoding.encoding == EncodingEnum::Simd && par.ntt_operator.is_none() {
-            return Err(Error::EncodingNotSupported {
-                encoding: EncodingEnum::Simd.to_string(),
-                reason: "NTT operator not available".into(),
-            });
+            return Err(crate::EncodingError::SimdUnavailable.into());
         }
         let ctx = par.context_at_level(encoding.level)?;
         let num_plaintexts = value.len().div_ceil(par.degree());
@@ -205,9 +193,7 @@ impl FheEncoder<&[u64]> for PlaintextVec {
                             }
                             par.ntt_operator
                                 .as_ref()
-                                .ok_or(Error::InvalidPlaintext {
-                                    reason: "No Ntt operator".into(),
-                                })?
+                                .ok_or(crate::PlaintextError::NttOperatorUnavailable)?
                                 .backward(&mut v);
                         }
                     };
@@ -319,7 +305,9 @@ mod tests {
         let a = vec![1u64];
         assert!(matches!(
             PlaintextVec::try_encode(a.as_slice(), Encoding::simd(), &params),
-            Err(crate::Error::EncodingNotSupported { .. })
+            Err(crate::Error::Encoding(
+                crate::EncodingError::SimdUnavailable
+            ))
         ));
         assert!(matches!(
             PlaintextVec::try_encode_vt(
@@ -328,7 +316,9 @@ mod tests {
                 &params,
                 fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
             ),
-            Err(crate::Error::EncodingNotSupported { .. })
+            Err(crate::Error::Encoding(
+                crate::EncodingError::SimdUnavailable
+            ))
         ));
         Ok(())
     }

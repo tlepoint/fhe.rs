@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::Error;
 use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
 use crate::errors::Result;
 use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
@@ -64,10 +63,7 @@ impl Aggregate<PublicKeyShare> for PublicKey {
         T: IntoIterator<Item = PublicKeyShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues {
-            actual: 0,
-            minimum: 1,
-        })?;
+        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
         let mut p0 = share.p0_share;
         for sh in shares {
             p0 += &sh.p0_share;

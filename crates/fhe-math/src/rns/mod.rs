@@ -51,7 +51,7 @@ impl RnsContext {
     /// Returns an error if the list is empty, or if the moduli are no coprime.
     pub fn new(moduli_u64: &[u64]) -> Result<Self> {
         if moduli_u64.is_empty() {
-            Err(Error::Default("The list of moduli is empty".to_string()))
+            Err(Error::EmptyModuli)
         } else {
             let mut product = BigUint::one();
             let mut product_dig = BigUintDig::one();
@@ -63,7 +63,10 @@ impl RnsContext {
                         let (d, _, _) = BigUintDig::from(moduli_u64[i])
                             .extended_gcd(&BigUintDig::from(moduli_u64[j]));
                         if d.cmp(&BigIntDig::from(1)) != Ordering::Equal {
-                            return Err(Error::Default("The moduli are not coprime".to_string()));
+                            return Err(Error::NonCoprimeModuli {
+                                left: moduli_u64[i],
+                                right: moduli_u64[j],
+                            });
                         }
                     }
                 }
@@ -152,6 +155,7 @@ mod tests {
     use std::error::Error;
 
     use super::RnsContext;
+    use crate::Error as MathError;
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
     use rand::Rng as RngCore;
@@ -163,14 +167,17 @@ mod tests {
         assert!(RnsContext::new(&[4, 15, 1153]).is_ok());
 
         let e = RnsContext::new(&[]);
-        assert!(e.is_err());
-        assert_eq!(e.unwrap_err().to_string(), "The list of moduli is empty");
+        assert_eq!(e.unwrap_err(), MathError::EmptyModuli);
         let e = RnsContext::new(&[2, 4]);
-        assert!(e.is_err());
-        assert_eq!(e.unwrap_err().to_string(), "The moduli are not coprime");
+        assert_eq!(
+            e.unwrap_err(),
+            MathError::NonCoprimeModuli { left: 2, right: 4 }
+        );
         let e = RnsContext::new(&[2, 3, 5, 30]);
-        assert!(e.is_err());
-        assert_eq!(e.unwrap_err().to_string(), "The moduli are not coprime");
+        assert_eq!(
+            e.unwrap_err(),
+            MathError::NonCoprimeModuli { left: 2, right: 30 }
+        );
     }
 
     #[test]

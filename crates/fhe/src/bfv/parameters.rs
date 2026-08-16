@@ -283,10 +283,8 @@ impl BfvParameters {
         // Check if we have any valid parameters after filtering
         if parameters.is_empty() {
             return Err(Error::ParametersError(
-                ParametersError::NoParametersAvailable {
-                    reason: format!(
-                        "No default parameters available for plaintext modulus of {plaintext_nbits} bits. All parameter sets have modulus product bitlength smaller than the plaintext modulus."
-                    ),
+                ParametersError::NoDefaultParameters {
+                    plaintext_bits: plaintext_nbits,
                 },
             ));
         }
@@ -457,16 +455,14 @@ impl BfvParametersBuilder {
         }
 
         if !self.ciphertext_moduli.is_empty() && !self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::ConflictingParameters {
-                conflict:
-                    "Only one of `ciphertext_moduli` and `ciphertext_moduli_sizes` can be specified"
-                        .into(),
-            }));
+            return Err(Error::ParametersError(
+                ParametersError::ConflictingCiphertextModulusSpecifications,
+            ));
         }
         if self.ciphertext_moduli.is_empty() && self.ciphertext_moduli_sizes.is_empty() {
-            return Err(Error::ParametersError(ParametersError::MissingParameter {
-                parameter: "ciphertext_moduli or ciphertext_moduli_sizes".into(),
-            }));
+            return Err(Error::ParametersError(
+                ParametersError::MissingCiphertextModulusSpecification,
+            ));
         }
 
         Ok(())
@@ -478,7 +474,7 @@ impl BfvParametersBuilder {
                 Error::ParametersError(ParametersError::InvalidCiphertextModulus {
                     index,
                     modulus,
-                    reason: error.to_string(),
+                    source: error,
                 })
             })?;
 
@@ -527,24 +523,23 @@ impl BfvParametersBuilder {
         if plaintext >= &ciphertext_modulus {
             return Err(Error::ParametersError(
                 ParametersError::PlaintextModulusExceedsCiphertextModulus {
-                    plaintext_modulus: plaintext.to_string(),
-                    ciphertext_modulus: ciphertext_modulus.to_string(),
+                    plaintext_modulus: plaintext.clone(),
+                    ciphertext_modulus,
                 },
             ));
         }
 
         for (index, modulus) in moduli.iter().copied().enumerate() {
-            let plaintext_mod_modulus = (plaintext % modulus).to_u64().ok_or_else(|| {
-                Error::ParametersError(ParametersError::InvalidPlaintextModulus {
-                    modulus,
-                    reason: "failed to reduce plaintext modulus".into(),
+            let plaintext_mod_modulus = (plaintext % modulus).to_u64().ok_or({
+                Error::ParametersError(ParametersError::PlaintextReductionFailed {
+                    ciphertext_modulus: modulus,
                 })
             })?;
             let gcd = Self::gcd(plaintext_mod_modulus, modulus);
             if gcd != 1 {
                 return Err(Error::ParametersError(
                     ParametersError::PlaintextModulusNotCoprime {
-                        plaintext_modulus: plaintext.to_string(),
+                        plaintext_modulus: plaintext.clone(),
                         ciphertext_modulus: modulus,
                         index,
                         gcd,
@@ -570,7 +565,7 @@ impl BfvParametersBuilder {
                 modulus: Modulus::new(p).map_err(|e| {
                     Error::ParametersError(ParametersError::InvalidPlaintextModulus {
                         modulus: p,
-                        reason: e.to_string(),
+                        source: e,
                     })
                 })?,
                 modulus_big: BigUint::from(p),
@@ -636,9 +631,10 @@ impl BfvParametersBuilder {
                 if let Some(inv) = q.inv(neg_t_mod_q) {
                     delta_rests.push(inv);
                 } else {
-                    Err(Error::MathError(fhe_math::Error::Default(
-                        "Inverse failed".to_string(),
-                    )))?;
+                    return Err(Error::MathError(fhe_math::Error::NonInvertible {
+                        value: neg_t_mod_q,
+                        modulus: *m,
+                    }));
                 }
             }
 
@@ -790,8 +786,8 @@ impl Serialize for BfvParameters {
 impl Deserialize for BfvParameters {
     fn try_deserialize(bytes: &[u8]) -> Result<Self> {
         let params: Parameters = Message::decode(bytes).map_err(|_| {
-            Error::SerializationError(SerializationError::ProtobufError {
-                message: "Parameters decode".into(),
+            Error::SerializationError(SerializationError::Decode {
+                object: crate::SerializedObject::Parameters,
             })
         })?;
 
@@ -801,7 +797,7 @@ impl Deserialize for BfvParameters {
             None => {
                 return Err(Error::SerializationError(
                     SerializationError::MissingField {
-                        field_name: "Parameters.plaintext_modulus".into(),
+                        field: crate::SerializedField::ParametersPlaintextModulus,
                     },
                 ));
             }
@@ -964,7 +960,12 @@ mod tests {
         };
         let bytes = proto.encode_to_vec();
         let err = BfvParameters::try_deserialize(&bytes).unwrap_err();
-        assert!(format!("{err}").contains("Missing required field"));
+        assert_eq!(
+            err,
+            FheError::SerializationError(crate::SerializationError::MissingField {
+                field: crate::SerializedField::ParametersPlaintextModulus,
+            })
+        );
     }
 
     #[test]
@@ -1172,14 +1173,11 @@ mod tests {
         let result = BfvParameters::default_parameters_128(10);
         assert!(result.is_err());
 
-        #[expect(clippy::panic, reason = "panic indicates violated internal invariant")]
-        match result {
-            Err(e) => {
-                let error_string = format!("{e}");
-                assert!(error_string.contains("No parameters available"));
-                assert!(error_string.contains("10 bits"));
-            }
-            Ok(_) => panic!("Expected error"),
-        }
+        assert_eq!(
+            result.err(),
+            Some(FheError::ParametersError(
+                ParametersError::NoDefaultParameters { plaintext_bits: 10 }
+            ))
+        );
     }
 }

@@ -36,10 +36,17 @@ impl PublicKeySwitchShare {
         ct: &Ciphertext,
         rng: &mut R,
     ) -> Result<Self> {
-        if sk_share.par != public_key.par || public_key.par != ct.par {
-            return Err(Error::DefaultError(
-                "Incompatible BFV parameters".to_string(),
-            ));
+        if sk_share.par != public_key.par {
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::SecretKey,
+                right: crate::ParameterSource::PublicKey,
+            });
+        }
+        if public_key.par != ct.par {
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::PublicKey,
+                right: crate::ParameterSource::Ciphertext,
+            });
         }
         let par = sk_share.par.clone();
 
@@ -91,10 +98,7 @@ impl Aggregate<PublicKeySwitchShare> for Ciphertext {
         T: IntoIterator<Item = PublicKeySwitchShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(Error::TooFewValues {
-            actual: 0,
-            minimum: 1,
-        })?;
+        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
         let mut h0 = share.h0_share;
         let mut h1 = share.h1_share;
         for sh in shares {

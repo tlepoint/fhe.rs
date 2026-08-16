@@ -3,7 +3,10 @@
     reason = "error enums rely on variant docs and error messages"
 )]
 
+use num_bigint::BigUint;
 use thiserror::Error;
+
+use crate::bfv::Encoding;
 
 /// The Result type for this library.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -13,156 +16,218 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum Error {
-    /// Indicates that an error from the underlying mathematical library was
-    /// encountered.
+    /// An error from the underlying mathematical library.
     #[error("Math library error: {0}")]
-    MathError(fhe_math::Error),
+    MathError(#[from] fhe_math::Error),
 
-    /// Indicates a mismatch between contexts
-    #[error("Context mismatch: found {found}, expected {expected}")]
-    ContextMismatch { found: String, expected: String },
-
-    /// Indicates a mismatch between polynomial formats
-    #[error("Polynomial format mismatch: found {found:?}, expected {expected:?}")]
-    PolyFormatMismatch {
-        found: fhe_math::rq::Representation,
-        expected: fhe_math::rq::Representation,
+    /// Cryptographic objects were constructed with incompatible parameters.
+    #[error("Parameter mismatch between {left:?} and {right:?}")]
+    ParameterMismatch {
+        left: ParameterSource,
+        right: ParameterSource,
     },
 
-    /// Indicates a mismatch between encoding types
-    #[error("Encoding mismatch: found {found}, expected {expected}")]
-    EncodingMismatch { found: String, expected: String },
-
-    /// Indicates that the encoding is not supported for the given parameters
-    #[error("Encoding '{encoding}' not supported for parameters: {reason}")]
-    EncodingNotSupported { encoding: String, reason: String },
-
-    /// Indicates data values exceeding a modulus
-    #[error("Data value {value} exceeds modulus {modulus}")]
-    DataExceedsModulus { value: u64, modulus: u64 },
-
-    /// Indicates values exceeding a limit during encoding
-    #[error("Encoding data size {actual} exceeds limit {limit} for degree {degree}")]
-    EncodingDataExceedsLimit {
-        actual: usize,
-        limit: usize,
-        degree: usize,
-    },
-
-    /// Indicates that too many values were provided.
-    #[error("Too many values provided: {actual} exceeds limit {limit}")]
-    TooManyValues { actual: usize, limit: usize },
-
-    /// Indicates that too few values were provided.
-    #[error("Too few values provided: {actual} is below minimum {minimum}")]
-    TooFewValues { actual: usize, minimum: usize },
-
-    /// Indicates a level is out of bounds
+    /// A level is outside the requested range.
     #[error("Level {level} out of bounds: valid range is [{min_level}, {max_level}]")]
     InvalidLevel {
-        /// The invalid level
         level: usize,
-        /// Minimum allowed level
         min_level: usize,
-        /// Maximum allowed level
         max_level: usize,
     },
 
-    /// Indicates an invalid ciphertext structure
-    #[error("Invalid ciphertext: {reason}")]
-    InvalidCiphertext { reason: String },
+    /// A ciphertext is structurally invalid for the requested operation.
+    #[error("Ciphertext error: {0}")]
+    Ciphertext(#[from] CiphertextError),
 
-    /// Indicates an invalid plaintext structure
-    #[error("Invalid plaintext: {reason}")]
-    InvalidPlaintext { reason: String },
+    /// A plaintext is structurally invalid for the requested operation.
+    #[error("Plaintext error: {0}")]
+    Plaintext(#[from] PlaintextError),
 
-    /// Indicates an invalid secret key
-    #[error("Invalid secret key: {reason}")]
-    InvalidSecretKey { reason: String },
+    /// A plaintext encoding is invalid or unavailable.
+    #[error("Encoding error: {0}")]
+    Encoding(#[from] EncodingError),
 
-    /// Indicates secret key is incompatible with context
-    #[error("Secret key incompatible with context: {reason}")]
-    IncompatibleSecretKey { reason: String },
-
-    /// Indicates an invalid Galois element
-    #[error("Invalid Galois element {element}: {reason}")]
-    InvalidGaloisElement { element: u64, reason: String },
-
-    /// Indicates an invalid rotation step
-    #[error("Invalid rotation step {step}: must be in range [{min}, {max}]")]
-    InvalidRotationStep { step: i64, min: i64, max: i64 },
-
-    /// Indicates SIMD operations not supported with current parameters
-    #[error("SIMD operations not supported: {reason}")]
-    SimdNotSupported { reason: String },
-
-    /// Indicates no decryptor available when needed
-    #[error("No decryptor available for operation")]
-    NoDecryptor,
-
-    /// Indicates a parameter error.
+    /// A parameter error.
     #[error("Parameters error: {0}")]
-    ParametersError(ParametersError),
+    ParametersError(#[from] ParametersError),
 
-    /// Indicates a serialization error.
+    /// A serialization error.
     #[error("Serialization error: {0}")]
-    SerializationError(SerializationError),
+    SerializationError(#[from] SerializationError),
 
-    /// Indicates dimension mismatch in operations
-    #[error("Dimension mismatch: {operation} requires dimensions {expected}, got {actual}")]
-    DimensionMismatch {
-        operation: String,
-        expected: String,
-        actual: String,
+    /// An evaluation-key or key-switching error.
+    #[error("Evaluation-key error: {0}")]
+    EvaluationKey(#[from] EvaluationKeyError),
+
+    /// A ciphertext/plaintext dot-product error.
+    #[error("Dot-product error: {0}")]
+    DotProduct(#[from] DotProductError),
+
+    /// A multiparty BFV protocol error.
+    #[error("Multiparty protocol error: {0}")]
+    Multiparty(#[from] MultipartyError),
+}
+
+/// Identifies the role of an object in a parameter mismatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParameterSource {
+    Ciphertext,
+    Plaintext,
+    Parameters,
+    SecretKey,
+    InputSecretKey,
+    OutputSecretKey,
+    PublicKey,
+    Polynomial,
+    KeySwitchingKey,
+    RelinearizationKey,
+    Multiplicator,
+}
+
+/// Ciphertext validation failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum CiphertextError {
+    #[error("Expected at least {minimum} polynomials, found {actual}")]
+    TooFewPolynomials { actual: usize, minimum: usize },
+
+    #[error("Polynomial context does not match ciphertext level {level}")]
+    PolynomialContextMismatch { level: usize },
+
+    #[error("{operation:?} requires {expected} polynomials, found {actual}")]
+    InvalidPolynomialCount {
+        operation: CiphertextOperation,
+        actual: usize,
+        expected: usize,
     },
 
-    /// Indicates security parameter validation failure
-    #[error("Security validation failed: {reason}")]
-    SecurityValidationError { reason: String },
-
-    /// Catch-all for unexpected errors (should be minimized)
-    #[error("Unexpected error: {message}")]
-    UnexpectedError { message: String },
-
-    /// Legacy catch-all error (deprecated).
-    #[error("{0}")]
-    DefaultError(String),
+    #[error("Multiplication requires {expected} polynomials per operand, found {left} and {right}")]
+    MultiplicationPolynomialCount {
+        left: usize,
+        right: usize,
+        expected: usize,
+    },
 }
 
-impl From<fhe_math::Error> for Error {
-    fn from(e: fhe_math::Error) -> Self {
-        Error::MathError(e)
-    }
+/// Operation that imposes a particular ciphertext polynomial count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CiphertextOperation {
+    Galois,
+    EvaluationKey,
+    Relinearization,
+    MultipartyKeySwitch,
 }
 
-impl Error {
-    pub fn context_mismatch<T, U>(found: &T, expected: &U) -> Self
-    where
-        T: std::fmt::Debug,
-        U: std::fmt::Debug,
-    {
-        Self::ContextMismatch {
-            found: format!("{found:?}"),
-            expected: format!("{expected:?}"),
-        }
-    }
+/// Plaintext validation and conversion failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum PlaintextError {
+    #[error("Polynomial context does not match plaintext level {level}")]
+    PolynomialContextMismatch { level: usize },
 
-    pub fn invalid_ciphertext<S: Into<String>>(reason: S) -> Self {
-        Self::InvalidCiphertext {
-            reason: reason.into(),
-        }
-    }
+    #[error("No plaintext encoding was specified")]
+    MissingEncoding,
 
-    pub fn encoding_not_supported<S1, S2>(encoding: S1, reason: S2) -> Self
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
-        Self::EncodingNotSupported {
-            encoding: encoding.into(),
-            reason: reason.into(),
-        }
-    }
+    #[error("No NTT operator is available for the plaintext parameters")]
+    NttOperatorUnavailable,
+
+    #[error("Plaintext input has {actual} values but degree permits at most {maximum}")]
+    TooManyValues { actual: usize, maximum: usize },
+
+    #[error("Plaintext value does not fit in u64")]
+    ValueTooLargeForU64,
+}
+
+/// Plaintext encoding failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum EncodingError {
+    #[error("Encoding mismatch: found {found:?}, expected {expected:?}")]
+    Mismatch { found: Encoding, expected: Encoding },
+
+    #[error("SIMD encoding requires an NTT operator for the plaintext modulus")]
+    SimdUnavailable,
+}
+
+/// Evaluation-key and key-switching failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum EvaluationKeyError {
+    #[error("The parameters do not support key switching")]
+    KeySwitchingNotSupported,
+
+    #[error("Evaluation key does not support {operation:?}")]
+    Unsupported { operation: EvaluationOperation },
+
+    #[error("Evaluation key is missing {component:?}")]
+    Missing { component: EvaluationKeyComponent },
+
+    #[error("Key-switching key contains no components")]
+    EmptyKeySwitchingComponents,
+
+    #[error("Invalid rotation step {step}: must be in range [{min}, {max}]")]
+    InvalidRotationStep { step: usize, min: usize, max: usize },
+
+    #[error("Expansion size {size} must be in [1, {degree}]")]
+    InvalidExpansionSize { size: usize, degree: usize },
+}
+
+/// Evaluation-key operation requested by a caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EvaluationOperation {
+    InnerSum,
+    RowRotation,
+    ColumnRotation { step: usize },
+    Expansion { level: usize },
+}
+
+/// Material required by an evaluation-key operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EvaluationKeyComponent {
+    GaloisExponent { step: usize },
+    GaloisKey { element: usize },
+    ExpansionMonomial { level: usize },
+}
+
+/// Dot-product validation failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum DotProductError {
+    #[error("Dot product requires at least one operand")]
+    EmptyInput,
+
+    #[error("Received {ciphertexts} ciphertexts and {plaintexts} plaintexts")]
+    OperandCountMismatch {
+        ciphertexts: usize,
+        plaintexts: usize,
+    },
+
+    #[error("Ciphertext has {actual} polynomial parts; expected {expected}")]
+    CiphertextPolynomialCountMismatch { actual: usize, expected: usize },
+}
+
+/// Multiparty BFV protocol failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+#[expect(missing_docs, reason = "error variants are documented inline")]
+#[non_exhaustive]
+pub enum MultipartyError {
+    #[error("At least one protocol share is required")]
+    NoShares,
+
+    #[error("Expected {expected} common random polynomials, got {actual}")]
+    InvalidCommonRandomPolynomialCount { actual: usize, expected: usize },
+
+    #[error("Round-two relinearization share is missing its round-one aggregation")]
+    MissingRelinearizationRoundOneShare,
 }
 
 /// Separate enum for errors arising from serialization.
@@ -170,54 +235,96 @@ impl Error {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum SerializationError {
-    /// Indicates polynomial context was not found during deserialization
-    #[error("Polynomial context not found: {context_id}")]
-    PolynomialContextNotFound { context_id: String },
+    /// A protobuf payload could not be decoded.
+    #[error("Failed to decode {object:?}")]
+    Decode { object: SerializedObject },
 
-    /// Indicates wrong number of polynomials in structure
-    #[error("{structure_type} has wrong number of polynomials: expected {expected}, got {actual}")]
+    /// A required protobuf field is absent.
+    #[error("Missing required field {field:?}")]
+    MissingField { field: SerializedField },
+
+    /// A serialized polynomial collection has the wrong length.
+    #[error("{component:?} has {actual} polynomials; expected {expected}")]
     WrongPolynomialCount {
-        structure_type: String,
+        component: SerializedPolynomialComponent,
         expected: usize,
         actual: usize,
     },
 
-    /// Indicates invalid serialized data format
-    #[error("Invalid serialized format: {reason}")]
-    InvalidFormat { reason: String },
+    /// Key-switching levels encoded in an RGSW ciphertext disagree.
+    #[error("Serialized RGSW ciphertext has inconsistent key-switching levels")]
+    InconsistentKeySwitchingLevels,
 
-    /// Indicates version mismatch in serialized data
+    /// A public key contains a ciphertext at a nonzero level.
+    #[error("Serialized public key ciphertext has level {actual}; expected {expected}")]
+    InvalidPublicKeyLevel { actual: usize, expected: usize },
+
+    /// Decomposition was encoded for non-maximal key-switching levels.
     #[error(
-        "Version mismatch: serialized with {serialized_version}, current version is {current_version}"
+        "Key-switching decomposition requires level {expected}; ciphertext level is {ciphertext_level} and key level is {key_level}"
     )]
-    VersionMismatch {
-        serialized_version: String,
-        current_version: String,
+    InvalidKeySwitchingDecompositionLevels {
+        ciphertext_level: usize,
+        key_level: usize,
+        expected: usize,
     },
 
-    /// Indicates corrupted serialized data
-    #[error("Corrupted data detected: {details}")]
-    CorruptedData { details: String },
+    /// A serialized key-switching seed has the wrong length.
+    #[error("Serialized key-switching seed has {actual} bytes; expected {expected}")]
+    InvalidKeySwitchingSeedLength { actual: usize, expected: usize },
 
-    /// Indicates missing required field in serialization
-    #[error("Missing required field: {field_name}")]
-    MissingField { field_name: String },
+    /// A serialized secret key has the wrong coefficient count.
+    #[error("Serialized secret key has {actual} coefficients; expected {expected}")]
+    InvalidSecretKeyCoefficientCount { actual: usize, expected: usize },
 
-    /// Indicates IO error during serialization/deserialization
-    #[error("IO error: {error}")]
-    IOError { error: String },
+    /// A serialized ciphertext lacks enough explicit or seeded polynomials.
+    #[error(
+        "Serialized ciphertext has {actual} explicit polynomials (seed present: {seed_present})"
+    )]
+    InvalidCiphertextPolynomialCount { actual: usize, seed_present: bool },
 
-    /// Indicates protobuf encoding/decoding error
-    #[error("Protobuf error: {message}")]
-    ProtobufError { message: String },
+    /// An I/O operation failed.
+    #[error("Serialization I/O error: {kind:?}")]
+    Io { kind: std::io::ErrorKind },
 }
 
 impl From<std::io::Error> for SerializationError {
     fn from(error: std::io::Error) -> Self {
-        SerializationError::IOError {
-            error: error.to_string(),
-        }
+        SerializationError::Io { kind: error.kind() }
     }
+}
+
+/// Type of protobuf object being decoded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SerializedObject {
+    Ciphertext,
+    EvaluationKey,
+    Parameters,
+    PublicKey,
+    RelinearizationKey,
+    RgswCiphertext,
+    SecretKey,
+}
+
+/// Required field in a protobuf object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SerializedField {
+    GaloisKeySwitchingKey,
+    ParametersPlaintextModulus,
+    PublicKeyCiphertext,
+    RelinearizationKeySwitchingKey,
+    RgswKeySwitchingKey0,
+    RgswKeySwitchingKey1,
+}
+
+/// Polynomial collection encoded inside a protobuf object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SerializedPolynomialComponent {
+    KeySwitchingKeyC0,
+    KeySwitchingKeyC1,
 }
 
 /// Separate enum to indicate parameters-related errors.
@@ -234,15 +341,18 @@ pub enum ParametersError {
     },
 
     /// Indicates that the plaintext modulus is invalid.
-    #[error("Invalid plaintext modulus {modulus}: {reason}")]
-    InvalidPlaintextModulus { modulus: u64, reason: String },
+    #[error("Invalid plaintext modulus {modulus}: {source}")]
+    InvalidPlaintextModulus {
+        modulus: u64,
+        source: fhe_math::Error,
+    },
 
     /// Indicates that a ciphertext modulus is invalid.
-    #[error("Invalid ciphertext modulus at index {index}: {modulus} ({reason})")]
+    #[error("Invalid ciphertext modulus at index {index}: {modulus} ({source})")]
     InvalidCiphertextModulus {
         index: usize,
         modulus: u64,
-        reason: String,
+        source: fhe_math::Error,
     },
 
     /// Indicates that the moduli sizes are invalid.
@@ -307,8 +417,8 @@ pub enum ParametersError {
         "Plaintext modulus {plaintext_modulus} must be smaller than ciphertext modulus {ciphertext_modulus}"
     )]
     PlaintextModulusExceedsCiphertextModulus {
-        plaintext_modulus: String,
-        ciphertext_modulus: String,
+        plaintext_modulus: BigUint,
+        ciphertext_modulus: BigUint,
     },
 
     /// Indicates that the plaintext modulus is not coprime with a ciphertext
@@ -317,11 +427,16 @@ pub enum ParametersError {
         "Plaintext modulus {plaintext_modulus} and ciphertext modulus {ciphertext_modulus} at index {index} are not coprime (gcd = {gcd})"
     )]
     PlaintextModulusNotCoprime {
-        plaintext_modulus: String,
+        plaintext_modulus: BigUint,
         ciphertext_modulus: u64,
         index: usize,
         gcd: u64,
     },
+
+    /// Indicates that reducing the plaintext modulus modulo a ciphertext
+    /// modulus failed.
+    #[error("Failed to reduce plaintext modulus modulo ciphertext modulus {ciphertext_modulus}")]
+    PlaintextReductionFailed { ciphertext_modulus: u64 },
 
     /// Indicates insecure parameters according to standard
     #[error(
@@ -337,17 +452,19 @@ pub enum ParametersError {
         max: usize,
     },
 
-    /// Indicates conflicting parameter specifications
-    #[error("Conflicting parameters: {conflict}")]
-    ConflictingParameters { conflict: String },
+    /// Indicates that explicit ciphertext moduli and modulus sizes were both
+    /// specified.
+    #[error("Specify either ciphertext moduli or ciphertext modulus sizes, not both")]
+    ConflictingCiphertextModulusSpecifications,
 
-    /// Indicates missing required parameter
-    #[error("Missing required parameter: {parameter}")]
-    MissingParameter { parameter: String },
+    /// Indicates that neither explicit ciphertext moduli nor modulus sizes
+    /// were specified.
+    #[error("Ciphertext moduli or ciphertext modulus sizes must be specified")]
+    MissingCiphertextModulusSpecification,
 
-    /// Indicates no parameters are available after filtering
-    #[error("No parameters available: {reason}")]
-    NoParametersAvailable { reason: String },
+    /// Indicates no default parameter set can accommodate a plaintext size.
+    #[error("No default parameters support a {plaintext_bits}-bit plaintext modulus")]
+    NoDefaultParameters { plaintext_bits: usize },
 }
 
 impl ParametersError {
@@ -371,64 +488,50 @@ impl ParametersError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, ParametersError, SerializationError};
+    use super::{
+        Error, EvaluationKeyError, EvaluationOperation, MultipartyError, ParameterSource,
+        ParametersError, SerializationError, SerializedObject,
+    };
 
     #[test]
     fn error_strings() {
         assert_eq!(
-            Error::MathError(fhe_math::Error::InvalidContext).to_string(),
-            "Math library error: Invalid context provided."
+            Error::MathError(fhe_math::Error::ContextNotReachable).to_string(),
+            "Math library error: Target context is not reachable from the source context."
         );
         assert_eq!(
-            Error::ContextMismatch {
-                found: "a".into(),
-                expected: "b".into()
+            Error::ParameterMismatch {
+                left: ParameterSource::Ciphertext,
+                right: ParameterSource::Parameters,
             }
             .to_string(),
-            "Context mismatch: found a, expected b"
+            "Parameter mismatch between Ciphertext and Parameters"
         );
         assert_eq!(
-            Error::TooManyValues {
-                actual: 20,
-                limit: 17
-            }
-            .to_string(),
-            "Too many values provided: 20 exceeds limit 17"
-        );
-        assert_eq!(
-            Error::TooFewValues {
-                actual: 10,
-                minimum: 17
-            }
-            .to_string(),
-            "Too few values provided: 10 is below minimum 17"
-        );
-        assert_eq!(
-            Error::EncodingMismatch {
-                found: "enc1".into(),
-                expected: "enc2".into()
-            }
-            .to_string(),
-            "Encoding mismatch: found enc1, expected enc2"
-        );
-        assert_eq!(
-            Error::EncodingNotSupported {
-                encoding: "test".into(),
-                reason: "oops".into()
-            }
-            .to_string(),
-            "Encoding 'test' not supported for parameters: oops"
-        );
-        assert_eq!(
-            Error::SerializationError(SerializationError::InvalidFormat {
-                reason: "bad".into()
+            Error::SerializationError(SerializationError::Decode {
+                object: SerializedObject::Ciphertext,
             })
             .to_string(),
-            "Serialization error: Invalid serialized format: bad"
+            "Serialization error: Failed to decode Ciphertext"
         );
         assert_eq!(
             Error::ParametersError(ParametersError::invalid_degree_with_bounds(10)).to_string(),
             "Parameters error: Invalid polynomial degree 10: must be a power of 2 between 8 and 65536"
+        );
+        assert_eq!(
+            Error::EvaluationKey(EvaluationKeyError::Unsupported {
+                operation: EvaluationOperation::ColumnRotation { step: 3 },
+            })
+            .to_string(),
+            "Evaluation-key error: Evaluation key does not support ColumnRotation { step: 3 }"
+        );
+        assert_eq!(
+            Error::Multiparty(MultipartyError::InvalidCommonRandomPolynomialCount {
+                actual: 2,
+                expected: 3,
+            })
+            .to_string(),
+            "Multiparty protocol error: Expected 3 common random polynomials, got 2"
         );
     }
 }

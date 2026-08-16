@@ -65,16 +65,4 @@ impl Encoding {
     }
 }
 
-impl From<Encoding> for String {
-    fn from(e: Encoding) -> Self {
-        String::from(&e)
-    }
-}
-
-impl From<&Encoding> for String {
-    fn from(e: &Encoding) -> Self {
-        format!("{e:?}")
-    }
-}
-
 impl FhePlaintextEncoding for Encoding {}

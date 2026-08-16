@@ -5,7 +5,7 @@ use super::{
     traits::TryConvertFrom,
 };
 use crate::{
-    Error, Result,
+    Error, PolynomialSerializationError, Result,
     proto::rq::{Representation as RepresentationProto, Rq},
 };
 use itertools::{Itertools, izip};
@@ -48,22 +48,23 @@ fn parse_proto(
     ctx: &Arc<Context>,
     variable_time: bool,
 ) -> Result<(Representation, Vec<u64>, bool)> {
-    let repr = value
-        .representation
-        .try_into()
-        .map_err(|_| Error::Default("Invalid representation".to_string()))?;
+    let repr = value.representation.try_into().map_err(|_| {
+        PolynomialSerializationError::InvalidRepresentation {
+            value: value.representation,
+        }
+    })?;
     let representation_from_proto = match repr {
         RepresentationProto::Powerbasis => Representation::PowerBasis,
         RepresentationProto::Ntt => Representation::Ntt,
         RepresentationProto::Nttshoup => Representation::NttShoup,
         RepresentationProto::Unknown => {
-            return Err(Error::Default("Unknown representation".to_string()));
+            return Err(PolynomialSerializationError::UnknownRepresentation.into());
         }
     };
 
     let degree = value.degree as usize;
     if !degree.is_multiple_of(8) || degree < 8 {
-        return Err(Error::Default("Invalid degree".to_string()));
+        return Err(PolynomialSerializationError::InvalidDegree { degree }.into());
     }
 
     let mut expected_nbytes = 0;
@@ -71,7 +72,11 @@ fn parse_proto(
         .iter()
         .for_each(|qi| expected_nbytes += qi.serialization_length(degree));
     if value.coefficients.len() != expected_nbytes {
-        return Err(Error::Default("Invalid coefficients".to_string()));
+        return Err(PolynomialSerializationError::InvalidCoefficientCount {
+            actual: value.coefficients.len(),
+            expected: expected_nbytes,
+        }
+        .into());
     }
 
     let mut index = 0;
@@ -98,9 +103,11 @@ impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
         let (representation_from_proto, coefficients, variable_time) =
             parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::PowerBasis {
-            return Err(Error::Default(
-                "The representation asked for does not match the representation in the serialization".to_string(),
-            ));
+            return Err(PolynomialSerializationError::RepresentationMismatch {
+                found: representation_from_proto,
+                expected: Representation::PowerBasis,
+            }
+            .into());
         }
         Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)
     }
@@ -111,9 +118,11 @@ impl TryConvertFrom<&Rq> for Poly<Ntt> {
         let (representation_from_proto, coefficients, variable_time) =
             parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::Ntt {
-            return Err(Error::Default(
-                "The representation asked for does not match the representation in the serialization".to_string(),
-            ));
+            return Err(PolynomialSerializationError::RepresentationMismatch {
+                found: representation_from_proto,
+                expected: Representation::Ntt,
+            }
+            .into());
         }
         let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
         Ok(p.into_ntt())
@@ -125,9 +134,11 @@ impl TryConvertFrom<&Rq> for Poly<NttShoup> {
         let (representation_from_proto, coefficients, variable_time) =
             parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::NttShoup {
-            return Err(Error::Default(
-                "The representation asked for does not match the representation in the serialization".to_string(),
-            ));
+            return Err(PolynomialSerializationError::RepresentationMismatch {
+                found: representation_from_proto,
+                expected: Representation::NttShoup,
+            }
+            .into());
         }
         let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
         Ok(p.into_ntt_shoup())
@@ -171,15 +182,19 @@ impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
             }
             Ok(out)
         } else {
-            Err(Error::Default(
-                "In PowerBasis representation, either all coefficients must be specified, or only coefficients up to the degree".to_string(),
-            ))
+            Err(Error::InvalidCoefficientCount {
+                representation: Representation::PowerBasis,
+                actual: v.len(),
+                degree: ctx.degree,
+                moduli: ctx.q.len(),
+            })
         }
     }
 }
 
 impl TryConvertFrom<Vec<u64>> for Poly<Ntt> {
     fn try_convert_from(v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let actual = v.len();
         if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
             Ok(Self {
                 ctx: ctx.clone(),
@@ -190,15 +205,19 @@ impl TryConvertFrom<Vec<u64>> for Poly<Ntt> {
                 _repr: std::marker::PhantomData,
             })
         } else {
-            Err(Error::Default(
-                "In Ntt representation, all coefficients must be specified".to_string(),
-            ))
+            Err(Error::InvalidCoefficientCount {
+                representation: Representation::Ntt,
+                actual,
+                degree: ctx.degree,
+                moduli: ctx.q.len(),
+            })
         }
     }
 }
 
 impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
     fn try_convert_from(v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
+        let actual = v.len();
         if let Ok(coefficients) = Array2::from_shape_vec((ctx.q.len(), ctx.degree), v) {
             let mut p = Self {
                 ctx: ctx.clone(),
@@ -211,9 +230,12 @@ impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
             p.compute_coefficients_shoup();
             Ok(p)
         } else {
-            Err(Error::Default(
-                "In NttShoup representation, all coefficients must be specified".to_string(),
-            ))
+            Err(Error::InvalidCoefficientCount {
+                representation: Representation::NttShoup,
+                actual,
+                degree: ctx.degree,
+                moduli: ctx.q.len(),
+            })
         }
     }
 }
@@ -221,9 +243,12 @@ impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
 impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
     fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if a.shape() != [ctx.q.len(), ctx.degree] {
-            Err(Error::Default(
-                "The array of coefficient does not have the correct shape".to_string(),
-            ))
+            Err(Error::InvalidCoefficientShape {
+                actual_rows: a.nrows(),
+                actual_columns: a.ncols(),
+                expected_rows: ctx.q.len(),
+                expected_columns: ctx.degree,
+            })
         } else {
             Ok(Self {
                 ctx: ctx.clone(),
@@ -240,9 +265,12 @@ impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
 impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
     fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if a.shape() != [ctx.q.len(), ctx.degree] {
-            Err(Error::Default(
-                "The array of coefficient does not have the correct shape".to_string(),
-            ))
+            Err(Error::InvalidCoefficientShape {
+                actual_rows: a.nrows(),
+                actual_columns: a.ncols(),
+                expected_rows: ctx.q.len(),
+                expected_columns: ctx.degree,
+            })
         } else {
             Ok(Self {
                 ctx: ctx.clone(),
@@ -259,9 +287,12 @@ impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
 impl TryConvertFrom<Array2<u64>> for Poly<NttShoup> {
     fn try_convert_from(a: Array2<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if a.shape() != [ctx.q.len(), ctx.degree] {
-            Err(Error::Default(
-                "The array of coefficient does not have the correct shape".to_string(),
-            ))
+            Err(Error::InvalidCoefficientShape {
+                actual_rows: a.nrows(),
+                actual_columns: a.ncols(),
+                expected_rows: ctx.q.len(),
+                expected_columns: ctx.degree,
+            })
         } else {
             let mut p = Self {
                 ctx: ctx.clone(),
@@ -314,9 +345,10 @@ impl<'a> TryConvertFrom<&'a [i64]> for Poly<PowerBasis> {
             });
             Ok(out)
         } else {
-            Err(Error::Default(
-                "In PowerBasis representation with signed integers, only `degree` coefficients can be specified".to_string(),
-            ))
+            Err(Error::TooManyCoefficients {
+                actual: v.len(),
+                maximum: ctx.degree,
+            })
         }
     }
 }
@@ -330,10 +362,10 @@ impl<'a> TryConvertFrom<&'a Vec<i64>> for Poly<PowerBasis> {
 impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<PowerBasis> {
     fn try_convert_from(v: &'a [BigUint], ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if v.len() > ctx.degree {
-            Err(Error::Default(
-                "The slice contains too many big integers compared to the polynomial degree"
-                    .to_string(),
-            ))
+            Err(Error::TooManyCoefficients {
+                actual: v.len(),
+                maximum: ctx.degree,
+            })
         } else {
             let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
 
@@ -445,9 +477,7 @@ impl TryFrom<&Poly<PowerBasis>> for Vec<u64> {
     fn try_from(p: &Poly<PowerBasis>) -> Result<Self> {
         p.coefficients
             .as_slice()
-            .ok_or_else(|| {
-                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
-            })
+            .ok_or(Error::NonContiguousCoefficients)
             .map(|slice| slice.to_vec())
     }
 }
@@ -458,9 +488,7 @@ impl TryFrom<&Poly<Ntt>> for Vec<u64> {
     fn try_from(p: &Poly<Ntt>) -> Result<Self> {
         p.coefficients
             .as_slice()
-            .ok_or_else(|| {
-                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
-            })
+            .ok_or(Error::NonContiguousCoefficients)
             .map(|slice| slice.to_vec())
     }
 }
@@ -471,9 +499,7 @@ impl TryFrom<&Poly<NttShoup>> for Vec<u64> {
     fn try_from(p: &Poly<NttShoup>) -> Result<Self> {
         p.coefficients
             .as_slice()
-            .ok_or_else(|| {
-                Error::Default("Polynomial coefficients are not contiguous in memory".to_string())
-            })
+            .ok_or(Error::NonContiguousCoefficients)
             .map(|slice| slice.to_vec())
     }
 }
@@ -505,7 +531,7 @@ impl From<&Poly<NttShoup>> for Vec<BigUint> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Error as CrateError,
+        Error as CrateError, PolynomialSerializationError,
         proto::rq::Rq,
         rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom},
     };
@@ -528,14 +554,20 @@ mod tests {
             );
             assert_eq!(
                 Poly::<Ntt>::try_convert_from(&proto, &ctx, false).unwrap_err(),
-                CrateError::Default(
-                    "The representation asked for does not match the representation in the serialization".to_string()
+                CrateError::PolynomialSerialization(
+                    PolynomialSerializationError::RepresentationMismatch {
+                        found: crate::rq::Representation::PowerBasis,
+                        expected: crate::rq::Representation::Ntt,
+                    }
                 )
             );
             assert_eq!(
                 Poly::<NttShoup>::try_convert_from(&proto, &ctx, false).unwrap_err(),
-                CrateError::Default(
-                    "The representation asked for does not match the representation in the serialization".to_string()
+                CrateError::PolynomialSerialization(
+                    PolynomialSerializationError::RepresentationMismatch {
+                        found: crate::rq::Representation::PowerBasis,
+                        expected: crate::rq::Representation::NttShoup,
+                    }
                 )
             );
         }
