@@ -21,6 +21,10 @@ pub struct Cli {
     )]
     /// Size in bytes of each database element.
     pub element_size: usize,
+
+    /// Bit-pack database NTT residues to reduce server memory.
+    #[arg(long)]
+    pub packed_database: bool,
 }
 
 #[allow(dead_code)]

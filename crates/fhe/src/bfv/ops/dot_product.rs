@@ -49,12 +49,14 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
     }
 }
 
+mod packed;
+
 /// Compute a ciphertext/plaintext dot product with temporary scratch.
 /// For repeated calls at the same level, use [`DotProductScalarWorkspace`].
-pub fn dot_product_scalar<'a, I, J>(ct: I, pt: J) -> Result<Ciphertext>
+pub fn dot_product_scalar<'a, 'b, I, J>(ct: I, pt: J) -> Result<Ciphertext>
 where
     I: Iterator<Item = &'a Ciphertext> + Clone,
-    J: Iterator<Item = &'a Plaintext> + Clone,
+    J: Iterator<Item = &'b Plaintext> + Clone,
 {
     let first = ct
         .clone()
@@ -109,10 +111,10 @@ impl DotProductScalarWorkspace {
     /// mismatches, or inconsistent ciphertext part counts. Iterators must
     /// yield the same operands when cloned. Timing permission is recomputed
     /// on every call.
-    pub fn dot_product_scalar<'a, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
+    pub fn dot_product_scalar<'a, 'b, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
     where
         I: Iterator<Item = &'a Ciphertext> + Clone,
-        J: Iterator<Item = &'a Plaintext> + Clone,
+        J: Iterator<Item = &'b Plaintext> + Clone,
     {
         let ct_count = ct.clone().count();
         let pt_count = pt.clone().count();

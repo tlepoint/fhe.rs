@@ -29,7 +29,7 @@ use itertools::Itertools;
 use rand::{Rng as RngCore, rng};
 use std::error::Error;
 use util::{
-    DatabaseLayout, encode_database, generate_database, number_elements_per_plaintext,
+    DatabaseLayout, generate_database, number_elements_per_plaintext, prepare_database,
     timeit::{timeit, timeit_n},
 };
 
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // information about the database.
     println!("# SealPIR with fhe.rs");
     println!(
-        "database of {}",
+        "Raw database: {}",
         HumanBytes((database_size * elements_size) as u64)
     );
     println!("\tdatabase_size = {database_size}");
@@ -86,8 +86,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ciphertext, and each element will be encoded as a polynomial in Ntt
     // representation.
     let (preprocessed_database, (dim1, dim2)) = timeit!("Database preprocessing", {
-        encode_database(&database, params.clone(), 1, DatabaseLayout::FewerColumns)
+        prepare_database(
+            &database,
+            params.clone(),
+            1,
+            DatabaseLayout::FewerColumns,
+            args.packed_database,
+        )
     });
+    println!("{}", preprocessed_database.storage_summary(&params));
 
     // Client setup: the client generates a secret key, and an evaluation key for
     // the server will which enable to obliviously expand a ciphertext up to (dim1 +
@@ -163,9 +170,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Expand: {}", DisplayDuration(start.elapsed()));
 
         let query_vec = &expanded_query[..dim1];
-        let mut dot_product_mod_switch = |i, database: &[bfv::Plaintext]| {
-            let column = database.iter().skip(i).step_by(dim2);
-            let mut c = dot_workspace.dot_product_scalar(query_vec.iter(), column)?;
+        let mut dot_product_mod_switch = |i, database: &util::EncodedDatabase| {
+            let mut c = database.dot_product(&mut dot_workspace, query_vec.iter(), i, dim2)?;
             c.switch_to_level(c.max_switchable_level())?;
             Ok(c)
         };

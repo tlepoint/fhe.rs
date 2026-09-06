@@ -29,5 +29,7 @@ pub use ops::{
 };
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;
+mod packed_plaintext;
+pub use packed_plaintext::{PackedPlaintext, PackedPlaintextVec, PackedPlaintextView};
 pub use plaintext_vec::PlaintextVec;
 pub use rgsw_ciphertext::RGSWCiphertext;

@@ -62,6 +62,10 @@ name = "pir_expansion"
 harness = false
 
 [[bench]]
+name = "pir_dot_product"
+harness = false
+
+[[bench]]
 name = "bfv_optimized_ops"
 harness = false
 
