@@ -700,3 +700,119 @@ BigInt negacyclic convolution and rounding at small moduli, decryption of sums
 of 1/2/17/81 products across multiple levels and after relinearization, malformed
 inputs and unchanged state after errors, the strict coefficient bound, and
 timing permission across all input parts and operand orderings.
+
+## Query expansion: modulus switching in NTT representation
+
+The ciphertext-product accumulation change was committed as `88991f4`.
+The next optimization removes redundant transforms from Galois key switching,
+which is the repeated arithmetic operation in both PIR query expansions.
+
+Both examples expand ciphertexts at level 1 using evaluation keys at level 0.
+Each Galois operation produces two polynomials under three moduli and drops
+the last modulus to return to the two-modulus ciphertext context. Previously,
+each polynomial underwent three inverse NTTs, power-basis modulus switching,
+and two forward NTTs. The new `Poly<Ntt>::switch_down` keeps the surviving rows
+in NTT form and uses one inverse NTT plus two forward NTTs for the correction.
+This saves four transforms per Galois operation: 1,020 degree-8192 transforms
+per MulPIR expansion and 2,044 degree-4096 transforms per SealPIR expansion.
+The in-place Galois path also avoids cloning the two complete output matrices
+before dropping a single modulus.
+
+### Exact rounding and scope
+
+For the dropped modulus p, let h=floor(p/2) and
+`r = ((x mod p + h) mod p) - h`. Then `round(x/p) = (x-r)/p`.
+An inverse NTT of the dropped row obtains the residues needed to compute r.
+For every surviving modulus q_i, transform r modulo q_i, subtract it from the
+existing NTT row, and multiply by the precomputed inverse of p modulo q_i.
+Linearity of the NTT makes this identical to the previous power-basis operation.
+No approximate RNS scaling or different rounding schedule is introduced.
+
+The new helper preserves each polynomial's timing permission. Its reductions
+are constant-time, and variable-time transforms run only when the polynomial
+already permits them. The temporary correction buffer is zeroized; the dropped
+row is cleared before removal when it contains secret data. Unreachable target
+contexts are rejected before mutation. When several moduli must be dropped,
+`switch_down_to` keeps the existing bulk power-basis round trip, avoiding
+repeated forward transforms of rows that later steps would discard.
+
+Both allocating and in-place Galois operations use the helper. This benefits
+query expansion and other Galois operations whose key context has an extra
+modulus. Same-level Galois operations do not take this path. General ciphertext
+modulus switching and relinearization-key operations retain their current
+implementations in this change.
+
+### Focused benchmarks
+
+Added `crates/fhe/benches/pir_expansion.rs`, with the exact parameters and
+expansion sizes used by the optimized PIR examples. Fixtures use seeded input
+and key generation, serialization/deserialization, and check every expanded
+selection bit before timing. Full expansions use 10 flat Criterion samples;
+one-step cases use 30. All cases use 100 ms warmup and a 600 ms measurement
+target, extended as necessary to collect the samples. Setup and fixture
+verification are excluded; result allocation and destruction are included.
+
+```sh
+cargo bench -p fhe --bench pir_expansion -- --save-baseline before-ntt-switch --noplot
+# Apply the NTT modulus-switching change, then:
+cargo bench -p fhe --bench pir_expansion -- --baseline before-ntt-switch --noplot
+```
+
+The final focused rerun against `88991f4` measured the following on the same
+macOS arm64 host with the default native NTT backend and release optimization:
+
+| Case | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| Full MulPIR expansion, 255 outputs | 271.26 ms | 234.88 ms | 13.4% |
+| Full SealPIR expansion, 511 outputs | 265.38 ms | 227.14 ms | 14.4% |
+| One MulPIR step with a modulus drop | 1.0136 ms | 0.8492 ms | 16.2% |
+| One SealPIR step with a modulus drop | 0.4920 ms | 0.4144 ms | 15.8% |
+
+The first optimized invocation measured full expansions at 233.62 and
+227.83 ms, respectively. Same-level controls had no statistically significant
+change in either invocation. The MulPIR control's baseline mean contained large
+outliers (415 microseconds versus roughly 390–399 microseconds afterwards), so
+that difference should not be attributed to this optimization.
+
+Four alternating pairs of complete release runs per scheme used 1,000,000
+entries of 288 bytes. Each process averaged five responses, with no concurrent
+builds or tests. These paired runs exercised the single-drop implementation;
+the final focused rerun above additionally includes the bulk-path guard for
+multi-drop calls. Medians across the four invocations per version were:
+
+| Scheme and measurement | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| MulPIR expansion inside server response | 272.54 ms | 235.95 ms | 13.4% |
+| MulPIR complete server response | 655.20 ms | 624.75 ms | 4.6% |
+| MulPIR whole process | 5.490 s | 5.327 s | 3.0% |
+| SealPIR expansion inside server response | 266.69 ms | 230.25 ms | 13.7% |
+| SealPIR complete server response | 529.35 ms | 497.80 ms | 6.0% |
+| SealPIR whole process | 4.672 s | 4.548 s | 2.7% |
+
+MulPIR response averages were 684.9, 655.0, 655.4, and 651.1 ms before, and
+647.5, 626.8, 616.3, and 622.7 ms after. SealPIR response averages were 554.5,
+526.7, 530.0, and 528.7 ms before, and 498.3, 501.7, 497.3, and 497.0 ms after.
+All 16 retrievals passed their byte comparisons. Absolute response times vary
+with host and cache conditions; use the paired comparison for this change.
+
+### Validation and remaining work
+
+`cargo test`, nightly formatting, Clippy across all targets with warnings denied,
+and rustdoc with warnings denied passed. New tests also pass in release mode
+with all features, exercising the TFHE NTT backend as well as its native
+fallback. Performance measurements used the default backend only.
+
+The math tests exhaust all coefficients for a small two-modulus context and
+compare against exact BigUint rounding and the old transform/switch/transform
+path. Other cases cover rounding boundaries, random coefficients, ascending
+and descending modulus sizes, multiple drops, invalid targets, and both timing
+permissions. The Galois regression test compares complete ciphertext
+coefficients against the old path across all valid key/ciphertext levels in a
+four-modulus chain, two substitutions, allocating/in-place calls, and output
+reuse across public/secret/public inputs.
+
+The next arithmetic candidate is key-switch digit construction: a digit's NTT
+row at its original modulus is already present before conversion to power
+basis, but the current decomposition reconstructs that forward transform.
+Retaining and reusing those rows could remove two more transforms per PIR
+Galois step. That optimization has not yet been implemented or measured.

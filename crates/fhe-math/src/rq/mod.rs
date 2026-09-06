@@ -12,6 +12,7 @@
 mod context;
 mod convert;
 mod dot_product;
+mod modulus_switch;
 mod ops;
 mod serialize;
 

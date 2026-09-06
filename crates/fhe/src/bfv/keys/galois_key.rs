@@ -67,12 +67,8 @@ impl GaloisKey {
         let (mut c0, mut c1) = self.ksk.key_switch(&c2)?;
 
         if c0.ctx() != ct[0].ctx() {
-            let mut c0_pb = c0.into_power_basis();
-            let mut c1_pb = c1.into_power_basis();
-            c0_pb.switch_down_to(ct[0].ctx())?;
-            c1_pb.switch_down_to(ct[1].ctx())?;
-            c0 = c0_pb.into_ntt();
-            c1 = c1_pb.into_ntt();
+            c0.switch_down_to(ct[0].ctx())?;
+            c1.switch_down_to(ct[1].ctx())?;
         }
 
         c0 += &ct[0].substitute(&self.element)?;
@@ -110,12 +106,8 @@ impl GaloisKey {
         self.ksk.key_switch_assign(&c2, out0, out1)?;
 
         if out0.ctx() != ct[0].ctx() {
-            let mut out0_pb = out0.clone().into_power_basis();
-            let mut out1_pb = out1.clone().into_power_basis();
-            out0_pb.switch_down_to(ct[0].ctx())?;
-            out1_pb.switch_down_to(ct[1].ctx())?;
-            *out0 = out0_pb.into_ntt();
-            *out1 = out1_pb.into_ntt();
+            out0.switch_down_to(ct[0].ctx())?;
+            out1.switch_down_to(ct[1].ctx())?;
         }
 
         *out0 += &ct[0].substitute(&self.element)?;
@@ -253,6 +245,56 @@ mod tests {
             gk.relinearize_into(&ct, &mut out)?;
 
             assert_eq!(ct_expected, out);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn leveled_relinearization_matches_power_basis_switching() -> Result<(), Box<dyn Error>> {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let params = BfvParameters::default_arc(4, 16);
+        let mut rng = ChaCha8Rng::seed_from_u64(0x6a1015);
+        let sk = SecretKey::random(&params, &mut rng);
+        for level in 0..=params.max_level() {
+            let pt = Plaintext::try_encode(
+                &[1u64, 2, 3, 4][..],
+                Encoding::simd_at_level(level),
+                &params,
+            )?;
+            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            for key_level in 0..=level {
+                for exponent in [3, params.degree() + 1] {
+                    let gk = GaloisKey::new(&sk, exponent, level, key_level, &mut rng)?;
+                    let mut out = Ciphertext::zero(&params);
+                    // Reuse the output across permission changes and check
+                    // both allocating and in-place entry points against the
+                    // previous transform/switch/transform implementation.
+                    for public in [true, false, true] {
+                        let mut input = ct.clone();
+                        if !public {
+                            input[1].disallow_variable_time_computations();
+                        }
+                        let c2 = input[1].substitute(&gk.element)?.into_power_basis();
+                        let (c0, c1) = gk.ksk.key_switch(&c2)?;
+                        let mut c0 = c0.into_power_basis();
+                        let mut c1 = c1.into_power_basis();
+                        c0.switch_down_to(input[0].ctx())?;
+                        c1.switch_down_to(input[1].ctx())?;
+                        let mut c0 = c0.into_ntt();
+                        c0 += &input[0].substitute(&gk.element)?;
+                        let expected = Ciphertext::new(vec![c0, c1.into_ntt()], &params)?;
+                        assert_eq!(gk.relinearize(&input)?, expected);
+                        gk.relinearize_into(&input, &mut out)?;
+                        assert_eq!(out, expected);
+                        assert!(
+                            out.iter()
+                                .all(|p| p.allows_variable_time_computations() == public)
+                        );
+                    }
+                }
+            }
         }
         Ok(())
     }
