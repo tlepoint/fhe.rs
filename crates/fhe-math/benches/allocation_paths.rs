@@ -22,6 +22,11 @@ fn benchmarks(c: &mut Criterion) {
     group.sample_size(20);
     group.warm_up_time(std::time::Duration::from_millis(100));
     group.measurement_time(std::time::Duration::from_millis(300));
+    group.bench_function("context_setup", |b| {
+        b.iter(|| Context::new_arc(black_box(&moduli), 2048).unwrap())
+    });
+    group.bench_function("add", |b| b.iter(|| black_box(&ntt) + black_box(&ntt)));
+    group.bench_function("forward", |b| b.iter(|| black_box(&pb).clone().into_ntt()));
     group.bench_function("random_shoup", |b| {
         b.iter(|| Poly::<NttShoup>::random_from_seed(black_box(&ctx), [7; 32]))
     });

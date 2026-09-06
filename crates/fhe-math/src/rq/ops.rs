@@ -7,169 +7,140 @@ use ndarray::Array2;
 use num_bigint::BigUint;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-impl AddAssign<&Poly<PowerBasis>> for Poly<PowerBasis> {
-    fn add_assign(&mut self, p: &Poly<PowerBasis>) {
-        assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
+// These operations are shared by PowerBasis and Ntt only. Do not add
+// NttShoup: mutating its coefficients would invalidate its cached quotients.
+macro_rules! impl_coefficient_ops {
+    ($repr:ty) => {
+        impl AddAssign<&Poly<$repr>> for Poly<$repr> {
+            fn add_assign(&mut self, p: &Poly<$repr>) {
+                assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
+                debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-        self.allow_variable_time_computations &= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
+                self.allow_variable_time_computations &= p.allow_variable_time_computations;
+                if self.allow_variable_time_computations {
+                    izip!(
+                        self.coefficients.outer_iter_mut(),
+                        p.coefficients.outer_iter(),
+                        self.ctx.q.iter()
+                    )
+                    .for_each(|(mut v1, v2, qi)| unsafe {
+                        qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                    });
+                } else {
+                    izip!(
+                        self.coefficients.outer_iter_mut(),
+                        p.coefficients.outer_iter(),
+                        self.ctx.q.iter()
+                    )
+                    .for_each(|(mut v1, v2, qi)| {
+                        qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                    });
+                }
+            }
         }
-    }
-}
-
-impl Add<&Poly<PowerBasis>> for &Poly<PowerBasis> {
-    type Output = Poly<PowerBasis>;
-    fn add(self, p: &Poly<PowerBasis>) -> Poly<PowerBasis> {
-        let mut q = self.clone();
-        q += p;
-        q
-    }
-}
-
-impl Add for Poly<PowerBasis> {
-    type Output = Poly<PowerBasis>;
-    fn add(self, mut p: Poly<PowerBasis>) -> Poly<PowerBasis> {
-        p += &self;
-        p
-    }
-}
-
-impl SubAssign<&Poly<PowerBasis>> for Poly<PowerBasis> {
-    fn sub_assign(&mut self, p: &Poly<PowerBasis>) {
-        assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-
-        self.allow_variable_time_computations &= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
+        impl Add<&Poly<$repr>> for &Poly<$repr> {
+            type Output = Poly<$repr>;
+            fn add(self, p: &Poly<$repr>) -> Poly<$repr> {
+                let mut q = self.clone();
+                q += p;
+                q
+            }
         }
-    }
-}
-
-impl Sub<&Poly<PowerBasis>> for &Poly<PowerBasis> {
-    type Output = Poly<PowerBasis>;
-    fn sub(self, p: &Poly<PowerBasis>) -> Poly<PowerBasis> {
-        let mut q = self.clone();
-        q -= p;
-        q
-    }
-}
-
-impl AddAssign<&Poly<Ntt>> for Poly<Ntt> {
-    fn add_assign(&mut self, p: &Poly<Ntt>) {
-        assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-
-        self.allow_variable_time_computations &= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.add_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.add_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
+        impl Add for Poly<$repr> {
+            type Output = Poly<$repr>;
+            fn add(self, mut p: Poly<$repr>) -> Poly<$repr> {
+                p += &self;
+                p
+            }
         }
-    }
-}
+        impl SubAssign<&Poly<$repr>> for Poly<$repr> {
+            fn sub_assign(&mut self, p: &Poly<$repr>) {
+                assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
+                debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
 
-impl Add<&Poly<Ntt>> for &Poly<Ntt> {
-    type Output = Poly<Ntt>;
-    fn add(self, p: &Poly<Ntt>) -> Poly<Ntt> {
-        let mut q = self.clone();
-        q += p;
-        q
-    }
-}
-
-impl Add for Poly<Ntt> {
-    type Output = Poly<Ntt>;
-    fn add(self, mut p: Poly<Ntt>) -> Poly<Ntt> {
-        p += &self;
-        p
-    }
-}
-
-impl SubAssign<&Poly<Ntt>> for Poly<Ntt> {
-    fn sub_assign(&mut self, p: &Poly<Ntt>) {
-        assert!(!self.has_lazy_coefficients && !p.has_lazy_coefficients);
-        debug_assert_eq!(self.ctx, p.ctx, "Incompatible contexts");
-
-        self.allow_variable_time_computations &= p.allow_variable_time_computations;
-        if self.allow_variable_time_computations {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| unsafe {
-                qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                p.coefficients.outer_iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, v2, qi)| {
-                qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
-            });
+                self.allow_variable_time_computations &= p.allow_variable_time_computations;
+                if self.allow_variable_time_computations {
+                    izip!(
+                        self.coefficients.outer_iter_mut(),
+                        p.coefficients.outer_iter(),
+                        self.ctx.q.iter()
+                    )
+                    .for_each(|(mut v1, v2, qi)| unsafe {
+                        qi.sub_vec_vt(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                    });
+                } else {
+                    izip!(
+                        self.coefficients.outer_iter_mut(),
+                        p.coefficients.outer_iter(),
+                        self.ctx.q.iter()
+                    )
+                    .for_each(|(mut v1, v2, qi)| {
+                        qi.sub_vec(v1.as_slice_mut().unwrap(), v2.as_slice().unwrap())
+                    });
+                }
+            }
         }
-    }
-}
+        impl Sub<&Poly<$repr>> for &Poly<$repr> {
+            type Output = Poly<$repr>;
+            fn sub(self, p: &Poly<$repr>) -> Poly<$repr> {
+                let mut q = self.clone();
+                q -= p;
+                q
+            }
+        }
+        impl MulAssign<&BigUint> for Poly<$repr> {
+            fn mul_assign(&mut self, p: &BigUint) {
+                let scalar_crt = self.ctx.rns.project(p);
 
-impl Sub<&Poly<Ntt>> for &Poly<Ntt> {
-    type Output = Poly<Ntt>;
-    fn sub(self, p: &Poly<Ntt>) -> Poly<Ntt> {
-        let mut q = self.clone();
-        q -= p;
-        q
-    }
+                if self.allow_variable_time_computations {
+                    unsafe {
+                        izip!(
+                            self.coefficients.outer_iter_mut(),
+                            scalar_crt.iter(),
+                            self.ctx.q.iter()
+                        )
+                        .for_each(|(mut v1, scalar_qi, qi)| {
+                            qi.scalar_mul_vec_vt(v1.as_slice_mut().unwrap(), *scalar_qi)
+                        });
+                    }
+                } else {
+                    izip!(
+                        self.coefficients.outer_iter_mut(),
+                        scalar_crt.iter(),
+                        self.ctx.q.iter()
+                    )
+                    .for_each(|(mut v1, scalar_qi, qi)| {
+                        qi.scalar_mul_vec(v1.as_slice_mut().unwrap(), *scalar_qi)
+                    });
+                }
+            }
+        }
+        impl Neg for &Poly<$repr> {
+            type Output = Poly<$repr>;
+            fn neg(self) -> Self::Output {
+                -self.clone()
+            }
+        }
+        impl Neg for Poly<$repr> {
+            type Output = Poly<$repr>;
+
+            fn neg(mut self) -> Poly<$repr> {
+                assert!(!self.has_lazy_coefficients);
+                if self.allow_variable_time_computations {
+                    izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter()).for_each(
+                        |(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) },
+                    );
+                } else {
+                    izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
+                        .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
+                }
+                self
+            }
+        }
+    };
 }
+impl_coefficient_ops!(PowerBasis);
+impl_coefficient_ops!(Ntt);
 
 impl MulAssign<&Poly<Ntt>> for Poly<Ntt> {
     fn mul_assign(&mut self, p: &Poly<Ntt>) {
@@ -291,129 +262,6 @@ impl Mul<&Poly<PowerBasis>> for &BigUint {
     type Output = Poly<PowerBasis>;
     fn mul(self, p: &Poly<PowerBasis>) -> Poly<PowerBasis> {
         p * self
-    }
-}
-
-impl MulAssign<&BigUint> for Poly<Ntt> {
-    fn mul_assign(&mut self, p: &BigUint) {
-        // Project the scalar into its CRT representation (reduced modulo each prime)
-        let scalar_crt = self.ctx.rns.project(p);
-
-        if self.allow_variable_time_computations {
-            unsafe {
-                izip!(
-                    self.coefficients.outer_iter_mut(),
-                    scalar_crt.iter(),
-                    self.ctx.q.iter()
-                )
-                .for_each(|(mut v1, scalar_qi, qi)| {
-                    qi.scalar_mul_vec_vt(v1.as_slice_mut().unwrap(), *scalar_qi)
-                });
-            }
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                scalar_crt.iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, scalar_qi, qi)| {
-                qi.scalar_mul_vec(v1.as_slice_mut().unwrap(), *scalar_qi)
-            });
-        }
-    }
-}
-
-impl MulAssign<&BigUint> for Poly<PowerBasis> {
-    fn mul_assign(&mut self, p: &BigUint) {
-        let scalar_crt = self.ctx.rns.project(p);
-
-        if self.allow_variable_time_computations {
-            unsafe {
-                izip!(
-                    self.coefficients.outer_iter_mut(),
-                    scalar_crt.iter(),
-                    self.ctx.q.iter()
-                )
-                .for_each(|(mut v1, scalar_qi, qi)| {
-                    qi.scalar_mul_vec_vt(v1.as_slice_mut().unwrap(), *scalar_qi)
-                });
-            }
-        } else {
-            izip!(
-                self.coefficients.outer_iter_mut(),
-                scalar_crt.iter(),
-                self.ctx.q.iter()
-            )
-            .for_each(|(mut v1, scalar_qi, qi)| {
-                qi.scalar_mul_vec(v1.as_slice_mut().unwrap(), *scalar_qi)
-            });
-        }
-    }
-}
-
-impl Neg for &Poly<Ntt> {
-    type Output = Poly<Ntt>;
-
-    fn neg(self) -> Poly<Ntt> {
-        assert!(!self.has_lazy_coefficients);
-        let mut out = self.clone();
-        if self.allow_variable_time_computations {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
-        out
-    }
-}
-
-impl Neg for &Poly<PowerBasis> {
-    type Output = Poly<PowerBasis>;
-
-    fn neg(self) -> Poly<PowerBasis> {
-        assert!(!self.has_lazy_coefficients);
-        let mut out = self.clone();
-        if self.allow_variable_time_computations {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(out.coefficients.outer_iter_mut(), out.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
-        out
-    }
-}
-
-impl Neg for Poly<Ntt> {
-    type Output = Poly<Ntt>;
-
-    fn neg(mut self) -> Poly<Ntt> {
-        assert!(!self.has_lazy_coefficients);
-        if self.allow_variable_time_computations {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
-        self
-    }
-}
-
-impl Neg for Poly<PowerBasis> {
-    type Output = Poly<PowerBasis>;
-
-    fn neg(mut self) -> Poly<PowerBasis> {
-        assert!(!self.has_lazy_coefficients);
-        if self.allow_variable_time_computations {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| unsafe { qi.neg_vec_vt(v1.as_slice_mut().unwrap()) });
-        } else {
-            izip!(self.coefficients.outer_iter_mut(), self.ctx.q.iter())
-                .for_each(|(mut v1, qi)| qi.neg_vec(v1.as_slice_mut().unwrap()));
-        }
-        self
     }
 }
 
@@ -583,6 +431,57 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
+
+    #[test]
+    fn shared_arithmetic_preserves_values_and_timing_policy() {
+        let ctx = crate::rq::Context::new_arc(&[1153, 2017], 16).unwrap();
+        macro_rules! check {
+            ($repr:ty) => {
+                for left_public in [false, true] {
+                    for right_public in [false, true] {
+                        let mut left = crate::rq::Poly::<$repr>::random_from_seed(&ctx, [1; 32]);
+                        let mut right = crate::rq::Poly::<$repr>::random_from_seed(&ctx, [2; 32]);
+                        left.allow_variable_time_computations = left_public;
+                        right.allow_variable_time_computations = right_public;
+                        let sum = &left + &right;
+                        let difference = &left - &right;
+                        let negated = -&left;
+                        let mut scaled = left.clone();
+                        scaled *= &BigUint::from(7u64);
+                        assert_eq!(
+                            sum.allows_variable_time_computations(),
+                            left_public && right_public
+                        );
+                        assert_eq!(
+                            difference.allows_variable_time_computations(),
+                            left_public && right_public
+                        );
+                        assert_eq!(negated.allows_variable_time_computations(), left_public);
+                        assert_eq!(scaled.allows_variable_time_computations(), left_public);
+                        assert_eq!(left.clone() + right.clone(), sum);
+                        assert_eq!(-left.clone(), negated);
+                        for (row, modulus) in ctx.q.iter().enumerate() {
+                            for column in 0..ctx.degree {
+                                let index = [row, column];
+                                let a = left.coefficients[index];
+                                let b = right.coefficients[index];
+                                assert_eq!(sum.coefficients[index], modulus.add(a, b));
+                                assert_eq!(difference.coefficients[index], modulus.sub(a, b));
+                                assert_eq!(negated.coefficients[index], modulus.neg(a));
+                                assert_eq!(scaled.coefficients[index], modulus.mul(a, 7));
+                            }
+                        }
+                        left.has_lazy_coefficients = true;
+                        assert!(std::panic::catch_unwind(|| &left + &right).is_err());
+                        assert!(std::panic::catch_unwind(|| &left - &right).is_err());
+                        assert!(std::panic::catch_unwind(|| -&left).is_err());
+                    }
+                }
+            };
+        }
+        check!(crate::rq::PowerBasis);
+        check!(crate::rq::Ntt);
+    }
 
     #[test]
     fn add() -> Result<(), Box<dyn Error>> {

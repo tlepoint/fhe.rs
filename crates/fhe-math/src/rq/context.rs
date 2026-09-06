@@ -10,9 +10,9 @@ pub struct Context {
     pub(crate) moduli: Box<[u64]>,
     pub(crate) q: Box<[Modulus]>,
     pub(crate) rns: Arc<RnsContext>,
-    pub(crate) ops: Box<[NttOperator]>,
+    pub(crate) ops: Box<[Arc<NttOperator>]>,
     pub(crate) degree: usize,
-    pub(crate) bitrev: Box<[usize]>,
+    pub(crate) bitrev: Arc<[usize]>,
     pub(crate) inv_last_qi_mod_qj: Box<[u64]>,
     pub(crate) inv_last_qi_mod_qj_shoup: Box<[u64]>,
     pub(crate) next_context: Option<Arc<Context>>,
@@ -44,7 +44,7 @@ impl Context {
             Err(Error::InvalidPolynomialDegree { degree, minimum: 8 })
         } else {
             let rns = Arc::new(RnsContext::new(moduli)?);
-            let (q, ops): (Vec<Modulus>, Vec<NttOperator>) = moduli
+            let (q, ops): (Vec<Modulus>, Vec<Arc<NttOperator>>) = moduli
                 .iter()
                 .map(|modulus| {
                     let qi = Modulus::new(*modulus)?;
@@ -53,42 +53,62 @@ impl Context {
                             modulus: *modulus,
                             degree,
                         })
-                        .map(|op| (qi, op))
+                        .map(|op| (qi, Arc::new(op)))
                 })
-                .collect::<Result<Vec<(Modulus, NttOperator)>>>()?
+                .collect::<Result<Vec<(Modulus, Arc<NttOperator>)>>>()?
                 .into_iter()
                 .unzip();
             let bitrev = (0..degree)
                 .map(|j| j.reverse_bits() >> (degree.leading_zeros() + 1))
                 .collect_vec();
 
-            let mut inv_last_qi_mod_qj = vec![];
-            let mut inv_last_qi_mod_qj_shoup = vec![];
-            let q_last = moduli.last().unwrap();
-            for qi in &q[..q.len() - 1] {
-                let inv = qi.inv(qi.reduce(*q_last)).unwrap();
-                inv_last_qi_mod_qj.push(inv);
-                inv_last_qi_mod_qj_shoup.push(qi.shoup(inv));
-            }
-
-            let next_context = if moduli.len() >= 2 {
-                Some(Arc::new(Context::new(&moduli[..moduli.len() - 1], degree)?))
-            } else {
-                None
-            };
-
-            Ok(Self {
-                moduli: moduli.to_owned().into_boxed_slice(),
-                q: q.into_boxed_slice(),
-                rns,
-                ops: ops.into_boxed_slice(),
-                degree,
-                bitrev: bitrev.into_boxed_slice(),
-                inv_last_qi_mod_qj: inv_last_qi_mod_qj.into_boxed_slice(),
-                inv_last_qi_mod_qj_shoup: inv_last_qi_mod_qj_shoup.into_boxed_slice(),
-                next_context,
-            })
+            Self::from_shared_operators(moduli, &q, &ops, degree, bitrev.into(), rns)
         }
+    }
+
+    // NTT operators and the bit-reversal permutation are immutable and shared
+    // across the whole chain. CRT products and switching constants vary by level.
+    fn from_shared_operators(
+        moduli: &[u64],
+        q: &[Modulus],
+        ops: &[Arc<NttOperator>],
+        degree: usize,
+        bitrev: Arc<[usize]>,
+        rns: Arc<RnsContext>,
+    ) -> Result<Self> {
+        let mut inv_last_qi_mod_qj = vec![];
+        let mut inv_last_qi_mod_qj_shoup = vec![];
+        let q_last = moduli.last().unwrap();
+        for qi in &q[..q.len() - 1] {
+            let inv = qi.inv(qi.reduce(*q_last)).unwrap();
+            inv_last_qi_mod_qj.push(inv);
+            inv_last_qi_mod_qj_shoup.push(qi.shoup(inv));
+        }
+        let next_context = if moduli.len() >= 2 {
+            let prefix = moduli.len() - 1;
+            let child_rns = Arc::new(RnsContext::new(&moduli[..prefix])?);
+            Some(Arc::new(Self::from_shared_operators(
+                &moduli[..prefix],
+                &q[..prefix],
+                &ops[..prefix],
+                degree,
+                bitrev.clone(),
+                child_rns,
+            )?))
+        } else {
+            None
+        };
+        Ok(Self {
+            moduli: moduli.into(),
+            q: q.into(),
+            ops: ops.into(),
+            degree,
+            bitrev,
+            rns,
+            inv_last_qi_mod_qj: inv_last_qi_mod_qj.into_boxed_slice(),
+            inv_last_qi_mod_qj_shoup: inv_last_qi_mod_qj_shoup.into_boxed_slice(),
+            next_context,
+        })
     }
 
     /// Creates a context in an `Arc`.
@@ -133,20 +153,17 @@ impl Context {
         Err(Error::ContextNotReachable)
     }
 
-    /// Returns the context after `i` iterations.
-    pub fn context_at_level(&self, i: usize) -> Result<Arc<Self>> {
+    /// Returns a shared context after `i` iterations, including this Arc at
+    /// level zero.
+    pub fn context_at_level(self: &Arc<Self>, i: usize) -> Result<Arc<Self>> {
         if i >= self.moduli.len() {
             Err(Error::InvalidContextLevel {
                 level: i,
                 max_level: self.moduli.len().saturating_sub(1),
             })
         } else {
-            if i == 0 {
-                // Preserve the borrowed-receiver API; only level zero needs a copy.
-                return Ok(Arc::new(self.clone()));
-            }
-            let mut current = self.next_context.as_ref().unwrap();
-            for _ in 1..i {
+            let mut current = self;
+            for _ in 0..i {
                 current = current.next_context.as_ref().unwrap();
             }
             Ok(current.clone())
@@ -170,9 +187,33 @@ mod tests {
     ];
 
     #[test]
+    fn levels_share_tables_and_keep_independent_crt_data() -> Result<(), Box<dyn Error>> {
+        let root = Context::new_arc(MODULI, 16)?;
+        for level in 0..MODULI.len() {
+            let child = root.context_at_level(level)?;
+            let separate = Context::new_arc(&MODULI[..MODULI.len() - level], 16)?;
+            assert_eq!(child, separate);
+            assert!(Arc::ptr_eq(&root.bitrev, &child.bitrev));
+            for (original, shared) in root.ops.iter().zip(child.ops.iter()) {
+                assert!(Arc::ptr_eq(original, shared));
+            }
+            if level != 0 {
+                assert!(!Arc::ptr_eq(&root.rns, &child.rns));
+            }
+            let poly = crate::rq::Poly::<crate::rq::PowerBasis>::random_from_seed(&child, [3; 32]);
+            assert_eq!(poly.clone().into_ntt().into_power_basis(), poly);
+        }
+        let child = root.context_at_level(2)?;
+        let reference = Context::new_arc(&MODULI[..MODULI.len() - 2], 16)?;
+        drop(root);
+        assert_eq!(child, reference);
+        Ok(())
+    }
+
+    #[test]
     fn level_lookup_reuses_children_and_accepts_equal_contexts() -> Result<(), Box<dyn Error>> {
         let ctx = Context::new_arc(MODULI, 16)?;
-        assert_eq!(ctx.context_at_level(0)?, ctx);
+        assert!(Arc::ptr_eq(&ctx.context_at_level(0)?, &ctx));
         let mut child = ctx.clone();
         for level in 1..MODULI.len() {
             child = child.next_context.as_ref().unwrap().clone();

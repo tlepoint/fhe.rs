@@ -1,6 +1,6 @@
 # fhe-math: optimizations and simplifications
 
-Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–4 have since been implemented; their original rationale remains below, with measurements in the implementation results section. References below are repository-relative source paths and symbol names.
+Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–7 have since been implemented; their original rationale remains below, with measurements in the implementation results sections. References below are repository-relative source paths and symbol names.
 
 Let **N** denote polynomial degree and **L** the number of RNS moduli. Start with allocations and context construction; treat arithmetic kernel changes as benchmark-driven experiments.
 
@@ -198,3 +198,24 @@ CRITERION_HOME=/tmp/fhe-allocation-bench cargo bench -p fhe-math --bench allocat
 # Apply items 1–4, then:
 CRITERION_HOME=/tmp/fhe-allocation-bench cargo bench -p fhe-math --bench allocation_paths -- --baseline before
 ```
+
+
+## Implementation results: items 5–7
+
+Shared arithmetic is generated only for PowerBasis and Ntt; NttShoup mutation is deliberately excluded. Raw constructors share shape validation, normalization, and storage initialization, with Shoup caches computed only for the matching representation. Wire parsing still rejects noncanonical data before using the common initializer.
+
+Context levels share per-modulus NTT operators through Arcs and share one bit-reversal array. Level-specific RNS products and switching constants remain separate. The TFHE wrapper stores exactly one backend, constructing native tables only when a TFHE plan is unavailable. Size 8 exercises that fallback. Backend selection, forward-output ordering, inverse normalization, and lazy-output ranges remain unchanged. Native and TFHE roots can differ, so tests compare decoded ring products across backends rather than requiring equal transform vectors.
+
+**0.2.0 API change:** `Context::context_at_level` now takes `self: &Arc<Self>`. Level zero returns an Arc clone of the existing root, eliminating the copy retained in items 1–4. All repository callers use Arc contexts. This supersedes the compatibility limitation recorded above; backward compatibility with 0.1.1 is not required.
+
+Tests verify table identity across levels, independent CRT metadata, contexts that outlive their root, equivalent independently constructed contexts, arithmetic values and timing policies, lazy-input rejection, constructor boundaries, both backend paths, and ring-product equivalence. Default/all-feature workspace tests, release math tests with all features, formatting, and Clippy passed.
+
+Extended the allocation benchmark with context setup, addition, and forward transformation. Compared against `4114b96` with the benchmark additions, on the same macOS arm64 host/toolchain and degree-2048, three-modulus parameters used above:
+
+| Operation | Native before → after | TFHE feature before → after |
+| --- | --- | --- |
+| Construct context chain | 1.532 ms → 0.883 ms | 1.816 ms → 0.460 ms |
+| Clone and forward transform | 30.29 µs → 30.68 µs | 29.92 µs → 29.58 µs |
+| Allocate and add polynomials | 1.698 µs → 1.718 µs | 1.699 µs → 1.730 µs |
+
+Setup improved clearly in these short runs. Transform changes and native addition were within noise/no-change classifications. TFHE addition initially showed about a 2% slowdown; a repeat measured 1.716 µs and Criterion classified the change within its noise threshold. These samples do not establish arithmetic speedups. Table sharing is also asserted directly by tests; retained-memory bytes were not profiled. NTT table storage across an L-modulus chain becomes O(LN), while level metadata and Arc lists still have their own costs.
