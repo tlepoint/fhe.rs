@@ -67,6 +67,13 @@ fn parse_proto(
         return Err(PolynomialSerializationError::InvalidDegree { degree }.into());
     }
 
+    if degree != ctx.degree {
+        return Err(Error::DegreeMismatch {
+            found: degree,
+            expected: ctx.degree,
+        });
+    }
+
     let mut expected_nbytes = 0;
     ctx.q
         .iter()
@@ -90,6 +97,18 @@ fn parse_proto(
             v
         })
         .collect();
+
+    for (row, modulus) in power_basis_coefficients
+        .chunks_exact(degree)
+        .zip(ctx.q.iter())
+    {
+        if row.iter().any(|coefficient| *coefficient >= **modulus) {
+            return Err(PolynomialSerializationError::NonCanonicalCoefficient {
+                modulus: **modulus,
+            }
+            .into());
+        }
+    }
 
     Ok((
         representation_from_proto,
@@ -145,6 +164,19 @@ impl TryConvertFrom<&Rq> for Poly<NttShoup> {
     }
 }
 
+// Preserve logical element order and reduce all RNS rows in constant time.
+fn canonical_coefficients(a: Array2<u64>, ctx: &Context) -> Array2<u64> {
+    let mut a = if a.is_standard_layout() {
+        a
+    } else {
+        a.as_standard_layout().into_owned()
+    };
+    for (mut row, modulus) in a.outer_iter_mut().zip(ctx.q.iter()) {
+        modulus.reduce_vec(row.as_slice_mut().unwrap());
+    }
+    a
+}
+
 impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
     fn try_convert_from(mut v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if v.len() == ctx.q.len() * ctx.degree {
@@ -152,7 +184,7 @@ impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients,
+                coefficients: canonical_coefficients(coefficients, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -199,7 +231,7 @@ impl TryConvertFrom<Vec<u64>> for Poly<Ntt> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients,
+                coefficients: canonical_coefficients(coefficients, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -222,7 +254,7 @@ impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
             let mut p = Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients,
+                coefficients: canonical_coefficients(coefficients, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -253,13 +285,7 @@ impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                // NTT kernels require contiguous rows, including when callers
-                // supply transposed or reversed owned arrays.
-                coefficients: if a.is_standard_layout() {
-                    a
-                } else {
-                    a.as_standard_layout().into_owned()
-                },
+                coefficients: canonical_coefficients(a, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -281,13 +307,7 @@ impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                // NTT kernels require contiguous rows, including when callers
-                // supply transposed or reversed owned arrays.
-                coefficients: if a.is_standard_layout() {
-                    a
-                } else {
-                    a.as_standard_layout().into_owned()
-                },
+                coefficients: canonical_coefficients(a, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -309,13 +329,7 @@ impl TryConvertFrom<Array2<u64>> for Poly<NttShoup> {
             let mut p = Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                // NTT kernels require contiguous rows, including when callers
-                // supply transposed or reversed owned arrays.
-                coefficients: if a.is_standard_layout() {
-                    a
-                } else {
-                    a.as_standard_layout().into_owned()
-                },
+                coefficients: canonical_coefficients(a, ctx),
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -717,6 +731,86 @@ mod tests {
         let values = Vec::<BigUint>::from(&p);
         let p2 = Poly::<PowerBasis>::try_convert_from(values.as_slice(), &ctx, false)?;
         assert_eq!(p, p2);
+        Ok(())
+    }
+
+    #[test]
+    fn wire_requires_matching_degree_and_canonical_coefficients() -> Result<(), Box<dyn Error>> {
+        use fhe_traits::{DeserializeWithContext, Serialize};
+        use prost::Message;
+        let small = Context::new_arc(&[1153], 8)?;
+        let large = Context::new_arc(&[1153], 16)?;
+        let bytes = Poly::<PowerBasis>::zero(&small).to_bytes();
+        assert!(matches!(
+            Poly::<PowerBasis>::from_bytes(&bytes, &large),
+            Err(CrateError::DegreeMismatch {
+                found: 8,
+                expected: 16
+            })
+        ));
+        let bytes = Poly::<PowerBasis>::zero(&large).to_bytes();
+        assert!(Poly::<PowerBasis>::from_bytes(&bytes, &small).is_err());
+        for representation in [1, 2, 3] {
+            let proto = Rq {
+                representation,
+                degree: 16,
+                coefficients: vec![255; 22],
+                allow_variable_time: false,
+            };
+            let bytes = proto.encode_to_vec();
+            let error = match representation {
+                1 => Poly::<PowerBasis>::from_bytes(&bytes, &large).unwrap_err(),
+                2 => Poly::<Ntt>::from_bytes(&bytes, &large).unwrap_err(),
+                _ => Poly::<NttShoup>::from_bytes(&bytes, &large).unwrap_err(),
+            };
+            assert!(matches!(
+                error,
+                CrateError::PolynomialSerialization(
+                    PolynomialSerializationError::NonCanonicalCoefficient { modulus: 1153 }
+                )
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn raw_rns_constructors_reduce_every_row() -> Result<(), Box<dyn Error>> {
+        use ndarray::Array2;
+        for moduli in [&MODULI[..1], &MODULI[..2]] {
+            let ctx = Context::new_arc(moduli, 16)?;
+            let values = vec![u64::MAX; moduli.len() * 16];
+            let expected =
+                Array2::from_shape_fn((moduli.len(), 16), |(row, _)| u64::MAX % moduli[row]);
+            let array = Array2::from_shape_vec((moduli.len(), 16), values.clone())?;
+            for public in [false, true] {
+                let pb = Poly::<PowerBasis>::try_convert_from(values.clone(), &ctx, public)?;
+                assert_eq!(pb.coefficients(), expected);
+                assert_eq!(
+                    (&pb + &Poly::<PowerBasis>::zero(&ctx)).coefficients(),
+                    expected
+                );
+                assert_eq!(
+                    Poly::<PowerBasis>::try_convert_from(array.clone(), &ctx, public)?
+                        .coefficients(),
+                    expected
+                );
+                assert_eq!(
+                    Poly::<Ntt>::try_convert_from(values.clone(), &ctx, public)?.coefficients(),
+                    expected
+                );
+                assert_eq!(
+                    Poly::<Ntt>::try_convert_from(array.clone(), &ctx, public)?.coefficients(),
+                    expected
+                );
+                let shoup = Poly::<NttShoup>::try_convert_from(values.clone(), &ctx, public)?;
+                assert_eq!(shoup.coefficients(), expected);
+                assert_eq!(
+                    Poly::<NttShoup>::try_convert_from(array.clone(), &ctx, public)?,
+                    shoup
+                );
+                assert_eq!(pb.clone().into_ntt().into_power_basis(), pb);
+            }
+        }
         Ok(())
     }
 }

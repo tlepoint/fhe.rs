@@ -443,19 +443,20 @@ impl FheDecoder<Plaintext> for Vec<i64> {
             let values = Vec::<BigUint>::try_decode(pt, encoding)?;
             let modulus_big = pt.par.plaintext_big();
             let modulus_int = BigInt::from_biguint(Sign::Plus, modulus_big.clone());
-            let half_modulus = modulus_big / 2u32;
+            let half_modulus = (modulus_big + 1u32) / 2u32;
 
-            Ok(values
+            values
                 .iter()
                 .map(|value| {
-                    if value >= &half_modulus {
+                    let centered = if value >= &half_modulus {
                         let value_int = BigInt::from_biguint(Sign::Plus, value.clone());
-                        (value_int - &modulus_int).to_i64().unwrap()
+                        (value_int - &modulus_int).to_i64()
                     } else {
-                        value.to_i64().unwrap()
-                    }
+                        value.to_i64()
+                    };
+                    centered.ok_or(crate::PlaintextError::ValueTooLargeForI64.into())
                 })
-                .collect())
+                .collect()
         }
     }
 
@@ -702,6 +703,44 @@ mod tests {
             assert_eq!(plaintext.level(), level);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn signed_decoding_boundaries_and_overflow() -> Result<(), Box<dyn Error>> {
+        let par = BfvParameters::default_arc(2, 16);
+        for encoding in [Encoding::poly(), Encoding::simd()] {
+            let pt = Plaintext::try_encode(&[576i64, -576], encoding.clone(), &par)?;
+            let values = Vec::<i64>::try_decode(&pt, encoding)?;
+            assert_eq!(&values[..2], &[576, -576]);
+        }
+        for t in [
+            BigUint::from(1u32) << 100usize,
+            (BigUint::from(1u32) << 100usize) + 1u32,
+        ] {
+            let par = BfvParametersBuilder::new()
+                .set_degree(16)
+                .set_plaintext_modulus_biguint(t.clone())
+                .set_moduli_sizes(&[62, 62, 62])
+                .build_arc()?;
+            let pt = Plaintext::try_encode(&[i64::MIN, -1, 0, i64::MAX], Encoding::poly(), &par)?;
+            assert_eq!(
+                &Vec::<i64>::try_decode(&pt, Encoding::poly())?[..4],
+                &[i64::MIN, -1, 0, i64::MAX]
+            );
+            for value in [
+                BigUint::from(1u32) << 80usize,
+                &t - (BigUint::from(1u32) << 80usize),
+            ] {
+                let pt = Plaintext::try_encode(&[value], Encoding::poly(), &par)?;
+                assert!(matches!(
+                    Vec::<i64>::try_decode(&pt, Encoding::poly()),
+                    Err(crate::Error::Plaintext(
+                        crate::PlaintextError::ValueTooLargeForI64
+                    ))
+                ));
+            }
+        }
         Ok(())
     }
 }

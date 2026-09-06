@@ -358,6 +358,9 @@ impl<R: RepresentationTag> Poly<R> {
     /// multiple of 2 * degree. In Ntt and NttShoup representation, i can be any
     /// odd integer that is not a multiple of 2 * degree.
     pub fn substitute(&self, i: &SubstitutionExponent) -> Result<Poly<R>> {
+        if self.ctx != i.ctx {
+            return Err(Error::PolynomialContextMismatch);
+        }
         let mut q = Poly::<R>::zero(&self.ctx);
         if self.allow_variable_time_computations {
             q.allow_variable_time_computations(fhe_traits::VariableTime::new(
@@ -508,7 +511,8 @@ impl Poly<PowerBasis> {
 
     /// Multiplies a polynomial in PowerBasis representation by x^(-power).
     pub fn multiply_inverse_power_of_x(&mut self, power: usize) -> Result<()> {
-        let shift = ((self.ctx.degree << 1) - power) % (self.ctx.degree << 1);
+        let period = self.ctx.degree << 1;
+        let shift = (period - power % period) % period;
         let mask = self.ctx.degree - 1;
         let mut new_coefficients = Array2::zeros((self.ctx.q.len(), self.ctx.degree));
         izip!(
@@ -1146,6 +1150,55 @@ mod tests {
             Vec::<BigUint>::from(&q)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn substitution_rejects_foreign_contexts() -> Result<(), Box<dyn Error>> {
+        let ctx = Context::new_arc(&[1153], 16)?;
+        let mut rng = rand::rng();
+        let pb = Poly::<PowerBasis>::random(&ctx, &mut rng);
+        for other in [
+            Context::new_arc(&[1153], 8)?,
+            Context::new_arc(&[1153], 32)?,
+            Context::new_arc(&[2017], 16)?,
+        ] {
+            let exponent = super::SubstitutionExponent::new(&other, 3)?;
+            assert_eq!(
+                pb.substitute(&exponent).unwrap_err(),
+                crate::Error::PolynomialContextMismatch
+            );
+            assert_eq!(
+                pb.clone().into_ntt().substitute(&exponent).unwrap_err(),
+                crate::Error::PolynomialContextMismatch
+            );
+            assert_eq!(
+                pb.clone()
+                    .into_ntt_shoup()
+                    .substitute(&exponent)
+                    .unwrap_err(),
+                crate::Error::PolynomialContextMismatch
+            );
+        }
+        let equal = Context::new_arc(&[1153], 16)?;
+        let identity = super::SubstitutionExponent::new(&equal, 1)?;
+        assert_eq!(pb.substitute(&identity)?, pb);
+        Ok(())
+    }
+
+    #[test]
+    fn inverse_monomial_powers_are_periodic() -> Result<(), Box<dyn Error>> {
+        let ctx = Context::new_arc(&[1153], 16)?;
+        let original = Poly::<PowerBasis>::random(&ctx, &mut rand::rng());
+        for power in [0usize, 16, 32, 33, 65, usize::MAX] {
+            let mut actual = original.clone();
+            actual.multiply_inverse_power_of_x(power)?;
+            let mut expected = original.clone();
+            expected.multiply_inverse_power_of_x(power % 32)?;
+            assert_eq!(actual, expected);
+            actual.multiply_inverse_power_of_x((32 - power % 32) % 32)?;
+            assert_eq!(actual, original);
+        }
         Ok(())
     }
 }

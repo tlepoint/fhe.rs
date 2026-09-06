@@ -140,6 +140,9 @@ pub enum PlaintextError {
 
     #[error("Plaintext value does not fit in u64")]
     ValueTooLargeForU64,
+
+    #[error("Centered plaintext value does not fit in i64")]
+    ValueTooLargeForI64,
 }
 
 /// Plaintext encoding failures.
@@ -235,6 +238,9 @@ pub enum MultipartyError {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum SerializationError {
+    #[error("Invalid key-switching log base {actual}; maximum is {maximum}")]
+    InvalidKeySwitchingLogBase { actual: usize, maximum: usize },
+
     /// A protobuf payload could not be decoded.
     #[error("Failed to decode {object:?}")]
     Decode { object: SerializedObject },

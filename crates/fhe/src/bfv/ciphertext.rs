@@ -39,6 +39,8 @@ impl Deref for Ciphertext {
 
 impl DerefMut for Ciphertext {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // Any component may be changed through the returned slice.
+        self.seed = None;
         &mut self.c
     }
 }
@@ -500,6 +502,29 @@ mod tests {
             _ => panic!("expected InvalidLevel error"),
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn mutable_parts_invalidate_seed() -> Result<(), Box<dyn StdError>> {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let pt = Plaintext::try_encode(&[3u64], Encoding::poly(), &params)?;
+        let original: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        assert!(original.seed.is_some());
+        for index in [0, 1] {
+            let mut ct = original.clone();
+            ct[index] = -&ct[index];
+            assert!(ct.seed.is_none());
+            let restored = Ciphertext::from_bytes(&ct.to_bytes(), &params)?;
+            assert_eq!(ct, restored);
+            assert_eq!(sk.try_decrypt(&ct)?, sk.try_decrypt(&restored)?);
+        }
+        let mut ct = original;
+        ct.iter_mut().for_each(|poly| *poly = -&*poly);
+        assert!(ct.seed.is_none());
+        assert_eq!(ct, Ciphertext::from_bytes(&ct.to_bytes(), &params)?);
         Ok(())
     }
 }

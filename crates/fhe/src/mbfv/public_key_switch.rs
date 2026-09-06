@@ -48,6 +48,15 @@ impl PublicKeySwitchShare {
                 right: crate::ParameterSource::Ciphertext,
             });
         }
+        ct.validate_for(&ct.par)?;
+        if ct.len() != 2 {
+            return Err(crate::CiphertextError::InvalidPolynomialCount {
+                operation: crate::CiphertextOperation::MultipartyKeySwitch,
+                actual: ct.len(),
+                expected: 2,
+            }
+            .into());
+        }
         let par = sk_share.par.clone();
 
         // Get appropriate context / level for the following computations
@@ -182,5 +191,26 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn rejects_unrelinearized_and_empty_ciphertexts() {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let pk = PublicKey::new(&sk, &mut rng);
+        let pt = Plaintext::try_encode(&[3u64], Encoding::poly(), &params).unwrap();
+        let ct: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut rng).unwrap();
+        assert!(PublicKeySwitchShare::new(&sk, &pk, &ct, &mut rng).is_ok());
+        assert!(matches!(
+            PublicKeySwitchShare::new(&sk, &pk, &(&ct * &ct), &mut rng),
+            Err(crate::Error::Ciphertext(
+                crate::CiphertextError::InvalidPolynomialCount { actual: 3, .. }
+            ))
+        ));
+        assert!(
+            PublicKeySwitchShare::new(&sk, &pk, &crate::bfv::Ciphertext::zero(&params), &mut rng)
+                .is_err()
+        );
     }
 }

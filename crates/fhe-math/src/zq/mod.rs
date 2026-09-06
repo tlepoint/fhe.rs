@@ -448,7 +448,7 @@ impl Modulus {
     pub const fn center(&self, a: u64) -> i64 {
         debug_assert!(a < self.p);
 
-        let threshold = self.p >> 1;
+        let threshold = (self.p + 1) >> 1;
         let cond = a >= threshold;
         let on_true = (a as i64).wrapping_sub(self.p as i64) as u64;
         let on_false = a;
@@ -1095,7 +1095,7 @@ mod tests {
         fn center(p in valid_moduli(), a: u64) {
             let a = p.reduce(a);
             let b = p.center(a);
-            if a >= *p >> 1 {
+            if a >= (*p + 1) >> 1 {
                 prop_assert_eq!(b, (a as i64) - (*p as i64));
             } else {
                 prop_assert_eq!(b, a as i64);
@@ -1190,5 +1190,19 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn centered_boundary_is_correct_for_odd_and_even_moduli() {
+        for p in [2u64, 3, 17, 1024, 1153] {
+            let modulus = Modulus::new(p).unwrap();
+            for value in 0..p {
+                let centered = modulus.center(value);
+                assert!(2 * centered >= -(p as i64));
+                assert!(2 * centered < p as i64);
+                assert_eq!(modulus.reduce_i64(centered), value);
+            }
+        }
+        assert_eq!(Modulus::new(1153).unwrap().center(576), 576);
     }
 }

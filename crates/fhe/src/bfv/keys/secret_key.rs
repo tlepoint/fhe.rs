@@ -105,7 +105,7 @@ impl SecretKey {
         let level = self.par.level_of_context(p.ctx())?;
 
         let mut seed = <ChaCha8Rng as SeedableRng>::Seed::default();
-        rand::rng().fill(&mut seed);
+        rng.fill(&mut seed);
 
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
@@ -421,5 +421,24 @@ mod tests {
                 crate::SerializationError::InvalidSecretKeyCoefficientCount { .. }
             )
         ));
+    }
+
+    #[test]
+    fn encryption_uses_only_the_supplied_rng() -> Result<(), Box<dyn Error>> {
+        use rand::{Rng, SeedableRng};
+        use rand_chacha::ChaCha8Rng;
+        let par = BfvParameters::default_arc(2, 16);
+        let sk = SecretKey::random(&par, &mut rng());
+        let pt = Plaintext::try_encode(&[42u64], Encoding::poly(), &par)?;
+        let mut first = ChaCha8Rng::seed_from_u64(123);
+        let mut second = ChaCha8Rng::seed_from_u64(123);
+        let a: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut first)?;
+        let b: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut second)?;
+        assert_eq!(a.to_bytes(), b.to_bytes());
+        assert_eq!(first.next_u64(), second.next_u64());
+        let next: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut first)?;
+        assert_ne!(a.to_bytes(), next.to_bytes());
+        assert_eq!(sk.try_decrypt(&a)?, sk.try_decrypt(&next)?);
+        Ok(())
     }
 }

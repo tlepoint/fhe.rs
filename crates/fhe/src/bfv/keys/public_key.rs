@@ -27,8 +27,8 @@ impl PublicKey {
         let zero = Plaintext::zero(Encoding::poly(), &sk.par).unwrap();
         let mut c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
         // The polynomials of a public key should not allow for variable time
-        // computation.
-        c.iter_mut()
+        // computation. Only timing metadata changes, so the seed remains valid.
+        c.c.iter_mut()
             .for_each(|p| p.disallow_variable_time_computations());
         Self {
             par: sk.par.clone(),
@@ -131,8 +131,8 @@ impl DeserializeParametrized for PublicKey {
                 ))
             } else {
                 // The polynomials of a public key should not allow for variable time
-                // computation.
-                c.iter_mut()
+                // computation. Only timing metadata changes, so the seed remains valid.
+                c.c.iter_mut()
                     .for_each(|p| p.disallow_variable_time_computations());
                 Ok(Self {
                     par: par.clone(),
@@ -227,6 +227,28 @@ mod tests {
             let bytes = pk.to_bytes();
             assert_eq!(pk, PublicKey::from_bytes(&bytes, &params)?);
         }
+        Ok(())
+    }
+    #[test]
+    fn timing_policy_preserves_seeded_serialization() -> Result<(), Box<dyn Error>> {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let pk = PublicKey::new(&sk, &mut rng);
+        assert!(pk.c.seed.is_some());
+        let bytes = pk.to_bytes();
+        let restored = PublicKey::from_bytes(&bytes, &params)?;
+        assert_eq!(restored, pk);
+        assert!(restored.c.seed.is_some());
+        assert!(
+            restored
+                .c
+                .iter()
+                .all(|poly| !poly.allows_variable_time_computations())
+        );
+        let mut unseeded = pk;
+        unseeded.c.seed = None;
+        assert!(bytes.len() < unseeded.to_bytes().len());
         Ok(())
     }
 }

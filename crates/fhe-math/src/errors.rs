@@ -118,6 +118,10 @@ pub enum Error {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum PolynomialSerializationError {
+    /// A serialized coefficient is not reduced modulo its RNS prime.
+    #[error("Serialized coefficient is not less than modulus {modulus}.")]
+    NonCanonicalCoefficient { modulus: u64 },
+
     /// The protobuf payload could not be decoded.
     #[error("Failed to decode polynomial serialization.")]
     Decode,

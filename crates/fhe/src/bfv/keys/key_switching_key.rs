@@ -409,6 +409,13 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             } else {
                 let log_modulus: usize =
                     par.moduli().first().unwrap().next_power_of_two().ilog2() as usize;
+                if log_base > log_modulus {
+                    return Err(SerializationError::InvalidKeySwitchingLogBase {
+                        actual: log_base,
+                        maximum: log_modulus,
+                    }
+                    .into());
+                }
                 c0_size = log_modulus.div_ceil(log_base);
             }
         } else {
@@ -705,6 +712,30 @@ mod tests {
                     .chain(decoded.c1.iter())
                     .all(Poly::allows_variable_time_computations)
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn serialized_decomposition_rejects_oversized_bases() -> Result<(), Box<dyn Error>> {
+        let par = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&par, &mut rng);
+        let ctx = par.context_at_level(1)?;
+        let from = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
+        let key = KeySwitchingKey::new(&sk, &from, 1, 1, &mut rng)?;
+        let proto = KeySwitchingKeyProto::from(&key);
+        assert_eq!(KeySwitchingKey::try_convert_from(&proto, &par)?, key);
+        for log_base in [63, 64, 65, u32::MAX] {
+            let mut malformed = proto.clone();
+            malformed.log_base = log_base;
+            malformed.c0.truncate(1);
+            assert!(matches!(
+                KeySwitchingKey::try_convert_from(&malformed, &par),
+                Err(crate::Error::SerializationError(
+                    crate::SerializationError::InvalidKeySwitchingLogBase { .. }
+                ))
+            ));
         }
         Ok(())
     }

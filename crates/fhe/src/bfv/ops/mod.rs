@@ -260,8 +260,12 @@ impl Mul<&Ciphertext> for &Ciphertext {
     type Output = Ciphertext;
 
     fn mul(self, rhs: &Ciphertext) -> Ciphertext {
+        assert!(Arc::ptr_eq(&self.par, &rhs.par));
         if self.is_empty() {
             return self.clone();
+        }
+        if rhs.is_empty() {
+            return rhs.clone();
         }
 
         if rhs == self {
@@ -726,6 +730,27 @@ mod tests {
             println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
             let pt = sk.try_decrypt(&ct2)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zero_multiplication_is_symmetric_at_every_level() -> Result<(), Box<dyn Error>> {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let zero = Ciphertext::zero(&params);
+        assert!((&zero * &zero).is_empty());
+        for level in 0..=params.max_level() {
+            let pt = Plaintext::try_encode(&[3u64], Encoding::poly_at_level(level), &params)?;
+            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            for operand in [ct.clone(), &ct * &ct] {
+                let left = &zero * &operand;
+                let right = &operand * &zero;
+                assert!(left.is_empty());
+                assert_eq!(left, right);
+                assert_eq!(&right + &operand, operand);
+            }
         }
         Ok(())
     }
