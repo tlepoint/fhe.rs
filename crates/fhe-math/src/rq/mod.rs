@@ -242,29 +242,24 @@ impl<R: RepresentationTag> Poly<R> {
 
     /// Compute the Shoup representation of the coefficients.
     fn compute_coefficients_shoup(&mut self) {
-        let mut coefficients_shoup = Array2::zeros((self.ctx.q.len(), self.ctx.degree));
+        let coefficients_shoup = self
+            .coefficients_shoup
+            .get_or_insert_with(|| Array2::zeros((self.ctx.q.len(), self.ctx.degree)));
         izip!(
             coefficients_shoup.outer_iter_mut(),
             self.coefficients.outer_iter(),
             self.ctx.q.iter()
         )
         .for_each(|(mut v_shoup, v, qi)| {
-            v_shoup
-                .as_slice_mut()
-                .unwrap()
-                .copy_from_slice(&qi.shoup_vec(v.as_slice().unwrap()))
+            qi.shoup_into(v.as_slice().unwrap(), v_shoup.as_slice_mut().unwrap());
         });
-        self.coefficients_shoup = Some(coefficients_shoup)
     }
 
     /// Generate a random polynomial.
     pub fn random<T: RngCore + CryptoRng>(ctx: &Arc<Context>, rng: &mut T) -> Self {
         let mut p = Poly::zero(ctx);
-        izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
-            v.as_slice_mut()
-                .unwrap()
-                .copy_from_slice(&qi.random_vec(ctx.degree, rng))
-        });
+        izip!(p.coefficients.outer_iter_mut(), ctx.q.iter())
+            .for_each(|(mut v, qi)| qi.random_into(v.as_slice_mut().unwrap(), rng));
         if R::REPRESENTATION == Representation::NttShoup {
             p.compute_coefficients_shoup();
         }
@@ -279,16 +274,7 @@ impl<R: RepresentationTag> Poly<R> {
         hasher.update(seed);
         let mut prng =
             ChaCha8Rng::from_seed(<ChaCha8Rng as SeedableRng>::Seed::from(hasher.finalize()));
-        let mut p = Poly::zero(ctx);
-        izip!(p.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut v, qi)| {
-            v.as_slice_mut()
-                .unwrap()
-                .copy_from_slice(&qi.random_vec(ctx.degree, &mut prng))
-        });
-        if R::REPRESENTATION == Representation::NttShoup {
-            p.compute_coefficients_shoup();
-        }
-        p
+        Self::random(ctx, &mut prng)
     }
 
     /// Generate a small polynomial and convert into the specified
@@ -695,6 +681,45 @@ mod tests {
         4611686018232352769,
         4611686018171535361,
     ];
+
+    #[test]
+    fn direct_sampling_preserves_stream_and_reuses_shoup_storage() -> Result<(), Box<dyn Error>> {
+        use super::NttShoup;
+        use rand::{Rng as _, SeedableRng};
+        use rand_chacha::ChaCha8Rng;
+        use sha2::{Digest, Sha256};
+        let ctx = Context::new_arc(MODULI, 16)?;
+        let seed = [7u8; 32];
+        let hashed: [u8; 32] = Sha256::digest(seed).into();
+        let mut reference_rng = ChaCha8Rng::from_seed(hashed);
+        let expected: Vec<u64> = ctx
+            .q
+            .iter()
+            .flat_map(|qi| qi.random_vec(ctx.degree, &mut reference_rng))
+            .collect();
+        let mut actual_rng = ChaCha8Rng::from_seed(hashed);
+        let mut actual = Poly::<NttShoup>::random(&ctx, &mut actual_rng);
+        assert_eq!(actual.coefficients.as_slice().unwrap(), expected);
+        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
+        assert_eq!(actual, Poly::<NttShoup>::random_from_seed(&ctx, seed));
+        let pointer = actual.coefficients_shoup.as_ref().unwrap().as_ptr();
+        actual.compute_coefficients_shoup();
+        assert_eq!(
+            pointer,
+            actual.coefficients_shoup.as_ref().unwrap().as_ptr()
+        );
+        for ((row, shoup), qi) in actual
+            .coefficients
+            .outer_iter()
+            .zip(actual.coefficients_shoup.as_ref().unwrap().outer_iter())
+            .zip(ctx.q.iter())
+        {
+            for (value, cached) in row.iter().zip(shoup.iter()) {
+                assert_eq!(*cached, qi.shoup(*value));
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn poly_zero() -> Result<(), Box<dyn Error>> {

@@ -14,14 +14,33 @@ use num_bigint::BigUint;
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
+#[expect(
+    clippy::fallible_impl_from,
+    reason = "Poly constructors guarantee contiguous standard-layout coefficient rows"
+)]
 impl<R: RepresentationTag> From<&Poly<R>> for Rq {
     fn from(p: &Poly<R>) -> Self {
         assert!(!p.has_lazy_coefficients);
-        let q: Poly<PowerBasis> = match R::REPRESENTATION {
-            Representation::PowerBasis => Poly::<PowerBasis>::from_parts(p.clone()),
-            Representation::Ntt => Poly::<Ntt>::from_parts(p.clone()).into_power_basis(),
-            Representation::NttShoup => Poly::<NttShoup>::from_parts(p.clone()).into_power_basis(),
+        // Only transformed coefficients need scratch. In particular, never clone
+        // the Shoup cache just to discard it during conversion to power basis.
+        let mut scratch = if R::REPRESENTATION == Representation::PowerBasis {
+            None
+        } else {
+            Some(Zeroizing::new(Poly::<PowerBasis> {
+                ctx: p.ctx.clone(),
+                coefficients: p.coefficients.clone(),
+                coefficients_shoup: None,
+                has_lazy_coefficients: false,
+                allow_variable_time_computations: p.allow_variable_time_computations,
+                _repr: std::marker::PhantomData,
+            }))
         };
+        if let Some(q) = scratch.as_mut() {
+            q.ntt_backward();
+        }
+        let coefficients = scratch
+            .as_ref()
+            .map_or(&p.coefficients, |q| &q.coefficients);
 
         let mut proto = Rq::default();
         match R::REPRESENTATION {
@@ -31,9 +50,16 @@ impl<R: RepresentationTag> From<&Poly<R>> for Rq {
             Representation::Ntt => proto.representation = RepresentationProto::Ntt as i32,
             Representation::NttShoup => proto.representation = RepresentationProto::Nttshoup as i32,
         }
-        let serialization: Vec<u8> = izip!(q.coefficients.outer_iter(), p.ctx.q.iter())
-            .flat_map(|(v, qi)| qi.serialize_vec(v.as_slice().unwrap()))
-            .collect();
+        let capacity = p
+            .ctx
+            .q
+            .iter()
+            .map(|qi| qi.serialization_length(p.ctx.degree))
+            .sum();
+        let mut serialization = Vec::with_capacity(capacity);
+        for (row, qi) in coefficients.outer_iter().zip(p.ctx.q.iter()) {
+            qi.serialize_into(row.as_slice().unwrap(), &mut serialization);
+        }
         proto.coefficients = serialization;
         proto.degree = p.ctx.degree as u32;
         // Timing policy is local execution state, not serialized data. In
@@ -47,7 +73,7 @@ fn parse_proto(
     value: &Rq,
     ctx: &Arc<Context>,
     variable_time: bool,
-) -> Result<(Representation, Vec<u64>, bool)> {
+) -> Result<(Representation, Poly<PowerBasis>)> {
     let repr = value.representation.try_into().map_err(|_| {
         PolynomialSerializationError::InvalidRepresentation {
             value: value.representation,
@@ -110,17 +136,24 @@ fn parse_proto(
         }
     }
 
-    Ok((
-        representation_from_proto,
-        power_basis_coefficients,
-        variable_time,
-    ))
+    // Only this parser constructs directly from wire coefficients: the exact
+    // shape and canonical residues have been validated above. Public raw
+    // constructors must still normalize arbitrary input.
+    let polynomial = Poly::<PowerBasis> {
+        ctx: ctx.clone(),
+        coefficients: Array2::from_shape_vec((ctx.q.len(), degree), power_basis_coefficients)
+            .unwrap(),
+        coefficients_shoup: None,
+        has_lazy_coefficients: false,
+        allow_variable_time_computations: variable_time,
+        _repr: std::marker::PhantomData,
+    };
+    Ok((representation_from_proto, polynomial))
 }
 
 impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
     fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
-        let (representation_from_proto, coefficients, variable_time) =
-            parse_proto(value, ctx, variable_time)?;
+        let (representation_from_proto, p) = parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::PowerBasis {
             return Err(PolynomialSerializationError::RepresentationMismatch {
                 found: representation_from_proto,
@@ -128,14 +161,13 @@ impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
             }
             .into());
         }
-        Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)
+        Ok(p)
     }
 }
 
 impl TryConvertFrom<&Rq> for Poly<Ntt> {
     fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
-        let (representation_from_proto, coefficients, variable_time) =
-            parse_proto(value, ctx, variable_time)?;
+        let (representation_from_proto, p) = parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::Ntt {
             return Err(PolynomialSerializationError::RepresentationMismatch {
                 found: representation_from_proto,
@@ -143,15 +175,13 @@ impl TryConvertFrom<&Rq> for Poly<Ntt> {
             }
             .into());
         }
-        let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
         Ok(p.into_ntt())
     }
 }
 
 impl TryConvertFrom<&Rq> for Poly<NttShoup> {
     fn try_convert_from(value: &Rq, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
-        let (representation_from_proto, coefficients, variable_time) =
-            parse_proto(value, ctx, variable_time)?;
+        let (representation_from_proto, p) = parse_proto(value, ctx, variable_time)?;
         if representation_from_proto != Representation::NttShoup {
             return Err(PolynomialSerializationError::RepresentationMismatch {
                 found: representation_from_proto,
@@ -159,7 +189,6 @@ impl TryConvertFrom<&Rq> for Poly<NttShoup> {
             }
             .into());
         }
-        let p = Poly::<PowerBasis>::try_convert_from(coefficients, ctx, variable_time)?;
         Ok(p.into_ntt_shoup())
     }
 }

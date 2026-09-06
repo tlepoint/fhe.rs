@@ -1,0 +1,200 @@
+# fhe-math: optimizations and simplifications
+
+Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–4 have since been implemented; their original rationale remains below, with measurements in the implementation results section. References below are repository-relative source paths and symbol names.
+
+Let **N** denote polynomial degree and **L** the number of RNS moduli. Start with allocations and context construction; treat arithmetic kernel changes as benchmark-driven experiments.
+
+## Suggested order
+
+| Order | Opportunity | Main benefit | Effort / risk |
+| --- | --- | --- | --- |
+| 1 | Fill Shoup and random buffers directly | Fewer allocations and copies | Small / low |
+| 2 | Borrow contexts during traversal | Avoid deep table clones | Small / low |
+| 3 | Use word-sized coprimality checks | Cheaper context setup | Small / low |
+| 4 | Borrow coefficients during serialization | Less copying and temporary storage | Medium / low |
+| 5 | Consolidate polynomial arithmetic and constructors | Smaller invariant-maintenance surface | Medium / moderate |
+| 6 | Share NTT tables across context levels | Lower setup time and retained memory | Medium / moderate |
+| 7 | Keep only the selected NTT backend | Lower setup time and retained memory | Medium / moderate |
+| 8 | Streamline dot-product validation and scratch use | Less setup overhead and allocation | Medium / moderate |
+| 9 | Add a tiled polynomial-scaling kernel | Better memory locality | Large / needs measurement |
+| 10 | Fuse native NTT final passes | Fewer full-buffer passes | Medium / arithmetic risk |
+| 11 | Traverse substitutions by contiguous row | Better locality and simpler indexing | Medium / moderate |
+| 12 | Improve benchmark coverage and comparability | Reliable prioritization | Small–medium / low |
+
+## 1. Fill Shoup and random buffers directly
+
+**Evidence:** `crates/fhe-math/src/rq/mod.rs`, `compute_coefficients_shoup`, `random`, and `random_from_seed`; `crates/fhe-math/src/zq/mod.rs`, `shoup_vec` and `random_vec`.
+
+Shoup computation allocates the destination matrix, then allocates a temporary vector for every row and copies it into that matrix. Random sampling follows the same temporary-vector-and-copy pattern. For `Poly<NttShoup>::random`, `Poly::zero` also allocates a zero Shoup matrix that is subsequently replaced by `compute_coefficients_shoup`.
+
+Add internal `shoup_into(input, output)` and `random_into(output, rng)` primitives. Fill matrix rows directly and reuse an existing correctly sized Shoup matrix. Keep allocating public helpers as thin wrappers if useful to callers. `random_from_seed` can delegate to `random` after hashing and initializing its PRNG.
+
+**Expected benefit:** remove L temporary allocations and O(LN) copying per operation, plus the redundant initial Shoup allocation. Actual runtime improvement depends on how much division or sampling dominates.
+
+**Validate:** compare Shoup values against the existing scalar reference; preserve exact seeded output and RNG consumption order with fixed-seed regression vectors. Benchmark NTT-to-Shoup conversion and random generation separately, including allocation counts. Preserve secret-buffer cleanup when changing ownership.
+
+## 2. Borrow contexts while traversing the level chain
+
+**Evidence:** `crates/fhe-math/src/rq/context.rs`, `niterations_to` and `context_at_level`.
+
+Both start with `Arc::new(self.clone())`. `Context::clone` copies its boxed operator and bit-reversal arrays; native NTT operators themselves contain boxed tables. `niterations_to` needs no owned root at all, and `context_at_level(i > 0)` immediately discards that copied root after moving to its child.
+
+Traverse using borrowed `&Context` references. For a nonzero level, clone only the destination `Arc`. Returning level zero without copying would require an Arc-aware entry point, such as a method with `self: &Arc<Self>`; retain compatibility or introduce an additional method rather than silently changing the public API.
+
+Also avoid explicit `as_ref()` comparisons of large derived contexts on frequent paths, such as `rq::Scaler::scale`, when an Arc equality comparison can first recognize shared identity. Preserve structural equality for independently constructed equivalent contexts; pointer equality alone would change behavior.
+
+**Validate:** level-zero, intermediate, and unreachable contexts; separately allocated equivalent contexts. Measure allocations and latency at multiple chain lengths.
+
+## 3. Use word-sized coprimality checks during RNS setup
+
+**Evidence:** `crates/fhe-math/src/rns/mod.rs`, `RnsContext::new`.
+
+The constructor runs arbitrary-precision extended GCD for every ordered pair of distinct u64 moduli, so each pair is checked twice. Only the GCD is needed for this validation.
+
+Use a u64 Euclidean GCD and examine each unordered pair once. This keeps O(L²) validation but removes big-integer allocation, unnecessary Bézout coefficient computation, and duplicate work. Reuse the validated result when building a chain if construction is later reorganized.
+
+Do not replace the modular inverse used for CRT precomputation with a prime-only shortcut: `RnsContext` supports coprime composite moduli too. Removing the second big-integer dependency is a separate investigation because it currently supplies inversion as well as GCD.
+
+**Validate:** composite coprime moduli, repeated moduli, shared factors, and invalid moduli. Preserve useful error reporting; benchmark construction rather than steady-state arithmetic.
+
+## 4. Reduce serialization and deserialization copies
+
+**Evidence:** `crates/fhe-math/src/rq/convert.rs`, `From<&Poly<R>> for Rq`, `parse_proto`, and the `TryConvertFrom<&Rq>` implementations.
+
+Serialization clones even a power-basis polynomial. For Shoup input it clones the auxiliary Shoup matrix although serialization only needs coefficients transformed into power basis. Packing also allocates a byte vector per modulus before collecting the combined payload.
+
+Borrow power-basis coefficients directly. For transformed input, copy only the coefficient matrix needed for the inverse NTT. Precompute payload capacity and add a packing routine that appends into the final payload buffer. The existing wire format stores power-basis coefficients with a representation tag; preserve that format.
+
+Deserialization already checks canonical residues, then routes them through public constructors that reduce the values again. An internal constructor accepting validated, standard-layout coefficients could avoid this second pass. Keep public raw constructors normalizing arbitrary residues, and keep wire parsing rejecting noncanonical residues. A private validated wrapper can make the boundary explicit without exposing an unchecked public API.
+
+**Validate:** byte-for-byte compatibility for all three representations, malformed-input regressions, degree checks, and local timing-policy behavior. Benchmark serialization/deserialization separately from NTT cost and track peak temporary memory.
+
+## 5. Consolidate representation-independent arithmetic and constructors
+
+**Evidence:** `crates/fhe-math/src/rq/ops.rs`, duplicated PowerBasis/Ntt addition, subtraction, scalar multiplication, and negation; `crates/fhe-math/src/rq/convert.rs`, raw Vec/Array2 constructors.
+
+The arithmetic implementations repeat row iteration, timing-policy propagation, and modulus dispatch. Constructors repeat dimensions, normalization, field initialization, and Shoup setup.
+
+Extract small private row kernels and a common validated-storage initializer. Keep public trait implementations explicit and thin, or use a narrowly scoped macro where that is clearer. Prefer static dispatch so an abstraction does not introduce per-coefficient indirect calls.
+
+Do not blanket-implement mutable arithmetic for every representation tag: changing NttShoup coefficients requires updating its cached Shoup values. Preserve the distinct lazy-coefficient preconditions and the rule that one secret operand forces constant-time execution.
+
+**Expected benefit:** easier review and fewer places to miss an invariant; runtime should remain neutral unless common helpers also remove allocations.
+
+**Validate:** existing arithmetic property tests plus mixed timing policies, lazy-input restrictions, layout normalization, and Shoup-cache correctness. Check representative release benchmarks for abstraction overhead.
+
+## 6. Share immutable NTT tables across context levels
+
+**Evidence:** `crates/fhe-math/src/rq/context.rs`, recursive `Context::new`; `crates/fhe-math/src/ntt/native.rs`, NTT table fields and constructor.
+
+Each context recursively constructs the shorter modulus prefix. An L-modulus chain therefore constructs L(L+1)/2 modulus-specific NTT operators, although there are only L distinct `(modulus, degree)` pairs. Every level also owns an identical degree-sized bit-reversal table. Native table storage across the chain consequently grows as O(L²N).
+
+Build immutable per-modulus operators once and share them across levels using Arc-backed storage or a shared table collection with a prefix length. Share bit-reversal data by degree. Keep level-specific CRT products and last-modulus inverses separate. This can reduce NTT table storage to O(LN), without implying that all context metadata becomes linear.
+
+**Tradeoff:** additional indirection and a broader internal layout change. Prefer per-chain sharing before adding a global cache with eviction and synchronization concerns.
+
+**Validate:** compare all levels against independently constructed contexts, round-trip transforms, and modulus switching. Measure cold construction, retained memory, and steady-state NTT throughput.
+
+## 7. Store only the selected NTT backend
+
+**Evidence:** `crates/fhe-math/src/ntt/tfhe.rs`, `NttOperator::new` and backend dispatch.
+
+With the feature enabled, the wrapper constructs a native operator and also attempts to construct a TFHE plan. When the plan is present, the wrapper routes the exposed transforms to it, leaving the native tables retained principally for fallback structure and equality.
+
+Consider an enum containing either a supported TFHE plan or the native operator. Retain a small mathematical identity `(modulus, size)` for equality. Construct native tables only when plan construction fails. Coordinate this with context-table sharing rather than duplicating ownership redesigns.
+
+**Validate:** both supported-plan and fallback parameters; native/backend transform agreement, normalization, lazy-output range contracts, equality, and construction failure behavior. Establish timing suitability from the pinned backend implementation before changing which backend handles secret data. Measure setup and memory, not just transform speed.
+
+## 8. Streamline dot-product preparation and reuse scratch
+
+**Evidence:** `crates/fhe-math/src/rq/ops.rs`, `dot_product` and `fma`.
+
+The function clones and traverses its iterators repeatedly for lengths, the first element, context validation, timing policy, and accumulation. Every invocation allocates a u128 accumulator, per-modulus counters and limits, and a result matrix.
+
+First combine metadata checks into one preparation pass while retaining the general iterator API and exact errors. Consider a slice-oriented fast path for common callers. For repeated key-switch workloads, offer an internal workspace or `dot_product_into` variant that reuses buffers; reset all state on every invocation. Per-modulus accumulation limits depend on public context data and could be precomputed.
+
+The raw-pointer reduction loop can also be tested against a safe row/chunk implementation. Keep the simpler version if generated code and benchmarks are equivalent.
+
+**Tradeoffs:** collecting arbitrary iterators adds an allocation, so it is not automatically an improvement. A reusable workspace needs explicit secret-memory cleanup. Do not perform variable-time reductions before determining that every input permits them, or loosen overflow bounds to reduce the number of reductions.
+
+**Validate:** empty/mismatched iterators, foreign contexts, mixed timing policies, and lengths immediately below/at/above accumulation thresholds. Compare against modular multiply-and-add; benchmark short and long products with and without scratch reuse.
+
+## 9. Tile polynomial RNS scaling for locality
+
+**Evidence:** `crates/fhe-math/src/rq/scaler.rs`, `Scaler::scale`; `crates/fhe-math/src/rns/scaler.rs`, `RnsScaler::scale`.
+
+Polynomial storage is modulus-major, but scaling visits one coefficient column at a time. Its residues are separated by N words, and each coefficient invokes scalar scaling with repeated dimension checks and passes over precomputed data.
+
+Prototype a batch kernel processing a small tile of adjacent coefficients, keeping rounding accumulators per coefficient while iterating through modulus rows. Hoist public shape checks to the batch boundary. Compare this with copying a tile into coefficient-major scratch; a full-matrix transpose may cost more than it saves.
+
+Retain the existing common-prefix shortcut for identity scaling and the rule that only new destination rows require forward NTT. Reusable scratch for the source inverse transform is another candidate for repeated calls.
+
+**Validate:** exact BigUint references, signed rounding ties, identity/general factors, partially shared bases, and PowerBasis/Ntt inputs. Benchmark complete polynomial scaling: the existing scalar RNS benchmark cannot establish gains from layout changes. Preserve branch-free secret-dependent rounding.
+
+## 10. Fuse native NTT final passes where beneficial
+
+**Evidence:** `crates/fhe-math/src/ntt/native.rs`, `forward_vt`, `forward_vt_lazy`, `backward`, and `backward_vt`.
+
+Variable-time forward NTT currently runs the lazy transform and then scans the entire output to reduce it. Inverse NTT performs a separate final normalization scan. The constant-time forward path already integrates reduction into its last butterfly stage.
+
+Try a canonical-output variant that reduces during the final variable-time forward stage while retaining the existing lazy variant. For inverse NTT, test applying normalization as each final-stage output is produced. Removing a memory pass does not guarantee a speedup: instruction scheduling and vectorization may become worse. Arithmetic fusion into twiddle constants would need a separate range proof.
+
+**Validate:** round trips and reference polynomial multiplication across degrees and modulus widths, especially near the modulus limit. Check every intermediate range and inspect generated code for constant-time paths. Benchmark each direction independently with the native backend before comparing feature-enabled builds.
+
+## 11. Make substitution access more contiguous
+
+**Evidence:** `crates/fhe-math/src/rq/mod.rs`, `SubstitutionExponent` and `Poly::substitute`.
+
+Power-basis substitution walks coefficient columns across all moduli, using ndarray slices for each column. NTT substitution accesses both source and destination through bit-reversal indices.
+
+For power basis, move the modulus-row loop outside and operate on contiguous row slices. Precompute destination/sign mappings in the exponent object if it is reused enough to amortize their storage. For NTT, precompute a source index for each sequential destination index; then destination writes can be linear. Reuse the same mapping for Shoup data.
+
+**Tradeoff:** additional O(N) mapping storage and setup. Power-basis even exponents can map multiple inputs to the same output, so preserve accumulation rather than assuming every substitution is a permutation.
+
+**Validate:** odd and even exponents, repeated destinations, signs, exponent periodicity, and all representations. Retain foreign-context rejection. Benchmark one-shot versus repeated use of an exponent.
+
+## 12. Make benchmarks support these decisions
+
+**Evidence:** `crates/fhe-math/benches/rq.rs`, `rns.rs`, and `ntt.rs`.
+
+The current suite covers useful arithmetic cases, but the main binary-operation macros use one modulus, dot products use length 256, and the RNS benchmark measures a single residue vector. In the dot-product comparison, naive variants repeatedly add into an existing output while the optimized version returns a fresh output. Several transform benchmarks intentionally include cloning in the timed operation.
+
+Add context construction/traversal, Shoup conversion, sampling, serialization, substitution, complete polynomial scaling, and short dot-product benchmarks. Separate end-to-end allocation-inclusive measurements from kernels with preallocated scratch. Reset naive dot-product outputs so both variants compute the same operation; use batched setup where the aim is to exclude cloning/reset costs. Keep a separate allocation-inclusive comparison.
+
+Use `std::hint::black_box` consistently for inputs and outputs and inspect suspiciously small results. Cover degrees 1024–8192 plus larger supported degrees, one and multiple moduli, several modulus widths, and both timing policies. Run native and `tfhe-ntt` configurations on the same machine. Record CPU, toolchain, feature set, allocation counts, and uncertainty; do not report a universal percentage from one parameter set.
+
+## Implementation acceptance criteria
+
+Keep the recent boundary checks, canonical-residue rules, layout normalization, and timing-policy propagation intact. Branching on public dimensions or modulus parameters is different from branching on secret coefficients. Allocation and ownership changes must preserve zeroization behavior; new scratch containing secrets needs an explicit cleanup policy.
+
+For each implemented change, add targeted regression/property tests and benchmark the affected operation before and after on the same machine. Run `cargo test --workspace`, tests with `--all-features`, `cargo +nightly fmt --all`, and `cargo clippy --workspace --all-targets --all-features -- -D warnings`. Arithmetic/range changes additionally need release-mode tests. The remaining proposals are unimplemented and have no measured performance gains.
+
+
+## Implementation results: items 1–4
+
+Implemented direct Shoup/random row filling and Shoup-buffer reuse, borrowed context traversal, u64 coprimality validation, and serialization buffer reuse. Wire parsing constructs polynomials directly after validating shape and canonical residues. Transformed serialization scratch is zeroized when dropped. The existing `context_at_level(0)` borrowed-receiver API still clones the root; nonzero levels reuse existing child Arcs.
+
+Added `crates/fhe-math/benches/allocation_paths.rs` and regression tests for RNG stream compatibility, Shoup storage reuse, context identity/equivalence, composite and invalid moduli, byte packing with existing prefixes, and legacy serialization payloads. Default/all-feature workspace tests, release math tests, nightly formatting, and all-target/all-feature Clippy with warnings denied passed.
+
+The following are Criterion timing estimates from the same macOS arm64 host, using `rustc 1.99.0-nightly (d453bdd8f 2026-08-14)`, the native NTT backend, degree 2048, and three approximately 62-bit moduli. Runs used 20 samples, 100 ms warmup, and 300 ms measurement per case. These short runs establish local evidence, not general performance guarantees. Allocation counts were not instrumented; removed allocations were identified from the code paths.
+
+| Operation | Before | After |
+| --- | --- | --- |
+| Seeded random Shoup polynomial | 115.31 µs | 111.10 µs |
+| Clone NTT polynomial and convert to Shoup | 70.82 µs | 69.93 µs |
+| Lookup level 2 | 3.814 µs | 4.002 ns |
+| Distance to level 2 | 3.791 µs | 3.581 ns |
+| Construct three-modulus RNS context | 4.092 µs | 2.898 µs |
+| Serialize power basis | 127.59 µs | 33.54 µs |
+| Serialize Shoup | 155.46 µs | 60.76 µs |
+| Deserialize Shoup | 182.68 µs | 165.46 µs |
+
+Criterion found clear improvements in random generation, child traversal, serialization, and Shoup deserialization in this run. Shoup conversion and RNS setup comparisons were classified within the noise threshold; avoid drawing firm speedup conclusions for those two from these samples. Serialization and conversion timings include allocation; Shoup conversion also includes cloning the input. Context timings refer to an existing chain and shared child, not construction or comparison against a separately allocated equivalent context.
+
+To reproduce a comparison, install this benchmark on the baseline revision before modifying production code, then run both revisions with the same absolute result directory:
+
+```sh
+CRITERION_HOME=/tmp/fhe-allocation-bench cargo bench -p fhe-math --bench allocation_paths -- --save-baseline before
+# Apply items 1–4, then:
+CRITERION_HOME=/tmp/fhe-allocation-bench cargo bench -p fhe-math --bench allocation_paths -- --baseline before
+```

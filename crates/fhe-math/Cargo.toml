@@ -58,3 +58,7 @@ harness = false
 [[bench]]
 name = "rns"
 harness = false
+
+[[bench]]
+name = "allocation_paths"
+harness = false

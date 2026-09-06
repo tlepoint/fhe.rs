@@ -11,9 +11,9 @@ use crate::{Error, Result, zq::Modulus};
 use itertools::{Itertools, izip};
 use ndarray::ArrayView1;
 use num_bigint::BigUint;
-use num_bigint_dig::{BigInt as BigIntDig, BigUint as BigUintDig, ExtendedGcd, ModInverse};
+use num_bigint_dig::{BigUint as BigUintDig, ModInverse};
 use num_traits::{One, Zero, cast::ToPrimitive};
-use std::{cmp::Ordering, fmt::Debug};
+use std::fmt::Debug;
 
 mod scaler;
 
@@ -58,16 +58,17 @@ impl RnsContext {
 
             for i in 0..moduli_u64.len() {
                 // Return an error if the moduli are not coprime.
-                for j in 0..moduli_u64.len() {
-                    if i != j {
-                        let (d, _, _) = BigUintDig::from(moduli_u64[i])
-                            .extended_gcd(&BigUintDig::from(moduli_u64[j]));
-                        if d.cmp(&BigIntDig::from(1)) != Ordering::Equal {
-                            return Err(Error::NonCoprimeModuli {
-                                left: moduli_u64[i],
-                                right: moduli_u64[j],
-                            });
-                        }
+                for j in i + 1..moduli_u64.len() {
+                    let (mut a, mut b) = (moduli_u64[i], moduli_u64[j]);
+                    // These are public parameters; Euclidean GCD may be variable-time.
+                    while b != 0 {
+                        (a, b) = (b, a % b);
+                    }
+                    if a != 1 {
+                        return Err(Error::NonCoprimeModuli {
+                            left: moduli_u64[i],
+                            right: moduli_u64[j],
+                        });
                     }
                 }
 
@@ -159,6 +160,31 @@ mod tests {
     use ndarray::ArrayView1;
     use num_bigint::BigUint;
     use rand::Rng as RngCore;
+
+    #[test]
+    fn coprimality_validation_handles_composites_and_invalid_moduli() {
+        for moduli in [&[4, 9, 25][..], &[8, 27, 125][..]] {
+            let ctx = RnsContext::new(moduli).unwrap();
+            for value in 0u64..100 {
+                let value = BigUint::from(value);
+                assert_eq!(ctx.lift(ctx.project(&value).as_slice().into()), value);
+            }
+        }
+        for (moduli, left, right) in [
+            (vec![17, 17], 17, 17),
+            (vec![5, 9, 21], 9, 21),
+            (vec![0, 2], 0, 2),
+            (vec![u64::MAX, 3], u64::MAX, 3),
+        ] {
+            assert_eq!(
+                RnsContext::new(&moduli).unwrap_err(),
+                MathError::NonCoprimeModuli { left, right }
+            );
+        }
+        for modulus in [0, 1, u64::MAX] {
+            assert!(RnsContext::new(&[modulus]).is_err());
+        }
+    }
 
     #[test]
     fn constructor() {

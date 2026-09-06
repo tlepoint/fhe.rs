@@ -53,7 +53,7 @@ impl Scaler {
 
     /// Scale a polynomial
     pub(crate) fn scale<R: ScaleRepresentation>(&self, p: &Poly<R>) -> Result<Poly<R>> {
-        if p.ctx.as_ref() != self.from.as_ref() {
+        if p.ctx != self.from {
             Err(Error::PolynomialContextMismatch)
         } else {
             let mut new_coefficients = Array2::<u64>::zeros((self.to.q.len(), self.to.degree));

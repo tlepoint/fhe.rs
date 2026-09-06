@@ -13,7 +13,7 @@ pub mod primes;
 use std::ops::Deref;
 
 use crate::errors::{Error, Result};
-use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes};
+use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
 use itertools::{Itertools, izip};
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
@@ -400,6 +400,15 @@ impl Modulus {
             .dispatch(|| a.iter().map(|ai| self.shoup(*ai)).collect_vec())
     }
 
+    pub(crate) fn shoup_into(&self, a: &[u64], out: &mut [u64]) {
+        assert_eq!(a.len(), out.len());
+        self.arch.dispatch(|| {
+            for (ai, output) in a.iter().zip(out.iter_mut()) {
+                *output = self.shoup(*ai);
+            }
+        });
+    }
+
     /// Shoup modular multiplication of vectors in place in constant time.
     ///
     /// Aborts if a and b differ in size, and if any of their values is >= p in
@@ -764,6 +773,17 @@ impl Modulus {
     /// Returns a random vector.
     pub fn random_vec<R: RngCore + CryptoRng>(&self, size: usize, rng: &mut R) -> Vec<u64> {
         rng.sample_iter(self.distribution).take(size).collect_vec()
+    }
+
+    pub(crate) fn random_into<R: RngCore + CryptoRng>(&self, out: &mut [u64], rng: &mut R) {
+        for (output, sample) in out.iter_mut().zip(rng.sample_iter(self.distribution)) {
+            *output = sample;
+        }
+    }
+
+    pub(crate) fn serialize_into(&self, a: &[u64], out: &mut Vec<u8>) {
+        let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
+        transcode_to_bytes_into(a, p_nbits, out);
     }
 
     /// Length of the serialization of a vector of size `size`.

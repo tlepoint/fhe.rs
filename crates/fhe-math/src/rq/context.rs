@@ -117,26 +117,20 @@ impl Context {
     /// Returns the number of iterations to switch to a children context.
     /// Returns an error if the context provided is not a child context.
     pub fn niterations_to(&self, context: &Arc<Context>) -> Result<usize> {
-        if context.as_ref() == self {
+        if std::ptr::eq(context.as_ref(), self) || context.as_ref() == self {
             return Ok(0);
         }
 
+        let mut current = self;
         let mut niterations = 0;
-        let mut found = false;
-        let mut current_ctx = Arc::new(self.clone());
-        while current_ctx.next_context.is_some() {
+        while let Some(next) = &current.next_context {
             niterations += 1;
-            current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
-            if &current_ctx == context {
-                found = true;
-                break;
+            if next == context {
+                return Ok(niterations);
             }
+            current = next;
         }
-        if found {
-            Ok(niterations)
-        } else {
-            Err(Error::ContextNotReachable)
-        }
+        Err(Error::ContextNotReachable)
     }
 
     /// Returns the context after `i` iterations.
@@ -147,11 +141,15 @@ impl Context {
                 max_level: self.moduli.len().saturating_sub(1),
             })
         } else {
-            let mut current_ctx = Arc::new(self.clone());
-            for _ in 0..i {
-                current_ctx = current_ctx.next_context.as_ref().unwrap().clone();
+            if i == 0 {
+                // Preserve the borrowed-receiver API; only level zero needs a copy.
+                return Ok(Arc::new(self.clone()));
             }
-            Ok(current_ctx)
+            let mut current = self.next_context.as_ref().unwrap();
+            for _ in 1..i {
+                current = current.next_context.as_ref().unwrap();
+            }
+            Ok(current.clone())
         }
     }
 }
@@ -170,6 +168,22 @@ mod tests {
         4611686018232352769,
         4611686018171535361,
     ];
+
+    #[test]
+    fn level_lookup_reuses_children_and_accepts_equal_contexts() -> Result<(), Box<dyn Error>> {
+        let ctx = Context::new_arc(MODULI, 16)?;
+        assert_eq!(ctx.context_at_level(0)?, ctx);
+        let mut child = ctx.clone();
+        for level in 1..MODULI.len() {
+            child = child.next_context.as_ref().unwrap().clone();
+            assert!(Arc::ptr_eq(&ctx.context_at_level(level)?, &child));
+            let separate = Context::new_arc(&MODULI[..MODULI.len() - level], 16)?;
+            assert_eq!(ctx.niterations_to(&separate)?, level);
+        }
+        assert!(ctx.context_at_level(MODULI.len()).is_err());
+        assert!(ctx.niterations_to(&Context::new_arc(MODULI, 8)?).is_err());
+        Ok(())
+    }
 
     #[test]
     fn context_constructor() {

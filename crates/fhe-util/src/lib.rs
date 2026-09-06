@@ -67,13 +67,23 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
 
 /// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
 #[must_use]
-#[expect(clippy::expect_used, reason = "bounds are validated before use")]
 pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    transcode_to_bytes_into(a, nbits, &mut out);
+    out
+}
+
+/// Appends packed `nbits`-bit numbers to `out`, padding the final byte with
+/// zeros. Each call starts at a byte boundary and preserves the existing
+/// prefix. Panics unless `nbits` is in 1..=64.
+#[expect(clippy::expect_used, reason = "bounds are validated before use")]
+pub fn transcode_to_bytes_into(a: &[u64], nbits: usize, out: &mut Vec<u8>) {
     assert!(0 < nbits && nbits <= 64);
 
     let mask = (u64::MAX >> (64 - nbits)) as u128;
     let nbytes = (a.len() * nbits).div_ceil(8);
-    let mut out = Vec::with_capacity(nbytes);
+    let start = out.len();
+    out.reserve(nbytes);
 
     let mut current_index = 0;
     let mut current_value = 0u128;
@@ -96,13 +106,12 @@ pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
     }
     if current_value_nbits > 0 {
         assert!(current_value_nbits < 8);
-        assert_eq!(out.len(), nbytes - 1);
+        assert_eq!(out.len() - start, nbytes - 1);
         out.push(current_value as u8)
     } else {
-        assert_eq!(out.len(), nbytes);
+        assert_eq!(out.len() - start, nbytes);
         assert_eq!(current_value, 0);
     }
-    out
 }
 
 /// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
@@ -248,6 +257,42 @@ mod tests {
     }
 
     impl<R: RngCore + CryptoRng> TryCryptoRng for CountingRng<R> {}
+
+    #[test]
+    fn appended_packing_matches_bit_reference() {
+        for width in 1..=64 {
+            for len in 0..=17 {
+                let mask = u64::MAX >> (64 - width);
+                let values: Vec<_> = (0..len)
+                    .map(|i| (u64::MAX.wrapping_mul(i + 1) >> 3) & mask)
+                    .collect();
+                let mut expected = vec![0xa5, 0x5a];
+                let mut byte = 0u8;
+                let mut offset = 0;
+                for value in &values {
+                    for bit in 0..width {
+                        byte |= (((value >> bit) & 1) as u8) << offset;
+                        offset += 1;
+                        if offset == 8 {
+                            expected.push(byte);
+                            byte = 0;
+                            offset = 0;
+                        }
+                    }
+                }
+                if offset != 0 {
+                    expected.push(byte);
+                }
+                let mut actual = vec![0xa5, 0x5a];
+                super::transcode_to_bytes_into(&values, width, &mut actual);
+                assert_eq!(actual, expected);
+                assert_eq!(
+                    super::transcode_to_bytes(&values, width),
+                    expected.into_iter().skip(2).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 
     #[test]
     fn prime() {

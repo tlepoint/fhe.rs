@@ -47,6 +47,41 @@ mod tests {
     ];
 
     #[test]
+    fn serialization_preserves_legacy_payload_and_source() -> Result<(), Box<dyn StdError>> {
+        let ctx = Context::new_arc(Q, 16)?;
+        let pb = Poly::<PowerBasis>::random_from_seed(&ctx, [11; 32]);
+        let ntt = pb.clone().into_ntt();
+        let shoup = pb.clone().into_ntt_shoup();
+        let payload: Vec<_> = pb
+            .coefficients
+            .outer_iter()
+            .zip(ctx.q.iter())
+            .flat_map(|(row, modulus)| modulus.serialize_vec(row.as_slice().unwrap()))
+            .collect();
+        for (bytes, representation) in [
+            (pb.to_bytes(), RepresentationProto::Powerbasis),
+            (ntt.to_bytes(), RepresentationProto::Ntt),
+            (shoup.to_bytes(), RepresentationProto::Nttshoup),
+        ] {
+            let expected = Rq {
+                coefficients: payload.clone(),
+                degree: 16,
+                representation: representation as i32,
+                allow_variable_time: false,
+            };
+            assert_eq!(bytes, expected.encode_to_vec());
+        }
+        assert_eq!(Poly::<PowerBasis>::from_bytes(&pb.to_bytes(), &ctx)?, pb);
+        assert_eq!(Poly::<Ntt>::from_bytes(&ntt.to_bytes(), &ctx)?, ntt);
+        assert_eq!(
+            Poly::<NttShoup>::from_bytes(&shoup.to_bytes(), &ctx)?,
+            shoup
+        );
+        assert_eq!(shoup, pb.into_ntt_shoup());
+        Ok(())
+    }
+
+    #[test]
     fn serialize() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
 
