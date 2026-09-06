@@ -29,7 +29,7 @@ use itertools::Itertools;
 use rand::{Rng as RngCore, rng};
 use std::error::Error;
 use util::{
-    encode_database, generate_database, number_elements_per_plaintext,
+    DatabaseLayout, encode_database, generate_database, number_elements_per_plaintext,
     timeit::{timeit, timeit_n},
 };
 
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // ciphertext, and each element will be encoded as a polynomial in Ntt
     // representation.
     let (preprocessed_database, (dim1, dim2)) = timeit!("Database preprocessing", {
-        encode_database(&database, params.clone(), 1)
+        encode_database(&database, params.clone(), 1, DatabaseLayout::FewerColumns)
     });
 
     // Client setup: the client generates a secret key, and an evaluation key for

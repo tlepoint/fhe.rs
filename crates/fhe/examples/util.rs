@@ -91,6 +91,45 @@ pub fn number_elements_per_plaintext(
     (plaintext_nbits * degree) / (elements_size * 8)
 }
 
+/// Matrix layout for the two stages of a PIR response.
+#[derive(Clone, Copy)]
+pub enum DatabaseLayout {
+    /// Balance the two dimensions.
+    Square,
+    /// Minimize columns without increasing query-expansion rounds. This reduces
+    /// ciphertext multiplications in MulPIR and intermediate ciphertext folding
+    /// and modulus switching in SealPIR.
+    FewerColumns,
+}
+
+impl DatabaseLayout {
+    fn dimensions(self, number_rows: usize) -> (usize, usize) {
+        assert!(number_rows > 0);
+        let mut dimension_1 = number_rows.isqrt();
+        if dimension_1 * dimension_1 < number_rows {
+            dimension_1 += 1;
+        }
+        let mut dimension_2 = number_rows.div_ceil(dimension_1);
+        if matches!(self, Self::FewerColumns) {
+            // Expansion performs 2^ceil(log2(dim1 + dim2)) - 1 key switches,
+            // while per-column work scales with dim2: ciphertext multiplication
+            // in MulPIR, or modulus switching and folding in SealPIR. Spend
+            // unused expansion capacity on a taller matrix to reduce this work.
+            let expansion_size = (dimension_1 + dimension_2).next_power_of_two();
+            while dimension_2 > 1 {
+                let candidate = dimension_2 - 1;
+                let rows = number_rows.div_ceil(candidate);
+                if rows > expansion_size - candidate {
+                    break;
+                }
+                dimension_1 = rows;
+                dimension_2 = candidate;
+            }
+        }
+        (dimension_1, dimension_2)
+    }
+}
+
 /// Encode a database into BFV plaintexts, returning the encoded rows and
 /// layout.
 #[must_use]
@@ -98,6 +137,7 @@ pub fn encode_database(
     database: &[Vec<u8>],
     par: Arc<bfv::BfvParameters>,
     level: usize,
+    layout: DatabaseLayout,
 ) -> (Vec<bfv::Plaintext>, (usize, usize)) {
     assert!(!database.is_empty());
 
@@ -108,8 +148,7 @@ pub fn encode_database(
     let number_rows = database.len().div_ceil(number_elements_per_plaintext);
     println!("number_rows = {number_rows}");
     println!("number_elements_per_plaintext = {number_elements_per_plaintext}");
-    let dimension_1 = (number_rows as f64).sqrt().ceil() as usize;
-    let dimension_2 = number_rows.div_ceil(dimension_1);
+    let (dimension_1, dimension_2) = layout.dimensions(number_rows);
     println!("dimensions = {dimension_1} {dimension_2}");
     println!("dimension = {}", dimension_1 * dimension_2);
 
@@ -124,7 +163,9 @@ pub fn encode_database(
         variable_time,
     )
     .unwrap();
-    let mut preprocessed_database = vec![public_zero; dimension_1 * dimension_2];
+    // Encode populated rows directly instead of allocating a zero polynomial
+    // for every row only to replace it immediately.
+    let mut preprocessed_database = Vec::with_capacity(dimension_1 * dimension_2);
     (0..number_rows).for_each(|i| {
         let mut serialized_plaintext = vec![0u8; number_elements_per_plaintext * elements_size];
         for j in 0..number_elements_per_plaintext {
@@ -133,15 +174,84 @@ pub fn encode_database(
             }
         }
         let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
-        preprocessed_database[i] = bfv::Plaintext::try_encode_vt(
-            pt_values.as_slice(),
-            bfv::Encoding::poly_at_level(level),
-            &par,
-            variable_time,
-        )
-        .unwrap();
+        preprocessed_database.push(
+            bfv::Plaintext::try_encode_vt(
+                pt_values.as_slice(),
+                bfv::Encoding::poly_at_level(level),
+                &par,
+                variable_time,
+            )
+            .unwrap(),
+        );
     });
+    preprocessed_database.resize(dimension_1 * dimension_2, public_zero);
     (preprocessed_database, (dimension_1, dimension_2))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DatabaseLayout, encode_database, number_elements_per_plaintext};
+    use fhe::bfv::{BfvParametersBuilder, Encoding};
+    use fhe_traits::FheDecoder;
+    use fhe_util::transcode_to_bytes;
+
+    #[test]
+    fn pir_layout_minimizes_columns_within_the_same_expansion_rounds() {
+        for number_rows in (1usize..=4096).chain([14085, 16384, 28572, 65535, 65536]) {
+            let (square_rows, square_columns) = DatabaseLayout::Square.dimensions(number_rows);
+            let (rows, columns) = DatabaseLayout::FewerColumns.dimensions(number_rows);
+            let expansion_size = (square_rows + square_columns).next_power_of_two();
+            assert!(rows * columns >= number_rows);
+            assert!(columns <= square_columns);
+            assert_eq!((rows + columns).next_power_of_two(), expansion_size);
+            // No smaller column count can fit the same expansion budget.
+            for candidate in 1..columns {
+                assert!(number_rows.div_ceil(candidate) + candidate > expansion_size);
+            }
+        }
+        assert_eq!(DatabaseLayout::FewerColumns.dimensions(14085), (174, 81));
+        assert_eq!(DatabaseLayout::FewerColumns.dimensions(28572), (447, 64));
+    }
+
+    #[test]
+    fn database_layouts_preserve_every_byte_and_zero_pad() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let params = BfvParametersBuilder::new()
+            .set_degree(32)
+            .set_plaintext_modulus(1153)
+            .set_moduli_sizes(&[40, 40])
+            .build_arc()?;
+        let element_size = 5;
+        let database: Vec<Vec<u8>> = (0..329)
+            .map(|row| {
+                (0..element_size)
+                    .map(|byte| (row * 31 + byte * 17) as u8)
+                    .collect()
+            })
+            .collect();
+        let bits = params.plaintext().ilog2() as usize;
+        let per_plaintext = number_elements_per_plaintext(params.degree(), bits, element_size);
+        for layout in [DatabaseLayout::Square, DatabaseLayout::FewerColumns] {
+            let (encoded, (rows, columns)) = encode_database(&database, params.clone(), 1, layout);
+            assert_eq!(encoded.len(), rows * columns);
+            for (row, plaintext) in encoded.iter().enumerate() {
+                let coefficients = Vec::<u64>::try_decode(plaintext, Encoding::poly_at_level(1))?;
+                let bytes = transcode_to_bytes(&coefficients, bits);
+                for (column, element) in bytes
+                    .chunks_exact(element_size)
+                    .take(per_plaintext)
+                    .enumerate()
+                {
+                    if let Some(expected) = database.get(row * per_plaintext + column) {
+                        assert_eq!(element, expected);
+                    } else {
+                        assert!(element.iter().all(|byte| *byte == 0));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn main() {}

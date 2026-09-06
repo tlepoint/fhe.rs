@@ -368,3 +368,97 @@ Both examples passed their database-entry equality assertions before and after.
 Each timing is the example's five-response average from one invocation; random
 inputs and host variability prevent treating these small changes as a statistical
 performance guarantee. No example or BFV code was changed for item 10.
+
+
+## MulPIR: database layout and preprocessing
+
+Measured against `f34ec35` on macOS arm64 with
+`rustc 1.99.0-nightly (d453bdd8f 2026-08-14)`, the default native backend,
+and the release profile:
+
+```sh
+cargo run --example mulpir --release -- --database-size 1000000 --element-size 288
+```
+
+Temporary stage timers identified ciphertext multiplication as the largest
+response cost: approximately 445 ms, compared with 273 ms for expansion and
+232 ms for plaintext/ciphertext dot products. The timers were removed after
+measurement.
+
+The database packs into 14,085 plaintexts. A square 119 × 119 layout requires
+119 ciphertext multiplications in the second response stage. The new layout
+uses 174 × 81, reducing this to 81 multiplications. Both layouts require eight
+expansion rounds and 255 Galois key switches: the implementation expands each
+round's entire lower half, including the last round. The layout search minimizes
+columns within the square layout's expansion budget. This preserves the BFV
+parameters, encoding, and serialized query/response sizes. SealPIR's layout is
+evaluated separately below.
+
+Preprocessing now builds populated plaintexts directly and appends only the
+padding, avoiding allocation and initialization of thousands of zero plaintexts
+that were immediately replaced. This shared improvement also applies to SealPIR.
+
+For the final comparison, the baseline and optimized release executables were
+copied aside and run sequentially in four alternating pairs (before/after,
+after/before, repeated). Each invocation computed five server responses and
+verified the decrypted database entry. No builds or tests ran concurrently with
+the measurements. The table reports medians across four invocations; process
+wall time includes setup, preprocessing, all five responses, verification, and
+cleanup, but excludes Cargo/build overhead.
+
+| Metric | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| Server response | 953.50 ms | 813.15 ms | 14.7% |
+| Database preprocessing | 2102.65 ms | 1936.50 ms | 7.9% |
+| Entire process | 7.136 s | 6.272 s | 12.1% |
+
+The four response averages were 951.0, 956.0, 953.1, and 953.9 ms before,
+and 813.0, 811.1, 814.1, and 813.3 ms after. Queries and keys are randomized;
+these are local measurements rather than a cross-platform guarantee. Other
+database sizes benefit according to unused capacity in their expansion round.
+
+Regression tests check minimal column counts without extra expansion rounds
+across small layouts and larger boundaries, including this workload, and decode
+every database byte and padding entry for both layouts. Run the example tests
+explicitly with `cargo test --example mulpir --example sealpir` (also tested
+with `--release`).
+
+
+## SealPIR: fewer database columns
+
+SealPIR also selects `DatabaseLayout::FewerColumns`. For the same million-entry,
+288-byte workload, its degree-4096 parameters pack 35 elements per plaintext,
+requiring 28,572 plaintexts. The layout changes from 170 × 169 to 447 × 64.
+Both use nine expansion rounds and 511 Galois key switches.
+
+SealPIR does not perform MulPIR's ciphertext/ciphertext multiplications. Fewer
+columns instead reduce intermediate modulus switches, ciphertext-to-plaintext
+folding, and the length of the second-stage dot products. Temporary stage
+measurements showed folding falling from approximately 30–32 ms to 12 ms,
+and the warmed-up first dot-product/modulus-switch stage from 262–266 ms to
+246–248 ms. Expansion rose by approximately 4 ms because more upper-half
+outputs must be materialized; the key-switch count remains the same.
+
+The following release comparison isolates the layout change: both versions
+already include direct database construction from the MulPIR optimization.
+The host, compiler, backend, and four alternating before/after pairs match the
+method above. Each invocation averages five server responses and checks its
+randomly selected database entry against the decrypted answer. Timings exclude
+compilation, and no tests or builds ran concurrently.
+
+```sh
+cargo run --example sealpir --release -- --database-size 1000000 --element-size 288
+```
+
+| Metric (median of four invocations) | Square | Fewer columns | Time reduction |
+| --- | --- | --- | --- |
+| Server response | 577.45 ms | 539.75 ms | 6.5% |
+| Database preprocessing | 1847.35 ms | 1846.65 ms | 0.04% |
+| Entire process | 4.982 s | 4.813 s | 3.4% |
+
+The response averages were 578.2, 577.1, 577.7, and 577.2 ms for the square
+layout, and 538.8, 539.3, 549.1, and 540.2 ms for fewer columns. All eight
+lookups passed. Evaluation keys remained 981.64 KiB, queries 36.05 KiB, and
+responses 144.11 KiB. This is a smaller local gain than MulPIR's, consistent
+with SealPIR's cheaper per-column work. The layout regression now includes
+SealPIR's exact 28,572-plaintext case and verifies the expected 447 × 64 shape.
