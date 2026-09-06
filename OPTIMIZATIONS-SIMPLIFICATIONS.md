@@ -462,3 +462,139 @@ lookups passed. Evaluation keys remained 981.64 KiB, queries 36.05 KiB, and
 responses 144.11 KiB. This is a smaller local gain than MulPIR's, consistent
 with SealPIR's cheaper per-column work. The layout regression now includes
 SealPIR's exact 28,572-plaintext case and verifies the expected 447 × 64 shape.
+
+
+## RNS scaling: omit zero fractional corrections
+
+Implemented after the PIR commit `0b1b2aa`, in
+`crates/fhe-math/src/rns/scaler.rs`. The RNS scaler now stores only nonzero
+fractional correction terms, together with their source indices. It also skips
+multiplication by a zero gamma correction. These choices depend on the contexts
+and scaling factor, not the input residues. Signed rounding, fixed-point
+precision, modular reductions, and the public API remain the same.
+
+For BFV downscaling from Q*P by t/Q, gamma = t*P is integral. The Garner
+projections for moduli belonging to P also contain Q as a factor, so their
+fractional corrections vanish. In the measured five-modulus to two-modulus case,
+this removes three of five residue/correction products and the gamma product
+for every coefficient. Packing the retained terms together avoids traversing
+separate coefficient and index arrays. A specialization for identity scaling
+keeps basis conversion free of the fractional-correction branches and scratch.
+
+Added scalar and full-polynomial BFV scaling cases to the RNS benchmark. On the
+same macOS arm64 host and nightly compiler as the PIR runs, using release mode
+and the native backend, the final Criterion repeat produced the following
+**means** (50 samples; BFV cases use 200 ms warmup and at least 600 ms measurement;
+the existing generic cases use 3 s warmup and 5 s measurement):
+
+| Operation | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| Generic RNS scaling, 3 to 4 moduli | 48.20 ns | 47.04 ns | 2.4% |
+| Identity basis conversion, 3 to 4 moduli | 30.06 ns | 29.93 ns | 0.4% |
+| BFV RNS downscaling, 5 to 2 moduli | 47.90 ns | 34.05 ns | 28.9% |
+| Degree-8192 NTT downscaling, constant-time transforms | 675.76 µs | 561.61 µs | 16.9% |
+| Degree-8192 NTT downscaling, public data | 638.20 µs | 532.41 µs | 16.6% |
+
+The final 95% confidence intervals for the BFV after-means were 33.93–34.17 ns,
+559.62–563.76 µs, and 530.87–533.99 µs respectively. Earlier repeats showed
+approximately 22–27% scalar and 14–16% polynomial improvements; performance
+varies with host conditions. The initial implementation regressed identity
+conversion by about 3%; the retained specialization removed that regression.
+
+To reproduce, add the benchmark to the baseline before changing the scaler:
+
+```sh
+cargo bench -p fhe-math --bench rns -- --save-baseline before-rns-sparse
+# Apply the scaler optimization, then:
+cargo bench -p fhe-math --bench rns -- --baseline before-rns-sparse
+```
+
+Four alternating release MulPIR comparisons with the already-optimized layout,
+1,000,000 entries, and 288-byte elements reduced median server-response time
+from 818.05 ms to 790.75 ms (**3.3%**). The response averages were 817.6, 818.6,
+815.7, and 818.5 ms before, and 789.7, 791.8, 792.9, and 787.1 ms after. All
+lookups decrypted correctly. Whole-process median time fell from 6.294 s to
+6.162 s (2.1%). No tests or builds ran concurrently with these measurements.
+
+Tests exhaust small contexts, including even products, rounding ties, zero and
+integer factors, identity scaling, sparse and dense corrections, reordered
+source moduli, and strided input/output views. Large-context tests check exact
+BigUint results on deterministic random samples and compare the sparse schedule
+with the original dense schedule at centering and rounding boundaries.
+
+### Existing fixed-point precision limitation
+
+The new boundary tests exposed a pre-existing approximation error, reproduced
+with the original scaler from `0b1b2aa`. With source moduli
+`[562949954093057, 4611686018326724609, 4611686018309947393,
+4611686018282684417, 4611686018257518593]`, destination moduli equal to the first
+two, Q equal to their product, scaling factor 1/Q, and
+`x = 1298074216154311220707323998969855 = (Q - 1)/2 - 1`, exact rounding gives
+residues `[0, 0]`; both the original and optimized scalers give `[1, 1]`.
+Discrepancies also occur extremely close to the source centering boundary.
+
+The scaler's fixed-point approximations cannot distinguish every such boundary
+at arbitrarily large modulus products. The optimization preserves the existing
+results there; it does not fix this precision limitation. The type documentation
+now states that limitation explicitly. Exact handling of these cases needs a
+separate correctness change, with care to preserve constant-time processing.
+
+
+## Focused core BFV benchmarks for sparse RNS scaling
+
+Added `crates/fhe/benches/bfv_core.rs` to measure six operations without running
+the full BFV benchmark suite: secret-key encryption, decryption, multiplication,
+squaring, multiplication followed by relinearization, and relinearization alone.
+The parameter sets are the library defaults at degree 4096 (three moduli,
+109 total modulus bits) and degree 8192 (five moduli, 218 total modulus bits),
+both at level zero with a 20-bit plaintext modulus.
+
+```sh
+cargo bench -p fhe --bench bfv_core
+```
+
+The harness uses seeded, fixed ciphertext inputs. Before timing, it decrypts
+and checks fresh ciphertexts, products, squares, and relinearized products.
+Relinearization input cloning is outside the timed region; the other operations
+include their normal result allocation and destruction. Key/parameter setup is
+outside every measurement, and ciphertexts are not repeatedly mutated across
+iterations to avoid accumulating noise.
+
+Both executables used the same harness and compiler configuration. The baseline
+used the scaler from `0b1b2aa`; the optimized executable used the uncommitted
+sparse-correction implementation. No other production source changed between
+them. Four optimized-profile invocations ran sequentially in before/after,
+after/before order, with no concurrent builds or tests. Each case used 30 flat
+samples, 100 ms warmup, and a 600 ms measurement target. The table averages the
+two invocation means for each version; all times are milliseconds.
+
+| Operation | Degree | Before | After | Time reduction |
+| --- | --- | --- | --- | --- |
+| encrypt_sk | 4096 | 0.5623 ms | 0.5624 ms | -0.0% |
+| encrypt_sk | 8192 | 1.8066 ms | 1.8223 ms | -0.9% |
+| decrypt | 4096 | 0.4896 ms | 0.4746 ms | 3.1% |
+| decrypt | 8192 | 1.4206 ms | 1.3906 ms | 2.1% |
+| multiply | 4096 | 2.2222 ms | 2.0713 ms | 6.8% |
+| multiply | 8192 | 8.0889 ms | 7.5647 ms | 6.5% |
+| square | 4096 | 1.8225 ms | 1.6708 ms | 8.3% |
+| square | 8192 | 6.6134 ms | 6.2069 ms | 6.1% |
+| multiply_relinearize | 4096 | 2.5364 ms | 2.3719 ms | 6.5% |
+| multiply_relinearize | 8192 | 9.6386 ms | 9.2327 ms | 4.2% |
+| relinearize | 4096 | 0.3005 ms | 0.2996 ms | 0.3% |
+| relinearize | 8192 | 1.5229 ms | 1.5264 ms | -0.2% |
+
+Multiplication improves by 6.5–6.8%, and squaring by 6.1–8.3%. Their RNS scaling
+work benefits, while NTTs, pointwise arithmetic, and allocation costs remain.
+Adding relinearization dilutes the gain to 4.2–6.5%; relinearization itself does
+not use this scaler in the tested same-level configuration. Decryption benefits
+modestly (2.1–3.1%) from its final scaling step. Encryption and standalone
+relinearization changed by less than 1%, which is too small to draw a useful
+conclusion from these short runs.
+
+The degree-8192 square and multiply-plus-relinearize measurements varied more:
+optimized invocation means were 6.311/6.103 ms and 9.321/9.144 ms, respectively.
+The table reports both runs rather than selecting the faster sample. These
+results support a moderate improvement in multiplication-heavy BFV work, not
+a blanket 17–29% BFV speedup inferred from the isolated scaler benchmarks.
+All four runs passed the fixture assertions. The focused benchmark also passed
+Clippy with warnings denied and nightly formatting checks.

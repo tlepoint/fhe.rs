@@ -48,6 +48,10 @@ impl ScalingFactor {
 
 /// Scaler for a RNS context.
 /// This is a helper struct to perform RNS scaling.
+///
+/// Fractional corrections use fixed-point approximations. For large contexts,
+/// results extremely close to centering or rounding boundaries can differ from
+/// exact rational arithmetic.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct RnsScaler {
     from: Arc<RnsContext>,
@@ -62,13 +66,19 @@ pub struct RnsScaler {
 
     omega: Box<[Box<[u64]>]>,
     omega_shoup: Box<[Box<[u64]>]>,
-    theta_omega_lo: Box<[u64]>,
-    theta_omega_hi: Box<[u64]>,
-    theta_omega_sign: Box<[bool]>,
+    theta_omega: Box<[RoundingTerm]>,
 
     theta_garner_lo: Box<[u64]>,
     theta_garner_hi: Box<[u64]>,
     theta_garner_shift: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RoundingTerm {
+    index: usize,
+    lo: u64,
+    hi: u64,
+    negative: bool,
 }
 
 impl RnsScaler {
@@ -154,6 +164,23 @@ impl RnsScaler {
             })
             .unzip();
 
+        // Integral projections need no rounding correction. In particular,
+        // when BFV scales from Q*P by t/Q, the extra P residues have integral
+        // Garner projections. Their zero terms can be omitted for every
+        // coefficient. This schedule depends only on the public contexts and
+        // scaling factor, never on the residues being scaled.
+        let theta_omega = izip!(theta_omega_lo, theta_omega_hi, theta_omega_sign)
+            .enumerate()
+            .filter_map(|(index, (lo, hi, negative))| {
+                ((lo | hi) != 0).then_some(RoundingTerm {
+                    index,
+                    lo,
+                    hi,
+                    negative,
+                })
+            })
+            .collect();
+
         Self {
             from: from.clone(),
             to: to.clone(),
@@ -165,9 +192,7 @@ impl RnsScaler {
             theta_gamma_sign,
             omega: omega.into_boxed_slice(),
             omega_shoup: omega_shoup.into_boxed_slice(),
-            theta_omega_lo: theta_omega_lo.into_boxed_slice(),
-            theta_omega_hi: theta_omega_hi.into_boxed_slice(),
-            theta_omega_sign: theta_omega_sign.into_boxed_slice(),
+            theta_omega,
             theta_garner_lo: theta_garner_lo.into_boxed_slice(),
             theta_garner_hi: theta_garner_hi.into_boxed_slice(),
             theta_garner_shift: theta_garner_shift as usize,
@@ -248,18 +273,28 @@ impl RnsScaler {
     ///
     /// Panics if the input length differs from the source modulus count, or
     /// the nonempty output range lies outside the destination moduli.
-    pub fn scale(
-        &self,
-        rests: ArrayView1<u64>,
-        mut out: ArrayViewMut1<u64>,
-        starting_index: usize,
-    ) {
+    pub fn scale(&self, rests: ArrayView1<u64>, out: ArrayViewMut1<u64>, starting_index: usize) {
         assert_eq!(rests.len(), self.from.moduli_u64.len());
         assert!(!out.is_empty());
         assert!(starting_index <= self.to.moduli_u64.len());
         assert!(out.len() <= self.to.moduli_u64.len() - starting_index);
 
-        // First, let's compute the inner product of the rests with theta_omega.
+        // Specialize once on the public scaling factor, so basis conversion
+        // does not carry the fractional-correction branches and scratch.
+        if self.scaling_factor.is_one {
+            self.scale_inner::<true>(rests, out, starting_index);
+        } else {
+            self.scale_inner::<false>(rests, out, starting_index);
+        }
+    }
+
+    fn scale_inner<const IDENTITY: bool>(
+        &self,
+        rests: ArrayView1<u64>,
+        mut out: ArrayViewMut1<u64>,
+        starting_index: usize,
+    ) {
+        // First, let's compute the inner product of the rests with theta_garner.
         let mut sum_theta_garner = u256::ZERO;
         for (thetag_lo, thetag_hi, ri) in izip!(
             self.theta_garner_lo.iter(),
@@ -279,17 +314,12 @@ impl RnsScaler {
         // theta_omega
         let mut w_sign = 0u64;
         let mut w = 0u128;
-        if !self.scaling_factor.is_one {
+        if !IDENTITY {
             let mut sum_theta_omega = u256::ZERO;
-            for (thetao_lo, thetao_hi, thetao_sign, ri) in izip!(
-                self.theta_omega_lo.iter(),
-                self.theta_omega_hi.iter(),
-                self.theta_omega_sign.iter(),
-                rests
-            ) {
-                let product = U256::from(*ri)
-                    * U256::from((*thetao_lo as u128) | ((*thetao_hi as u128) << 64));
-                if *thetao_sign {
+            for term in &self.theta_omega {
+                let product = U256::from(rests[term.index])
+                    * U256::from((term.lo as u128) | ((term.hi as u128) << 64));
+                if term.negative {
                     sum_theta_omega = sum_theta_omega.wrapping_sub(product);
                 } else {
                     sum_theta_omega = sum_theta_omega.wrapping_add(product);
@@ -297,12 +327,18 @@ impl RnsScaler {
             }
 
             // Let's subtract v * theta_gamma to sum_theta_omega.
-            let v_theta_gamma = U256::from(v)
-                * U256::from((self.theta_gamma_lo as u128) | ((self.theta_gamma_hi as u128) << 64));
-            if self.theta_gamma_sign {
-                sum_theta_omega = sum_theta_omega.wrapping_add(v_theta_gamma);
-            } else {
-                sum_theta_omega = sum_theta_omega.wrapping_sub(v_theta_gamma);
+            // This correction also vanishes exactly for BFV's t/Q scaling
+            // from Q*P, since t*P is integral.
+            if (self.theta_gamma_lo | self.theta_gamma_hi) != 0 {
+                let v_theta_gamma = U256::from(v)
+                    * U256::from(
+                        (self.theta_gamma_lo as u128) | ((self.theta_gamma_hi as u128) << 64),
+                    );
+                if self.theta_gamma_sign {
+                    sum_theta_omega = sum_theta_omega.wrapping_add(v_theta_gamma);
+                } else {
+                    sum_theta_omega = sum_theta_omega.wrapping_sub(v_theta_gamma);
+                }
             }
 
             // Let's compute w = round(sum_theta_omega / 2^(192)).
@@ -338,7 +374,7 @@ impl RnsScaler {
                     - qi.lazy_mul_shoup(qi.reduce_u128(v), *gamma_i, *gamma_shoup_i))
                     as u128;
 
-                if !self.scaling_factor.is_one {
+                if !IDENTITY {
                     let wi = qi.lazy_reduce_u128(w);
                     let mask = 0u64.wrapping_sub(w_sign);
                     let signed_wi = wi ^ ((wi ^ (**qi * 2 - wi)) & mask);
@@ -430,6 +466,170 @@ mod tests {
                     scaler.scale(rests.as_slice().into(), (&mut suffix[..]).into(), 1);
                     assert_eq!(suffix[0], actual[1]);
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn exact_scaled_residues(
+        x: &BigUint,
+        from: &RnsContext,
+        to: &RnsContext,
+        numerator: &BigUint,
+        denominator: &BigUint,
+    ) -> Vec<u64> {
+        let negative = x >= &((from.modulus() + 1u64) >> 1usize);
+        let magnitude = if negative {
+            from.modulus() - x
+        } else {
+            x.clone()
+        };
+        // Signed ties round toward positive infinity.
+        let bias = if negative {
+            (denominator - 1u64) >> 1usize
+        } else {
+            denominator >> 1usize
+        };
+        let rounded = ((magnitude * numerator + bias) / denominator) % to.modulus();
+        let reduced = if negative && !rounded.is_zero() {
+            to.modulus() - rounded
+        } else {
+            rounded
+        };
+        to.project(&reduced)
+    }
+
+    #[test]
+    fn sparse_rounding_matches_exact_arithmetic_with_strided_views() -> Result<(), Box<dyn Error>> {
+        use ndarray::s;
+
+        let to = Arc::new(RnsContext::new(&[37, 41, 43])?);
+        for (moduli, denominator, indices) in [
+            ([5u64, 7, 11], 35u64, [0, 1]),
+            ([11, 5, 7], 35, [1, 2]),
+            ([4, 9, 5], 36, [0, 1]),
+        ] {
+            let from = Arc::new(RnsContext::new(&moduli)?);
+            for (num, den) in [(0u64, 1u64), (2, 1), (2, 2), (3, denominator), (7, 13)] {
+                let numerator = BigUint::from(num);
+                let denominator = BigUint::from(den);
+                let scaler =
+                    RnsScaler::new(&from, &to, ScalingFactor::new(&numerator, &denominator));
+                if num == 3 {
+                    assert_eq!(
+                        scaler
+                            .theta_omega
+                            .iter()
+                            .map(|term| term.index)
+                            .collect::<Vec<_>>(),
+                        indices
+                    );
+                    assert_eq!(scaler.theta_gamma_lo | scaler.theta_gamma_hi, 0);
+                } else if num == 7 {
+                    assert_eq!(scaler.theta_omega.len(), moduli.len());
+                    assert_ne!(scaler.theta_gamma_lo | scaler.theta_gamma_hi, 0);
+                } else {
+                    assert!(scaler.theta_omega.is_empty());
+                }
+                for x in 0..from.modulus().to_u64().unwrap() {
+                    let x = BigUint::from(x);
+                    let expected = exact_scaled_residues(&x, &from, &to, &numerator, &denominator);
+                    let rests = from.project(&x);
+                    assert_eq!(scaler.scale_new(rests.as_slice().into(), 3), expected);
+
+                    let interleaved: Vec<_> = rests.iter().flat_map(|r| [*r, u64::MAX]).collect();
+                    let input = ArrayView1::from(&interleaved);
+                    let mut output = [u64::MAX; 4];
+                    scaler.scale(
+                        input.slice(s![..;2]),
+                        ndarray::ArrayViewMut1::from(&mut output[..]).slice_move(s![1..;2]),
+                        1,
+                    );
+                    assert_eq!(output, [u64::MAX, expected[1], u64::MAX, expected[2]]);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bfv_sparse_rounding_preserves_dense_boundaries_and_exact_random_results()
+    -> Result<(), Box<dyn Error>> {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let moduli = [
+            562949954093057u64,
+            4611686018326724609,
+            4611686018309947393,
+            4611686018282684417,
+            4611686018257518593,
+        ];
+        let from = Arc::new(RnsContext::new(&moduli)?);
+        let to = Arc::new(RnsContext::new(&moduli[..2])?);
+        let denominator = to.modulus();
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let mut inputs = vec![
+            BigUint::from(0u64),
+            BigUint::from(1u64),
+            from.modulus() - 1u64,
+        ];
+        let mut boundaries = Vec::new();
+        for center in [from.modulus() >> 1usize, denominator >> 1usize] {
+            for x in [&center - 1u64, center.clone(), &center + 1u64] {
+                boundaries.push(from.modulus() - &x);
+                boundaries.push(x);
+            }
+        }
+        for _ in 0..128 {
+            let residues: Vec<_> = moduli.iter().map(|q| rng.next_u64() % q).collect();
+            inputs.push(from.lift(residues.as_slice().into()));
+        }
+        for num in [1u64, 2, 2056193] {
+            let numerator = BigUint::from(num);
+            let scaler = RnsScaler::new(&from, &to, ScalingFactor::new(&numerator, denominator));
+            assert_eq!(scaler.theta_omega.len(), 2);
+            assert_eq!(scaler.theta_gamma_lo | scaler.theta_gamma_hi, 0);
+            // Reconstruct the original dense schedule, including zero terms.
+            // For large contexts the existing fixed-point approximation can
+            // disagree with exact arithmetic extremely close to centering or
+            // rounding ties. Preserve its behavior at those boundaries; this
+            // optimization changes only the work performed, not the precision.
+            let mut dense = scaler.clone();
+            dense.theta_omega = from
+                .garner
+                .iter()
+                .enumerate()
+                .map(|(index, garner)| {
+                    let (_, lo, hi, negative) = RnsScaler::extract_projection_and_theta(
+                        &to,
+                        garner,
+                        &numerator,
+                        denominator,
+                        true,
+                    );
+                    super::RoundingTerm {
+                        index,
+                        lo,
+                        hi,
+                        negative,
+                    }
+                })
+                .collect();
+            for x in inputs.iter().chain(&boundaries) {
+                let residues = from.project(x);
+                assert_eq!(
+                    scaler.scale_new(residues.as_slice().into(), 2),
+                    dense.scale_new(residues.as_slice().into(), 2)
+                );
+            }
+            for x in &inputs {
+                let residues = from.project(x);
+                assert_eq!(
+                    scaler.scale_new(residues.as_slice().into(), 2),
+                    exact_scaled_residues(x, &from, &to, &numerator, denominator),
+                    "num={num}, x={x}"
+                );
             }
         }
         Ok(())

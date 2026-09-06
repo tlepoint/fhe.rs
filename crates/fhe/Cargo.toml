@@ -54,6 +54,10 @@ name = "bfv"
 harness = false
 
 [[bench]]
+name = "bfv_core"
+harness = false
+
+[[bench]]
 name = "bfv_optimized_ops"
 harness = false
 
