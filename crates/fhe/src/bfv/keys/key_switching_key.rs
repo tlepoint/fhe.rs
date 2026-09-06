@@ -7,7 +7,7 @@ use fhe_math::rq::Context;
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::{
     rns::RnsContext,
-    rq::{Ntt, NttShoup, Poly, PowerBasis},
+    rq::{Ntt, NttShoup, Poly, PowerBasis, RepresentationTag},
 };
 use fhe_traits::{DeserializeWithContext, Serialize};
 use itertools::{Itertools, izip};
@@ -45,7 +45,7 @@ pub struct KeySwitchingKey {
 }
 
 impl KeySwitchingKey {
-    fn permits_variable_time_with(&self, p: &Poly<PowerBasis>) -> bool {
+    fn permits_variable_time_with<R: RepresentationTag>(&self, p: &Poly<R>) -> bool {
         p.allows_variable_time_computations()
             && self
                 .c0
@@ -54,7 +54,12 @@ impl KeySwitchingKey {
                 .all(Poly::allows_variable_time_computations)
     }
 
-    fn configure_accumulators(&self, p: &Poly<PowerBasis>, c0: &mut Poly<Ntt>, c1: &mut Poly<Ntt>) {
+    fn configure_accumulators<R: RepresentationTag>(
+        &self,
+        p: &Poly<R>,
+        c0: &mut Poly<Ntt>,
+        c1: &mut Poly<Ntt>,
+    ) {
         if self.permits_variable_time_with(p) {
             let variable_time =
                 fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
@@ -64,6 +69,22 @@ impl KeySwitchingKey {
             c0.disallow_variable_time_computations();
             c1.disallow_variable_time_computations();
         }
+    }
+
+    fn reset_accumulators<R: RepresentationTag>(
+        &self,
+        p: &Poly<R>,
+        c0: &mut Poly<Ntt>,
+        c1: &mut Poly<Ntt>,
+    ) {
+        for output in [&mut *c0, &mut *c1] {
+            if output.ctx().as_ref() != self.ctx_ksk.as_ref() {
+                *output = Poly::zero(&self.ctx_ksk);
+            } else {
+                output.zeroize();
+            }
+        }
+        self.configure_accumulators(p, c0, c1);
     }
 
     fn decomposition_poly(
@@ -303,18 +324,7 @@ impl KeySwitchingKey {
                 right: crate::ParameterSource::KeySwitchingKey,
             });
         }
-        if c0.ctx().as_ref() != self.ctx_ksk.as_ref() {
-            *c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
-        } else {
-            c0.zeroize();
-        }
-
-        if c1.ctx().as_ref() != self.ctx_ksk.as_ref() {
-            *c1 = Poly::<Ntt>::zero(&self.ctx_ksk);
-        } else {
-            c1.zeroize();
-        }
-        self.configure_accumulators(p, c0, c1);
+        self.reset_accumulators(p, c0, c1);
 
         let p_coefficients = p.coefficients();
         for (c2_i_coefficients, c0_i, c1_i) in
@@ -324,6 +334,53 @@ impl KeySwitchingKey {
             *c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             *c1 += &c2_i;
+        }
+        Ok(())
+    }
+
+    /// Key switch an NTT input, retaining its existing RNS-component
+    /// transforms.
+    pub(crate) fn key_switch_ntt(&self, p: Poly<Ntt>) -> Result<(Poly<Ntt>, Poly<Ntt>)> {
+        let mut c0 = Poly::zero(&self.ctx_ksk);
+        let mut c1 = Poly::zero(&self.ctx_ksk);
+        self.key_switch_ntt_assign(p, &mut c0, &mut c1)?;
+        Ok((c0, c1))
+    }
+
+    /// Key switch an NTT input into reusable output buffers.
+    pub(crate) fn key_switch_ntt_assign(
+        &self,
+        p: Poly<Ntt>,
+        c0: &mut Poly<Ntt>,
+        c1: &mut Poly<Ntt>,
+    ) -> Result<()> {
+        if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
+            return Err(Error::ParameterMismatch {
+                left: crate::ParameterSource::Polynomial,
+                right: crate::ParameterSource::KeySwitchingKey,
+            });
+        }
+        // Bit-decomposition digits are not RNS rows. Also preserve the existing
+        // restriction on decomposition timing when key components are secret.
+        if self.log_base != 0
+            || (p.allows_variable_time_computations() && !self.permits_variable_time_with(&p))
+        {
+            let power_basis = p.into_power_basis();
+            return self.key_switch_assign(&power_basis, c0, c1);
+        }
+        self.reset_accumulators(&p, c0, c1);
+        for (index, (c0_i, c1_i)) in self.c0.iter().zip(self.c1.iter()).enumerate() {
+            let mut component = p.lift_rns_component_for_shoup(index, &self.ctx_ksk)?;
+            let mut product = &component * c0_i;
+            *c0 += &product;
+            if !product.allows_variable_time_computations() {
+                product.zeroize();
+            }
+            component *= c1_i;
+            *c1 += &component;
+            if !component.allows_variable_time_computations() {
+                component.zeroize();
+            }
         }
         Ok(())
     }
@@ -653,6 +710,69 @@ mod tests {
             ksk.key_switch_assign(&input, &mut a0, &mut a1)?;
             assert!(!a0.allows_variable_time_computations());
             assert!(!a1.allows_variable_time_computations());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn key_switch_ntt_matches_power_basis_with_restricted_timing() -> Result<(), Box<dyn Error>> {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let params = BfvParameters::default_arc(3, 16);
+        let mut rng = ChaCha8Rng::seed_from_u64(0x517c4);
+        let sk = SecretKey::random(&params, &mut rng);
+        for level in 0..=params.max_level() {
+            let ctx = params.context_at_level(level)?;
+            let original = Poly::<PowerBasis>::random(ctx, &mut rng);
+            for key_level in 0..=level {
+                let key_ctx = params.context_at_level(key_level)?;
+                let from = Poly::<PowerBasis>::small(key_ctx, 10, &mut rng)?;
+                let key = KeySwitchingKey::new(&sk, &from, level, key_level, &mut rng)?;
+                for restricted_part in 0..=2 {
+                    let mut key = key.clone();
+                    if restricted_part == 0 {
+                        key.c0[0].disallow_variable_time_computations();
+                    } else if restricted_part == 1 {
+                        key.c1[0].disallow_variable_time_computations();
+                    }
+                    let mut out0 = Poly::<Ntt>::zero(ctx);
+                    let mut out1 = Poly::<Ntt>::zero(ctx);
+                    for public in [true, false, true] {
+                        let mut input = original.clone();
+                        if public {
+                            input.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                                fhe_traits::PublicData::assert_public(),
+                            ));
+                        }
+                        let expected = key.key_switch(&input)?;
+                        let transformed = input.into_ntt();
+                        assert_eq!(key.key_switch_ntt(transformed.clone())?, expected);
+                        key.key_switch_ntt_assign(transformed, &mut out0, &mut out1)?;
+                        assert_eq!((&out0, &out1), (&expected.0, &expected.1));
+                        assert_eq!(
+                            out0.allows_variable_time_computations(),
+                            public && restricted_part == 2
+                        );
+                        assert_eq!(
+                            out1.allows_variable_time_computations(),
+                            public && restricted_part == 2
+                        );
+                    }
+                    let wrong_ctx = if level == 0 {
+                        params.context_at_level(1)?
+                    } else {
+                        params.context_at_level(0)?
+                    };
+                    let invalid = Poly::<Ntt>::zero(wrong_ctx);
+                    let saved = (out0.clone(), out1.clone());
+                    assert!(
+                        key.key_switch_ntt_assign(invalid, &mut out0, &mut out1)
+                            .is_err()
+                    );
+                    assert_eq!((out0, out1), saved);
+                }
+            }
         }
         Ok(())
     }

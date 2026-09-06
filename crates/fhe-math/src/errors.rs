@@ -70,6 +70,14 @@ pub enum Error {
     #[error("Polynomial dot product does not accept lazy coefficients.")]
     LazyDotProductOperand,
 
+    /// RNS component lifting requires canonical NTT coefficients.
+    #[error("RNS component lifting does not accept lazy coefficients.")]
+    LazyRnsComponentOperand,
+
+    /// Indicates that an RNS component index is out of bounds.
+    #[error("RNS component {index} out of bounds for {moduli} moduli.")]
+    InvalidRnsComponent { index: usize, moduli: usize },
+
     /// Indicates an invalid number of polynomial coefficients.
     #[error(
         "Invalid coefficient count {actual} for {representation:?}: degree {degree}, moduli {moduli}."

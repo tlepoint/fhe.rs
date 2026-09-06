@@ -63,8 +63,8 @@ impl GaloisKey {
     pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext> {
         self.validate_ciphertext(ct)?;
 
-        let c2 = ct[1].substitute(&self.element)?.into_power_basis();
-        let (mut c0, mut c1) = self.ksk.key_switch(&c2)?;
+        let c2 = ct[1].substitute(&self.element)?;
+        let (mut c0, mut c1) = self.ksk.key_switch_ntt(c2)?;
 
         if c0.ctx() != ct[0].ctx() {
             c0.switch_down_to(ct[0].ctx())?;
@@ -102,8 +102,8 @@ impl GaloisKey {
         out0.zeroize();
         out1.zeroize();
 
-        let c2 = ct[1].substitute(&self.element)?.into_power_basis();
-        self.ksk.key_switch_assign(&c2, out0, out1)?;
+        let c2 = ct[1].substitute(&self.element)?;
+        self.ksk.key_switch_ntt_assign(c2, out0, out1)?;
 
         if out0.ctx() != ct[0].ctx() {
             out0.switch_down_to(ct[0].ctx())?;

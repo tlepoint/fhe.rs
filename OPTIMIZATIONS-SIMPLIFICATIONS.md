@@ -815,4 +815,120 @@ The next arithmetic candidate is key-switch digit construction: a digit's NTT
 row at its original modulus is already present before conversion to power
 basis, but the current decomposition reconstructs that forward transform.
 Retaining and reusing those rows could remove two more transforms per PIR
-Galois step. That optimization has not yet been implemented or measured.
+Galois step; its implementation and measurements follow.
+
+## Reuse NTT rows when constructing key-switch digits
+
+The NTT modulus-switching optimization was committed as `2a2b112`. This next
+change implements the RNS-digit reuse described above for Galois operations.
+
+For source modulus q_i, the old key-switch path took the coefficient-domain
+residues modulo q_i and transformed that digit under every key modulus. Its
+transform under q_i is already the corresponding row of the input NTT
+polynomial. `Poly<Ntt>::lift_rns_component_for_shoup` now copies that row and
+computes forward transforms only for other target moduli. Both PIR examples
+have two source moduli, saving two forward NTTs per Galois operation: 510
+degree-8192 transforms per MulPIR expansion and 1,022 degree-4096 transforms per
+SealPIR expansion. The inverse transforms required to recover the other rows'
+coefficient inputs are still necessary.
+
+The helper uses its final output row as temporary power-basis workspace, then
+converts or overwrites that row with its final NTT values. This avoids a
+separate coefficient buffer for every digit. It also retains lazy residues on
+the public-data path, allowing the following Shoup multiplication to perform
+the final reductions. An initial prototype with extra buffers, unconditional
+cleanup of public data, and canonical output reductions lost the transform
+savings; preserving the existing lazy arithmetic and reusing output storage
+were necessary for the retained improvement.
+
+### Arithmetic, timing, and scope
+
+This is an unsigned lift of coefficient residues in [0, q_i), matching the
+existing decomposition. It must not use centered representatives. Reused
+transforms are valid because NTT operators are constructed deterministically
+from the modulus and degree within each backend. The helper supports reordered
+target moduli and targets without any overlap. A single target modulus equal
+to q_i needs only a copy. Invalid indices, unequal degrees, and lazy source
+polynomials return errors.
+
+The returned polynomial is intended for multiplication by `Poly<NttShoup>`;
+its lazy flag prevents unsupported arithmetic before that multiplication.
+Secret inputs use constant-time reductions and transforms, while public inputs
+retain their existing timing permission. The key-switch path checks the
+permissions of the input and all key components. Public inputs with restricted
+key components use the existing decomposition path. Secret product/digit
+temporaries are cleared after use; the temporary power-basis row becomes part
+of the returned polynomial rather than a separate allocation.
+
+The NTT entry points consume the substituted polynomial, so the existing
+bit-decomposition fallback can convert it in place without adding a clone.
+Bit-decomposition digits are not RNS rows and do not use the optimization.
+Ciphertext coefficients, rounding, noise, key generation, and wire formats are
+unchanged. Both allocating and in-place Galois operations use the new path.
+Power-basis callers, including the current relinearization-key and RGSW paths,
+continue using their existing decomposition implementation.
+
+### Measurements
+
+The existing six-case `pir_expansion` benchmark compared `2a2b112` with this
+change using identical fixtures, compiler settings, and the default native NTT
+backend on the same macOS arm64 host. The final Criterion means were:
+
+| Case | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| Full MulPIR expansion, 255 outputs | 234.96 ms | 219.67 ms | 6.5% |
+| Full SealPIR expansion, 511 outputs | 227.86 ms | 211.93 ms | 7.0% |
+| One MulPIR step with a modulus drop | 0.8508 ms | 0.7856 ms | 7.7% |
+| One SealPIR step with a modulus drop | 0.4198 ms | 0.3839 ms | 8.6% |
+| One MulPIR step without a modulus drop | 0.3903 ms | 0.3289 ms | 15.7% |
+| One SealPIR step without a modulus drop | 0.1925 ms | 0.1581 ms | 17.8% |
+
+Unlike the preceding optimization, this also benefits same-level Galois
+operations. Their larger relative improvement reflects the absence of modulus
+switching overhead. These are one-step expansion measurements, not a blanket
+speedup for all BFV operations. An earlier run of the retained workspace
+implementation measured full expansions at 220.05/213.42 ms, respectively.
+To reproduce using the benchmark's existing 10 full-expansion samples and
+30 one-step samples:
+
+```sh
+cargo bench -p fhe --bench pir_expansion -- --save-baseline before-ntt-reuse --noplot
+# Apply the NTT-row reuse change, then:
+cargo bench -p fhe --bench pir_expansion -- --baseline before-ntt-reuse --noplot
+```
+
+Four alternating before/after pairs of complete release runs per scheme used
+1,000,000 entries of 288 bytes, with five server responses per invocation and
+no concurrent builds or tests. Medians across the four invocations per version:
+
+| Scheme and measurement | Before | After | Time reduction |
+| --- | --- | --- | --- |
+| MulPIR query expansion | 235.84 ms | 219.71 ms | 6.8% |
+| MulPIR complete server response | 617.85 ms | 599.05 ms | 3.0% |
+| MulPIR whole process | 5.304 s | 5.222 s | 1.5% |
+| SealPIR query expansion | 230.38 ms | 213.27 ms | 7.4% |
+| SealPIR complete server response | 496.50 ms | 477.30 ms | 3.9% |
+| SealPIR whole process | 4.531 s | 4.448 s | 1.8% |
+
+MulPIR response averages were 622.0, 618.8, 616.9, and 613.6 ms before, and
+596.7, 599.7, 600.6, and 598.4 ms after. SealPIR averages were 497.3, 495.7,
+494.2, and 497.7 ms before, and 477.1, 476.3, 480.6, and 477.5 ms after.
+All 16 lookups passed their byte comparisons. Use these paired comparisons
+rather than absolute timings from earlier runs to assess this change.
+
+### Validation
+
+`cargo test`, nightly formatting, Clippy across all targets with warnings denied,
+and rustdoc with warnings denied passed. The new math and key-switch tests,
+plus the existing leveled Galois regression, also passed in release mode with
+all features enabled. Performance was measured only with the default backend.
+
+The math tests compare every lifted component against the independent
+coefficient-domain conversion followed by a forward transform, canonicalizing
+the new lazy result through Shoup multiplication by one. Cases include residue
+boundaries and random inputs, degrees 8/16/1024, matching/reordered/disjoint and
+single-modulus targets, both timing permissions, and invalid inputs. Key-switch
+tests require identical output coefficients across all valid levels in a
+three-modulus chain, both restricted key components, public/secret/public
+output reuse, and bit decomposition. The existing Galois test additionally
+compares complete substituted ciphertexts against the old implementation.

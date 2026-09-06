@@ -14,6 +14,7 @@ mod convert;
 mod dot_product;
 mod modulus_switch;
 mod ops;
+mod rns_component;
 mod serialize;
 
 pub mod scaler;
