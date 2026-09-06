@@ -1,6 +1,6 @@
 # fhe-math: optimizations and simplifications
 
-Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–8 have since been implemented; their original rationale remains below, with measurements in the implementation results sections. References below are repository-relative source paths and symbol names.
+Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–8 and the forward portion of item 10 have since been implemented; their original rationale remains below, with measurements in the implementation results sections. References below are repository-relative source paths and symbol names.
 
 Let **N** denote polynomial degree and **L** the number of RNS moduli. Start with allocations and context construction; treat arithmetic kernel changes as benchmark-driven experiments.
 
@@ -280,3 +280,91 @@ cargo run --example mulpir --release -- --database-size 1000000 --element-size 2
 These are single sequential before/after invocations on the same host, not a statistical performance guarantee. Observed changes are modest (approximately 0.7% and 1.5%). The workspace is now used by the actual hot paths, but bulk polynomial arithmetic and database reads remain, and query expansion alone takes about 264–273 ms. This integration does not imply a large end-to-end speedup.
 
 New tests cover repeated fast/fallback transitions, 2/3-part ciphertexts, buffer identity, public/secret policy changes, invalid levels and parameters, and full-width/strided u128 conversion. Default and all-feature workspace tests, release math tests, nightly formatting, and all-target/all-feature Clippy passed.
+
+
+## Implementation results: item 10
+
+Native `forward_vt` now reduces each output in its final butterfly stage. A
+compile-time canonical/lazy choice shares the earlier stages, and a separate
+adjacent-pair final loop lets the compiler optimize that stage independently.
+`forward_vt_lazy` retains its [0, 4p) output contract. No buffers, twiddle constants,
+public APIs, or timing-policy dispatch were added or changed.
+
+The existing butterfly bounds still apply: inputs are below 4p, its reduced left
+input and Shoup product are below 2p, and both outputs are below 4p. Since p is
+less than 2^62, the sums fit in u64. The same two conditional subtractions as the
+old standalone pass produce values below p. Constant-time forward and both inverse
+implementations remain unchanged. Final-stage inverse normalization was prototyped
+and tested, but removed after several native cases regressed by approximately
+3–6%; fewer passes alone did not justify retaining it.
+
+Native-specific regressions run even with `tfhe-ntt` enabled. They cover degrees
+8–16384; 17-, 31-, and near-limit 62-bit moduli; zero, maximum and mixed lazy
+residues; canonical output and lazy ranges; round trips with inverse inputs below
+2p; and independent negacyclic schoolbook products (dense at small degrees,
+sparse at large degrees). Debug assertions check intermediate butterfly ranges.
+Release AArch64 assembly inspection confirmed that canonical reduction occurs
+before final stores, with no later reduction scan. The constant-time forward and
+backward instruction streams match the baseline apart from labels and panic
+metadata references; this is a local compiler check, not a cross-platform timing
+proof.
+
+The NTT benchmark now uses `black_box`, covers degrees 1024–16384, and measures
+each direction independently using a reused in-place buffer. The small benchmark
+modulus is now 65537, which supports all these degrees. The following native
+forward-VT means are from a repeated before/after comparison on an Apple M2,
+macOS arm64, `rustc 1.99.0-nightly (d453bdd8f 2026-08-14)`, no optional features,
+50 samples, 200 ms warmup and 600 ms measurement per case. Both revisions used
+the same updated benchmark. Times exclude allocation and setup; allocation counts
+were not instrumented, and the kernels remain allocation-free.
+
+| Degree | Modulus bits | Before | After (95% confidence interval) |
+| --- | --- | --- | --- |
+| 1024 | 17 | 3.167 µs | 3.035 µs (3.025–3.045) |
+| 1024 | 62 | 3.193 µs | 3.023 µs (3.014–3.034) |
+| 4096 | 17 | 14.931 µs | 13.843 µs (13.810–13.876) |
+| 4096 | 62 | 14.439 µs | 13.899 µs (13.861–13.940) |
+| 8192 | 17 | 31.545 µs | 29.986 µs (29.915–30.058) |
+| 8192 | 62 | 31.400 µs | 30.008 µs (29.919–30.105) |
+| 16384 | 17 | 69.414 µs | 70.119 µs (69.938–70.302) |
+| 16384 | 62 | 68.998 µs | 70.093 µs (69.892–70.308) |
+
+Criterion classified degrees 1024–8192 as improvements in this repeat, the
+16384/17 change within noise, and 16384/62 as an approximately 1.6% regression.
+Earlier short runs were noisier and showed smaller gains. Retaining the forward
+fusion trades modest gains at smaller degrees for a small measured large-degree
+regression on this host; these measurements do not establish a universal speedup
+or a benefit for the separate TFHE backend.
+
+To reproduce, install the updated benchmark on the baseline before changing
+production code, then run each revision with the same absolute result directory:
+
+```sh
+CRITERION_HOME=/tmp/fhe-ntt-item10 cargo bench -p fhe-math --bench ntt -- forward_vt --warm-up-time 0.2 --measurement-time 0.6 --save-baseline before
+# Apply the forward fusion, then:
+CRITERION_HOME=/tmp/fhe-ntt-item10 cargo bench -p fhe-math --bench ntt -- forward_vt --warm-up-time 0.2 --measurement-time 0.6 --baseline before
+```
+
+Validation passed: default and all-feature workspace tests, native and all-feature
+release math tests, nightly formatting, and default/all-feature all-target Clippy
+with warnings denied.
+
+### Item 10: million-entry PIR check
+
+Ran both commands on the same host, first with the original native NTT and then
+with the retained forward fusion:
+
+```sh
+cargo run --example mulpir --release -- --database-size 1000000 --element-size 288
+cargo run --example sealpir --release -- --database-size 1000000 --element-size 288
+```
+
+| Server response | Before | After | Observed change |
+| --- | --- | --- | --- |
+| MulPIR | 972.4 ms | 958.0 ms | 1.5% faster |
+| SealPIR | 590.9 ms | 575.2 ms | 2.7% faster |
+
+Both examples passed their database-entry equality assertions before and after.
+Each timing is the example's five-response average from one invocation; random
+inputs and host variability prevent treating these small changes as a statistical
+performance guarantee. No example or BFV code was changed for item 10.

@@ -140,37 +140,48 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub(crate) unsafe fn forward_vt_lazy(&self, a_ptr: *mut u64) {
+        unsafe { self.forward_vt_impl::<false>(a_ptr) };
+    }
+
+    // CANONICAL is selected at compile time; the lazy path retains its range.
+    unsafe fn forward_vt_impl<const CANONICAL: bool>(&self, a_ptr: *mut u64) {
         let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, self.size) };
 
         let mut l = self.size >> 1;
         let mut m = 1;
         let mut k = 1;
-        while l > 0 {
+        while l > 1 {
             for i in 0..m {
                 let omega = unsafe { *self.omegas.get_unchecked(k) };
                 let omega_shoup = unsafe { *self.omegas_shoup.get_unchecked(k) };
                 k += 1;
-
                 let s = 2 * i * l;
-                match l {
-                    1 => {
-                        // SAFETY: s and s + l are distinct (l > 0) and in-bounds
-                        // (s + l < 2 * m * l = size)
-                        let [x, y] = unsafe { a.get_disjoint_unchecked_mut([s, s + l]) };
-                        unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
-                    }
-                    _ => {
-                        for j in s..(s + l) {
-                            // SAFETY: j and j + l are distinct (l > 0) and in-bounds
-                            // (j + l < s + 2 * l <= 2 * m * l = size)
-                            let [x, y] = unsafe { a.get_disjoint_unchecked_mut([j, j + l]) };
-                            unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
-                        }
-                    }
+                for j in s..(s + l) {
+                    // SAFETY: j and j + l are distinct and in bounds because
+                    // j + l < s + 2 * l <= 2 * m * l = size.
+                    let [x, y] = unsafe { a.get_disjoint_unchecked_mut([j, j + l]) };
+                    unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
                 }
             }
             l >>= 1;
             m <<= 1;
+        }
+
+        // The final stage has adjacent outputs and one twiddle per pair.
+        // Butterfly outputs are < 4p < 2^64, so the same two reductions as
+        // the former standalone pass yield canonical values without overflow.
+        for (([x, y], &omega), &omega_shoup) in a
+            .as_chunks_mut::<2>()
+            .0
+            .iter_mut()
+            .zip(self.omegas[k..].iter())
+            .zip(self.omegas_shoup[k..].iter())
+        {
+            unsafe { self.butterfly_vt(x, y, omega, omega_shoup) };
+            if CANONICAL {
+                *x = unsafe { self.reduce3_vt(*x) };
+                *y = unsafe { self.reduce3_vt(*y) };
+            }
         }
     }
 
@@ -181,11 +192,7 @@ impl NttOperator {
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub unsafe fn forward_vt(&self, a_ptr: *mut u64) {
-        unsafe { self.forward_vt_lazy(a_ptr) };
-        let a = unsafe { std::slice::from_raw_parts_mut(a_ptr, self.size) };
-        for ai in a.iter_mut() {
-            *ai = unsafe { self.reduce3_vt(*ai) };
-        }
+        unsafe { self.forward_vt_impl::<true>(a_ptr) };
     }
 
     /// Compute the backward NTT in place in variable time.
@@ -345,5 +352,135 @@ impl NttOperator {
         // A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
         // for all prime p dividing n.
         (p.pow(a, n as u64) == 1) && (p.pow(a, (n / 2) as u64) != 1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test the native implementation even when the TFHE backend is enabled.
+    #[test]
+    fn final_pass_ranges_and_round_trips() {
+        let mut rng = ChaCha8Rng::seed_from_u64(10);
+        for n in [8, 16, 32, 128, 1024, 8192, 16384] {
+            for modulus in [65537, 2013265921, 4611686018326724609] {
+                let p = Modulus::new(modulus).unwrap();
+                let op = NttOperator::new(&p, n).unwrap();
+                let boundaries = [
+                    0,
+                    1,
+                    modulus - 1,
+                    modulus,
+                    2 * modulus - 1,
+                    2 * modulus,
+                    4 * modulus - 1,
+                ];
+                let inputs = [
+                    vec![0; n],
+                    vec![modulus - 1; n],
+                    vec![4 * modulus - 1; n],
+                    (0..n).map(|i| boundaries[i % boundaries.len()]).collect(),
+                    p.random_vec(n, &mut rng),
+                ];
+                for input in inputs {
+                    let canonical: Vec<_> = input.iter().map(|x| x % modulus).collect();
+                    let mut expected = canonical.clone();
+                    op.forward(&mut expected);
+                    let mut ct = input.clone();
+                    let mut vt = input.clone();
+                    let mut lazy = input;
+                    op.forward(&mut ct);
+                    unsafe {
+                        op.forward_vt(vt.as_mut_ptr());
+                        op.forward_vt_lazy(lazy.as_mut_ptr());
+                    }
+                    assert_eq!(ct, expected);
+                    assert_eq!(vt, expected);
+                    assert!(vt.iter().all(|&x| x < modulus));
+                    assert!(lazy.iter().all(|&x| x < 4 * modulus));
+                    assert!(lazy.iter().zip(&expected).all(|(&x, &y)| x % modulus == y));
+                    // Inverse inputs can be lazy in [0, 2p), but not [0, 4p).
+                    for x in &mut vt {
+                        *x += modulus;
+                    }
+                    op.backward(&mut ct);
+                    unsafe {
+                        op.backward_vt(vt.as_mut_ptr());
+                    }
+                    assert_eq!(ct, canonical);
+                    assert_eq!(vt, canonical);
+                }
+                let mut inverse = vec![2 * modulus - 1; n];
+                let mut inverse_vt = inverse.clone();
+                op.backward(&mut inverse);
+                unsafe {
+                    op.backward_vt(inverse_vt.as_mut_ptr());
+                }
+                assert_eq!(inverse, inverse_vt);
+                assert!(inverse.iter().all(|&x| x < modulus));
+                op.forward(&mut inverse);
+                assert_eq!(inverse, vec![modulus - 1; n]);
+            }
+        }
+    }
+
+    #[test]
+    fn final_pass_matches_reference_ring_product() {
+        let mut rng = ChaCha8Rng::seed_from_u64(11);
+        for n in [8, 32, 128, 1024, 8192] {
+            for modulus in [65537, 2013265921, 4611686018326724609] {
+                let p = Modulus::new(modulus).unwrap();
+                let op = NttOperator::new(&p, n).unwrap();
+                let a = p.random_vec(n, &mut rng);
+                let mut b = p.random_vec(n, &mut rng);
+                // Dense schoolbook products at small sizes, sparse at large
+                // sizes to check wraparound without quadratic test cost.
+                if n > 128 {
+                    b.fill(0);
+                    b[0] = modulus - 1;
+                    b[n / 2] = modulus - 1;
+                    b[n - 1] = modulus - 1;
+                }
+                let mut expected = vec![0u64; n];
+                for (j, &y) in b.iter().enumerate().filter(|(_, y)| **y != 0) {
+                    for (i, &x) in a.iter().enumerate() {
+                        let product = (u128::from(x) * u128::from(y)) % u128::from(modulus);
+                        let k = (i + j) % n;
+                        let term = if i + j >= n {
+                            u128::from(modulus) - product
+                        } else {
+                            product
+                        };
+                        expected[k] =
+                            ((u128::from(expected[k]) + term) % u128::from(modulus)) as u64;
+                    }
+                }
+                for variable_time in [false, true] {
+                    let mut lhs = a.clone();
+                    let mut rhs = b.clone();
+                    if variable_time {
+                        unsafe {
+                            op.forward_vt(lhs.as_mut_ptr());
+                            op.forward_vt(rhs.as_mut_ptr());
+                        }
+                    } else {
+                        op.forward(&mut lhs);
+                        op.forward(&mut rhs);
+                    }
+                    for (x, y) in lhs.iter_mut().zip(rhs) {
+                        *x = p.mul(*x, y);
+                    }
+                    if variable_time {
+                        unsafe {
+                            op.backward_vt(lhs.as_mut_ptr());
+                        }
+                    } else {
+                        op.backward(&mut lhs);
+                    }
+                    assert_eq!(lhs, expected, "degree={n}, modulus={modulus}");
+                }
+            }
+        }
     }
 }
