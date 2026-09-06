@@ -1,7 +1,7 @@
 //! Operations over ciphertexts
 
 mod dot_product;
-pub use dot_product::dot_product_scalar;
+pub use dot_product::{DotProductScalarWorkspace, dot_product_scalar};
 
 mod mul;
 pub use mul::Multiplicator;

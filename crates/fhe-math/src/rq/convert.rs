@@ -260,6 +260,44 @@ fn from_rns_vec<R: RepresentationTag>(
     from_rns_array(coefficients, ctx, variable_time)
 }
 
+// Reduce a wide accumulator directly into canonical NTT storage, without a
+// second u64 reduction pass. This is also safe for arbitrary public API inputs.
+impl<'a> TryConvertFrom<ndarray::ArrayView2<'a, u128>> for Poly<Ntt> {
+    fn try_convert_from(
+        a: ndarray::ArrayView2<'a, u128>,
+        ctx: &Arc<Context>,
+        variable_time: bool,
+    ) -> Result<Self> {
+        if a.shape() != [ctx.q.len(), ctx.degree] {
+            return Err(Error::InvalidCoefficientShape {
+                actual_rows: a.nrows(),
+                actual_columns: a.ncols(),
+                expected_rows: ctx.q.len(),
+                expected_columns: ctx.degree,
+            });
+        }
+        let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
+        for ((mut output, input), modulus) in coefficients
+            .outer_iter_mut()
+            .zip(a.outer_iter())
+            .zip(ctx.q.iter())
+        {
+            for (out, value) in output.iter_mut().zip(input.iter()) {
+                *out = if variable_time {
+                    unsafe { modulus.reduce_u128_vt(*value) }
+                } else {
+                    modulus.reduce_u128(*value)
+                };
+            }
+        }
+        Ok(from_canonical_coefficients(
+            coefficients,
+            ctx,
+            variable_time,
+        ))
+    }
+}
+
 impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
     fn try_convert_from(mut v: Vec<u64>, ctx: &Arc<Context>, variable_time: bool) -> Result<Self> {
         if v.len() == ctx.q.len() * ctx.degree {
@@ -561,6 +599,40 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
+
+    #[test]
+    fn wide_ntt_conversion_reduces_once_and_accepts_strided_views() -> Result<(), Box<dyn Error>> {
+        let ctx = Context::new_arc(&[1153, 4611686018326724609], 16)?;
+        let a = ndarray::Array2::from_shape_fn((2, 16), |(r, c)| match c % 4 {
+            0 => 0,
+            1 => u128::MAX,
+            2 => ctx.moduli()[r] as u128,
+            _ => ctx.moduli()[r] as u128 + 1,
+        });
+        for view in [a.view(), a.slice(ndarray::s![.., ..;-1])] {
+            for public in [false, true] {
+                let p = Poly::<Ntt>::try_convert_from(view, &ctx, public)?;
+                assert_eq!(p.allows_variable_time_computations(), public);
+                for ((output, input), modulus) in p
+                    .coefficients
+                    .outer_iter()
+                    .zip(view.outer_iter())
+                    .zip(ctx.moduli())
+                {
+                    for (actual, value) in output.iter().zip(input) {
+                        assert_eq!(*actual, (*value % *modulus as u128) as u64);
+                    }
+                }
+                assert_eq!(p.clone().into_power_basis().into_ntt(), p);
+            }
+        }
+        let wrong = ndarray::Array2::<u128>::zeros((1, 32));
+        assert!(matches!(
+            Poly::<Ntt>::try_convert_from(wrong.view(), &ctx, false),
+            Err(crate::Error::InvalidCoefficientShape { .. })
+        ));
+        Ok(())
+    }
 
     #[test]
     fn shared_constructors_reject_invalid_shapes_and_lengths() -> Result<(), Box<dyn Error>> {

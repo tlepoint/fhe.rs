@@ -50,6 +50,31 @@ fn benchmarks(c: &mut Criterion) {
     group.bench_function("deserialize_shoup", |b| {
         b.iter(|| Poly::<NttShoup>::from_bytes(black_box(&bytes), &ctx).unwrap())
     });
+    for length in [4, 16, 256] {
+        let left = vec![ntt.clone(); length];
+        let right = vec![ntt.clone(); length];
+        group.bench_function(format!("dot_product/{length}"), |b| {
+            b.iter(|| {
+                fhe_math::rq::dot_product(black_box(&left).iter(), black_box(&right).iter())
+                    .unwrap()
+            })
+        });
+    }
+    for length in [4, 16, 256] {
+        let left = vec![ntt.clone(); length];
+        let right = left.clone();
+        let mut workspace = fhe_math::rq::DotProductWorkspace::new(&ctx);
+        let mut out = ntt.clone();
+        group.bench_function(format!("dot_product_reuse/{length}"), |b| {
+            b.iter(|| {
+                workspace
+                    .dot_product_into(black_box(&left).iter(), black_box(&right).iter(), &mut out)
+                    .unwrap();
+                black_box(&out);
+            })
+        });
+    }
+
     group.finish();
 }
 criterion_group!(benches, benchmarks);

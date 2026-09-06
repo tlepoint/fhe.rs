@@ -11,6 +11,7 @@
 
 mod context;
 mod convert;
+mod dot_product;
 mod ops;
 mod serialize;
 
@@ -20,10 +21,10 @@ pub mod traits;
 use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
 use crate::{Error, Result, zq::Modulus};
 pub use context::Context;
+pub use dot_product::{DotProductWorkspace, dot_product};
 use fhe_util::sample_vec_cbd;
 use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView2, Axis, s};
-pub use ops::dot_product;
 use rand::{CryptoRng, Rng as RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sha2::{Digest, Sha256};

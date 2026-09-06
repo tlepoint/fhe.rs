@@ -1,9 +1,7 @@
 //! Implementation of operations over polynomials.
 
 use super::{Ntt, NttShoup, Poly, PowerBasis};
-use crate::{Error, Result};
-use itertools::{Itertools, izip};
-use ndarray::Array2;
+use itertools::izip;
 use num_bigint::BigUint;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
@@ -265,165 +263,13 @@ impl Mul<&Poly<PowerBasis>> for &BigUint {
     }
 }
 
-/// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
-///
-/// Uses safe slice chunk APIs (Rust 1.88+) to process elements in chunks of 16
-/// for better performance through loop unrolling, while maintaining safety.
-fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
-    let n = out.len();
-    assert_eq!(x.len(), n);
-    assert_eq!(y.len(), n);
-
-    // Process complete chunks of 16 elements using safe chunk APIs
-    let (out_chunks, out_remainder) = out.as_chunks_mut::<16>();
-    let (x_chunks, x_remainder) = x.as_chunks::<16>();
-    let (y_chunks, y_remainder) = y.as_chunks::<16>();
-
-    for ((out_chunk, x_chunk), y_chunk) in out_chunks.iter_mut().zip(x_chunks).zip(y_chunks) {
-        for i in 0..16 {
-            out_chunk[i] += (x_chunk[i] as u128) * (y_chunk[i] as u128);
-        }
-    }
-
-    // Process any remaining elements
-    for ((out_elem, x_elem), y_elem) in out_remainder.iter_mut().zip(x_remainder).zip(y_remainder) {
-        *out_elem += (*x_elem as u128) * (*y_elem as u128);
-    }
-}
-
-/// Compute the dot product between two iterators of polynomials in Ntt
-/// representation. Returns an error if either iterator is empty, the iterator
-/// lengths differ, or the polynomial contexts do not match.
-pub fn dot_product<'a, 'b, I, J>(p: I, q: J) -> Result<Poly<Ntt>>
-where
-    I: Iterator<Item = &'a Poly<Ntt>> + Clone,
-    J: Iterator<Item = &'b Poly<Ntt>> + Clone,
-{
-    let p_count = p.clone().count();
-    let q_count = q.clone().count();
-    if p_count == 0 || q_count == 0 {
-        return Err(Error::EmptyDotProduct);
-    }
-    if p_count != q_count {
-        return Err(Error::DotProductLengthMismatch {
-            left: p_count,
-            right: q_count,
-        });
-    }
-    let count = p_count;
-
-    let p_first = p.clone().next().ok_or(Error::EmptyDotProduct)?;
-    if p.clone().any(|poly| poly.ctx() != p_first.ctx())
-        || q.clone().any(|poly| poly.ctx() != p_first.ctx())
-    {
-        return Err(Error::PolynomialContextMismatch);
-    }
-    // A dot product may use variable-time reductions only when every input is
-    // public. One constant-time operand conservatively downgrades the result.
-    let allow_variable_time_computations =
-        p.clone().zip(q.clone()).take(count).all(|(pi, qi)| {
-            pi.allow_variable_time_computations && qi.allow_variable_time_computations
-        });
-
-    // Initialize the accumulator
-    let mut acc: Array2<u128> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-    let acc_ptr = acc.as_mut_ptr();
-
-    // Current number of products accumulated
-    let mut num_acc = vec![1u128; p_first.ctx.q.len()];
-    let num_acc_ptr = num_acc.as_mut_ptr();
-
-    // Maximum number of products that can be accumulated
-    let max_acc = p_first
-        .ctx
-        .q
-        .iter()
-        .map(|qi| 1u128 << (2 * (*qi).leading_zeros()))
-        .collect_vec();
-    let max_acc_ptr = max_acc.as_ptr();
-
-    let q_ptr = p_first.ctx.q.as_ptr();
-    let degree = p_first.ctx.degree as isize;
-
-    let min_of_max = max_acc.iter().min().unwrap();
-
-    let out_slice = acc.as_slice_mut().unwrap();
-    if count as u128 > *min_of_max {
-        for (pi, qi) in izip!(p, q) {
-            let pij = pi.coefficients();
-            let qij = qi.coefficients();
-            let pi_slice = pij.as_slice().unwrap();
-            let qi_slice = qij.as_slice().unwrap();
-            fma(out_slice, pi_slice, qi_slice);
-
-            // SAFETY: The pointer arithmetic here is valid because:
-            // - acc_ptr, num_acc_ptr, max_acc_ptr, q_ptr are all valid pointers
-            // - j is bounded by p_first.ctx.q.len()
-            // - i is bounded by (j+1) * degree which is within acc bounds
-            unsafe {
-                for j in 0..p_first.ctx.q.len() as isize {
-                    let qj = &*q_ptr.offset(j);
-                    *num_acc_ptr.offset(j) += 1;
-                    if *num_acc_ptr.offset(j) == *max_acc_ptr.offset(j) {
-                        if allow_variable_time_computations {
-                            for i in j * degree..(j + 1) * degree {
-                                *acc_ptr.offset(i) = qj.reduce_u128_vt(*acc_ptr.offset(i)) as u128;
-                            }
-                        } else {
-                            for i in j * degree..(j + 1) * degree {
-                                *acc_ptr.offset(i) = qj.reduce_u128(*acc_ptr.offset(i)) as u128;
-                            }
-                        }
-                        *num_acc_ptr.offset(j) = 1;
-                    }
-                }
-            }
-        }
-    } else {
-        // We don't need to check the condition on the max, it should shave off a few
-        // cycles.
-        for (pi, qi) in izip!(p, q) {
-            let pij = pi.coefficients();
-            let qij = qi.coefficients();
-            let pi_slice = pij.as_slice().unwrap();
-            let qi_slice = qij.as_slice().unwrap();
-            fma(out_slice, pi_slice, qi_slice);
-        }
-    }
-    // Last reduction to create the coefficients
-    let mut coeffs: Array2<u64> = Array2::zeros((p_first.ctx.q.len(), p_first.ctx.degree));
-    izip!(
-        coeffs.outer_iter_mut(),
-        acc.outer_iter(),
-        p_first.ctx.q.iter()
-    )
-    .for_each(|(mut coeffsj, accj, m)| {
-        if allow_variable_time_computations {
-            izip!(coeffsj.iter_mut(), accj.iter())
-                .for_each(|(cj, accjk)| *cj = unsafe { m.reduce_u128_vt(*accjk) });
-        } else {
-            izip!(coeffsj.iter_mut(), accj.iter())
-                .for_each(|(cj, accjk)| *cj = m.reduce_u128(*accjk));
-        }
-    });
-
-    Ok(Poly {
-        ctx: p_first.ctx.clone(),
-        allow_variable_time_computations,
-        coefficients: coeffs,
-        coefficients_shoup: None,
-        has_lazy_coefficients: false,
-        _repr: std::marker::PhantomData,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use itertools::{Itertools, izip};
     use num_bigint::BigUint;
     use rand::rng;
 
-    use super::dot_product;
+    use crate::rq::dot_product;
     use crate::{
         rq::{Context, Ntt, NttShoup, Poly, PowerBasis},
         zq::Modulus,

@@ -66,6 +66,10 @@ pub enum Error {
     #[error("Polynomial dot product length mismatch: left has {left}, right has {right}.")]
     DotProductLengthMismatch { left: usize, right: usize },
 
+    /// Dot products require canonical (non-lazy) NTT coefficients.
+    #[error("Polynomial dot product does not accept lazy coefficients.")]
+    LazyDotProductOperand,
+
     /// Indicates an invalid number of polynomial coefficients.
     #[error(
         "Invalid coefficient count {actual} for {representation:?}: degree {degree}, moduli {moduli}."

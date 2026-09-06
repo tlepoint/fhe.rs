@@ -1,6 +1,6 @@
 # fhe-math: optimizations and simplifications
 
-Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–7 have since been implemented; their original rationale remains below, with measurements in the implementation results sections. References below are repository-relative source paths and symbol names.
+Reviewed the source and existing benchmarks at commit `20506cd`, including the recent correctness fixes. The initial review identified implementation opportunities without measured speedups. Items 1–8 have since been implemented; their original rationale remains below, with measurements in the implementation results sections. References below are repository-relative source paths and symbol names.
 
 Let **N** denote polynomial degree and **L** the number of RNS moduli. Start with allocations and context construction; treat arithmetic kernel changes as benchmark-driven experiments.
 
@@ -219,3 +219,64 @@ Extended the allocation benchmark with context setup, addition, and forward tran
 | Allocate and add polynomials | 1.698 µs → 1.718 µs | 1.699 µs → 1.730 µs |
 
 Setup improved clearly in these short runs. Transform changes and native addition were within noise/no-change classifications. TFHE addition initially showed about a 2% slowdown; a repeat measured 1.716 µs and Criterion classified the change within its noise threshold. These samples do not establish arithmetic speedups. Table sharing is also asserted directly by tests; retained-memory bytes were not profiled. NTT table storage across an L-modulus chain becomes O(LN), while level metadata and Arc lists still have their own costs.
+
+
+## Implementation results: item 8
+
+Added `rq::DotProductWorkspace`, with fixed-context scratch, precomputed per-modulus accumulation limits, and reusable counters. `workspace.dot_product(...)` allocates a result while reusing scratch; `workspace.dot_product_into(..., &mut out)` reuses both. The original `rq::dot_product` remains the allocation-inclusive convenience function. The BFV long-dot-product fallback now shares one workspace across ciphertext components.
+
+Validation counts and inspects each input once, followed by one arithmetic pass, without collecting iterator contents. It preserves empty/length/context error precedence and checks all timing permissions before any reduction. Cloned iterators must produce the same operands. Equivalent separately allocated contexts remain accepted. Output and workspace contexts are checked before mutation; validation errors leave the output unchanged.
+
+The accumulator is initialized to zero and guarded throughout computation. The guard zeroizes it after success or panic unwinding; workspace drop therefore releases already-cleared storage. Buffers never grow. This replaces the previous unzeroized temporary accumulator. Cleanup is not repeated through `Zeroizing<Vec<_>>`, whose element-by-element and full-capacity wiping added avoidable overhead in an intermediate implementation.
+
+Periodic reduction uses safe slice iteration and retains the original per-modulus bounds and short-product fast path. Lazy NTT inputs are now rejected with `LazyDotProductOperand`: their larger coefficient range invalidates the canonical-input accumulation bound. Convert them to canonical NTT coefficients before using dot products.
+
+Usage with an existing `Arc<Context>` and slices of NTT polynomials:
+
+```rust
+let mut workspace = fhe_math::rq::DotProductWorkspace::new(&ctx);
+let mut output = fhe_math::rq::Poly::<fhe_math::rq::Ntt>::zero(&ctx);
+workspace.dot_product_into(left.iter(), right.iter(), &mut output)?;
+// Reuse workspace and output for the next set of inputs.
+```
+
+Tests cover 15/16/17 and repeated reduction boundaries with maximum canonical residues, mixed modulus widths, changing lengths and timing policies, equivalent/foreign contexts, lazy inputs, unchanged output on errors, unchanged buffer addresses, exact iterator visit counts, and cleanup/recovery after an iterator panic. A BFV regression forces the fallback with 62-bit moduli and lengths 17 and 33.
+
+Native-backend Criterion samples on the same macOS arm64 host/toolchain, degree 2048 and three 62-bit moduli, comparing against `2090337` with the benchmark additions:
+
+| Terms | Previous fresh call | New fresh call | New workspace + output reuse |
+| --- | --- | --- | --- |
+| 4 | 22.55 µs | 23.85 µs | 21.27 µs |
+| 16 | 55.57 µs | 58.91 µs | 53.93 µs |
+| 256 | 890.60 µs | 894.94 µs | 895.29 µs |
+
+These short runs show modest short-product gains from reuse, but a roughly 6–8% regression for fresh short calls with the new cleanup guarantee. Long-product changes were within noise; no long-product speedup is claimed. Buffer identity is checked by tests, but total allocator activity was not instrumented. Benchmark filters are `allocation_paths/dot_product/` and `allocation_paths/dot_product_reuse/`; the latter has no pre-change API equivalent. Retain an absolute `CRITERION_HOME` when comparing revisions.
+
+Validation passed: default and all-feature workspace tests, release math tests with all features, nightly formatting, and all-target/all-feature Clippy with warnings denied.
+
+
+### Item 8 follow-up: BFV fast path and PIR examples
+
+The initial BFV integration only covered the long-product fallback. For the million-entry, 288-byte workloads, SealPIR uses 170-term columns with a 2^56 fallback threshold, and MulPIR uses 119-term columns with a 262,144 threshold. Neither reaches that fallback.
+
+Added `bfv::DotProductScalarWorkspace::new(&params, level)` and its `dot_product_scalar` method. It preserves the fused ciphertext/plaintext fast loop and retains its accumulator between calls; the long path lazily retains a polynomial workspace too. Scratch is cleared after each computation and on unwinding. Parameter/level validation, part-count checks, and timing-permission checks remain in place. Results have independent coefficient buffers; a changed ciphertext part count resizes the fast accumulator on the next fast-path call.
+
+The fast path now converts an `ArrayView2<u128>` directly into canonical `Poly<Ntt>` coefficients using a checked conversion in `fhe-math`. This removes the second reduction previously performed by the u64 constructor. The new conversion validates shape, accepts strided input views, and reduces arbitrary u128 values with the selected timing policy.
+
+SealPIR and MulPIR each create one BFV workspace outside the timed response loop and reuse it across database columns and response repetitions. SealPIR also reuses it for its final folded dot products. The free `bfv::dot_product_scalar` function is a convenience wrapper over the same implementation with temporary workspace.
+
+Both exact commands completed successfully and verified the requested database entry:
+
+```sh
+cargo run --example sealpir --release -- --database-size 1000000 --element-size 288
+cargo run --example mulpir --release -- --database-size 1000000 --element-size 288
+```
+
+| Server response (five-response average per invocation) | Before BFV fast-path integration | After |
+| --- | --- | --- |
+| SealPIR | 576.2 ms | 572.2 ms |
+| MulPIR | 954.0 ms | 939.9 ms |
+
+These are single sequential before/after invocations on the same host, not a statistical performance guarantee. Observed changes are modest (approximately 0.7% and 1.5%). The workspace is now used by the actual hot paths, but bulk polynomial arithmetic and database reads remain, and query expansion alone takes about 264–273 ms. This integration does not imply a large end-to-end speedup.
+
+New tests cover repeated fast/fallback transitions, 2/3-part ciphertexts, buffer identity, public/secret policy changes, invalid levels and parameters, and full-width/strided u128 conversion. Default and all-feature workspace tests, release math tests, nightly formatting, and all-target/all-feature Clippy passed.

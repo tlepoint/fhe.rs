@@ -24,7 +24,7 @@ pub use encoding::Encoding;
 #[cfg(feature = "experimental-mbfv")]
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
-pub use ops::{Multiplicator, dot_product_scalar};
+pub use ops::{DotProductScalarWorkspace, Multiplicator, dot_product_scalar};
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;
 pub use plaintext_vec::PlaintextVec;

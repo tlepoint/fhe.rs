@@ -160,6 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    ciphertexts obtained after expansion of the query, then relinearize and
     //    modulus switch to the latest modulus to optimize communication.
     // The operation is done `5` times to compute an average response time.
+    let mut dot_workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
     let response = timeit_n!("Server response", 5, {
         let start = Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
@@ -167,10 +168,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Expand: {:?}", start.elapsed());
 
         let query_vec = &expanded_query[..dim1];
-        let dot_product_mod_switch =
-            move |i, database: &[bfv::Plaintext]| -> fhe::Result<bfv::Ciphertext> {
+        let mut dot_product_mod_switch =
+            |i, database: &[bfv::Plaintext]| -> fhe::Result<bfv::Ciphertext> {
                 let column = database.iter().skip(i).step_by(dim2);
-                bfv::dot_product_scalar(query_vec.iter(), column)
+                dot_workspace.dot_product_scalar(query_vec.iter(), column)
             };
 
         let mut out = bfv::Ciphertext::zero(&params);

@@ -155,6 +155,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    the inner product of the last `dim2` ciphertexts from step 1 with the
     //    transposed of the plaintext obtained above.
     // The operation is done `5` times to compute an average response time.
+    let mut dot_workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
     let responses: Vec<Vec<u8>> = timeit_n!("Server response", 5, {
         let start = std::time::Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
@@ -162,9 +163,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Expand: {}", DisplayDuration(start.elapsed()));
 
         let query_vec = &expanded_query[..dim1];
-        let dot_product_mod_switch = move |i, database: &[bfv::Plaintext]| {
+        let mut dot_product_mod_switch = |i, database: &[bfv::Plaintext]| {
             let column = database.iter().skip(i).step_by(dim2);
-            let mut c = bfv::dot_product_scalar(query_vec.iter(), column)?;
+            let mut c = dot_workspace.dot_product_scalar(query_vec.iter(), column)?;
             c.switch_to_level(c.max_switchable_level())?;
             Ok(c)
         };
@@ -200,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect::<fhe::Result<Vec<bfv::PlaintextVec>>>()?;
         (0..fold[0].len())
             .map(|i| {
-                let mut outi = bfv::dot_product_scalar(
+                let mut outi = dot_workspace.dot_product_scalar(
                     expanded_query[dim1..].iter(),
                     fold.iter().map(|pts| &pts[i]),
                 )?;
