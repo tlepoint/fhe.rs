@@ -253,7 +253,13 @@ impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients: a,
+                // NTT kernels require contiguous rows, including when callers
+                // supply transposed or reversed owned arrays.
+                coefficients: if a.is_standard_layout() {
+                    a
+                } else {
+                    a.as_standard_layout().into_owned()
+                },
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -275,7 +281,13 @@ impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
             Ok(Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients: a,
+                // NTT kernels require contiguous rows, including when callers
+                // supply transposed or reversed owned arrays.
+                coefficients: if a.is_standard_layout() {
+                    a
+                } else {
+                    a.as_standard_layout().into_owned()
+                },
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -297,7 +309,13 @@ impl TryConvertFrom<Array2<u64>> for Poly<NttShoup> {
             let mut p = Self {
                 ctx: ctx.clone(),
                 allow_variable_time_computations: variable_time,
-                coefficients: a,
+                // NTT kernels require contiguous rows, including when callers
+                // supply transposed or reversed owned arrays.
+                coefficients: if a.is_standard_layout() {
+                    a
+                } else {
+                    a.as_standard_layout().into_owned()
+                },
                 coefficients_shoup: None,
                 has_lazy_coefficients: false,
                 _repr: std::marker::PhantomData,
@@ -540,6 +558,44 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     static MODULI: &[u64; 3] = &[1153, 4611686018326724609, 4611686018309947393];
+
+    #[test]
+    fn owned_array_layouts_preserve_values_and_ntt_safety() -> Result<(), Box<dyn Error>> {
+        use ndarray::{Array2, Axis};
+        for moduli in [&MODULI[..1], &MODULI[..2]] {
+            let ctx = Context::new_arc(moduli, 16)?;
+            let base =
+                Array2::from_shape_fn((moduli.len(), 16), |(row, col)| (row * 16 + col) as u64);
+            let mut reverse_columns = base.clone();
+            reverse_columns.invert_axis(Axis(1));
+            let mut reverse_rows = base.clone();
+            reverse_rows.invert_axis(Axis(0));
+            let transposed =
+                Array2::from_shape_fn((16, moduli.len()), |(col, row)| (row * 16 + col) as u64)
+                    .reversed_axes();
+            for array in [reverse_columns, reverse_rows, transposed] {
+                let standard = array.as_standard_layout().into_owned();
+                for public in [false, true] {
+                    let pb = Poly::<PowerBasis>::try_convert_from(array.clone(), &ctx, public)?;
+                    let expected =
+                        Poly::<PowerBasis>::try_convert_from(standard.clone(), &ctx, false)?;
+                    assert!(pb.coefficients().is_standard_layout());
+                    assert_eq!(pb.clone().into_ntt().into_power_basis(), expected);
+                    assert_eq!(pb.into_ntt_shoup().into_power_basis(), expected);
+                    let ntt = Poly::<Ntt>::try_convert_from(array.clone(), &ctx, public)?;
+                    let expected = Poly::<Ntt>::try_convert_from(standard.clone(), &ctx, false)?;
+                    assert!(ntt.coefficients().is_standard_layout());
+                    assert_eq!(ntt.into_power_basis(), expected.into_power_basis());
+                    let shoup = Poly::<NttShoup>::try_convert_from(array.clone(), &ctx, public)?;
+                    let expected =
+                        Poly::<NttShoup>::try_convert_from(standard.clone(), &ctx, false)?;
+                    assert!(shoup.coefficients().is_standard_layout());
+                    assert_eq!(shoup.into_power_basis(), expected.into_power_basis());
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn proto() -> Result<(), Box<dyn Error>> {

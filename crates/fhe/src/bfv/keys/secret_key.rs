@@ -225,7 +225,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
         let d = Zeroizing::new(c_pb.as_ref().scale(&ctx_lvl.cipher_plain_context.scaler)?);
 
         let poly = match self.par.plaintext.small() {
-            Some(plaintext_modulus) => {
+            Some(plaintext_modulus) if **plaintext_modulus < self.par.moduli[0] => {
                 let mut v = Vec::<u64>::try_from(d.as_ref())?;
                 v.iter_mut().for_each(|vi| *vi += **plaintext_modulus);
                 let mut w = v[..self.par.degree()].to_vec();
@@ -235,7 +235,9 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 plaintext_modulus.reduce_vec(&mut w);
                 Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt()
             }
-            None => {
+            Some(_) | None => {
+                // A single residue cannot recover values modulo t when t is
+                // larger than q0, even if t itself fits in a machine word.
                 let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
                     .into_iter()
                     .map(|vi| vi + self.par.plaintext_big())
@@ -281,6 +283,45 @@ mod tests {
             // Check that this is a small polynomial
             assert!((*ci).abs() <= 2 * sk.par.variance as i64)
         })
+    }
+
+    #[test]
+    fn decrypt_word_plaintext_larger_than_first_prime() -> Result<(), Box<dyn Error>> {
+        use crate::bfv::{BfvParametersBuilder, Ciphertext, PublicKey};
+        use fhe_traits::FheDecoder;
+        let t = 1u64 << 40;
+        let params = BfvParametersBuilder::new()
+            .set_degree(16)
+            .set_plaintext_modulus(t)
+            .set_moduli_sizes(&[30, 30, 30, 30])
+            .build_arc()?;
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let pk = PublicKey::new(&sk, &mut rng);
+        let mut values = vec![0u64, 1, 12345, t / 2, t - 1];
+        values.resize(params.degree(), 0);
+        // Retain enough ciphertext modulus for a meaningful noise budget.
+        for level in [0, 1] {
+            let encoding = Encoding::poly_at_level(level);
+            let pt = Plaintext::try_encode(&values, encoding.clone(), &params)?;
+            for ct in [
+                sk.try_encrypt(&pt, &mut rng)?,
+                pk.try_encrypt(&pt, &mut rng)?,
+            ] {
+                let ct: Ciphertext = ct;
+                assert_eq!(
+                    Vec::<u64>::try_decode(&sk.try_decrypt(&ct)?, encoding.clone())?,
+                    values
+                );
+                let doubled = &ct + &ct;
+                let expected = values.iter().map(|v| (v * 2) % t).collect::<Vec<_>>();
+                assert_eq!(
+                    Vec::<u64>::try_decode(&sk.try_decrypt(&doubled)?, encoding.clone())?,
+                    expected
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]

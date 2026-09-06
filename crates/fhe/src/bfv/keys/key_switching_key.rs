@@ -66,6 +66,25 @@ impl KeySwitchingKey {
         }
     }
 
+    fn decomposition_poly(
+        &self,
+        coefficients: &[u64],
+        input: &Poly<PowerBasis>,
+    ) -> Result<Poly<Ntt>> {
+        if self.permits_variable_time_with(input) {
+            Ok(Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
+                coefficients,
+                &self.ctx_ksk,
+                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+            ))
+        } else {
+            Ok(
+                Poly::<PowerBasis>::try_convert_from(coefficients, &self.ctx_ksk, false)?
+                    .into_ntt(),
+            )
+        }
+    }
+
     /// Generate a [`KeySwitchingKey`] to this [`SecretKey`] from a polynomial
     /// `from`.
     pub fn new<R: RngCore + CryptoRng>(
@@ -256,12 +275,7 @@ impl KeySwitchingKey {
         for (c2_i_coefficients, c0_i, c1_i) in
             izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
         {
-            let mut c2_i =
-                Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                    c2_i_coefficients.as_slice().unwrap(),
-                    &self.ctx_ksk,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
-                );
+            let mut c2_i = self.decomposition_poly(c2_i_coefficients.as_slice().unwrap(), p)?;
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -306,12 +320,7 @@ impl KeySwitchingKey {
         for (c2_i_coefficients, c0_i, c1_i) in
             izip!(p_coefficients.outer_iter(), self.c0.iter(), self.c1.iter())
         {
-            let mut c2_i =
-                Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                    c2_i_coefficients.as_slice().unwrap(),
-                    &self.ctx_ksk,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
-                );
+            let mut c2_i = self.decomposition_poly(c2_i_coefficients.as_slice().unwrap(), p)?;
             *c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             *c1 += &c2_i;
@@ -348,12 +357,7 @@ impl KeySwitchingKey {
         let mut c1 = Poly::<Ntt>::zero(&self.ctx_ksk);
         self.configure_accumulators(p, &mut c0, &mut c1);
         for (c2_i_coefficients, c0_i, c1_i) in izip!(c2i.iter(), self.c0.iter(), self.c1.iter()) {
-            let mut c2_i =
-                Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
-                    c2_i_coefficients.as_slice(),
-                    &self.ctx_ksk,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
-                );
+            let mut c2_i = self.decomposition_poly(c2_i_coefficients.as_slice(), p)?;
             c0 += &(&c2_i * c0_i);
             c2_i *= c1_i;
             c1 += &c2_i;
@@ -555,6 +559,60 @@ mod tests {
                     assert!(std::cmp::min(b.bits(), (rns.modulus() - b).bits()) <= 70)
                 });
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn key_switch_restricts_decomposition_timing() -> Result<(), Box<dyn Error>> {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let permission = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        for level in [0, 1] {
+            let ctx = params.context_at_level(level)?;
+            let from = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
+            let mut key = KeySwitchingKey::new(&sk, &from, level, level, &mut rng)?;
+            let private = Poly::<PowerBasis>::random(ctx, &mut rng);
+            let mut public = private.clone();
+            public.allow_variable_time_computations(permission);
+            let expected = key.key_switch(&public)?;
+            for input in [&private, &public] {
+                let coefficients = input.coefficients();
+                let row = coefficients.row(0);
+                let component = key.decomposition_poly(row.as_slice().unwrap(), input)?;
+                assert_eq!(
+                    component.allows_variable_time_computations(),
+                    input.allows_variable_time_computations()
+                );
+                let actual = key.key_switch(input)?;
+                assert_eq!(actual, expected);
+                assert_eq!(
+                    actual.0.allows_variable_time_computations(),
+                    input.allows_variable_time_computations()
+                );
+                let (mut out0, mut out1) = expected.clone();
+                key.key_switch_assign(input, &mut out0, &mut out1)?;
+                assert_eq!((out0.clone(), out1.clone()), expected);
+                assert_eq!(
+                    out0.allows_variable_time_computations(),
+                    input.allows_variable_time_computations()
+                );
+                assert_eq!(
+                    out1.allows_variable_time_computations(),
+                    input.allows_variable_time_computations()
+                );
+            }
+            key.c0[0].disallow_variable_time_computations();
+            let coefficients = public.coefficients();
+            assert!(
+                !key.decomposition_poly(coefficients.row(0).as_slice().unwrap(), &public)?
+                    .allows_variable_time_computations()
+            );
+            let actual = key.key_switch(&public)?;
+            assert_eq!(actual, expected);
+            assert!(!actual.0.allows_variable_time_computations());
+            assert!(!actual.1.allows_variable_time_computations());
         }
         Ok(())
     }

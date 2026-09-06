@@ -231,10 +231,12 @@ impl RnsScaler {
     /// Output the RNS representation of the rests scaled by numerator *
     /// denominator, and either rounded or floored.
     ///
-    /// Aborts if the number of rests is different than the number of moduli in
-    /// debug mode, or if the size is not in [1, ..., rests.len()].
+    /// Panics if the input length differs from the source modulus count, or
+    /// `size` is zero or exceeds the destination modulus count.
     #[must_use]
     pub fn scale_new(&self, rests: ArrayView1<u64>, size: usize) -> Vec<u64> {
+        assert_eq!(rests.len(), self.from.moduli_u64.len());
+        assert!(size > 0 && size <= self.to.moduli_u64.len());
         let mut out = vec![0; size];
         self.scale(rests, (&mut out).into(), 0);
         out
@@ -244,17 +246,18 @@ impl RnsScaler {
     /// denominator, and either rounded or floored, and store the result in
     /// `out`.
     ///
-    /// Aborts if the number of rests is different than the number of moduli in
-    /// debug mode, or if the size of out is not in [1, ..., rests.len()].
+    /// Panics if the input length differs from the source modulus count, or
+    /// the nonempty output range lies outside the destination moduli.
     pub fn scale(
         &self,
         rests: ArrayView1<u64>,
         mut out: ArrayViewMut1<u64>,
         starting_index: usize,
     ) {
-        debug_assert_eq!(rests.len(), self.from.moduli_u64.len());
-        debug_assert!(!out.is_empty());
-        debug_assert!(starting_index + out.len() <= self.to.moduli_u64.len());
+        assert_eq!(rests.len(), self.from.moduli_u64.len());
+        assert!(!out.is_empty());
+        assert!(starting_index <= self.to.moduli_u64.len());
+        assert!(out.len() <= self.to.moduli_u64.len() - starting_index);
 
         // First, let's compute the inner product of the rests with theta_omega.
         let mut sum_theta_garner = u256::ZERO;
@@ -269,11 +272,12 @@ impl RnsScaler {
         }
         // Let's compute v = round(sum_theta_garner / 2^theta_garner_shift)
         sum_theta_garner >>= self.theta_garner_shift - 1;
-        let v = sum_theta_garner.as_u128().div_ceil(2);
+        let v = sum_theta_garner.as_u128();
+        let v = (v >> 1) + (v & 1);
 
         // If the scaling factor is not 1, compute the inner product with the
         // theta_omega
-        let mut w_sign = false;
+        let mut w_sign = 0u64;
         let mut w = 0u128;
         if !self.scaling_factor.is_one {
             let mut sum_theta_omega = u256::ZERO;
@@ -302,15 +306,18 @@ impl RnsScaler {
             }
 
             // Let's compute w = round(sum_theta_omega / 2^(192)).
-            w_sign = (sum_theta_omega >> (63 + 128)) > u256::ZERO;
+            let sign_bits = (sum_theta_omega >> 191isize).as_u128();
+            // Branch-free nonzero test of the upper bits, preserving the
+            // existing signed rounding convention.
+            w_sign = ((sign_bits | sign_bits.wrapping_neg()) >> 127) as u64;
 
-            if w_sign {
-                w = ((!sum_theta_omega) >> 126isize).as_u128() + 1;
-                w /= 2;
-            } else {
-                w = (sum_theta_omega >> 126isize).as_u128();
-                w = w.div_ceil(2)
-            }
+            // Both rounding candidates are computed without branching on the
+            // secret-dependent sign. Wrapping handles the unused candidate.
+            let positive = (sum_theta_omega >> 126isize).as_u128();
+            let positive = (positive >> 1) + (positive & 1);
+            let negative = ((!sum_theta_omega) >> 126isize).as_u128().wrapping_add(1) >> 1;
+            let mask = 0u128.wrapping_sub(w_sign as u128);
+            w = positive ^ ((positive ^ negative) & mask);
         }
 
         unsafe {
@@ -333,7 +340,9 @@ impl RnsScaler {
 
                 if !self.scaling_factor.is_one {
                     let wi = qi.lazy_reduce_u128(w);
-                    yi += if w_sign { **qi * 2 - wi } else { wi } as u128;
+                    let mask = 0u64.wrapping_sub(w_sign);
+                    let signed_wi = wi ^ ((wi ^ (**qi * 2 - wi)) & mask);
+                    yi += signed_wi as u128;
                 }
 
                 debug_assert!(rests.len() <= omega_i.len());
@@ -362,6 +371,69 @@ mod tests {
     use num_bigint::BigUint;
     use num_traits::{ToPrimitive, Zero};
     use rand::{Rng as RngCore, rng};
+
+    #[test]
+    fn rejects_invalid_dimensions_in_all_profiles() -> Result<(), Box<dyn Error>> {
+        let ctx = Arc::new(RnsContext::new(&[17])?);
+        let scaler = RnsScaler::new(&ctx, &ctx, ScalingFactor::one());
+        for rests in [vec![], vec![1, 2]] {
+            assert!(catch_unwind(|| scaler.scale_new(rests.as_slice().into(), 1)).is_err());
+        }
+        for size in [0, 2, usize::MAX] {
+            assert!(catch_unwind(|| scaler.scale_new((&[1u64][..]).into(), size)).is_err());
+        }
+        for start in [1, 2, usize::MAX] {
+            assert!(
+                catch_unwind(|| {
+                    let mut out = [0u64];
+                    scaler.scale((&[1u64][..]).into(), (&mut out[..]).into(), start);
+                })
+                .is_err()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn signed_rounding_matches_integer_reference() -> Result<(), Box<dyn Error>> {
+        // Exhaust both signs and rounding ties, with odd and even source products.
+        for moduli in [&[17u64, 19][..], &[4u64, 17][..]] {
+            let from = Arc::new(RnsContext::new(moduli)?);
+            let to = Arc::new(RnsContext::new(&[37, 41])?);
+            let modulus = from.modulus().to_i64().unwrap();
+            for (num, den) in [(1i64, 2i64), (2, 3), (5, 7), (17, modulus)] {
+                let scaler = RnsScaler::new(
+                    &from,
+                    &to,
+                    ScalingFactor::new(&BigUint::from(num as u64), &BigUint::from(den as u64)),
+                );
+                for x in 0..modulus {
+                    let centered = if x >= (modulus + 1) / 2 {
+                        x - modulus
+                    } else {
+                        x
+                    };
+                    let product = centered * num;
+                    let rounded = if product < 0 {
+                        -((-product + (den - 1) / 2) / den)
+                    } else {
+                        (product + den / 2) / den
+                    };
+                    let rests = from.project(&BigUint::from(x as u64));
+                    let actual = scaler.scale_new(rests.as_slice().into(), 2);
+                    assert_eq!(
+                        actual,
+                        vec![rounded.rem_euclid(37) as u64, rounded.rem_euclid(41) as u64],
+                        "x={x}, factor={num}/{den}"
+                    );
+                    let mut suffix = [0u64];
+                    scaler.scale(rests.as_slice().into(), (&mut suffix[..]).into(), 1);
+                    assert_eq!(suffix[0], actual[1]);
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn constructor() -> Result<(), Box<dyn Error>> {
