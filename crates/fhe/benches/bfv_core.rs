@@ -1,7 +1,10 @@
 //! A short selection of core BFV operations on two default parameter sets.
 
 use criterion::{BatchSize, BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
-use fhe::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey};
+use fhe::bfv::{
+    BfvParameters, Ciphertext, CiphertextProductAccumulator, Encoding, Plaintext,
+    RelinearizationKey, SecretKey,
+};
 use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -65,6 +68,40 @@ fn core_bfv(c: &mut Criterion) {
             par.degree(),
             par.moduli_sizes().iter().sum::<usize>()
         );
+        let separate_sum = || {
+            let mut sum = Ciphertext::zero(&par);
+            for _ in 0..8 {
+                sum += &(black_box(&ct) * black_box(&other));
+            }
+            sum
+        };
+        let fused_sum = || {
+            let mut accumulator = CiphertextProductAccumulator::new(&par, 0).unwrap();
+            for _ in 0..8 {
+                accumulator
+                    .add_product(black_box(&ct), black_box(&other))
+                    .unwrap();
+            }
+            accumulator.finish().unwrap()
+        };
+        for sum in [separate_sum(), fused_sum()] {
+            assert_eq!(
+                Vec::<u64>::try_decode(&sk.try_decrypt(&sum).unwrap(), Encoding::simd()).unwrap(),
+                expected
+                    .iter()
+                    .map(|x| 8 * x % par.plaintext())
+                    .collect::<Vec<_>>()
+            );
+        }
+        group.bench_function(
+            BenchmarkId::new("product_sum_8/separate", &parameter),
+            |b| {
+                b.iter(separate_sum);
+            },
+        );
+        group.bench_function(BenchmarkId::new("product_sum_8/fused", &parameter), |b| {
+            b.iter(fused_sum);
+        });
         group.bench_function(BenchmarkId::new("encrypt_sk", &parameter), |b| {
             b.iter(|| {
                 let encrypted: Ciphertext = sk.try_encrypt(black_box(&pt), &mut rng).unwrap();

@@ -59,7 +59,7 @@ pub enum Error {
     #[error("Evaluation-key error: {0}")]
     EvaluationKey(#[from] EvaluationKeyError),
 
-    /// A ciphertext/plaintext dot-product error.
+    /// A ciphertext or ciphertext/plaintext dot-product error.
     #[error("Dot-product error: {0}")]
     DotProduct(#[from] DotProductError),
 
@@ -205,6 +205,9 @@ pub enum EvaluationKeyComponent {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum DotProductError {
+    #[error("Extended multiplication basis permits at most {maximum} accumulated products")]
+    TooManyProducts { maximum: usize },
+
     #[error("Dot product requires at least one operand")]
     EmptyInput,
 

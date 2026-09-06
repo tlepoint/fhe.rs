@@ -598,3 +598,105 @@ results support a moderate improvement in multiplication-heavy BFV work, not
 a blanket 17–29% BFV speedup inferred from the isolated scaler benchmarks.
 All four runs passed the fixture assertions. The focused benchmark also passed
 Clippy with warnings denied and nightly formatting checks.
+
+## Accumulate ciphertext products before BFV scaling
+
+The sparse RNS optimization and focused core benchmarks were committed as
+`49721e9`. The next change adds `bfv::CiphertextProductAccumulator` and uses it
+for MulPIR's final ciphertext dot product. It streams two-part ciphertext pairs
+into three polynomials in the existing extended multiplication basis, then
+applies the BFV factor t/Q once at the end. Relinearization still happens once.
+
+For the 174-by-81 database layout, this replaces 243 polynomial downscalings
+with three. With the five-modulus multiplication basis and two-modulus output,
+that also eliminates 1,680 degree-8192 NTTs. Operand basis extensions and the
+pointwise products remain necessary. No database columns are retained beyond
+their current iteration, and the new accumulator's scratch is zeroized on drop.
+
+### Arithmetic and API constraints
+
+Let Q be the input modulus, M the extended multiplication modulus, N the ring
+degree, and k the number of accumulated pairs. Use the conservative bound Q
+on the magnitude of each lifted input coefficient, allowing for either centered
+representative at a boundary. A negacyclic convolution has N terms per
+coefficient, and the middle ciphertext component combines two convolutions.
+Every accumulated coefficient therefore has magnitude at most 2*k*N*Q^2.
+Requiring `4*k*N*Q^2 < M` prevents centered wraparound in the extended basis.
+The API computes `floor((M - 1)/(4*N*Q^2))`, capped at `usize::MAX`, and rejects
+additional pairs before modifying the sum. The bound depends only on public
+parameters. MulPIR's 81 pairs fit comfortably in its 291-bit extended modulus.
+
+The API requires two polynomial parts per input and validates parameter and
+level agreement. It returns three parts at the original level. Empty
+accumulators and malformed inputs produce errors. Variable-time permission is
+propagated from every input part and remains disabled once a secret part enters
+the sum. Accumulation has no coefficient-dependent shortcut.
+
+One rounding after summation is a different operation from summing individually
+rounded products. Ciphertext coefficients and rounding noise can differ, while
+the intended plaintext sum is preserved when its BFV noise budget suffices.
+Ordinary ciphertext multiplication is unchanged. This API also retains the
+existing fixed-point scaler precision limitation described above; it does not
+claim exact rounding for arbitrary large-modulus boundary inputs.
+
+This optimization does not directly apply to SealPIR. Its response path folds
+intermediate ciphertexts into plaintexts, then uses ciphertext/plaintext dot
+products for the second stage as well as the first. Both stages already use
+the scalar dot-product accumulator before reduction and modulus switching;
+there is no ciphertext/ciphertext product sum to downscale. Optimizations to
+query expansion/key switching or the shared scalar dot-product kernel would
+benefit both PIR examples.
+
+### Measurements
+
+Four alternating before/after pairs compared separate release executables from
+`49721e9` and this change, using the same compiler, default NTT backend, layout,
+and RNS implementation. Every invocation requested 1,000,000 entries of 288
+bytes and averaged five server responses. No builds or tests ran concurrently.
+The reported numbers below are medians across the four invocations per version.
+
+| Measurement | Separate products | Accumulated products | Time reduction |
+| --- | --- | --- | --- |
+| MulPIR server response | 819.20 ms | 689.95 ms | 15.8% |
+| Whole process | 6.410 s | 5.841 s | 8.9% |
+
+Server-response averages were 818.3, 818.3, 826.5, and 820.1 ms before, and
+695.0, 680.5, 684.9, and 713.7 ms after. All eight retrievals passed the byte
+comparison. Measured response noise was 21–22 bits in both versions. These are
+independent random queries; the noise readings are a sanity check, not a claim
+that the two rounding schedules produce identical noise.
+
+The focused BFV harness now includes separate and accumulated sums of eight
+products. Run only these four cases with:
+
+```sh
+cargo bench -p fhe --bench bfv_core -- product_sum_8 --noplot
+```
+
+Both paths use the same fixed encrypted inputs and check decrypted sums before
+timing. These measurements include accumulator construction, result allocation,
+final scaling, and scratch destruction; neither path includes relinearization.
+One Criterion invocation collected 30 flat samples per case, with 100 ms warmup
+and a 600 ms target extended as needed to collect all samples.
+
+| Parameters | Separate products | Accumulated products | Time reduction |
+| --- | --- | --- | --- |
+| N=4096, log2(Q) approximately 109 | 16.725 ms | 9.583 ms | 42.7% |
+| N=8192, log2(Q) approximately 218 | 61.008 ms | 33.893 ms | 44.4% |
+
+A separate instrumented MulPIR run located the remaining costs. Median stage
+times over its five responses were query expansion 272.8 ms, database column
+dot products 227.0 ms, extended ciphertext products 150.9 ms, and final scaling,
+relinearization, modulus switching, and serialization 2.4 ms. The first column
+pass was slower (374.8 ms), so these medians describe the warmed stages and do
+not sum to the invocation's 687.7 ms average. Query expansion and the database
+dot products are now the largest opportunities; further downscaler work would
+affect only the small final stage of this particular path.
+
+Validation passed `cargo test`, `cargo +nightly fmt --all`, and
+`cargo clippy --all-targets -- -D warnings`, plus the new accumulator tests in
+release mode with both default and all features. Five new tests cover exact
+BigInt negacyclic convolution and rounding at small moduli, decryption of sums
+of 1/2/17/81 products across multiple levels and after relinearization, malformed
+inputs and unchanged state after errors, the strict coefficient bound, and
+timing permission across all input parts and operand orderings.

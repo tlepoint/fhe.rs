@@ -174,10 +174,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 dot_workspace.dot_product_scalar(query_vec.iter(), column)
             };
 
-        let mut out = bfv::Ciphertext::zero(&params);
+        // Sum in the extended multiplication basis, then round only once.
+        let mut products = bfv::CiphertextProductAccumulator::new(&params, 1)?;
         for (i, ci) in expanded_query[dim1..].iter().enumerate() {
-            out += &(&dot_product_mod_switch(i, &preprocessed_database)? * ci)
+            products.add_product(&dot_product_mod_switch(i, &preprocessed_database)?, ci)?;
         }
+        let mut out = products.finish()?;
         rk.relinearizes(&mut out)?;
         out.switch_to_level(out.max_switchable_level())?;
         out.to_bytes()

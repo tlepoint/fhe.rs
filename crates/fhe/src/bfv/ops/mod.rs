@@ -6,6 +6,9 @@ pub use dot_product::{DotProductScalarWorkspace, dot_product_scalar};
 mod mul;
 pub use mul::Multiplicator;
 
+mod product_accumulator;
+pub use product_accumulator::CiphertextProductAccumulator;
+
 use super::{Ciphertext, Plaintext};
 use crate::{Error, Result};
 use fhe_math::rq::{Ntt, Poly};
