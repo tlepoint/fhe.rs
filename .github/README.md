@@ -10,9 +10,15 @@ in repository settings.
   tests), with default and all features. Rust 1.91.1 also checks every target in
   both feature configurations. Keep the MSRV aligned with `Cargo.toml` and the
   root README.
-- `lint-fmt.yml`: nightly rustfmt, stable Clippy for every target with default and
+- `lint-fmt.yml`: pinned nightly rustfmt, stable Clippy for every target with default and
   all features, and actionlint to validate the workflows themselves. Nightly is
   required for the `wrap_comments` option in `rustfmt.toml`.
+  CI uses `nightly-2026-08-15` to avoid formatting drift as nightly changes. Use
+  that dated toolchain locally for matching results, and review formatting when
+  updating the date. actionlint uses a prebuilt release binary whose SHA256 is
+  verified before extraction; Go is not needed. Update its versioned download
+  URL and checksum together in `lint-fmt.yml`. Dependabot does not update this
+  inline binary download.
 - `security.yml`: cargo-audit scans the committed `Cargo.lock`, including a weekly
   scheduled run to detect new advisories without a code change. Findings fail the
   job directly; the workflow needs no secrets or permission to create issues.
@@ -30,11 +36,16 @@ groups action updates into one pull request. Keep version comments alongside the
 hashes. The Rust toolchain action must use a commit from its `master` history with
 an explicit `toolchain` input, as required by its upstream documentation.
 
-To validate workflow edits locally, install actionlint and run `actionlint` from
-the repository root. To reproduce Rust checks (with `protoc` installed):
+To validate workflow edits locally, download the binary for your platform from
+the [actionlint v1.7.12 release](https://github.com/rhysd/actionlint/releases/tag/v1.7.12),
+verify it against the release's checksums, and put it on `PATH`. Run `actionlint`
+from the repository root. CI uses the Linux x86_64 archive for `ubuntu-latest`.
+Install the formatter with
+`rustup toolchain install nightly-2026-08-15 --profile minimal --component rustfmt`.
+To reproduce Rust checks (with `protoc` installed):
 
 ```sh
-cargo +nightly fmt --all -- --check
+cargo +nightly-2026-08-15 fmt --all -- --check
 cargo +stable check --workspace --all-targets --locked
 cargo +stable check --workspace --all-targets --locked --all-features
 cargo +stable test --workspace --locked

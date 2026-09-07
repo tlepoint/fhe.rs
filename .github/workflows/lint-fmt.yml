@@ -31,11 +31,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
-          # rustfmt.toml uses unstable options, as documented in AGENTS.md.
-          toolchain: nightly
+          # Pin comment-wrapping behavior; update alongside a formatting review.
+          toolchain: nightly-2026-08-15
           components: rustfmt
       - name: Check formatting
-        run: cargo +nightly fmt --all -- --check
+        run: cargo +nightly-2026-08-15 fmt --all -- --check
 
   clippy:
     name: Clippy (${{ matrix.features }})
@@ -76,9 +76,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install CI tools
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
-        with:
-          tool: actionlint
+      - name: Install actionlint
+        working-directory: ${{ runner.temp }}
+        # Linux x86_64 release for ubuntu-latest. Update URL and SHA256 together.
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            --output actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz' | sha256sum -c -
+          mkdir -p actionlint-bin
+          tar -xzf actionlint.tar.gz -C actionlint-bin actionlint
+          echo "$PWD/actionlint-bin" >> "$GITHUB_PATH"
       - name: Validate GitHub Actions workflows
         run: actionlint -color
