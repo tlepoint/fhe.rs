@@ -1,4 +1,3 @@
-use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
 use rand::{CryptoRng, Rng as RngCore};
@@ -65,7 +64,7 @@ impl PublicKeySwitchShare {
         let ctx = par.context_at_level(ct.level)?;
 
         let mut s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         s.disallow_variable_time_computations();
 

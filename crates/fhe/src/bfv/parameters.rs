@@ -707,10 +707,10 @@ impl ParameterConfiguration {
 
             // Use RnsContext to lift the delta values and create the scaling polynomial
             let rns = RnsContext::new(level_moduli)?;
-            let delta = Poly::<PowerBasis>::try_convert_from_public(
+            let delta = Poly::<PowerBasis>::from_biguint_coefficients_with_timing(
                 &[rns.lift((&delta_rests).into())],
                 &cipher_ctx,
-                crate::VariableTime::new(crate::PublicData::assert_public()),
+                Some(crate::VariableTime::new(crate::PublicData::assert_public())),
             )?
             .into_ntt_shoup();
 

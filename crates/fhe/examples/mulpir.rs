@@ -98,12 +98,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let sk = bfv::SecretKey::generate(&params, &mut rng);
         let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("level = {level}");
-        let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk)
+        let ek_expansion = bfv::evaluation::EvaluationKeyBuilder::new(&sk)
             .ciphertext_level(1)
             .key_level(0)
             .enable_expansion(level)
             .build(&mut rng)?;
-        let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1, &mut rng)?;
+        let rk = bfv::evaluation::RelinearizationKey::new_leveled(&sk, 1, 1, &mut rng)?;
         let ek_expansion_serialized = ek_expansion.to_bytes();
         let rk_serialized = rk.to_bytes();
         (sk, ek_expansion_serialized, rk_serialized)
@@ -121,8 +121,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // deserializes them.
     let (ek_expansion, rk) = timeit!("Server setup", {
         (
-            bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?,
-            bfv::RelinearizationKey::from_bytes(&rk_serialized, &params)?,
+            bfv::evaluation::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?,
+            bfv::evaluation::RelinearizationKey::from_bytes(&rk_serialized, &params)?,
         )
     });
 
@@ -167,7 +167,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    ciphertexts obtained after expansion of the query, then relinearize and
     //    modulus switch to the latest modulus to optimize communication.
     // The operation is done `5` times to compute an average response time.
-    let mut dot_workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
+    let mut dot_workspace = bfv::evaluation::DotProductScalarWorkspace::new(&params, 1)?;
     let response = timeit_n!("Server response", 5, {
         let start = Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
@@ -181,7 +181,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
         // Sum in the extended multiplication basis, then round only once.
-        let mut products = bfv::CiphertextProductAccumulator::new(&params, 1)?;
+        let mut products = bfv::evaluation::CiphertextProductAccumulator::new(&params, 1)?;
         for (i, ci) in expanded_query[dim1..].iter().enumerate() {
             products.add_product(&dot_product_mod_switch(i, &preprocessed_database)?, ci)?;
         }
@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let pt = sk.decrypt(&response)?;
         let pt = pt.decode(bfv::Encoding::Polynomial)?;
-        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
+        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize).unwrap();
         let offset = index
             % number_elements_per_plaintext(
                 params.degree(),

@@ -1,10 +1,12 @@
 //! Operations over ciphertexts
 
 mod dot_product;
-pub use dot_product::{DotProductScalarWorkspace, dot_product_scalar};
+pub use dot_product::{DotProductScalarWorkspace, dot_product_scalar, dot_product_scalar_iter};
 
 mod mul;
-pub use mul::{MultiplicationPlan, PreparedMultiplicand};
+pub use mul::{
+    MultiplicationPlan, MultiplicationPlanBuilder, MultiplicationScaling, PreparedMultiplicand,
+};
 
 mod tensor;
 

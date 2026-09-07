@@ -1,7 +1,9 @@
 //! Repeated-operand multiplication, including the cost of preparing it.
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
-use fhe::bfv::{Ciphertext, Encoding, MultiplicationPlan, Parameters, Plaintext, SecretKey};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::MultiplicationPlan,
+};
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -27,7 +29,7 @@ fn multiplication(c: &mut Criterion) {
         let rhs_batch: Vec<Ciphertext> =
             (0..8).map(|_| sk.encrypt(&pt, &mut rng).unwrap()).collect();
         let ct_copy = ct.clone();
-        let strategy = MultiplicationPlan::without_relinearization(&par, 0).unwrap();
+        let strategy = MultiplicationPlan::builder(&par).level(0).build().unwrap();
         let prepared = strategy.prepare_lhs(&ct).unwrap();
         let product = strategy.multiply(&ct, &rhs).unwrap();
         assert_eq!(prepared.multiply(&rhs).unwrap(), product);

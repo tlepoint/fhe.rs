@@ -3,9 +3,10 @@
 #![expect(clippy::indexing_slicing, reason = "tests use known nonempty fixtures")]
 
 use fhe::bfv::{
-    Ciphertext, CiphertextProductAccumulator, Encoding, EvaluationKey, MultiplicationPlan,
-    PackedPlaintext, PackedPlaintextVec, Parameters, Plaintext, PlaintextVec, PublicKey,
-    RelinearizationKey, RgswCiphertext, SecretKey,
+    Ciphertext, Encoding, Parameters, Plaintext, PublicKey, SecretKey,
+    evaluation::CiphertextProductAccumulator, evaluation::EvaluationKey,
+    evaluation::MultiplicationPlan, evaluation::RelinearizationKey, evaluation::RgswCiphertext,
+    packing::PackedPlaintext, packing::PackedPlaintextBatch,
 };
 use fhe::{CiphertextError, Error, ParametersError, PublicData, VariableTime};
 
@@ -76,7 +77,7 @@ fn independent_and_imported_parameter_handles_are_compatible() -> fhe::Result<()
             [4, 9]
         );
         assert_eq!(ct.multiply_plaintext(&pt)?, other.multiply_plaintext(&pt)?);
-        let mut packed = PackedPlaintextVec::with_capacity(&original, 0, 1)?;
+        let mut packed = PackedPlaintextBatch::with_capacity(&original, 0, 1)?;
         packed.push(&pt)?;
         assert_eq!(PackedPlaintext::from(&pt).unpack(), pt);
         let mut accumulator = CiphertextProductAccumulator::new(&original, 0)?;
@@ -211,7 +212,7 @@ fn encoding_reduces_inputs_and_chunks_without_storing_metadata() -> fhe::Result<
         );
         assert!(Plaintext::encode(&par, &vec![0; par.degree() + 1], encoding).is_err());
         let values = vec![t + 3; par.degree() + 1];
-        let chunks = PlaintextVec::encode_at_level(&par, &values, encoding, 1)?;
+        let chunks = Plaintext::encode_chunks_at_level(&par, &values, encoding, 1)?;
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].decode(encoding)?, vec![3; par.degree()]);
         assert_eq!(chunks[1].decode(encoding)?[0], 3);

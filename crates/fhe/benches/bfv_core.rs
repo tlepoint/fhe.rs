@@ -2,8 +2,8 @@
 
 use criterion::{BatchSize, BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
 use fhe::bfv::{
-    Ciphertext, CiphertextProductAccumulator, Encoding, Parameters, Plaintext, RelinearizationKey,
-    SecretKey,
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey,
+    evaluation::CiphertextProductAccumulator, evaluation::RelinearizationKey,
 };
 
 use rand::SeedableRng;

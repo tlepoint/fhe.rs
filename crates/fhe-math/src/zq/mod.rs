@@ -783,7 +783,7 @@ impl Modulus {
 
     pub(crate) fn serialize_into(&self, a: &[u64], out: &mut Vec<u8>) {
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-        transcode_to_bytes_into(a, p_nbits, out);
+        transcode_to_bytes_into(a, p_nbits, out).unwrap();
     }
 
     /// Length of the serialization of a vector of size `size`.
@@ -796,18 +796,23 @@ impl Modulus {
         p_nbits * size / 8
     }
 
-    /// Serialize a vector of elements of length a multiple of 8.
-    ///
-    /// Panics if the length of the vector is not a multiple of 8.
-    #[must_use]
-    pub fn serialize_vec(&self, a: &[u64]) -> Vec<u8> {
+    /// Pack words at this modulus' bit width, rejecting truncation and padding
+    /// the final byte with zeros. This does not validate that every word is <
+    /// p.
+    pub fn serialize_vec(
+        &self,
+        a: &[u64],
+    ) -> std::result::Result<Vec<u8>, fhe_util::TranscodeError> {
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
         transcode_to_bytes(a, p_nbits)
     }
 
-    /// Deserialize a vector of bytes into a vector of elements mod p.
-    #[must_use]
-    pub fn deserialize_vec(&self, b: &[u8]) -> Vec<u64> {
+    /// Decode every bit at this modulus' width, zero-extending a final partial
+    /// word. This does not reduce or validate residues against p.
+    pub fn deserialize_vec(
+        &self,
+        b: &[u8],
+    ) -> std::result::Result<Vec<u64>, fhe_util::TranscodeError> {
         let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
         transcode_from_bytes(b, p_nbits)
     }
@@ -1106,8 +1111,8 @@ mod tests {
         #[test]
         fn serialize(p in valid_moduli(), mut a in prop_vec(any::<u64>(), 8)) {
             p.reduce_vec(&mut a);
-            let b = p.serialize_vec(&a);
-            let c = p.deserialize_vec(&b);
+            let b = p.serialize_vec(&a).unwrap();
+            let c = p.deserialize_vec(&b).unwrap();
             prop_assert_eq!(a, c);
         }
 

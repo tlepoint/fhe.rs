@@ -7,8 +7,9 @@
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use fhe::bfv::{
-    Ciphertext, Encoding, EvaluationKeyBuilder, MultiplicationPlan, Parameters, Plaintext,
-    PublicKey, RelinearizationKey, SecretKey,
+    Ciphertext, Encoding, Parameters, Plaintext, PublicKey, SecretKey,
+    evaluation::EvaluationKeyBuilder, evaluation::MultiplicationPlan,
+    evaluation::RelinearizationKey,
 };
 use fhe_math::rns::{RnsContext, ScalingFactor};
 use fhe_math::zq::primes::generate_prime;
@@ -263,18 +264,19 @@ pub fn bfv_benchmark(c: &mut Criterion) {
             }
             let rns_q = RnsContext::new(&extended_basis[..par.moduli().len()]).unwrap();
             let rns_p = RnsContext::new(&extended_basis[par.moduli().len()..]).unwrap();
-            let mut multiplicator = MultiplicationPlan::new(
-                ScalingFactor::one(),
-                ScalingFactor::new(rns_p.modulus(), rns_q.modulus()),
-                &extended_basis,
-                ScalingFactor::new(
-                    &BigUint::from(par.plaintext_modulus_u64().unwrap()),
-                    rns_p.modulus(),
-                ),
-                &par,
-            )
-            .unwrap();
-            assert!(multiplicator.enable_relinearization(rk).is_ok());
+            let multiplicator = MultiplicationPlan::builder(&par)
+                .extended_basis(&extended_basis)
+                .scaling(fhe::bfv::evaluation::MultiplicationScaling {
+                    left: ScalingFactor::one(),
+                    right: ScalingFactor::new(rns_p.modulus(), rns_q.modulus()),
+                    product: ScalingFactor::new(
+                        &BigUint::from(par.plaintext_modulus_u64().unwrap()),
+                        rns_p.modulus(),
+                    ),
+                })
+                .relinearization(rk)
+                .build()
+                .unwrap();
             group.bench_function(
                 BenchmarkId::new(
                     "mul_and_relin_2",

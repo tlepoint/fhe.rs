@@ -1,6 +1,7 @@
 #![allow(missing_docs, clippy::indexing_slicing)]
 use fhe::bfv::{
-    Ciphertext, Encoding, Parameters, ParametersBuilder, Plaintext, RelinearizationKey, SecretKey,
+    Ciphertext, Encoding, Parameters, ParametersBuilder, Plaintext, SecretKey,
+    evaluation::RelinearizationKey,
 };
 
 use num_bigint::BigUint;

@@ -137,8 +137,9 @@ impl CiphertextProductAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{Encoding, ParametersBuilder, Plaintext, RelinearizationKey, SecretKey};
-    use fhe_math::rq::traits::TryConvertFrom;
+    use crate::bfv::{
+        Encoding, ParametersBuilder, Plaintext, SecretKey, evaluation::RelinearizationKey,
+    };
 
     use num_bigint::BigInt;
     use num_traits::{Signed, Zero};
@@ -189,7 +190,11 @@ mod tests {
                                         .iter()
                                         .map(|x| ((x + &q) % &q).to_biguint().unwrap())
                                         .collect();
-                                    Poly::<Ntt>::try_convert_from(residues.as_slice(), ctx)
+                                    Poly::<fhe_math::rq::PowerBasis>::from_biguint_coefficients(
+                                        residues.as_slice(),
+                                        ctx,
+                                    )
+                                    .map(|p| p.into_ntt())
                                 })
                                 .collect::<fhe_math::Result<Vec<_>>>()?;
                             Ciphertext::from_components(c, &par)

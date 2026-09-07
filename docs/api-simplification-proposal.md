@@ -7,10 +7,54 @@ This document proposes a breaking release; it does not implement the redesign.
 Examples under “Proposed” describe the target design; see the migration notes
 below for the implemented APIs.
 
-Implementation update: the P0 contract work is now implemented. See the
-[P0 migration notes](api-p0-migration.md) for the actual changes and current
-signatures. P1 is also implemented; see the [P1 migration notes](api-p1-migration.md).
-The analysis below records the original findings; P2 remains a proposal.
+Implementation update: the main P0, P1, and P2 refactors are implemented; this
+does **not** mean every suggestion and acceptance check below is complete.
+See the [P0](api-p0-migration.md), [P1](api-p1-migration.md), and
+[P2](api-p2-migration.md) migration notes for actual signatures. P0 and P1 were
+committed as `0eb11ce` and `ca81f68`; P2 is currently an uncommitted change.
+The analysis below records the original findings. The following coverage audit
+distinguishes implemented changes from remaining work and optional suggestions.
+
+## Implementation coverage (2026-09-07)
+
+| Proposal area | Current coverage |
+| --- | --- |
+| Sections 1–2: value contracts and invariant boundaries | Implemented: equality, valid zero/default states, checked component imports, and immutable descriptors |
+| Sections 3–6: common API, parameters, encoding, arithmetic | Implemented: inherent methods, removal of `fhe-traits`, shared parameter handles with value compatibility, explicit encodings, and checked arithmetic |
+| Section 7: construction | Parameter/evaluation-key builders and names updated; standalone `RelinearizationKey::new_leveled` still takes adjacent ciphertext/key level integers |
+| Section 8: serialization | Inherent contextual imports, private DTOs, legacy fixtures, and zeroizing secret export implemented; decoder source errors are still discarded |
+| Section 9: ownership and timing | Redacted diagnostics, borrowed secrets, timing tokens, diagnostic acknowledgment, and backend auto-trait checks implemented; optional checked NTT wrappers remain |
+| Sections 10–11: advanced, math, multiparty APIs | Module organization, immutable borrowed-key plans, slice/iterator APIs, chunk encoding, packed batches, sealed representations, named math constructors, checked transcoding, and consuming multiparty rounds implemented |
+| Acceptance checks | Default/all-feature tests, Clippy, formatting, MSRV, and rustdoc passed; the full performance/memory comparison remains |
+
+Remaining implementation and validation work:
+
+1. Replace the standalone relinearization key's adjacent level arguments with
+   named configuration, preserving the distinction between ciphertext and key
+   levels. The evaluation-key and multiplication-plan builders already do this.
+2. Preserve useful protobuf decoder causes in `SerializationError::Decode`;
+   it currently records only the object classification.
+3. Complete representative before/after multiplication, prepared-product,
+   packed-dot-product, allocation-path, and PIR measurements, including setup
+   costs and peak memory. P2 has benchmark smoke tests and small packed/unpacked
+   PIR retrieval runs, not the full performance acceptance evidence.
+
+Optional suggestions and retained limitations:
+
+- Checked slice wrappers around the raw-pointer variable-time NTT kernels were
+  not added. The raw entrypoints remain `unsafe`; the existing native safe
+  slice transforms still check length only with `debug_assert_eq!`.
+- Detailed error enums still have root exports; the suggested public `error`
+  module was not introduced.
+- The [wire policy](api-p1-migration.md#serialization-boundaries) is documented:
+  callers select the object type and parameter binding, and unknown/trailing
+  fields follow protobuf semantics. There is no new decoder allocation budget;
+  input limits remain the caller's responsibility. Enforced allocation limits
+  would require further work and tests. A portable versioned envelope is a
+  separate format change, not necessary to preserve the existing bytes.
+- No breaking release has been published. Source aliases, examples, benchmarks,
+  and the three surviving crate READMEs have been migrated; `fhe-traits` was
+  removed. The separately linked Rayon-pool proposal is not part of this work.
 
 ## Recommendation
 
@@ -436,7 +480,7 @@ assumptions; ordinary builder validation is not a security estimator.
 `from_bytes` / `try_deserialize` naming. There are two unrelated
 `TryConvertFrom` traits in
 [`bfv::traits` (now private wire helpers)](../crates/fhe/src/bfv/wire.rs) and
-[`rq::traits`](../crates/fhe-math/src/rq/traits.rs). The `fhe` crate also publicly
+[`rq::traits` (now private wire helpers)](../crates/fhe-math/src/rq/wire.rs). The `fhe` crate also publicly
 exports generated protobuf types through [`proto`](../crates/fhe/src/proto/mod.rs).
 
 **Proposed:** expose inherent `to_bytes` and `from_bytes` methods for supported
@@ -570,7 +614,7 @@ Preserve count mismatch errors, validation-before-mutation, timing propagation,
 and packed views. The choice of validation and snapshot strategy also matters
 for unsafe arithmetic kernels.
 
-[`PlaintextVec`](../crates/fhe/src/bfv/plaintext_vec.rs) primarily exists to
+[`PlaintextVec`](../crates/fhe/src/bfv/plaintext_chunks.rs) primarily exists to
 implement the encoding trait, and the single-plaintext encoder currently builds
 one then clones its first element. Replace it with an inherent `encode_chunks`
 returning `Vec<Plaintext>`, or a `PlaintextBatch` only if it owns useful shared

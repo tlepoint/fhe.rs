@@ -1,8 +1,7 @@
 //! Implementation of conversions from and to polynomials.
 
 use super::{
-    Context, Ntt, NttShoup, Poly, PowerBasis, Representation, RepresentationTag,
-    traits::TryConvertFrom,
+    Context, Ntt, NttShoup, Poly, PowerBasis, Representation, RepresentationTag, wire::FromProto,
 };
 use crate::{
     Error, PolynomialSerializationError, Result,
@@ -12,7 +11,7 @@ use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView, Axis};
 use num_bigint::BigUint;
 use std::sync::Arc;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 #[expect(
     clippy::fallible_impl_from,
@@ -118,7 +117,9 @@ fn parse_proto(
         .iter()
         .flat_map(|qi| {
             let size = qi.serialization_length(degree);
-            let v = qi.deserialize_vec(&value.coefficients[index..index + size]);
+            let v = qi
+                .deserialize_vec(&value.coefficients[index..index + size])
+                .unwrap();
             index += size;
             v
         })
@@ -145,8 +146,8 @@ fn parse_proto(
     Ok((representation_from_proto, polynomial))
 }
 
-impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
+impl FromProto<&Rq> for Poly<PowerBasis> {
+    fn from_proto_with_timing(
         value: &Rq,
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
@@ -164,8 +165,8 @@ impl TryConvertFrom<&Rq> for Poly<PowerBasis> {
     }
 }
 
-impl TryConvertFrom<&Rq> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
+impl FromProto<&Rq> for Poly<Ntt> {
+    fn from_proto_with_timing(
         value: &Rq,
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
@@ -183,8 +184,8 @@ impl TryConvertFrom<&Rq> for Poly<Ntt> {
     }
 }
 
-impl TryConvertFrom<&Rq> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
+impl FromProto<&Rq> for Poly<NttShoup> {
+    fn from_proto_with_timing(
         value: &Rq,
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
@@ -275,11 +276,54 @@ fn from_rns_vec<R: RepresentationTag>(
     from_rns_array(coefficients, ctx, variable_time)
 }
 
-// Reduce a wide accumulator directly into canonical NTT storage, without a
-// second u64 reduction pass. This is also safe for arbitrary public API inputs.
-impl<'a> TryConvertFrom<ndarray::ArrayView2<'a, u128>> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        a: ndarray::ArrayView2<'a, u128>,
+impl<R: RepresentationTag> Poly<R> {
+    /// Import raw RNS residues in representation `R`; no transform is
+    /// performed. Shape must be `(number of moduli, degree)`. Rows are
+    /// reduced modulo their respective primes and copied into standard
+    /// layout if necessary.
+    pub fn from_rns_residues(values: Array2<u64>, ctx: &Arc<Context>) -> Result<Self> {
+        Self::from_rns_residues_with_timing(values, ctx, None)
+    }
+
+    /// Import raw RNS residues with optional permission for variable-time work.
+    /// Supplying a token asserts the residues are public.
+    pub fn from_rns_residues_with_timing(
+        values: Array2<u64>,
+        ctx: &Arc<Context>,
+        permission: Option<fhe_util::VariableTime>,
+    ) -> Result<Self> {
+        from_rns_array(values, ctx, permission.is_some())
+    }
+
+    /// Import a contiguous, modulus-major sequence of raw RNS residues in `R`.
+    /// Length must be exactly `number of moduli * degree`; no transform occurs.
+    pub fn from_rns_slice(values: &[u64], ctx: &Arc<Context>) -> Result<Self> {
+        Self::from_rns_slice_with_timing(values, ctx, None)
+    }
+
+    /// Import a raw residue slice with optional public-data timing permission.
+    pub fn from_rns_slice_with_timing(
+        values: &[u64],
+        ctx: &Arc<Context>,
+        permission: Option<fhe_util::VariableTime>,
+    ) -> Result<Self> {
+        from_rns_vec(values.to_vec(), ctx, permission.is_some())
+    }
+}
+
+impl Poly<Ntt> {
+    /// Reduce wide NTT accumulators into canonical residues. Accepts strided
+    /// views with shape `(number of moduli, degree)`. No NTT is performed.
+    pub fn from_wide_ntt_residues(
+        a: ndarray::ArrayView2<'_, u128>,
+        ctx: &Arc<Context>,
+    ) -> Result<Self> {
+        Self::from_wide_ntt_residues_with_timing(a, ctx, None)
+    }
+
+    /// Reduce wide NTT residues with optional public-data timing permission.
+    pub fn from_wide_ntt_residues_with_timing(
+        a: ndarray::ArrayView2<'_, u128>,
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
     ) -> Result<Self> {
@@ -314,138 +358,48 @@ impl<'a> TryConvertFrom<ndarray::ArrayView2<'a, u128>> for Poly<Ntt> {
     }
 }
 
-impl TryConvertFrom<Vec<u64>> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        mut v: Vec<u64>,
+impl Poly<PowerBasis> {
+    /// Encode integer coefficients in power basis, reducing each coefficient
+    /// modulo every RNS prime and padding to the degree. Rejects longer input;
+    /// its length never changes the interpretation to raw residues.
+    pub fn from_coefficients(v: &[u64], ctx: &Arc<Context>) -> Result<Self> {
+        Self::from_coefficients_with_timing(v, ctx, None)
+    }
+
+    /// Encode coefficients with optional public-data timing permission.
+    pub fn from_coefficients_with_timing(
+        v: &[u64],
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
     ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        if v.len() == ctx.q.len() * ctx.degree {
-            from_rns_vec(v, ctx, variable_time)
-        } else if v.len() <= ctx.degree {
-            let mut out = Self::zero(ctx);
-            if variable_time {
-                unsafe {
-                    izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(
-                        |(mut w, qi)| {
-                            let wi = w.as_slice_mut().unwrap();
-                            wi[..v.len()].copy_from_slice(&v);
-                            qi.reduce_vec_vt(wi);
-                        },
-                    );
-                    out.allow_variable_time_computations(fhe_util::VariableTime::new(
-                        fhe_util::PublicData::assert_public(),
-                    ));
-                }
-            } else {
-                izip!(out.coefficients.outer_iter_mut(), ctx.q.iter()).for_each(|(mut w, qi)| {
-                    let wi = w.as_slice_mut().unwrap();
-                    wi[..v.len()].copy_from_slice(&v);
-                    qi.reduce_vec(wi);
-                });
-                v.zeroize();
-            }
-            Ok(out)
-        } else {
-            Err(Error::InvalidCoefficientCount {
-                representation: Representation::PowerBasis,
+        if v.len() > ctx.degree {
+            return Err(Error::TooManyCoefficients {
                 actual: v.len(),
-                degree: ctx.degree,
-                moduli: ctx.q.len(),
-            })
+                maximum: ctx.degree,
+            });
         }
+        let mut out = Self::zero(ctx);
+        out.allow_variable_time_computations = permission.is_some();
+        for (mut row, modulus) in out.coefficients.outer_iter_mut().zip(ctx.q.iter()) {
+            let row = row.as_slice_mut().unwrap();
+            row[..v.len()].copy_from_slice(v);
+            if permission.is_some() {
+                unsafe { modulus.reduce_vec_vt(row) };
+            } else {
+                modulus.reduce_vec(row);
+            }
+        }
+        Ok(out)
     }
-}
 
-impl TryConvertFrom<Vec<u64>> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: Vec<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        from_rns_vec(v, ctx, variable_time)
+    /// Encode signed integer coefficients, reducing and zero-padding to degree.
+    pub fn from_signed_coefficients(v: &[i64], ctx: &Arc<Context>) -> Result<Self> {
+        Self::from_signed_coefficients_with_timing(v, ctx, None)
     }
-}
 
-impl TryConvertFrom<Vec<u64>> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: Vec<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        from_rns_vec(v, ctx, variable_time)
-    }
-}
-
-impl TryConvertFrom<Array2<u64>> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        a: Array2<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        from_rns_array(a, ctx, variable_time)
-    }
-}
-
-impl TryConvertFrom<Array2<u64>> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        a: Array2<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        from_rns_array(a, ctx, variable_time)
-    }
-}
-
-impl TryConvertFrom<Array2<u64>> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        a: Array2<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let variable_time = permission.is_some();
-        from_rns_array(a, ctx, variable_time)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [u64]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::<PowerBasis>::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [u64]> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::<Ntt>::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [u64]> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::<NttShoup>::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [i64]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [i64],
+    /// Encode signed coefficients with optional public-data timing permission.
+    pub fn from_signed_coefficients_with_timing(
+        v: &[i64],
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
     ) -> Result<Self> {
@@ -473,21 +427,17 @@ impl<'a> TryConvertFrom<&'a [i64]> for Poly<PowerBasis> {
             })
         }
     }
-}
 
-impl<'a> TryConvertFrom<&'a Vec<i64>> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a Vec<i64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref() as &[i64], ctx, permission)
+    /// Encode arbitrary unsigned integer coefficients, reducing and padding to
+    /// degree. Big-integer operations do not provide constant-time guarantees.
+    pub fn from_biguint_coefficients(v: &[BigUint], ctx: &Arc<Context>) -> Result<Self> {
+        Self::from_biguint_coefficients_with_timing(v, ctx, None)
     }
-}
 
-impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint],
+    /// Encode big-integer coefficients with optional public-data timing
+    /// permission.
+    pub fn from_biguint_coefficients_with_timing(
+        v: &[BigUint],
         ctx: &Arc<Context>,
         permission: Option<fhe_util::VariableTime>,
     ) -> Result<Self> {
@@ -513,128 +463,6 @@ impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<PowerBasis> {
                 _repr: std::marker::PhantomData,
             })
         }
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let p = Poly::<PowerBasis>::try_convert_from_with_timing(v, ctx, permission)?;
-        Ok(p.into_ntt())
-    }
-}
-
-impl<'a> TryConvertFrom<&'a [BigUint]> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        let p = Poly::<PowerBasis>::try_convert_from_with_timing(v, ctx, permission)?;
-        Ok(p.into_ntt_shoup())
-    }
-}
-
-impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a Vec<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: &'a Vec<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a> TryConvertFrom<&'a Vec<u64>> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: &'a Vec<u64>,
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.to_vec(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [u64; N]> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: &'a [u64; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<Ntt> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [BigUint; N]> for Poly<NttShoup> {
-    fn try_convert_from_with_timing(
-        v: &'a [BigUint; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
-    }
-}
-
-impl<'a, const N: usize> TryConvertFrom<&'a [i64; N]> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        v: &'a [i64; N],
-        ctx: &Arc<Context>,
-        permission: Option<fhe_util::VariableTime>,
-    ) -> Result<Self> {
-        Poly::try_convert_from_with_timing(v.as_ref(), ctx, permission)
     }
 }
 
@@ -700,7 +528,7 @@ mod tests {
     use crate::{
         Error as CrateError, PolynomialSerializationError,
         proto::rq::Rq,
-        rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom},
+        rq::{Context, Ntt, NttShoup, Poly, PowerBasis, wire::FromProto},
     };
     use num_bigint::BigUint;
     use rand::rng;
@@ -719,7 +547,7 @@ mod tests {
         });
         for view in [a.view(), a.slice(ndarray::s![.., ..;-1])] {
             for public in [false, true] {
-                let p = Poly::<Ntt>::try_convert_from_with_timing(
+                let p = Poly::<Ntt>::from_wide_ntt_residues_with_timing(
                     view,
                     &ctx,
                     (public).then(|| {
@@ -742,7 +570,7 @@ mod tests {
         }
         let wrong = ndarray::Array2::<u128>::zeros((1, 32));
         assert!(matches!(
-            Poly::<Ntt>::try_convert_from(wrong.view(), &ctx),
+            Poly::<Ntt>::from_wide_ntt_residues(wrong.view(), &ctx),
             Err(crate::Error::InvalidCoefficientShape { .. })
         ));
         Ok(())
@@ -755,7 +583,7 @@ mod tests {
             ($repr:ty) => {
                 for shape in [(1, 32), (2, 15), (3, 16)] {
                     let error =
-                        Poly::<$repr>::try_convert_from(ndarray::Array2::zeros(shape), &ctx)
+                        Poly::<$repr>::from_rns_residues(ndarray::Array2::zeros(shape), &ctx)
                             .unwrap_err();
                     assert!(matches!(
                         error,
@@ -763,7 +591,7 @@ mod tests {
                     ));
                 }
                 for length in [17, 31, 33] {
-                    let error = Poly::<$repr>::try_convert_from(vec![0; length], &ctx).unwrap_err();
+                    let error = Poly::<$repr>::from_rns_slice(&vec![0; length], &ctx).unwrap_err();
                     assert!(matches!(
                         error,
                         crate::Error::InvalidCoefficientCount { .. }
@@ -775,7 +603,7 @@ mod tests {
         check!(Ntt);
         check!(NttShoup);
         // Power-basis short inputs still denote a polynomial, not flattened RNS rows.
-        let short = Poly::<PowerBasis>::try_convert_from(vec![2018], &ctx)?;
+        let short = Poly::<PowerBasis>::from_coefficients(&[2018], &ctx)?;
         assert_eq!(
             Vec::<BigUint>::from(&short).first(),
             Some(&BigUint::from(2018u64))
@@ -800,35 +628,35 @@ mod tests {
             for array in [reverse_columns, reverse_rows, transposed] {
                 let standard = array.as_standard_layout().into_owned();
                 for public in [false, true] {
-                    let pb = Poly::<PowerBasis>::try_convert_from_with_timing(
+                    let pb = Poly::<PowerBasis>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| {
                             fhe_util::VariableTime::new(fhe_util::PublicData::assert_public())
                         }),
                     )?;
-                    let expected = Poly::<PowerBasis>::try_convert_from(standard.clone(), &ctx)?;
+                    let expected = Poly::<PowerBasis>::from_rns_residues(standard.clone(), &ctx)?;
                     assert!(pb.coefficients().is_standard_layout());
                     assert_eq!(pb.clone().into_ntt().into_power_basis(), expected);
                     assert_eq!(pb.into_ntt_shoup().into_power_basis(), expected);
-                    let ntt = Poly::<Ntt>::try_convert_from_with_timing(
+                    let ntt = Poly::<Ntt>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| {
                             fhe_util::VariableTime::new(fhe_util::PublicData::assert_public())
                         }),
                     )?;
-                    let expected = Poly::<Ntt>::try_convert_from(standard.clone(), &ctx)?;
+                    let expected = Poly::<Ntt>::from_rns_residues(standard.clone(), &ctx)?;
                     assert!(ntt.coefficients().is_standard_layout());
                     assert_eq!(ntt.into_power_basis(), expected.into_power_basis());
-                    let shoup = Poly::<NttShoup>::try_convert_from_with_timing(
+                    let shoup = Poly::<NttShoup>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| {
                             fhe_util::VariableTime::new(fhe_util::PublicData::assert_public())
                         }),
                     )?;
-                    let expected = Poly::<NttShoup>::try_convert_from(standard.clone(), &ctx)?;
+                    let expected = Poly::<NttShoup>::from_rns_residues(standard.clone(), &ctx)?;
                     assert!(shoup.coefficients().is_standard_layout());
                     assert_eq!(shoup.into_power_basis(), expected.into_power_basis());
                 }
@@ -844,9 +672,9 @@ mod tests {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
             let proto = Rq::from(&p);
-            assert_eq!(Poly::<PowerBasis>::try_convert_from(&proto, &ctx)?, p);
+            assert_eq!(Poly::<PowerBasis>::from_proto(&proto, &ctx)?, p);
             assert_eq!(
-                Poly::<Ntt>::try_convert_from(&proto, &ctx).unwrap_err(),
+                Poly::<Ntt>::from_proto(&proto, &ctx).unwrap_err(),
                 CrateError::PolynomialSerialization(
                     PolynomialSerializationError::RepresentationMismatch {
                         found: crate::rq::Representation::PowerBasis,
@@ -855,7 +683,7 @@ mod tests {
                 )
             );
             assert_eq!(
-                Poly::<NttShoup>::try_convert_from(&proto, &ctx).unwrap_err(),
+                Poly::<NttShoup>::from_proto(&proto, &ctx).unwrap_err(),
                 CrateError::PolynomialSerialization(
                     PolynomialSerializationError::RepresentationMismatch {
                         found: crate::rq::Representation::PowerBasis,
@@ -868,11 +696,11 @@ mod tests {
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        assert_eq!(Poly::<Ntt>::try_convert_from(&proto, &ctx)?, p);
+        assert_eq!(Poly::<Ntt>::from_proto(&proto, &ctx)?, p);
 
         let p = Poly::<NttShoup>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        assert_eq!(Poly::<NttShoup>::try_convert_from(&proto, &ctx)?, p);
+        assert_eq!(Poly::<NttShoup>::from_proto(&proto, &ctx)?, p);
 
         Ok(())
     }
@@ -884,35 +712,35 @@ mod tests {
 
             // Power Basis
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(&[0u64], &ctx)?,
+                Poly::<PowerBasis>::from_coefficients(&[0u64], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(&[0i64], &ctx)?,
+                Poly::<PowerBasis>::from_signed_coefficients(&[0i64], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(&[0u64; 16], &ctx)?,
+                Poly::<PowerBasis>::from_coefficients(&[0u64; 16], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(&[0i64; 16], &ctx)?,
+                Poly::<PowerBasis>::from_signed_coefficients(&[0i64; 16], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(Poly::<PowerBasis>::try_convert_from(&[0u64; 17], &ctx).is_err());
+            assert!(Poly::<PowerBasis>::from_coefficients(&[0u64; 17], &ctx).is_err());
 
             // Ntt
-            assert!(Poly::<Ntt>::try_convert_from(&[0u64], &ctx).is_err());
-            assert!(Poly::<Ntt>::try_convert_from(&[0u64; 16], &ctx).is_ok());
-            assert!(Poly::<Ntt>::try_convert_from(&[0u64; 17], &ctx).is_err());
+            assert!(Poly::<Ntt>::from_rns_slice(&[0u64], &ctx).is_err());
+            assert!(Poly::<Ntt>::from_rns_slice(&[0u64; 16], &ctx).is_ok());
+            assert!(Poly::<Ntt>::from_rns_slice(&[0u64; 17], &ctx).is_err());
         }
 
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         assert_eq!(
-            Poly::<PowerBasis>::try_convert_from(Vec::<u64>::default(), &ctx)?,
+            Poly::<PowerBasis>::from_coefficients(&Vec::<u64>::default(), &ctx)?,
             Poly::<PowerBasis>::zero(&ctx)
         );
-        assert!(Poly::<Ntt>::try_convert_from(Vec::<u64>::default(), &ctx).is_err());
+        assert!(Poly::<Ntt>::from_rns_slice(&Vec::<u64>::default(), &ctx).is_err());
 
         Ok(())
     }
@@ -922,23 +750,23 @@ mod tests {
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(vec![], &ctx)?,
+                Poly::<PowerBasis>::from_coefficients(&[], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(Poly::<Ntt>::try_convert_from(vec![], &ctx).is_err());
+            assert!(Poly::<Ntt>::from_rns_slice(&[], &ctx).is_err());
 
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(vec![0], &ctx)?,
+                Poly::<PowerBasis>::from_coefficients(&[0], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
-            assert!(Poly::<Ntt>::try_convert_from(vec![0], &ctx).is_err());
+            assert!(Poly::<Ntt>::from_rns_slice(&[0], &ctx).is_err());
 
             assert_eq!(
-                Poly::<PowerBasis>::try_convert_from(vec![0; 16], &ctx)?,
+                Poly::<PowerBasis>::from_coefficients(&[0; 16], &ctx)?,
                 Poly::<PowerBasis>::zero(&ctx)
             );
             assert_eq!(
-                Poly::<Ntt>::try_convert_from(vec![0; 16], &ctx)?,
+                Poly::<Ntt>::from_rns_slice(&[0; 16], &ctx)?,
                 Poly::<Ntt>::zero(&ctx)
             );
         }
@@ -952,7 +780,7 @@ mod tests {
         let ctx = Arc::new(Context::new(MODULI, 16)?);
         let p = Poly::<PowerBasis>::random(&ctx, &mut rng);
         let values = Vec::<BigUint>::from(&p);
-        let p2 = Poly::<PowerBasis>::try_convert_from(values.as_slice(), &ctx)?;
+        let p2 = Poly::<PowerBasis>::from_biguint_coefficients(values.as_slice(), &ctx)?;
         assert_eq!(p, p2);
         Ok(())
     }
@@ -1005,8 +833,8 @@ mod tests {
                 Array2::from_shape_fn((moduli.len(), 16), |(row, _)| u64::MAX % moduli[row]);
             let array = Array2::from_shape_vec((moduli.len(), 16), values.clone())?;
             for public in [false, true] {
-                let pb = Poly::<PowerBasis>::try_convert_from_with_timing(
-                    values.clone(),
+                let pb = Poly::<PowerBasis>::from_rns_slice_with_timing(
+                    &values,
                     &ctx,
                     (public).then(|| {
                         fhe_util::VariableTime::new(fhe_util::PublicData::assert_public())
@@ -1018,7 +846,7 @@ mod tests {
                     expected
                 );
                 assert_eq!(
-                    Poly::<PowerBasis>::try_convert_from_with_timing(
+                    Poly::<PowerBasis>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| fhe_util::VariableTime::new(
@@ -1029,8 +857,8 @@ mod tests {
                     expected
                 );
                 assert_eq!(
-                    Poly::<Ntt>::try_convert_from_with_timing(
-                        values.clone(),
+                    Poly::<Ntt>::from_rns_slice_with_timing(
+                        &values,
                         &ctx,
                         (public).then(|| fhe_util::VariableTime::new(
                             fhe_util::PublicData::assert_public()
@@ -1040,7 +868,7 @@ mod tests {
                     expected
                 );
                 assert_eq!(
-                    Poly::<Ntt>::try_convert_from_with_timing(
+                    Poly::<Ntt>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| fhe_util::VariableTime::new(
@@ -1050,8 +878,8 @@ mod tests {
                     .coefficients(),
                     expected
                 );
-                let shoup = Poly::<NttShoup>::try_convert_from_with_timing(
-                    values.clone(),
+                let shoup = Poly::<NttShoup>::from_rns_slice_with_timing(
+                    &values,
                     &ctx,
                     (public).then(|| {
                         fhe_util::VariableTime::new(fhe_util::PublicData::assert_public())
@@ -1059,7 +887,7 @@ mod tests {
                 )?;
                 assert_eq!(shoup.coefficients(), expected);
                 assert_eq!(
-                    Poly::<NttShoup>::try_convert_from_with_timing(
+                    Poly::<NttShoup>::from_rns_residues_with_timing(
                         array.clone(),
                         &ctx,
                         (public).then(|| fhe_util::VariableTime::new(
@@ -1071,6 +899,38 @@ mod tests {
                 assert_eq!(pb.clone().into_ntt().into_power_basis(), pb);
             }
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    use super::*;
+
+    #[test]
+    fn coefficient_count_never_changes_interpretation_to_raw_residues() -> Result<()> {
+        let ctx = Context::new_arc(&[1153, 2017], 16)?;
+        let residues = vec![1; 32];
+        assert!(matches!(
+            Poly::<PowerBasis>::from_coefficients(&residues, &ctx),
+            Err(Error::TooManyCoefficients {
+                actual: 32,
+                maximum: 16
+            })
+        ));
+        let raw = Poly::<Ntt>::from_rns_slice(&residues, &ctx)?;
+        assert_eq!(
+            raw.coefficients().iter().copied().collect::<Vec<_>>(),
+            residues
+        );
+        let coefficient = Poly::<PowerBasis>::from_coefficients(&[1], &ctx)?.into_ntt();
+        assert_eq!(raw, coefficient);
+        assert!(Poly::<Ntt>::from_rns_slice(&[1], &ctx).is_err());
+        assert!(Poly::<PowerBasis>::from_signed_coefficients(&[1; 17], &ctx).is_err());
+        assert!(
+            Poly::<PowerBasis>::from_biguint_coefficients(&vec![BigUint::from(1_u64); 17], &ctx)
+                .is_err()
+        );
         Ok(())
     }
 }

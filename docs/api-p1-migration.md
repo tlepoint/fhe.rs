@@ -1,5 +1,8 @@
 # P1 API migration
 
+The [P2 migration notes](api-p2-migration.md) describe subsequent advanced API,
+batch, math-constructor, and experimental multiparty changes.
+
 Implemented after the P0 contract commit `0eb11ce`. This is a breaking Rust API
 change. Existing protobuf bytes remain readable with the same NTT backend; fixtures produced by that
 commit exercise parameter, key, ciphertext, and evaluation-key imports.

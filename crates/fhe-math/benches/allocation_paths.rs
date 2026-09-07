@@ -54,10 +54,7 @@ fn benchmarks(c: &mut Criterion) {
         let left = vec![ntt.clone(); length];
         let right = vec![ntt.clone(); length];
         group.bench_function(format!("dot_product/{length}"), |b| {
-            b.iter(|| {
-                fhe_math::rq::dot_product(black_box(&left).iter(), black_box(&right).iter())
-                    .unwrap()
-            })
+            b.iter(|| fhe_math::rq::dot_product(black_box(&left), black_box(&right)).unwrap())
         });
     }
     for length in [4, 16, 256] {
@@ -68,7 +65,7 @@ fn benchmarks(c: &mut Criterion) {
         group.bench_function(format!("dot_product_reuse/{length}"), |b| {
             b.iter(|| {
                 workspace
-                    .dot_product_into(black_box(&left).iter(), black_box(&right).iter(), &mut out)
+                    .dot_product_into(black_box(&left), black_box(&right), &mut out)
                     .unwrap();
                 black_box(&out);
             })

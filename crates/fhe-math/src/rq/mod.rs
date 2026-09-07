@@ -19,11 +19,11 @@ mod serialize;
 
 pub mod scaler;
 pub mod switcher;
-pub mod traits;
-use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
+mod wire;
+use self::{scaler::Scaler, switcher::Switcher};
 use crate::{Error, Result, zq::Modulus};
 pub use context::Context;
-pub use dot_product::{DotProductWorkspace, dot_product};
+pub use dot_product::{DotProductWorkspace, dot_product, dot_product_iter};
 use fhe_util::sample_vec_cbd;
 use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView2, Axis, s};
@@ -61,8 +61,17 @@ pub struct Ntt;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NttShoup;
 
-/// Trait implemented by representation marker types.
-pub trait RepresentationTag: Default + Copy + 'static {
+/// Sealed trait implemented by the three supported representation markers.
+///
+/// ```compile_fail
+/// use fhe_math::rq::{Representation, RepresentationTag};
+/// #[derive(Default, Clone, Copy)]
+/// struct Custom;
+/// impl RepresentationTag for Custom {
+///     const REPRESENTATION: Representation = Representation::Ntt;
+/// }
+/// ```
+pub trait RepresentationTag: sealed::Representation + Default + Copy + 'static {
     /// Associated runtime representation.
     const REPRESENTATION: Representation;
 }
@@ -80,8 +89,24 @@ impl RepresentationTag for NttShoup {
 }
 
 /// Marker trait for representations that can be scaled/switched without
-/// requiring Shoup coefficients.
-pub trait ScaleRepresentation: RepresentationTag {}
+/// requiring Shoup coefficients. Sealed to the supported transitions.
+///
+/// ```compile_fail
+/// use fhe_math::rq::{NttShoup, ScaleRepresentation};
+/// fn scalable<T: ScaleRepresentation>() {}
+/// scalable::<NttShoup>();
+/// ```
+pub trait ScaleRepresentation: RepresentationTag + sealed::Scalable {}
+
+mod sealed {
+    pub trait Representation {}
+    pub trait Scalable {}
+    impl Representation for super::PowerBasis {}
+    impl Representation for super::Ntt {}
+    impl Representation for super::NttShoup {}
+    impl Scalable for super::PowerBasis {}
+    impl Scalable for super::Ntt {}
+}
 
 impl ScaleRepresentation for PowerBasis {}
 impl ScaleRepresentation for Ntt {}
@@ -201,22 +226,6 @@ impl<R: RepresentationTag> Poly<R> {
         !self.has_lazy_coefficients
     }
 
-    /// Convert explicitly public values into a polynomial using variable-time
-    /// reduction when available.
-    ///
-    /// Passing [`fhe_util::VariableTime`] asserts that `value` is public.
-    /// Classifying secret values as public may expose them through timing.
-    pub fn try_convert_from_public<T>(
-        value: T,
-        ctx: &Arc<Context>,
-        variable_time: fhe_util::VariableTime,
-    ) -> Result<Self>
-    where
-        Self: traits::TryConvertFrom<T>,
-    {
-        Self::try_convert_from_with_timing(value, ctx, Some(variable_time))
-    }
-
     /// Creates a polynomial holding the constant 0.
     #[must_use]
     pub fn zero(ctx: &Arc<Context>) -> Self {
@@ -334,7 +343,7 @@ impl<R: RepresentationTag> Poly<R> {
                 maximum: 32,
             }
         })?);
-        let p = Poly::<PowerBasis>::try_convert_from(coeffs.as_ref() as &[i64], ctx)?;
+        let p = Poly::<PowerBasis>::from_signed_coefficients(coeffs.as_ref() as &[i64], ctx)?;
         if R::REPRESENTATION == Representation::PowerBasis {
             Ok(Poly::from_parts(p))
         } else if R::REPRESENTATION == Representation::Ntt {

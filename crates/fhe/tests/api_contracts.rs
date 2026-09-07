@@ -2,10 +2,11 @@
 #![expect(clippy::indexing_slicing, reason = "tests use known nonempty fixtures")]
 
 use fhe::bfv::{
-    Ciphertext, Encoding, EvaluationKeyBuilder, Parameters, ParametersBuilder, Plaintext, SecretKey,
+    Ciphertext, Encoding, Parameters, ParametersBuilder, Plaintext, SecretKey,
+    evaluation::EvaluationKeyBuilder,
 };
 use fhe::{PublicData, SecretDependentDiagnostics, VariableTime};
-use fhe_math::rq::{Ntt, NttShoup, Poly, PowerBasis, SubstitutionExponent, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, NttShoup, Poly, PowerBasis, SubstitutionExponent};
 use std::sync::Arc;
 
 fn parameters() -> fhe::Result<Parameters> {
@@ -145,8 +146,8 @@ fn debug_redacts_secret_key_plaintext_polynomial_and_builder() -> fhe::Result<()
     let pb = Plaintext::encode(&par, &[456_u64], Encoding::Polynomial)?;
     assert_eq!(format!("{pa:?}"), format!("{pb:?}"));
     let ctx = par.context_at_level(0)?;
-    let a = Poly::<PowerBasis>::try_convert_from(&[123_u64], ctx)?;
-    let b = Poly::<PowerBasis>::try_convert_from(&[456_u64], ctx)?;
+    let a = Poly::<PowerBasis>::from_coefficients(&[123_u64], ctx)?;
+    let b = Poly::<PowerBasis>::from_coefficients(&[456_u64], ctx)?;
     assert_eq!(format!("{a:?}"), format!("{b:?}"));
     assert!(!format!("{a:?}").contains("coefficients"));
     Ok(())
@@ -156,11 +157,11 @@ fn debug_redacts_secret_key_plaintext_polynomial_and_builder() -> fhe::Result<()
 fn timing_permissions_and_diagnostic_acknowledgment_are_explicit() -> fhe::Result<()> {
     let par = parameters()?;
     let ctx = par.context_at_level(0)?;
-    let restricted = Poly::<PowerBasis>::try_convert_from(&[3_u64], ctx)?;
-    let public = Poly::<PowerBasis>::try_convert_from_public(
+    let restricted = Poly::<PowerBasis>::from_coefficients(&[3_u64], ctx)?;
+    let public = Poly::<PowerBasis>::from_coefficients_with_timing(
         &[3_u64],
         ctx,
-        VariableTime::new(PublicData::assert_public()),
+        Some(VariableTime::new(PublicData::assert_public())),
     )?;
     assert!(!restricted.allows_variable_time_computations());
     assert!(public.allows_variable_time_computations());
@@ -181,7 +182,7 @@ fn descriptors_keep_their_validated_values() -> fhe::Result<()> {
     let exponent = SubstitutionExponent::new(ctx, 2 * par.degree() + 3)?;
     assert_eq!(exponent.exponent(), 3);
     assert!(SubstitutionExponent::new(ctx, 2).is_err());
-    let poly = Poly::<PowerBasis>::try_convert_from(&[1_u64, 2, 3], ctx)?;
+    let poly = Poly::<PowerBasis>::from_coefficients(&[1_u64, 2, 3], ctx)?;
     assert_eq!(
         poly.substitute(&exponent)?.into_ntt(),
         poly.into_ntt().substitute(&exponent)?,

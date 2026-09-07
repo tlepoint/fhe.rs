@@ -4,10 +4,7 @@ use super::key_switching_key::KeySwitchingKey;
 use crate::bfv::{Ciphertext, Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{
-    Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher,
-    traits::TryConvertFrom as TryConvertFromPoly,
-};
+use fhe_math::rq::{Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher};
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -36,7 +33,7 @@ impl GaloisKey {
             SubstitutionExponent::new(ctx_ciphertext, exponent).map_err(Error::MathError)?;
 
         let switcher_up = Switcher::new(ctx_ciphertext, ctx_galois_key)?;
-        let s = Zeroizing::new(Poly::<PowerBasis>::try_convert_from(
+        let s = Zeroizing::new(Poly::<PowerBasis>::from_signed_coefficients(
             sk.coeffs.as_ref(),
             ctx_ciphertext,
         )?);

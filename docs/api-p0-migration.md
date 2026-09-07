@@ -1,5 +1,8 @@
 # P0 API contract changes
 
+The [P2 migration notes](api-p2-migration.md) describe subsequent advanced API,
+batch, math-constructor, and experimental multiparty changes.
+
 The later [P1 migration](api-p1-migration.md) supersedes the P0 signatures below.
 
 This implements the P0 work in the [API proposal](api-simplification-proposal.md).

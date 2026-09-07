@@ -4,7 +4,7 @@ use crate::bfv::{Ciphertext, Parameters, Plaintext};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::{
-    rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom},
+    rq::{Ntt, Poly, PowerBasis},
     zq::Modulus,
 };
 
@@ -82,7 +82,8 @@ impl SecretKey {
 
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct.c[0].ctx())?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(self.coeffs.as_ref(), ct.c[0].ctx())?
+                .into_ntt(),
         );
         let mut si = s.clone();
 
@@ -126,7 +127,7 @@ impl SecretKey {
 
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), p.ctx())?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(self.coeffs.as_ref(), p.ctx())?.into_ntt(),
         );
 
         let mut a = Poly::<Ntt>::random_from_seed(p.ctx(), seed);
@@ -222,7 +223,8 @@ impl SecretKey {
         ct.validate_for(&self.par)?;
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct.c[0].ctx())?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(self.coeffs.as_ref(), ct.c[0].ctx())?
+                .into_ntt(),
         );
         let mut si = s.clone();
 
@@ -255,7 +257,7 @@ impl SecretKey {
                 let q = Modulus::new(self.par.inner.moduli[0]).map_err(Error::MathError)?;
                 q.reduce_vec(&mut w);
                 plaintext_modulus.reduce_vec(&mut w);
-                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt()
+                Poly::<PowerBasis>::from_coefficients(w.as_slice(), ct.c[0].ctx())?.into_ntt()
             }
             Some(_) | None => {
                 // A single residue cannot recover values modulo t when t is
@@ -270,7 +272,8 @@ impl SecretKey {
                 w.iter_mut().for_each(|wi| *wi %= q_poly);
 
                 self.par.inner.plaintext.reduce_vec(&mut w);
-                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt()
+                Poly::<PowerBasis>::from_biguint_coefficients(w.as_slice(), ct.c[0].ctx())?
+                    .into_ntt()
             }
         };
 

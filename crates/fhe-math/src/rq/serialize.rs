@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use super::{Context, Poly, RepresentationTag, traits::TryConvertFrom};
+use super::{Context, Poly, RepresentationTag, wire::FromProto};
 use crate::{Error, PolynomialSerializationError, proto::rq::Rq};
 
 use prost::Message;
@@ -23,7 +23,7 @@ macro_rules! impl_from_bytes {
             /// Wire data never grants permission for variable-time computation.
             pub fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Error> {
                 let rq: Rq = Message::decode(bytes).map_err(|_| PolynomialSerializationError::Decode)?;
-                Self::try_convert_from(&rq, ctx)
+                Self::from_proto(&rq, ctx)
             }
         }
         )+
@@ -37,7 +37,7 @@ mod tests {
 
     use rand::rng;
 
-    use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom};
+    use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, wire::FromProto};
     use crate::{
         Error, PolynomialSerializationError,
         proto::rq::{Representation as RepresentationProto, Rq},
@@ -60,7 +60,7 @@ mod tests {
             .coefficients
             .outer_iter()
             .zip(ctx.q.iter())
-            .flat_map(|(row, modulus)| modulus.serialize_vec(row.as_slice().unwrap()))
+            .flat_map(|(row, modulus)| modulus.serialize_vec(row.as_slice().unwrap()).unwrap())
             .collect();
         for (bytes, representation) in [
             (pb.to_bytes(), RepresentationProto::Powerbasis),
@@ -169,7 +169,7 @@ mod tests {
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        let err = Poly::<PowerBasis>::try_convert_from(&proto, &ctx).unwrap_err();
+        let err = Poly::<PowerBasis>::from_proto(&proto, &ctx).unwrap_err();
         assert_eq!(
             err,
             Error::PolynomialSerialization(PolynomialSerializationError::RepresentationMismatch {

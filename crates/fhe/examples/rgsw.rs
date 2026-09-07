@@ -7,7 +7,9 @@
 
 use std::error::Error;
 
-use fhe::bfv::{Ciphertext, Encoding, Parameters, Plaintext, RgswCiphertext, SecretKey};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::RgswCiphertext,
+};
 
 use rand::rng;
 

@@ -5,7 +5,7 @@
 )]
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
-use fhe_math::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, dot_product, traits::TryConvertFrom};
+use fhe_math::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, dot_product};
 use itertools::{Itertools, izip};
 use rand::rng;
 use std::{sync::Arc, time::Duration};
@@ -189,7 +189,7 @@ pub fn rq_dot_product(c: &mut Criterion) {
             group.bench_function(
                 BenchmarkId::from_parameter(format!("opt/{}/{}", degree, ctx.modulus().bits())),
                 |b| {
-                    b.iter(|| dot_product(p_vec.iter(), q_vec.iter()));
+                    b.iter(|| dot_product(&p_vec, &q_vec));
                 },
             );
         }
@@ -321,7 +321,7 @@ pub fn rq_convert_benchmark(c: &mut Criterion) {
             group.bench_function(
                 BenchmarkId::new("try_convert_from_slice", format!("{}/{}", degree, nmoduli)),
                 |b| {
-                    b.iter(|| Poly::<PowerBasis>::try_convert_from(slice, &ctx).unwrap());
+                    b.iter(|| Poly::<PowerBasis>::from_coefficients(slice, &ctx).unwrap());
                 },
             );
         }

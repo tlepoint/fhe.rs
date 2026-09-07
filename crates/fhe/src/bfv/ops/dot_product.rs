@@ -1,4 +1,4 @@
-use fhe_math::rq::{DotProductWorkspace, Ntt, Poly, traits::TryConvertFrom};
+use fhe_math::rq::{DotProductWorkspace, Ntt, Poly};
 use itertools::izip;
 use ndarray::Array3;
 use zeroize::Zeroize;
@@ -51,17 +51,24 @@ unsafe fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 mod packed;
 
 /// Compute a ciphertext/plaintext dot product with temporary scratch.
+/// Accepts slices without allocating operand lists.
 /// For repeated calls at the same level, use [`DotProductScalarWorkspace`].
-pub fn dot_product_scalar<'a, 'b, I, J>(ct: I, pt: J) -> Result<Ciphertext>
-where
-    I: Iterator<Item = &'a Ciphertext> + Clone,
-    J: Iterator<Item = &'b Plaintext> + Clone,
-{
-    let first = ct
-        .clone()
-        .next()
-        .ok_or(crate::DotProductError::EmptyInput)?;
+pub fn dot_product_scalar(ct: &[Ciphertext], pt: &[Plaintext]) -> Result<Ciphertext> {
+    let first = ct.first().ok_or(crate::DotProductError::EmptyInput)?;
     DotProductScalarWorkspace::new(&first.par, first.level)?.dot_product_scalar(ct, pt)
+}
+
+/// Snapshot each borrowed input iterator once, then validate and evaluate that
+/// snapshot. Prefer [`dot_product_scalar`] for slices to avoid reference
+/// vectors.
+pub fn dot_product_scalar_iter<'a, 'b>(
+    ct: impl IntoIterator<Item = &'a Ciphertext>,
+    pt: impl IntoIterator<Item = &'b Plaintext>,
+) -> Result<Ciphertext> {
+    let ct: Vec<_> = ct.into_iter().collect();
+    let pt: Vec<_> = pt.into_iter().collect();
+    let first = ct.first().ok_or(crate::DotProductError::EmptyInput)?;
+    DotProductScalarWorkspace::new(&first.par, first.level)?.dot_product_scalar_refs(&ct, &pt)
 }
 
 struct ClearAccumulator<'a>(&'a mut Array3<u128>);
@@ -105,12 +112,44 @@ impl DotProductScalarWorkspace {
         })
     }
 
-    /// Compute a dot product, reusing scratch and allocating its result.
-    /// Returns an error for empty/unequal inputs, parameter or level
-    /// mismatches, or inconsistent ciphertext part counts. Iterators must
-    /// yield the same operands when cloned. Timing permission is recomputed
-    /// on every call.
-    pub fn dot_product_scalar<'a, 'b, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
+    /// Compute a checked dot product from slices, reusing scratch and
+    /// allocating its result. Empty/unequal inputs, parameter,
+    /// level, and component-count errors leave workspace storage unchanged.
+    /// Timing permission is recomputed on every call.
+    pub fn dot_product_scalar(
+        &mut self,
+        ct: &[Ciphertext],
+        pt: &[Plaintext],
+    ) -> Result<Ciphertext> {
+        self.dot_product_validated_slices(ct.iter(), pt.iter())
+    }
+
+    /// Compute from slices of borrowed operands without allocating reference
+    /// lists.
+    pub fn dot_product_scalar_refs(
+        &mut self,
+        ct: &[&Ciphertext],
+        pt: &[&Plaintext],
+    ) -> Result<Ciphertext> {
+        self.dot_product_validated_slices(ct.iter().copied(), pt.iter().copied())
+    }
+
+    /// Consume each borrowed iterator once and evaluate the collected
+    /// references.
+    pub fn dot_product_scalar_iter<'a, 'b>(
+        &mut self,
+        ct: impl IntoIterator<Item = &'a Ciphertext>,
+        pt: impl IntoIterator<Item = &'b Plaintext>,
+    ) -> Result<Ciphertext> {
+        self.dot_product_scalar_refs(
+            &ct.into_iter().collect::<Vec<_>>(),
+            &pt.into_iter().collect::<Vec<_>>(),
+        )
+    }
+
+    // Only called with immutable slice iterators above. Validation and arithmetic
+    // therefore traverse identical operands even for stateful external iterators.
+    fn dot_product_validated_slices<'a, 'b, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
     where
         I: Iterator<Item = &'a Ciphertext> + Clone,
         J: Iterator<Item = &'b Plaintext> + Clone,
@@ -170,7 +209,7 @@ impl DotProductScalarWorkspace {
             let c = (0..ct_first.len())
                 .map(|i| {
                     workspace
-                        .dot_product(
+                        .dot_product_iter(
                             ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
                             pt.clone().map(|pti| &pti.poly_ntt),
                         )
@@ -214,7 +253,7 @@ impl DotProductScalarWorkspace {
             // Reduce
             let mut c = Vec::with_capacity(ct_first.len());
             for acci in acc.0.outer_iter() {
-                c.push(Poly::<Ntt>::try_convert_from_with_timing(
+                c.push(Poly::<Ntt>::from_wide_ntt_residues_with_timing(
                     acci,
                     ctx,
                     (allow_variable_time_computations)
@@ -234,7 +273,7 @@ impl DotProductScalarWorkspace {
 
 #[cfg(test)]
 mod tests {
-    use super::dot_product_scalar;
+    use super::dot_product_scalar_iter;
     use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, SecretKey};
 
     use itertools::{Itertools, izip};
@@ -267,7 +306,7 @@ mod tests {
                                 crate::PublicData::assert_public(),
                             ));
                     }
-                    let actual = workspace.dot_product_scalar(
+                    let actual = workspace.dot_product_scalar_iter(
                         std::iter::repeat_n(ciphertext, length),
                         std::iter::repeat_n(&pt, length),
                     )?;
@@ -292,12 +331,12 @@ mod tests {
                     }
                     assert!(
                         workspace
-                            .dot_product_scalar(std::iter::empty(), std::iter::once(&pt))
+                            .dot_product_scalar_iter(std::iter::empty(), std::iter::once(&pt))
                             .is_err()
                     );
                     assert!(
                         workspace
-                            .dot_product_scalar(
+                            .dot_product_scalar_iter(
                                 std::iter::once(ciphertext),
                                 std::iter::repeat_n(&pt, 2)
                             )
@@ -311,18 +350,18 @@ mod tests {
         lower.switch_to_level(1)?;
         assert!(
             workspace
-                .dot_product_scalar(std::iter::once(&lower), std::iter::once(&original))
+                .dot_product_scalar_iter(std::iter::once(&lower), std::iter::once(&original))
                 .is_err()
         );
         let other = Parameters::test_parameters(1, 16);
         let foreign = Plaintext::encode(&other, &[1u64][..], Encoding::Polynomial)?;
         assert!(
             workspace
-                .dot_product_scalar(std::iter::once(&ct), std::iter::once(&foreign))
+                .dot_product_scalar_iter(std::iter::once(&ct), std::iter::once(&foreign))
                 .is_err()
         );
         assert_eq!(
-            workspace.dot_product_scalar(std::iter::once(&ct), std::iter::once(&original))?,
+            workspace.dot_product_scalar_iter(std::iter::once(&ct), std::iter::once(&original))?,
             ct.multiply_plaintext(&original).unwrap()
         );
         Ok(())
@@ -343,7 +382,7 @@ mod tests {
         for length in [17, 33] {
             let ciphertexts = vec![ct.clone(); length];
             let plaintexts = vec![pt.clone(); length];
-            let actual = dot_product_scalar(ciphertexts.iter(), plaintexts.iter())?;
+            let actual = dot_product_scalar_iter(ciphertexts.iter(), plaintexts.iter())?;
             let mut expected = Ciphertext::trivial_zero(&params, 0)?;
             for (ciphertext, plaintext) in ciphertexts.iter().zip(plaintexts.iter()) {
                 (expected)
@@ -360,7 +399,7 @@ mod tests {
         let mut rng = rng();
         let empty_ct: Vec<Ciphertext> = Vec::new();
         let empty_pt: Vec<Plaintext> = Vec::new();
-        assert!(dot_product_scalar(empty_ct.iter(), empty_pt.iter()).is_err());
+        assert!(dot_product_scalar_iter(empty_ct.iter(), empty_pt.iter()).is_err());
 
         for params in [
             Parameters::test_parameters(1, 16),
@@ -386,7 +425,7 @@ mod tests {
                     })
                     .collect_vec();
 
-                let r = dot_product_scalar(ct.iter(), pt.iter())?;
+                let r = dot_product_scalar_iter(ct.iter(), pt.iter())?;
                 assert!(
                     r.iter()
                         .all(|poly| !poly.allows_variable_time_computations())
@@ -407,7 +446,7 @@ mod tests {
                         .poly_ntt
                         .allow_variable_time_computations(variable_time)
                 });
-                let public_result = dot_product_scalar(ct.iter(), public_pt.iter())?;
+                let public_result = dot_product_scalar_iter(ct.iter(), public_pt.iter())?;
                 assert!(
                     public_result
                         .iter()
@@ -427,13 +466,13 @@ mod tests {
         let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
 
         assert!(matches!(
-            dot_product_scalar([&ct].into_iter(), [&pt, &pt].into_iter()),
+            dot_product_scalar_iter([&ct].into_iter(), [&pt, &pt].into_iter()),
             Err(crate::Error::DotProduct(
                 crate::DotProductError::OperandCountMismatch { .. }
             ))
         ));
         assert!(matches!(
-            dot_product_scalar(
+            dot_product_scalar_iter(
                 [&Ciphertext::invalid_empty(&params)].into_iter(),
                 [&pt].into_iter()
             ),

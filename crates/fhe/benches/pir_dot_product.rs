@@ -2,8 +2,8 @@
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
 use fhe::bfv::{
-    Ciphertext, DotProductScalarWorkspace, Encoding, PackedPlaintext, PackedPlaintextVec,
-    ParametersBuilder, Plaintext, SecretKey,
+    Ciphertext, Encoding, ParametersBuilder, Plaintext, SecretKey,
+    evaluation::DotProductScalarWorkspace, packing::PackedPlaintext, packing::PackedPlaintextBatch,
 };
 use fhe::{PublicData, VariableTime};
 use rand::{RngExt, SeedableRng};
@@ -46,13 +46,11 @@ fn scalar(c: &mut Criterion) {
         };
         let column: Vec<_> = coefficients.iter().map(encode).collect();
         let mut workspace = DotProductScalarWorkspace::new(&par, 1).unwrap();
-        let expected = workspace
-            .dot_product_scalar(query.iter(), column.iter())
-            .unwrap();
+        let expected = workspace.dot_product_scalar(&query, &column).unwrap();
         group.bench_function(BenchmarkId::new("column", name), |b| {
             b.iter(|| {
                 workspace
-                    .dot_product_scalar(black_box(query.iter()), black_box(column.iter()))
+                    .dot_product_scalar(black_box(&query), black_box(&column))
                     .unwrap()
             });
         });
@@ -60,30 +58,26 @@ fn scalar(c: &mut Criterion) {
         let rebuilt: Vec<_> = coefficients.iter().map(encode).collect();
         assert_eq!(
             expected,
-            workspace
-                .dot_product_scalar(query.iter(), rebuilt.iter())
-                .unwrap()
+            workspace.dot_product_scalar(&query, &rebuilt).unwrap()
         );
         drop(rebuilt);
         group.bench_function(BenchmarkId::new("encode_and_column", name), |b| {
             b.iter(|| {
                 let rebuilt: Vec<_> = black_box(&coefficients).iter().map(encode).collect();
-                workspace
-                    .dot_product_scalar(query.iter(), rebuilt.iter())
-                    .unwrap()
+                workspace.dot_product_scalar(&query, &rebuilt).unwrap()
             });
         });
         let packed: Vec<_> = column.iter().map(PackedPlaintext::from).collect();
         assert_eq!(
             expected,
             workspace
-                .dot_product_scalar_packed(query.iter(), packed.iter())
+                .dot_product_scalar_packed_iter(query.iter(), packed.iter())
                 .unwrap()
         );
         group.bench_function(BenchmarkId::new("packed_column", name), |b| {
             b.iter(|| {
                 workspace
-                    .dot_product_scalar_packed(query.iter(), packed.iter())
+                    .dot_product_scalar_packed_iter(query.iter(), packed.iter())
                     .unwrap()
             });
         });
@@ -99,7 +93,7 @@ fn scalar(c: &mut Criterion) {
                 for column in 0..columns {
                     black_box(
                         workspace
-                            .dot_product_scalar(
+                            .dot_product_scalar_iter(
                                 query.iter(),
                                 database.iter().skip(column).step_by(columns),
                             )
@@ -109,7 +103,7 @@ fn scalar(c: &mut Criterion) {
             });
         });
         let mut packed_database =
-            PackedPlaintextVec::with_capacity(&par, 1, database.len()).unwrap();
+            PackedPlaintextBatch::with_capacity(&par, 1, database.len()).unwrap();
         for pt in database {
             packed_database.push(&pt).unwrap();
         }
@@ -118,7 +112,7 @@ fn scalar(c: &mut Criterion) {
                 for column in 0..columns {
                     black_box(
                         workspace
-                            .dot_product_scalar_packed(
+                            .dot_product_scalar_packed_iter(
                                 query.iter(),
                                 packed_database.iter().skip(column).step_by(columns),
                             )

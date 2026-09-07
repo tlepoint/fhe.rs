@@ -11,6 +11,23 @@ The crate contains helper routines such as primality testing, centered binomial 
 fhe-util = "0.1.1"
 ```
 
+## Checked bit transcoding
+
+Bit-transcoding helpers return `Result<_, TranscodeError>` for invalid widths,
+length overflow, or words that would be truncated. Packing uses least-significant
+bits first and zero-pads the final byte. `transcode_to_bytes_into` appends only
+after validating all input, leaving its output unchanged on an error.
+
+`transcode_from_bytes_exact(bytes, width, count)` rejects missing/extra bytes and
+nonzero padding. Use it for a packed message with a known word count.
+`transcode_from_bytes(bytes, width)` interprets every byte bit as data and
+zero-extends a partial final word. `transcode_bidirectional` also zero-extends its
+final word and does not retain the original bit count. No helper silently masks
+out-of-range input words.
+
+`sample_vec_cbd` returns the typed `InvalidVariance` error for variances outside
+1..=32. The sampling algorithm and randomness consumption are unchanged.
+
 ## Testing
 
 ```bash

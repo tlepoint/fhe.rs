@@ -1,10 +1,10 @@
 //! Plaintext type in the BFV encryption scheme.
+use crate::VariableTime;
 use crate::{
     Error, Result,
-    bfv::{Encoding, Parameters, PlaintextVec},
+    bfv::{Encoding, Parameters},
 };
-use crate::{PublicData, VariableTime};
-use fhe_math::rq::{Context, Ntt, Poly, PowerBasis, traits::TryConvertFrom};
+use fhe_math::rq::{Context, Ntt, Poly, PowerBasis};
 use num_bigint::{BigInt, BigUint, Sign};
 use num_traits::ToPrimitive;
 use std::sync::Arc;
@@ -153,14 +153,14 @@ impl Plaintext {
                 };
                 let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
                 modulus.scalar_mul_vec(&mut values, q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx).unwrap()
+                Poly::<PowerBasis>::from_coefficients(values.as_slice(), ctx).unwrap()
             }
             PlaintextCoefficients::Large(mut values) => {
                 self.par
                     .inner
                     .plaintext
                     .scalar_mul_vec(&mut values, &ctx_lvl.cipher_plain_context.q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx).unwrap()
+                Poly::<PowerBasis>::from_biguint_coefficients(values.as_slice(), ctx).unwrap()
             }
         };
 
@@ -195,37 +195,6 @@ impl std::fmt::Debug for Plaintext {
     }
 }
 
-// Conversions.
-impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
-    fn try_convert_from_with_timing(
-        pt: &Plaintext,
-        ctx: &Arc<Context>,
-        permission: Option<VariableTime>,
-    ) -> fhe_math::Result<Self> {
-        let variable_time = permission.is_some();
-        if ctx
-            != pt
-                .par
-                .context_at_level(pt.level())
-                .map_err(|_| fhe_math::Error::ContextNotReachable)?
-        {
-            Err(fhe_math::Error::PolynomialContextMismatch)
-        } else {
-            let mut poly = pt.poly_ntt.clone();
-            if variable_time {
-                poly.allow_variable_time_computations(VariableTime::new(
-                    PublicData::assert_public(),
-                ));
-            } else {
-                poly.disallow_variable_time_computations();
-            }
-            Ok(poly.into_power_basis())
-        }
-    }
-}
-
-// Encoding and decoding.
-
 impl Plaintext {
     /// Shared parameters of this plaintext.
     #[must_use]
@@ -253,9 +222,7 @@ impl Plaintext {
             values,
             encoding,
             level,
-            |values, encoding, par, ctx| {
-                PlaintextVec::encode_u64_chunk(values, encoding, par, ctx, None)
-            },
+            |values, encoding, par, ctx| Self::encode_u64_chunk(values, encoding, par, ctx, None),
         )
     }
 
@@ -285,7 +252,7 @@ impl Plaintext {
             encoding,
             level,
             |values, encoding, par, ctx| {
-                PlaintextVec::encode_u64_chunk(values, encoding, par, ctx, Some(permission))
+                Self::encode_u64_chunk(values, encoding, par, ctx, Some(permission))
             },
         )
     }
@@ -308,13 +275,7 @@ impl Plaintext {
         encoding: Encoding,
         level: usize,
     ) -> Result<Self> {
-        Self::encode_with(
-            par,
-            values,
-            encoding,
-            level,
-            PlaintextVec::encode_biguint_chunk,
-        )
+        Self::encode_with(par, values, encoding, level, Self::encode_biguint_chunk)
     }
 
     /// Encode signed integers modulo the plaintext modulus at level zero.

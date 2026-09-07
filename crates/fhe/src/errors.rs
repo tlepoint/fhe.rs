@@ -230,8 +230,11 @@ pub enum MultipartyError {
     #[error("Expected {expected} common random polynomials, got {actual}")]
     InvalidCommonRandomPolynomialCount { actual: usize, expected: usize },
 
-    #[error("Round-two relinearization share is missing its round-one aggregation")]
-    MissingRelinearizationRoundOneShare,
+    #[error("Protocol shares have incompatible parameters, levels, or shapes")]
+    IncompatibleShares,
+
+    #[error("Round-two shares depend on different first-round aggregations")]
+    RoundOneAggregationMismatch,
 }
 
 /// Separate enum for errors arising from serialization.

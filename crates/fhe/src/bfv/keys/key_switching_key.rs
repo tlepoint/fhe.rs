@@ -4,7 +4,6 @@ use crate::bfv::{Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::rq::Context;
-use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::{
     rns::RnsContext,
     rq::{Ntt, NttShoup, Poly, PowerBasis, RepresentationTag},
@@ -98,7 +97,7 @@ impl KeySwitchingKey {
                 crate::VariableTime::new(crate::PublicData::assert_public()),
             ))
         } else {
-            Ok(Poly::<PowerBasis>::try_convert_from(coefficients, &self.ctx_ksk)?.into_ntt())
+            Ok(Poly::<PowerBasis>::from_coefficients(coefficients, &self.ctx_ksk)?.into_ntt())
         }
     }
 
@@ -195,7 +194,8 @@ impl KeySwitchingKey {
         let size = c1.len();
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx())?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), c1[0].ctx())?
+                .into_ntt(),
         );
 
         let rns = RnsContext::new(&sk.par.inner.moduli[..size])?;
@@ -240,7 +240,8 @@ impl KeySwitchingKey {
             return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx())?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), c1[0].ctx())?
+                .into_ntt(),
         );
 
         let c0 = c1
@@ -552,7 +553,7 @@ mod tests {
     use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
     use fhe_math::{
         rns::RnsContext,
-        rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly},
+        rq::{Ntt, Poly, PowerBasis},
     };
     use num_bigint::BigUint;
     use rand::rng;
@@ -600,7 +601,7 @@ mod tests {
                 let ctx = params.context_at_level(0)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
+                let s = Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 
@@ -781,7 +782,7 @@ mod tests {
                 let ctx = params.context_at_level(5)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 5, 5, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
+                let s = Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 

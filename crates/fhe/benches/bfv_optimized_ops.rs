@@ -2,7 +2,9 @@
 #![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use fhe::bfv::{Ciphertext, Encoding, Parameters, Plaintext, SecretKey, dot_product_scalar};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::dot_product_scalar,
+};
 
 use itertools::{Itertools, izip};
 use rand::rng;
@@ -69,7 +71,7 @@ pub fn bfv_benchmark(c: &mut Criterion) {
                     ),
                 ),
                 |b| {
-                    b.iter(|| dot_product_scalar(ct_vec.iter(), pt_vec.iter()));
+                    b.iter(|| dot_product_scalar(&ct_vec, &pt_vec));
                 },
             );
         }

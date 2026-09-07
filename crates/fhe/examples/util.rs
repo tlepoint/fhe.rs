@@ -164,7 +164,7 @@ pub enum EncodedDatabase {
     /// Canonical NTT residues stored in machine words.
     Ntt(Vec<bfv::Plaintext>),
     /// Bit-packed canonical NTT residues.
-    Packed(bfv::PackedPlaintextVec),
+    Packed(bfv::packing::PackedPlaintextBatch),
 }
 
 impl EncodedDatabase {
@@ -194,17 +194,17 @@ impl EncodedDatabase {
     /// Compute one column's ciphertext/plaintext dot product.
     pub fn dot_product<'a>(
         &self,
-        workspace: &mut bfv::DotProductScalarWorkspace,
-        query: impl Iterator<Item = &'a bfv::Ciphertext> + Clone,
+        workspace: &mut bfv::evaluation::DotProductScalarWorkspace,
+        query: impl IntoIterator<Item = &'a bfv::Ciphertext>,
         column: usize,
         columns: usize,
     ) -> fhe::Result<bfv::Ciphertext> {
         match self {
             Self::Ntt(data) => {
-                workspace.dot_product_scalar(query, data.iter().skip(column).step_by(columns))
+                workspace.dot_product_scalar_iter(query, data.iter().skip(column).step_by(columns))
             }
             Self::Packed(data) => workspace
-                .dot_product_scalar_packed(query, data.iter().skip(column).step_by(columns)),
+                .dot_product_scalar_packed_iter(query, data.iter().skip(column).step_by(columns)),
         }
     }
 }
@@ -221,7 +221,8 @@ pub fn prepare_database(
 ) -> (EncodedDatabase, (usize, usize)) {
     if packed {
         let (rows, columns) = encoded_shape(database, &par, layout);
-        let mut data = bfv::PackedPlaintextVec::with_capacity(&par, level, rows * columns).unwrap();
+        let mut data =
+            bfv::packing::PackedPlaintextBatch::with_capacity(&par, level, rows * columns).unwrap();
         let shape =
             encode_database_with(database, par, level, layout, |pt| data.push(&pt).unwrap());
         (EncodedDatabase::Packed(data), shape)
@@ -272,7 +273,7 @@ fn encode_database_with(
                 serialized_plaintext[j * elements_size..(j + 1) * elements_size].copy_from_slice(pt)
             }
         }
-        let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
+        let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits).unwrap();
         append(
             bfv::Plaintext::encode_public_at_level(
                 &par,
@@ -373,23 +374,25 @@ mod tests {
                 unreachable!()
             };
             assert_eq!(packed.len(), encoded.len());
-            let mut workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
+            let mut workspace = bfv::evaluation::DotProductScalarWorkspace::new(&params, 1)?;
             let mut rng = rand::rng();
             let sk = bfv::SecretKey::generate(&params, &mut rng);
             let ct: bfv::Ciphertext =
                 fhe_util::FheEncrypter::encrypt(&sk, encoded.first().unwrap(), &mut rng)?;
             assert_eq!(
-                workspace.dot_product_scalar_packed(
+                workspace.dot_product_scalar_packed_iter(
                     std::iter::repeat_n(&ct, packed.len()),
                     packed.iter()
                 )?,
-                workspace
-                    .dot_product_scalar(std::iter::repeat_n(&ct, encoded.len()), encoded.iter())?
+                workspace.dot_product_scalar_iter(
+                    std::iter::repeat_n(&ct, encoded.len()),
+                    encoded.iter()
+                )?
             );
             assert_eq!(encoded.len(), rows * columns);
             for (row, plaintext) in encoded.iter().enumerate() {
                 let coefficients = plaintext.decode(Encoding::Polynomial)?;
-                let bytes = transcode_to_bytes(&coefficients, bits);
+                let bytes = transcode_to_bytes(&coefficients, bits).unwrap();
                 for (column, element) in bytes
                     .chunks_exact(element_size)
                     .take(per_plaintext)

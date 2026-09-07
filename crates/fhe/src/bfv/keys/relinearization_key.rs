@@ -6,9 +6,7 @@ use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{
-    Ntt, Poly, PowerBasis, switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly,
-};
+use fhe_math::rq::{Ntt, Poly, PowerBasis, switcher::Switcher};
 
 use prost::Message;
 use rand::{CryptoRng, Rng as RngCore};
@@ -52,7 +50,8 @@ impl RelinearizationKey {
         }
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx_ciphertext)?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx_ciphertext)?
+                .into_ntt(),
         );
         let s2 = Zeroizing::new((s.as_ref() * s.as_ref()).into_power_basis());
         let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
@@ -157,7 +156,7 @@ mod tests {
     use super::RelinearizationKey;
     use crate::bfv::{Ciphertext, Encoding, Parameters, SecretKey, wire::FromProto};
     use crate::proto::bfv::RelinearizationKey as RelinearizationKeyProto;
-    use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly};
+    use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
     use rand::rng;
     use std::error::Error;
@@ -198,7 +197,7 @@ mod tests {
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
                 let ctx = params.context_at_level(0)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
+                let s = Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
                 let s2 = &s * &s;
@@ -263,9 +262,10 @@ mod tests {
                         )?;
 
                         let ctx = params.context_at_level(ciphertext_level)?;
-                        let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
-                            .map_err(crate::Error::MathError)?
-                            .into_ntt();
+                        let s =
+                            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
+                                .map_err(crate::Error::MathError)?
+                                .into_ntt();
                         let s2 = &s * &s;
                         // Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 *
                         // s^2, c1, c2) encrypting 0.

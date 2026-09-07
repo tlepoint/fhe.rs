@@ -8,29 +8,44 @@
 //! The Brakerski-Fan-Vercauteren homomorphic encryption scheme
 
 mod ciphertext;
-mod context;
+pub mod context;
 mod encoding;
 mod keys;
 mod ops;
 mod parameters;
 mod plaintext;
-mod plaintext_vec;
+mod plaintext_chunks;
 mod rgsw_ciphertext;
 
 mod wire;
 pub use ciphertext::Ciphertext;
-pub use context::ContextLevel;
 pub use encoding::Encoding;
 #[cfg(feature = "experimental-mbfv")]
 pub(crate) use keys::KeySwitchingKey;
-pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
-pub use ops::{
-    CiphertextProductAccumulator, DotProductScalarWorkspace, MultiplicationPlan,
-    PreparedMultiplicand, dot_product_scalar,
-};
+pub use keys::{PublicKey, SecretKey};
+
 pub use parameters::{ParameterProfile, Parameters, ParametersBuilder};
 pub use plaintext::Plaintext;
 mod packed_plaintext;
-pub use packed_plaintext::{PackedPlaintext, PackedPlaintextVec, PackedPlaintextView};
-pub use plaintext_vec::PlaintextVec;
-pub use rgsw_ciphertext::RgswCiphertext;
+pub(crate) use packed_plaintext::PackedPlaintextView;
+
+/// Evaluation keys, immutable multiplication plans, and caller-owned scratch.
+/// Workspaces are independent mutable values and can be used in caller-owned
+/// thread pools. This module does not start threads or retain global scratch.
+pub mod evaluation {
+    pub use super::keys::{EvaluationKey, EvaluationKeyBuilder, RelinearizationKey};
+    pub use super::ops::{
+        CiphertextProductAccumulator, DotProductScalarWorkspace, MultiplicationPlan,
+        MultiplicationPlanBuilder, MultiplicationScaling, PreparedMultiplicand, dot_product_scalar,
+        dot_product_scalar_iter,
+    };
+    pub use super::rgsw_ciphertext::RgswCiphertext;
+}
+
+/// Compact, validated storage of plaintext NTT residues for repeated
+/// evaluation.
+pub mod packing {
+    pub use super::packed_plaintext::{
+        PackedPlaintext, PackedPlaintextBatch, PackedPlaintextIter, PackedPlaintextView,
+    };
+}

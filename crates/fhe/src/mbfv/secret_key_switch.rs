@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, PowerBasis};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng as RngCore};
@@ -65,12 +65,18 @@ impl SecretKeySwitchShare {
 
         let par = sk_input_share.par.clone();
         let s_in = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_input_share.coeffs.as_ref(), ct.c[0].ctx())?
-                .into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(
+                sk_input_share.coeffs.as_ref(),
+                ct.c[0].ctx(),
+            )?
+            .into_ntt(),
         );
         let s_out = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_output_share.coeffs.as_ref(), ct.c[0].ctx())?
-                .into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(
+                sk_output_share.coeffs.as_ref(),
+                ct.c[0].ctx(),
+            )?
+            .into_ntt(),
         );
 
         // Sample error
@@ -164,7 +170,8 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         ct.par.inner.plaintext.reduce_vec(&mut w);
 
-        let poly = Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt();
+        let poly =
+            Poly::<PowerBasis>::from_biguint_coefficients(w.as_slice(), ct.c[0].ctx())?.into_ntt();
 
         let pt = Plaintext {
             par: ct.par.clone(),

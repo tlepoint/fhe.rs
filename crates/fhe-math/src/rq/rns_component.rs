@@ -103,7 +103,7 @@ impl Poly<Ntt> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rq::{PowerBasis, traits::TryConvertFrom};
+    use crate::rq::PowerBasis;
     use crate::zq::primes::generate_prime;
     use ndarray::Array2;
     use rand::SeedableRng;
@@ -130,7 +130,7 @@ mod tests {
                 }
             });
             let inputs = [
-                Poly::<PowerBasis>::try_convert_from(edges, &source)?,
+                Poly::<PowerBasis>::from_rns_residues(edges, &source)?,
                 Poly::<PowerBasis>::random(&source, &mut rng),
             ];
             // Match at the start, middle, or workspace row; include no overlap
@@ -144,10 +144,12 @@ mod tests {
                 vec![moduli[1], moduli[3]],
             ] {
                 let target = Context::new_arc(&target_moduli, degree)?;
-                let one = Poly::<PowerBasis>::try_convert_from_public(
+                let one = Poly::<PowerBasis>::from_coefficients_with_timing(
                     &[1u64][..],
                     &target,
-                    fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
+                    Some(fhe_util::VariableTime::new(
+                        fhe_util::PublicData::assert_public(),
+                    )),
                 )?
                 .into_ntt_shoup();
                 for input in &inputs {
@@ -156,7 +158,7 @@ mod tests {
                         transformed.allow_variable_time_computations = public;
                         for index in 0..source.moduli.len() {
                             let source_row = input.coefficients.row(index);
-                            let expected = Poly::<PowerBasis>::try_convert_from_with_timing(
+                            let expected = Poly::<PowerBasis>::from_coefficients_with_timing(
                                 source_row.as_slice().unwrap(),
                                 &target,
                                 (public).then(|| {

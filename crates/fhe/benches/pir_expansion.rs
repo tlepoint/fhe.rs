@@ -2,8 +2,8 @@
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
 use fhe::bfv::{
-    Ciphertext, Encoding, EvaluationKey, EvaluationKeyBuilder, ParametersBuilder, Plaintext,
-    SecretKey,
+    Ciphertext, Encoding, ParametersBuilder, Plaintext, SecretKey, evaluation::EvaluationKey,
+    evaluation::EvaluationKeyBuilder,
 };
 
 use rand::SeedableRng;

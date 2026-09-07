@@ -1,6 +1,6 @@
 use crate::bfv::{Ciphertext, Parameters, PublicKey, SecretKey};
 use crate::errors::Result;
-use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly, PowerBasis};
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
@@ -37,7 +37,7 @@ impl PublicKeyShare {
 
         // Convert secret key to usable polynomial
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
 
         // Sample error

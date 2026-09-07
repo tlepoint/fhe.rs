@@ -1,36 +1,23 @@
-use std::{cmp::min, ops::Deref, sync::Arc};
+use std::{cmp::min, sync::Arc};
 
 use crate::VariableTime;
-use fhe_math::rq::{Context, Ntt, Poly, PowerBasis, traits::TryConvertFrom};
+use fhe_math::rq::{Context, Ntt, Poly, PowerBasis};
 use num_bigint::BigUint;
 use num_traits::{ToPrimitive, Zero};
-use zeroize_derive::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     Result,
     bfv::{Encoding, Parameters, Plaintext},
 };
 
-/// Plaintexts encoded from successive degree-sized chunks of a sequence.
-#[derive(Zeroize, ZeroizeOnDrop)]
-pub struct PlaintextVec(Vec<Plaintext>);
-
-impl Deref for PlaintextVec {
-    type Target = [Plaintext];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl PlaintextVec {
-    fn encode_with<T>(
+impl Plaintext {
+    fn encode_chunks_with<T>(
         value: &[T],
         encoding: Encoding,
         level: usize,
         par: &Parameters,
         mut encode_chunk: impl FnMut(&[T], &Encoding, &Parameters, &Arc<Context>) -> Result<Poly<Ntt>>,
-    ) -> Result<Self> {
+    ) -> Result<Vec<Plaintext>> {
         if encoding == Encoding::Simd && par.inner.ntt_operator.is_none() {
             return Err(crate::EncodingError::SimdUnavailable.into());
         }
@@ -49,7 +36,7 @@ impl PlaintextVec {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self(plaintexts))
+        Ok(plaintexts)
     }
 
     pub(crate) fn encode_u64_chunk(
@@ -97,13 +84,13 @@ impl PlaintextVec {
         }
 
         let poly = if let Some(variable_time) = variable_time {
-            Poly::<PowerBasis>::try_convert_from_public(
+            Poly::<PowerBasis>::from_coefficients_with_timing(
                 coefficients.as_slice(),
                 ctx,
-                variable_time,
+                Some(variable_time),
             )?
         } else {
-            Poly::<PowerBasis>::try_convert_from(coefficients.as_slice(), ctx)?
+            Poly::<PowerBasis>::from_coefficients(coefficients.as_slice(), ctx)?
         };
         Ok(poly.into_ntt())
     }
@@ -123,7 +110,10 @@ impl PlaintextVec {
             Encoding::Polynomial => {
                 let mut coefficients = vec![BigUint::zero(); par.degree()];
                 coefficients[..value.len()].clone_from_slice(value);
-                Ok(Poly::<PowerBasis>::try_convert_from(coefficients.as_slice(), ctx)?.into_ntt())
+                Ok(
+                    Poly::<PowerBasis>::from_biguint_coefficients(coefficients.as_slice(), ctx)?
+                        .into_ntt(),
+                )
             }
             Encoding::Simd => {
                 let values = value
@@ -140,20 +130,52 @@ impl PlaintextVec {
     }
 }
 
-impl PlaintextVec {
+impl Plaintext {
+    /// Encode signed values in degree-sized chunks at level zero. Empty input
+    /// yields one zero plaintext and the last chunk is padded with zeros.
+    pub fn encode_chunks_signed(
+        par: &Parameters,
+        values: &[i64],
+        encoding: Encoding,
+    ) -> Result<Vec<Self>> {
+        Self::encode_chunks_signed_at_level(par, values, encoding, 0)
+    }
+
+    /// Encode signed chunks at an explicit level.
+    pub fn encode_chunks_signed_at_level(
+        par: &Parameters,
+        values: &[i64],
+        encoding: Encoding,
+        level: usize,
+    ) -> Result<Vec<Self>> {
+        if values.is_empty() {
+            return Ok(vec![Self::encode_signed_at_level(
+                par, values, encoding, level,
+            )?]);
+        }
+        values
+            .chunks(par.degree())
+            .map(|chunk| Self::encode_signed_at_level(par, chunk, encoding, level))
+            .collect()
+    }
+
     /// Encode a sequence in degree-sized chunks at level zero. Empty input
     /// produces one zero plaintext; the last chunk is padded with zeros.
-    pub fn encode(par: &Parameters, values: &[u64], encoding: Encoding) -> Result<Self> {
-        Self::encode_at_level(par, values, encoding, 0)
+    pub fn encode_chunks(
+        par: &Parameters,
+        values: &[u64],
+        encoding: Encoding,
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_at_level(par, values, encoding, 0)
     }
     /// Encode degree-sized chunks at an explicit level.
-    pub fn encode_at_level(
+    pub fn encode_chunks_at_level(
         par: &Parameters,
         values: &[u64],
         encoding: Encoding,
         level: usize,
-    ) -> Result<Self> {
-        Self::encode_with(
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_with(
             values,
             encoding,
             level,
@@ -163,41 +185,41 @@ impl PlaintextVec {
     }
     /// Encode a sequence in degree-sized chunks at level zero. Empty input
     /// produces one zero plaintext; the last chunk is padded with zeros.
-    pub fn encode_biguint(
+    pub fn encode_chunks_biguint(
         par: &Parameters,
         values: &[BigUint],
         encoding: Encoding,
-    ) -> Result<Self> {
-        Self::encode_biguint_at_level(par, values, encoding, 0)
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_biguint_at_level(par, values, encoding, 0)
     }
     /// Encode degree-sized chunks at an explicit level.
-    pub fn encode_biguint_at_level(
+    pub fn encode_chunks_biguint_at_level(
         par: &Parameters,
         values: &[BigUint],
         encoding: Encoding,
         level: usize,
-    ) -> Result<Self> {
-        Self::encode_with(values, encoding, level, par, Self::encode_biguint_chunk)
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_with(values, encoding, level, par, Self::encode_biguint_chunk)
     }
     /// Encode a sequence in degree-sized chunks at level zero. Empty input
     /// produces one zero plaintext; the last chunk is padded with zeros.
-    pub fn encode_public(
+    pub fn encode_chunks_public(
         par: &Parameters,
         values: &[u64],
         encoding: Encoding,
         permission: VariableTime,
-    ) -> Result<Self> {
-        Self::encode_public_at_level(par, values, encoding, 0, permission)
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_public_at_level(par, values, encoding, 0, permission)
     }
     /// Encode degree-sized chunks at an explicit level.
-    pub fn encode_public_at_level(
+    pub fn encode_chunks_public_at_level(
         par: &Parameters,
         values: &[u64],
         encoding: Encoding,
         level: usize,
         permission: VariableTime,
-    ) -> Result<Self> {
-        Self::encode_with(
+    ) -> Result<Vec<Plaintext>> {
+        Self::encode_chunks_with(
             values,
             encoding,
             level,
@@ -211,7 +233,7 @@ impl PlaintextVec {
 
 #[cfg(test)]
 mod tests {
-    use crate::bfv::{Encoding, Parameters, PlaintextVec, parameters::ParametersBuilder};
+    use crate::bfv::{Encoding, Parameters, Plaintext, parameters::ParametersBuilder};
 
     use num_bigint::BigUint;
     use num_traits::Zero;
@@ -229,51 +251,52 @@ mod tests {
                 let a_vec = q.random_vec(params.degree() * i, &mut rng);
 
                 let plaintexts =
-                    PlaintextVec::encode(&params, a_vec.as_slice(), Encoding::Polynomial)?;
-                assert_eq!(plaintexts.0.len(), i);
+                    Plaintext::encode_chunks(&params, a_vec.as_slice(), Encoding::Polynomial)?;
+                assert_eq!(plaintexts.len(), i);
 
                 for j in 0..i {
-                    let b = (plaintexts.0[j]).decode(Encoding::Polynomial)?;
+                    let b = (plaintexts[j]).decode(Encoding::Polynomial)?;
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts_vt = PlaintextVec::encode_public(
+                let plaintexts_vt = Plaintext::encode_chunks_public(
                     &params,
                     a_vec.as_slice(),
                     Encoding::Polynomial,
                     crate::VariableTime::new(crate::PublicData::assert_public()),
                 )?;
-                assert_eq!(plaintexts_vt.0.len(), i);
-                for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
+                assert_eq!(plaintexts_vt.len(), i);
+                for (pt, pt_vt) in plaintexts.iter().zip(plaintexts_vt.iter()) {
                     assert_eq!(pt, pt_vt);
                 }
 
                 for j in 0..i {
-                    let b = (plaintexts_vt.0[j]).decode(Encoding::Polynomial)?;
+                    let b = (plaintexts_vt[j]).decode(Encoding::Polynomial)?;
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts = PlaintextVec::encode(&params, a_vec.as_slice(), Encoding::Simd)?;
-                assert_eq!(plaintexts.0.len(), i);
+                let plaintexts =
+                    Plaintext::encode_chunks(&params, a_vec.as_slice(), Encoding::Simd)?;
+                assert_eq!(plaintexts.len(), i);
 
                 for j in 0..i {
-                    let b = (plaintexts.0[j]).decode(Encoding::Simd)?;
+                    let b = (plaintexts[j]).decode(Encoding::Simd)?;
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
 
-                let plaintexts_vt = PlaintextVec::encode_public(
+                let plaintexts_vt = Plaintext::encode_chunks_public(
                     &params,
                     a_vec.as_slice(),
                     Encoding::Simd,
                     crate::VariableTime::new(crate::PublicData::assert_public()),
                 )?;
-                assert_eq!(plaintexts_vt.0.len(), i);
-                for (pt, pt_vt) in plaintexts.0.iter().zip(plaintexts_vt.0.iter()) {
+                assert_eq!(plaintexts_vt.len(), i);
+                for (pt, pt_vt) in plaintexts.iter().zip(plaintexts_vt.iter()) {
                     assert_eq!(pt, pt_vt);
                 }
 
                 for j in 0..i {
-                    let b = (plaintexts_vt.0[j]).decode(Encoding::Simd)?;
+                    let b = (plaintexts_vt[j]).decode(Encoding::Simd)?;
                     assert_eq!(b, &a_vec[j * params.degree()..(j + 1) * params.degree()]);
                 }
             }
@@ -285,13 +308,13 @@ mod tests {
             .build()?;
         let a = vec![1u64];
         assert!(matches!(
-            PlaintextVec::encode(&params, a.as_slice(), Encoding::Simd),
+            Plaintext::encode_chunks(&params, a.as_slice(), Encoding::Simd),
             Err(crate::Error::Encoding(
                 crate::EncodingError::SimdUnavailable
             ))
         ));
         assert!(matches!(
-            PlaintextVec::encode_public(
+            Plaintext::encode_chunks_public(
                 &params,
                 a.as_slice(),
                 Encoding::Simd,
@@ -316,7 +339,7 @@ mod tests {
         let values = (0u32..20).map(BigUint::from).collect::<Vec<_>>();
 
         let plaintexts =
-            PlaintextVec::encode_biguint(&params, values.as_slice(), Encoding::Polynomial)?;
+            Plaintext::encode_chunks_biguint(&params, values.as_slice(), Encoding::Polynomial)?;
         assert_eq!(plaintexts.len(), 2);
 
         for (plaintext, chunk) in plaintexts.iter().zip(values.chunks(params.degree())) {
@@ -331,9 +354,9 @@ mod tests {
     fn empty_inputs_share_zero_encoding_path() -> Result<(), Box<dyn Error>> {
         let params = Parameters::test_parameters(1, 16);
         let encoding = Encoding::Polynomial;
-        let constant = PlaintextVec::encode(&params, &[] as &[u64], encoding)?;
-        let big = PlaintextVec::encode_biguint(&params, &[] as &[BigUint], encoding)?;
-        let variable = PlaintextVec::encode_public(
+        let constant = Plaintext::encode_chunks(&params, &[] as &[u64], encoding)?;
+        let big = Plaintext::encode_chunks_biguint(&params, &[] as &[BigUint], encoding)?;
+        let variable = Plaintext::encode_chunks_public(
             &params,
             &[] as &[u64],
             encoding,

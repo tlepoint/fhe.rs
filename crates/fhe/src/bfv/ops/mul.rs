@@ -3,188 +3,185 @@ use std::sync::Arc;
 use fhe_math::{
     rns::ScalingFactor,
     rq::{Context, Ntt, NttShoup, Poly, scaler::Scaler},
-    zq::primes::generate_prime,
 };
 
 use zeroize::Zeroizing;
 
 use super::tensor::{self, Scratch};
 use crate::{
-    Error, ParametersError, Result,
+    Error, Result,
     bfv::{Ciphertext, Parameters, keys::RelinearizationKey},
 };
 
-/// MultiplicationPlan that implements a strategy for multiplying. In
-/// particular, the following information can be specified:
-/// - Whether `lhs` must be scaled;
-/// - Whether `rhs` must be scaled;
-/// - The basis at which the multiplication will occur;
-/// - The scaling factor after multiplication;
-/// - Whether relinearization should be used.
+/// Scaling applied before and after multiplication in the extended basis.
+/// Custom factors are an expert facility: callers are responsible for choosing
+/// factors and a basis large enough for their desired rounding semantics.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultiplicationPlan {
-    par: Parameters,
-    pub(crate) extender_lhs: Scaler,
-    pub(crate) extender_rhs: Scaler,
-    pub(crate) down_scaler: Scaler,
-    pub(crate) base_ctx: Arc<Context>,
-    pub(crate) mul_ctx: Arc<Context>,
-    rk: Option<RelinearizationKey>,
-    mod_switch: bool,
-    level: usize,
-    symmetric: bool,
+pub struct MultiplicationScaling {
+    /// Scale the left operand before the tensor product.
+    pub left: ScalingFactor,
+    /// Scale the right operand before the tensor product.
+    pub right: ScalingFactor,
+    /// Scale the product back to the ciphertext basis.
+    pub product: ScalingFactor,
 }
 
-impl MultiplicationPlan {
-    /// Construct a multiplicator using custom scaling factors and extended
-    /// basis.
-    pub fn new(
-        lhs_scaling_factor: ScalingFactor,
-        rhs_scaling_factor: ScalingFactor,
-        extended_basis: &[u64],
-        post_mul_scaling_factor: ScalingFactor,
-        par: &Parameters,
-    ) -> Result<Self> {
-        Self::new_leveled_internal(
-            lhs_scaling_factor,
-            rhs_scaling_factor,
-            extended_basis,
-            post_mul_scaling_factor,
-            0,
-            par,
-        )
+/// Configuration for an immutable [`MultiplicationPlan`].
+/// Defaults to the parameters' precomputed BFV multiplication at level zero,
+/// without relinearization or modulus switching. A supplied key is borrowed.
+#[derive(Debug, Clone)]
+pub struct MultiplicationPlanBuilder<'key> {
+    par: Parameters,
+    level: usize,
+    scaling: Option<MultiplicationScaling>,
+    extended_basis: Option<Vec<u64>>,
+    rk: Option<&'key RelinearizationKey>,
+    mod_switch: bool,
+}
+
+impl<'key> MultiplicationPlanBuilder<'key> {
+    /// Set the input ciphertext level.
+    #[must_use]
+    pub fn level(mut self, level: usize) -> Self {
+        self.level = level;
+        self
     }
 
-    /// Construct a multiplicator using custom scaling factors and extended
-    /// basis at a given level.
-    pub fn new_leveled(
-        lhs_scaling_factor: ScalingFactor,
-        rhs_scaling_factor: ScalingFactor,
-        extended_basis: &[u64],
-        post_mul_scaling_factor: ScalingFactor,
-        level: usize,
-        par: &Parameters,
-    ) -> Result<Self> {
-        Self::new_leveled_internal(
-            lhs_scaling_factor,
-            rhs_scaling_factor,
-            extended_basis,
-            post_mul_scaling_factor,
-            level,
-            par,
-        )
+    /// Set explicit left, right, and product scaling factors.
+    #[must_use]
+    pub fn scaling(mut self, scaling: MultiplicationScaling) -> Self {
+        self.scaling = Some(scaling);
+        self
     }
 
-    fn new_leveled_internal(
-        lhs_scaling_factor: ScalingFactor,
-        rhs_scaling_factor: ScalingFactor,
-        extended_basis: &[u64],
-        post_mul_scaling_factor: ScalingFactor,
-        level: usize,
-        par: &Parameters,
-    ) -> Result<Self> {
-        let base_ctx = par.context_at_level(level)?;
-        let mul_ctx = Arc::new(Context::new(extended_basis, par.degree())?);
-        let symmetric = lhs_scaling_factor == rhs_scaling_factor;
-        let extender_lhs = Scaler::new(base_ctx, &mul_ctx, lhs_scaling_factor)?;
-        let extender_rhs = Scaler::new(base_ctx, &mul_ctx, rhs_scaling_factor)?;
-        let down_scaler = Scaler::new(&mul_ctx, base_ctx, post_mul_scaling_factor)?;
-        Ok(Self {
-            par: par.clone(),
-            extender_lhs,
-            extender_rhs,
-            down_scaler,
-            base_ctx: base_ctx.clone(),
-            mul_ctx,
-            rk: None,
-            mod_switch: false,
-            level,
-            symmetric,
-        })
+    /// Choose the multiplication basis; by default use the precomputed basis.
+    #[must_use]
+    pub fn extended_basis(mut self, moduli: impl AsRef<[u64]>) -> Self {
+        self.extended_basis = Some(moduli.as_ref().to_vec());
+        self
     }
 
-    /// Default multiplication strategy using relinearization.
-    pub fn with_relinearization(rk: &RelinearizationKey) -> Result<Self> {
-        let ctx = rk.ksk.par.context_at_level(rk.ksk.ciphertext_level)?;
-
-        let modulus_size = rk.ksk.par.moduli_sizes()[..ctx.moduli().len()]
-            .iter()
-            .sum::<usize>();
-        let n_moduli = (modulus_size + 60).div_ceil(62);
-
-        let mut extended_basis = Vec::with_capacity(ctx.moduli().len() + n_moduli);
-        extended_basis.append(&mut ctx.moduli().to_vec());
-        let mut upper_bound = 1 << 62;
-        while extended_basis.len() != ctx.moduli().len() + n_moduli {
-            upper_bound = generate_prime(62, 2 * rk.ksk.par.degree() as u64, upper_bound)
-                .ok_or_else(|| {
-                    Error::ParametersError(ParametersError::NotEnoughPrimes {
-                        size: 62,
-                        degree: rk.ksk.par.degree(),
-                        needed: n_moduli,
-                        available: extended_basis.len() - ctx.moduli().len(),
-                    })
-                })?;
-            if !extended_basis.contains(&upper_bound) && !ctx.moduli().contains(&upper_bound) {
-                extended_basis.push(upper_bound)
-            }
-        }
-
-        let mut multiplicator = Self::new_leveled_internal(
-            ScalingFactor::one(),
-            ScalingFactor::one(),
-            &extended_basis,
-            ScalingFactor::new(rk.ksk.par.plaintext_modulus(), ctx.modulus()),
-            rk.ksk.ciphertext_level,
-            &rk.ksk.par,
-        )?;
-
-        multiplicator.enable_relinearization(rk)?;
-        Ok(multiplicator)
+    /// Borrow the key used to relinearize the product. The key's ciphertext
+    /// level must match this plan; its key level may differ.
+    #[must_use]
+    pub fn relinearization(mut self, key: &'key RelinearizationKey) -> Self {
+        self.rk = Some(key);
+        self
     }
 
-    /// Enable relinearization after multiplication.
-    pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
-        if !Parameters::compatible(&self.par, &rk.ksk.par)
-            || rk.ksk.ciphertext_level != self.level
-            || rk.ksk.ctx_ciphertext != self.base_ctx
+    /// Switch down one level after multiplication and optional relinearization.
+    #[must_use]
+    pub fn modulus_switching(mut self, enabled: bool) -> Self {
+        self.mod_switch = enabled;
+        self
+    }
+
+    /// Validate configuration and create a plan. No evaluation key is copied.
+    pub fn build(self) -> Result<MultiplicationPlan<'key>> {
+        let base_ctx = self.par.context_at_level(self.level)?;
+        if let Some(rk) = self.rk
+            && (!Parameters::compatible(&self.par, &rk.ksk.par)
+                || rk.ksk.ciphertext_level != self.level
+                || &rk.ksk.ctx_ciphertext != base_ctx)
         {
             return Err(Error::ParameterMismatch {
                 left: crate::ParameterSource::RelinearizationKey,
                 right: crate::ParameterSource::MultiplicationPlan,
             });
         }
-        self.rk = Some(rk.clone());
-        Ok(())
+        if self.mod_switch && self.level == self.par.max_level() {
+            return Err(fhe_math::Error::NoMoreContext.into());
+        }
+        let mp = self.par.context_level_at(self.level)?.mul_params();
+        let (extender_lhs, extender_rhs, down_scaler, mul_ctx, symmetric) =
+            if self.scaling.is_none() && self.extended_basis.is_none() {
+                (
+                    mp.extender.clone(),
+                    mp.extender.clone(),
+                    mp.down_scaler.clone(),
+                    mp.to.clone(),
+                    true,
+                )
+            } else {
+                let mul_ctx = match self.extended_basis {
+                    Some(moduli) => Arc::new(Context::new(&moduli, self.par.degree())?),
+                    None => mp.to.clone(),
+                };
+                let scaling = self.scaling.unwrap_or_else(|| MultiplicationScaling {
+                    left: ScalingFactor::one(),
+                    right: ScalingFactor::one(),
+                    product: ScalingFactor::new(self.par.plaintext_modulus(), base_ctx.modulus()),
+                });
+                let symmetric = scaling.left == scaling.right;
+                (
+                    Scaler::new(base_ctx, &mul_ctx, scaling.left)?,
+                    Scaler::new(base_ctx, &mul_ctx, scaling.right)?,
+                    Scaler::new(&mul_ctx, base_ctx, scaling.product)?,
+                    mul_ctx,
+                    symmetric,
+                )
+            };
+        Ok(MultiplicationPlan {
+            par: self.par.clone(),
+            extender_lhs,
+            extender_rhs,
+            down_scaler,
+            base_ctx: base_ctx.clone(),
+            mul_ctx,
+            rk: self.rk,
+            mod_switch: self.mod_switch,
+            level: self.level,
+            symmetric,
+        })
     }
+}
 
-    /// Enable modulus switching after multiplication (and relinearization, if
-    /// applicable).
-    pub fn enable_mod_switching(&mut self) -> Result<()> {
-        if self.par.context_at_level(self.par.max_level())? == &self.base_ctx {
-            Err(fhe_math::Error::NoMoreContext.into())
-        } else {
-            self.mod_switch = true;
-            Ok(())
+/// Immutable multiplication strategy, borrowing an optional relinearization
+/// key. Configure scaling, basis, and evaluation steps with [`Self::builder`].
+/// Prepared operands borrow the plan; scratch and output buffers are separate.
+///
+/// ```compile_fail
+/// use fhe::bfv::evaluation::MultiplicationPlan;
+/// fn change(plan: &mut MultiplicationPlan<'_>) {
+///     plan.enable_mod_switching();
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiplicationPlan<'key> {
+    par: Parameters,
+    extender_lhs: Scaler,
+    extender_rhs: Scaler,
+    down_scaler: Scaler,
+    base_ctx: Arc<Context>,
+    mul_ctx: Arc<Context>,
+    rk: Option<&'key RelinearizationKey>,
+    mod_switch: bool,
+    level: usize,
+    symmetric: bool,
+}
+
+impl<'key> MultiplicationPlan<'key> {
+    /// Configure a plan using these parameters' precomputed multiplication
+    /// basis.
+    #[must_use]
+    pub fn builder(par: &Parameters) -> MultiplicationPlanBuilder<'key> {
+        MultiplicationPlanBuilder {
+            par: par.clone(),
+            level: 0,
+            scaling: None,
+            extended_basis: None,
+            rk: None,
+            mod_switch: false,
         }
     }
 
-    /// Use the parameters' precomputed multiplication basis at `level`, without
-    /// relinearization or modulus switching. These can be enabled afterwards.
-    pub fn without_relinearization(par: &Parameters, level: usize) -> Result<Self> {
-        let mp = par.context_level_at(level)?.mul_params();
-        Ok(Self {
-            par: par.clone(),
-            extender_lhs: mp.extender.clone(),
-            extender_rhs: mp.extender.clone(),
-            down_scaler: mp.down_scaler.clone(),
-            base_ctx: mp.from.clone(),
-            mul_ctx: mp.to.clone(),
-            rk: None,
-            mod_switch: false,
-            level,
-            symmetric: true,
-        })
+    /// Use the default BFV strategy at the key's ciphertext level, with
+    /// relinearization and without modulus switching. Borrows the key.
+    pub fn with_relinearization(rk: &'key RelinearizationKey) -> Result<Self> {
+        Self::builder(&rk.ksk.par)
+            .level(rk.ksk.ciphertext_level)
+            .relinearization(rk)
+            .build()
     }
 
     fn validate_operand(&self, ct: &Ciphertext) -> Result<()> {
@@ -312,10 +309,10 @@ impl MultiplicationPlan {
 ///
 /// This is an owned snapshot, so later changes to the source ciphertext do not
 /// affect its products. Each multiplication still rounds independently; use
-/// [`crate::bfv::CiphertextProductAccumulator`] to round a sum of products
-/// once.
+/// [`crate::bfv::evaluation::CiphertextProductAccumulator`] to round a sum of
+/// products once.
 pub struct PreparedMultiplicand<'a> {
-    multiplicator: &'a MultiplicationPlan,
+    multiplicator: &'a MultiplicationPlan<'a>,
     c: Zeroizing<[Poly<NttShoup>; 3]>,
 }
 
@@ -348,17 +345,17 @@ impl PreparedMultiplicand<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, RelinearizationKey, SecretKey};
-    use fhe_math::{
-        rns::{RnsContext, ScalingFactor},
-        zq::primes::generate_prime,
+    use crate::bfv::{
+        Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::RelinearizationKey,
     };
+    use fhe_math::rns::{RnsContext, ScalingFactor};
 
     use num_bigint::BigUint;
     use rand::rng;
     use std::error::Error;
 
     use super::MultiplicationPlan;
+    use fhe_math::zq::primes::generate_prime;
 
     #[test]
     fn prepared_products_and_squares_at_every_level() -> Result<(), Box<dyn Error>> {
@@ -377,7 +374,7 @@ mod tests {
             let other_pt = Plaintext::encode_at_level(&par, &right, encoding, level)?;
             let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
             let other: Ciphertext = sk.encrypt(&other_pt, &mut rng)?;
-            let base = MultiplicationPlan::without_relinearization(&par, level)?;
+            let base = MultiplicationPlan::builder(&par).level(level).build()?;
             let raw_product = ct.multiply(&other)?;
             let raw_square = ct.multiply(&ct.clone())?;
             assert_eq!(raw_square, ct.square()?);
@@ -387,20 +384,21 @@ mod tests {
                     if mode == 2 && level == par.max_level() {
                         continue;
                     }
-                    let mut strategy = base.clone();
+                    let mut builder = MultiplicationPlan::builder(&par).level(level);
                     let rk = RelinearizationKey::new_leveled(&sk, level, key_level, &mut rng)?;
                     let mut expected = raw_product.clone();
                     let mut expected_square = raw_square.clone();
                     if mode > 0 {
-                        strategy.enable_relinearization(&rk)?;
+                        builder = builder.relinearization(&rk);
                         rk.relinearize(&mut expected)?;
                         rk.relinearize(&mut expected_square)?;
                     }
                     if mode == 2 {
-                        strategy.enable_mod_switching()?;
+                        builder = builder.modulus_switching(true);
                         expected.switch_down()?;
                         expected_square.switch_down()?;
                     }
+                    let strategy = builder.build()?;
                     let mut snapshot_source = ct.clone();
                     let prepared = strategy.prepare_lhs(&snapshot_source)?;
                     snapshot_source.c[0].zeroize();
@@ -441,7 +439,7 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(0xc07);
         for level in 0..=par.max_level() {
             let ctx = par.context_at_level(level)?;
-            let strategy = MultiplicationPlan::without_relinearization(&par, level)?;
+            let strategy = MultiplicationPlan::builder(&par).level(level).build()?;
             for mask in 0..16 {
                 let mut parts: Vec<_> =
                     (0..4).map(|_| Poly::<Ntt>::random(ctx, &mut rng)).collect();
@@ -476,7 +474,7 @@ mod tests {
         let sk = SecretKey::generate(&par, &mut rng);
         let pt = Plaintext::encode(&par, &[2u64], Encoding::Polynomial)?;
         let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
-        let strategy = MultiplicationPlan::without_relinearization(&par, 0)?;
+        let strategy = MultiplicationPlan::builder(&par).level(0).build()?;
         let prepared = strategy.prepare_lhs(&ct)?;
         let expected = prepared.multiply(&ct)?;
 
@@ -516,15 +514,29 @@ mod tests {
         assert!(strategy.prepare_lhs(&expected).is_err());
         assert!(prepared.multiply(&expected).is_err());
         assert_eq!(prepared.multiply(&ct)?, expected);
-        assert!(MultiplicationPlan::without_relinearization(&par, par.max_level() + 1).is_err());
+        assert!(
+            MultiplicationPlan::builder(&par)
+                .level(par.max_level() + 1)
+                .build()
+                .is_err()
+        );
         // Identical moduli are insufficient: an evaluation key must belong
         // to compatible BFV parameter settings and the same ciphertext level.
         let foreign_sk = SecretKey::generate(&wrong_params.par, &mut rng);
         let foreign_rk = RelinearizationKey::new(&foreign_sk, &mut rng)?;
         let leveled_rk = RelinearizationKey::new_leveled(&sk, 1, 0, &mut rng)?;
-        let mut strategy = strategy.clone();
-        assert!(strategy.enable_relinearization(&foreign_rk).is_err());
-        assert!(strategy.enable_relinearization(&leveled_rk).is_err());
+        assert!(
+            MultiplicationPlan::builder(&par)
+                .relinearization(&foreign_rk)
+                .build()
+                .is_err()
+        );
+        assert!(
+            MultiplicationPlan::builder(&par)
+                .relinearization(&leveled_rk)
+                .build()
+                .is_err()
+        );
         assert_eq!(strategy.square(&ct)?, expected);
         Ok(())
     }
@@ -568,7 +580,10 @@ mod tests {
             let ct1 = sk.encrypt(&pt, &mut rng)?;
             let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = MultiplicationPlan::with_relinearization(&rk)?;
+            let builder = MultiplicationPlan::builder(&par)
+                .level(rk.ksk.ciphertext_level)
+                .relinearization(&rk);
+            let multiplicator = builder.clone().build()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             println!(
                 "Noise: {}",
@@ -580,7 +595,7 @@ mod tests {
             let pt = sk.decrypt(&ct3)?;
             assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
-            multiplicator.enable_mod_switching()?;
+            let multiplicator = builder.clone().modulus_switching(true).build()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
             println!(
@@ -615,7 +630,10 @@ mod tests {
                 assert_eq!(ct1.level, level);
                 assert_eq!(ct2.level, level);
 
-                let mut multiplicator = MultiplicationPlan::with_relinearization(&rk).unwrap();
+                let builder = MultiplicationPlan::builder(&par)
+                    .level(level)
+                    .relinearization(&rk);
+                let multiplicator = builder.clone().build()?;
                 let ct3 = multiplicator.multiply(&ct1, &ct2).unwrap();
                 println!(
                     "Noise: {}",
@@ -627,7 +645,7 @@ mod tests {
                 let pt = sk.decrypt(&ct3)?;
                 assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
-                multiplicator.enable_mod_switching()?;
+                let multiplicator = builder.clone().modulus_switching(true).build()?;
                 let ct3 = multiplicator.multiply(&ct1, &ct2)?;
                 assert_eq!(ct3.level, level + 1);
                 println!(
@@ -657,14 +675,12 @@ mod tests {
             q.mul_vec(&mut expected, &values);
 
             let sk = SecretKey::generate(&par, &mut rng);
-            let rk = RelinearizationKey::new(&sk, &mut rng)?;
             let pt = Plaintext::encode(&par, &values, Encoding::Simd)?;
             let ct1 = sk.encrypt(&pt, &mut rng)?;
             let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = MultiplicationPlan::with_relinearization(&rk)?;
-            // Remove the relinearization key.
-            multiplicator.rk = None;
+            let builder = MultiplicationPlan::builder(&par);
+            let multiplicator = builder.clone().build()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             println!(
                 "Noise: {}",
@@ -676,7 +692,7 @@ mod tests {
             let pt = sk.decrypt(&ct3)?;
             assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
-            multiplicator.enable_mod_switching()?;
+            let multiplicator = builder.clone().modulus_switching(true).build()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
             println!(
@@ -720,16 +736,17 @@ mod tests {
             let ct1 = sk.encrypt(&pt, &mut rng)?;
             let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = MultiplicationPlan::new(
-                ScalingFactor::one(),
-                ScalingFactor::new(rns.modulus(), par.context_at_level(0)?.modulus()),
-                &extended_basis,
-                ScalingFactor::new(
-                    &BigUint::from(par.plaintext_modulus_u64().unwrap()),
-                    rns.modulus(),
-                ),
-                &par,
-            )?;
+            let builder = MultiplicationPlan::builder(&par)
+                .extended_basis(&extended_basis)
+                .scaling(super::MultiplicationScaling {
+                    left: ScalingFactor::one(),
+                    right: ScalingFactor::new(rns.modulus(), par.context_at_level(0)?.modulus()),
+                    product: ScalingFactor::new(
+                        &BigUint::from(par.plaintext_modulus_u64().unwrap()),
+                        rns.modulus(),
+                    ),
+                });
+            let multiplicator = builder.clone().build()?;
 
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(multiplicator.prepare_lhs(&ct1)?.multiply(&ct2)?, ct3);
@@ -747,7 +764,7 @@ mod tests {
             let pt = sk.decrypt(&ct3)?;
             assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
-            multiplicator.enable_mod_switching()?;
+            let multiplicator = builder.clone().modulus_switching(true).build()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
             assert_eq!(multiplicator.prepare_lhs(&ct1)?.multiply(&ct2)?, ct3);

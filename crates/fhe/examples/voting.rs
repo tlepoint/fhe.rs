@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Show vote result
     println!("Vote result = {tally_result} / {num_voters}");
 
-    let expected_tally = votes.iter().sum();
+    let expected_tally: u64 = votes.iter().sum();
     assert_eq!(tally_result, expected_tally);
 
     Ok(())

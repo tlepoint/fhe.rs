@@ -2,7 +2,7 @@ use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RgswCiphertextProto,
 };
 use crate::{Error, Result, SerializationError};
-use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly};
+use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
 use prost::Message;
 use rand::{CryptoRng, Rng as RngCore};
@@ -92,7 +92,7 @@ impl SecretKey {
 
         let m = Zeroizing::new(pt.poly_ntt.clone().into_power_basis());
         let mut m_s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ctx)?.into_ntt(),
+            Poly::<PowerBasis>::from_signed_coefficients(self.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         *m_s.as_mut() *= pt.poly_ntt.as_ref();
         let ctx = m_s.ctx().clone();
@@ -159,14 +159,16 @@ mod tests {
     #[test]
     fn import_rejects_different_switching_and_ciphertext_levels() -> crate::Result<()> {
         use crate::bfv::keys::KeySwitchingKey;
-        use fhe_math::rq::{Poly, PowerBasis, traits::TryConvertFrom};
+        use fhe_math::rq::{Poly, PowerBasis};
         let par = Parameters::test_parameters(3, 16);
         let mut rng = rng();
         let sk = SecretKey::generate(&par, &mut rng);
         let pt = Plaintext::encode(&par, &[2, 3], Encoding::Simd)?;
-        let secret =
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), par.context_at_level(0)?)?
-                .into_ntt();
+        let secret = Poly::<PowerBasis>::from_signed_coefficients(
+            sk.coeffs.as_ref(),
+            par.context_at_level(0)?,
+        )?
+        .into_ntt();
         let m_s = (&pt.poly_ntt * &secret).into_power_basis();
         let m = pt.poly_ntt.clone().into_power_basis();
         let rgsw = RgswCiphertext {

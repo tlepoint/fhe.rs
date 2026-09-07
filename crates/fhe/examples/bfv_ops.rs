@@ -10,8 +10,8 @@ mod util;
 use std::error::Error;
 
 use fhe::bfv::{
-    Ciphertext, Encoding, EvaluationKeyBuilder, Parameters, Plaintext, PublicKey,
-    RelinearizationKey, SecretKey,
+    Ciphertext, Encoding, Parameters, Plaintext, PublicKey, SecretKey,
+    evaluation::EvaluationKeyBuilder, evaluation::RelinearizationKey,
 };
 
 use rand::rng;
@@ -36,7 +36,7 @@ fn weighted_sum_plain(
 fn weighted_sum_simd(
     ct: &Ciphertext,
     weights: &Plaintext,
-    ek: &fhe::bfv::EvaluationKey,
+    ek: &fhe::bfv::evaluation::EvaluationKey,
     sk: &SecretKey,
 ) -> Result<u64, Box<dyn Error>> {
     let tmp = ct.multiply_plaintext(weights)?;

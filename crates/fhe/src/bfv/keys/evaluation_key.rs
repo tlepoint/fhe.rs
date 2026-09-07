@@ -312,7 +312,7 @@ impl EvaluationKey {
 /// The builder retains no owned copy of the secret coefficients.
 ///
 /// ```compile_fail
-/// use fhe::bfv::{EvaluationKeyBuilder, SecretKey};
+/// use fhe::bfv::{evaluation::EvaluationKeyBuilder, SecretKey};
 /// fn build(sk: SecretKey) {
 ///     let mut builder = EvaluationKeyBuilder::new(&sk);
 ///     drop(sk);
@@ -454,10 +454,10 @@ impl<'a> EvaluationKeyBuilder<'a> {
         for l in 0..self.sk.par.degree().ilog2() {
             let mut monomial = vec![0i64; self.sk.par.degree()];
             monomial[self.sk.par.degree() - (1 << l)] = -1;
-            let monomial = Poly::<PowerBasis>::try_convert_from_public(
+            let monomial = Poly::<PowerBasis>::from_signed_coefficients_with_timing(
                 &monomial,
                 ciphertext_ctx,
-                crate::VariableTime::new(crate::PublicData::assert_public()),
+                Some(crate::VariableTime::new(crate::PublicData::assert_public())),
             )?;
             ek.monomials.push(monomial.into_ntt_shoup());
         }
@@ -518,10 +518,10 @@ impl FromProto<&EvaluationKeyProto> for EvaluationKey {
         for l in 0..par.degree().ilog2() {
             let mut monomial = vec![0i64; par.degree()];
             monomial[par.degree() - (1 << l)] = -1;
-            let monomial = Poly::<PowerBasis>::try_convert_from_public(
+            let monomial = Poly::<PowerBasis>::from_signed_coefficients_with_timing(
                 &monomial,
                 ciphertext_ctx,
-                crate::VariableTime::new(crate::PublicData::assert_public()),
+                Some(crate::VariableTime::new(crate::PublicData::assert_public())),
             )?;
             monomials.push(monomial.into_ntt_shoup());
         }

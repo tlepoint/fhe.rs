@@ -56,6 +56,19 @@ fn main() -> fhe::Result<()> {
 
 Note that operations actually happen modulo the `plaintext_modulus`, here set to `1024 (= 1 << 10)`; for example, we would have had that the homomorphic multiplication of `805` and `-7` is `509 = (805 * (-7)) mod 1024`. Additionally, the `Encoding::Polynomial` encoding means that the vector being encoded corresponds to the coefficients of a polynomial in `(ZZ / (1024))[x] / (x^2048+1)` (and homomorphic multiplication happens in that ring); here since only one coefficient is provided, the value is placed in the constant coefficient. The library also contains a `Encoding::Simd` encoding, which enables component-wise operation on the values of the vector, provided the technical limitation that the plaintext modulus is congruent to `1` modulo twice the polynomial degree.
 
+## Advanced APIs
+
+The basic flow uses `bfv::{Parameters, Encoding, Plaintext, Ciphertext, SecretKey,
+PublicKey}`. Evaluation keys, immutable multiplication plans, prepared operands,
+and workspaces live in `bfv::evaluation`. Compact plaintext storage lives in
+`bfv::packing`; immutable level descriptors live in `bfv::context`.
+
+`Plaintext::encode_chunks` returns `Vec<Plaintext>`; empty input produces one
+zero plaintext. `PackedPlaintextBatch` keeps contiguous storage and validates
+`try_extend` before appending. Dot-product methods accept slices, with `_refs`
+variants for reference slices and `_iter` variants that collect references once.
+Workspaces remain caller-owned mutable values; no implicit thread pool is created.
+
 ## Examples
 
 More examples exercizing multiple functions from the API are provided in the repository [`examples/`](./examples/). For example, this library implements [SealPIR](https://eprint.iacr.org/2017/1142) and [MulPIR](https://eprint.iacr.org/2019/1483), which can be run as follows:
@@ -80,7 +93,7 @@ value owns a snapshot and borrows the multiplication strategy, so its level
 and scaling settings cannot accidentally change underneath it.
 
 ```rust
-use fhe::bfv::{Ciphertext, MultiplicationPlan, RelinearizationKey};
+use fhe::bfv::{Ciphertext, evaluation::{MultiplicationPlan, RelinearizationKey}};
 
 fn multiply_query(
     query: &Ciphertext,
@@ -96,14 +109,14 @@ fn multiply_query(
 Preparation trades memory and setup time for faster subsequent products. It
 works with custom asymmetric scaling strategies and optional modulus switching;
 every right operand must use compatible parameter settings and the strategy's input
-level. Use `MultiplicationPlan::without_relinearization(&parameters, level)` to reuse
+level. Use `MultiplicationPlan::builder(&parameters).level(level).build()?` to reuse
 the parameters' multiplication basis without a relinearization key.
 
 `Ciphertext::multiply` provides checked multiplication, and `Ciphertext::square`
 uses symmetry to avoid duplicate cross products. These return unrelinearized
 ciphertexts. `MultiplicationPlan::square` also applies the strategy's relinearization
 and modulus switching. Explicit `square()` is preferable when squaring a cloned
-ciphertext: operators recognize identical references without scanning encrypted
+ciphertext: multiplication methods recognize identical references without scanning encrypted
 coefficients for equality.
 
 Run `cargo bench -p fhe --bench bfv_multiplication` to compare ordinary and

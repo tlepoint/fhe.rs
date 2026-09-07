@@ -2,7 +2,9 @@
 #![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use fhe::bfv::{Ciphertext, Encoding, Parameters, Plaintext, RgswCiphertext, SecretKey};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::RgswCiphertext,
+};
 
 use itertools::Itertools;
 use rand::rng;
