@@ -565,17 +565,19 @@ mod tests {
         let params = BfvParameters::default_arc(1, 16);
         let a = params.plaintext();
         let q = fhe_math::zq::Modulus::new(a).unwrap();
-        let a_vec = q.random_vec(params.degree(), &mut rng);
+        let mut a_vec = q.random_vec(params.degree(), &mut rng);
+        // Always exercise the midpoint: for odd a, floor(a / 2) stays positive.
+        a_vec[params.degree() - 1] = a / 2;
 
         let plaintext = Plaintext::try_encode(&a_vec, Encoding::simd(), &params);
         assert!(plaintext.is_ok());
         let b = Vec::<u64>::try_decode(&plaintext?, Encoding::simd())?;
         assert_eq!(b, a_vec);
 
-        // center_vec replacement logic for test
+        // Center into [-a / 2, a / 2); the first negative residue is ceil(a / 2).
         let mut a_signed = vec![];
         for x in &a_vec {
-            if *x >= a / 2 {
+            if *x >= a.div_ceil(2) {
                 a_signed.push((*x as i64) - (a as i64));
             } else {
                 a_signed.push(*x as i64);
@@ -709,10 +711,16 @@ mod tests {
     #[test]
     fn signed_decoding_boundaries_and_overflow() -> Result<(), Box<dyn Error>> {
         let par = BfvParameters::default_arc(2, 16);
+        assert_eq!(par.plaintext(), 1153);
         for encoding in [Encoding::poly(), Encoding::simd()] {
-            let pt = Plaintext::try_encode(&[576i64, -576], encoding.clone(), &par)?;
+            // Values just outside the centered interval wrap modulo 1153.
+            let pt = Plaintext::try_encode(
+                &[575i64, 576, 577, -575, -576, -577],
+                encoding.clone(),
+                &par,
+            )?;
             let values = Vec::<i64>::try_decode(&pt, encoding)?;
-            assert_eq!(&values[..2], &[576, -576]);
+            assert_eq!(&values[..6], &[575, 576, -576, -575, -576, 576]);
         }
         for t in [
             BigUint::from(1u32) << 100usize,
