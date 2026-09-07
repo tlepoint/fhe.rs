@@ -25,7 +25,8 @@ pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::{
-    CiphertextProductAccumulator, DotProductScalarWorkspace, Multiplicator, dot_product_scalar,
+    CiphertextProductAccumulator, DotProductScalarWorkspace, Multiplicator, PreparedMultiplicand,
+    dot_product_scalar,
 };
 pub use parameters::{BfvParameters, BfvParametersBuilder};
 pub use plaintext::Plaintext;

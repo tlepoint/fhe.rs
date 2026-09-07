@@ -83,6 +83,41 @@ cargo run --release --example mulpir
 
 Micro benchmarks can be obtained by running `cargo bench`. This crate uses [criterion.rs](https://criterion.rs) for benchmarks.
 
+For repeated ciphertext multiplication, prepare the operand that stays fixed.
+This caches its basis extension and Shoup multiplication tables. The prepared
+value owns a snapshot and borrows the multiplication strategy, so its level
+and scaling settings cannot accidentally change underneath it.
+
+```rust
+use fhe::bfv::{Ciphertext, Multiplicator, RelinearizationKey};
+
+fn multiply_query(
+    query: &Ciphertext,
+    encrypted_rows: &[Ciphertext],
+    key: &RelinearizationKey,
+) -> fhe::Result<Vec<Ciphertext>> {
+    let strategy = Multiplicator::default(key)?;
+    let prepared = strategy.prepare_lhs(query)?;
+    encrypted_rows.iter().map(|row| prepared.multiply(row)).collect()
+}
+```
+
+Preparation trades memory and setup time for faster subsequent products. It
+works with custom asymmetric scaling strategies and optional modulus switching;
+every right operand must match the strategy's parameter instance and input
+level. Use `Multiplicator::without_relinearization(&parameters, level)` to reuse
+the parameters' multiplication basis without a relinearization key.
+
+`Ciphertext::try_mul` provides checked multiplication, and `Ciphertext::square`
+uses symmetry to avoid duplicate cross products. These return unrelinearized
+ciphertexts. `Multiplicator::square` also applies the strategy's relinearization
+and modulus switching. Explicit `square()` is preferable when squaring a cloned
+ciphertext: operators recognize identical references without scanning encrypted
+coefficients for equality.
+
+Run `cargo bench -p fhe --bench bfv_multiplication` to compare ordinary and
+prepared products, including preparation cost for a batch of eight products.
+
 ## Unit tests
 
 Run tests with `cargo test`.

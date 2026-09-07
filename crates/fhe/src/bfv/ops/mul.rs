@@ -2,10 +2,13 @@ use std::sync::Arc;
 
 use fhe_math::{
     rns::ScalingFactor,
-    rq::{Context, scaler::Scaler},
+    rq::{Context, Ntt, NttShoup, Poly, scaler::Scaler},
     zq::primes::generate_prime,
 };
 
+use zeroize::Zeroizing;
+
+use super::tensor::{self, Scratch};
 use crate::{
     Error, ParametersError, Result,
     bfv::{BfvParameters, Ciphertext, keys::RelinearizationKey},
@@ -29,6 +32,7 @@ pub struct Multiplicator {
     rk: Option<RelinearizationKey>,
     mod_switch: bool,
     level: usize,
+    symmetric: bool,
 }
 
 impl Multiplicator {
@@ -81,6 +85,7 @@ impl Multiplicator {
     ) -> Result<Self> {
         let base_ctx = par.context_at_level(level)?;
         let mul_ctx = Arc::new(Context::new(extended_basis, par.degree())?);
+        let symmetric = lhs_scaling_factor == rhs_scaling_factor;
         let extender_lhs = Scaler::new(base_ctx, &mul_ctx, lhs_scaling_factor)?;
         let extender_rhs = Scaler::new(base_ctx, &mul_ctx, rhs_scaling_factor)?;
         let down_scaler = Scaler::new(&mul_ctx, base_ctx, post_mul_scaling_factor)?;
@@ -94,6 +99,7 @@ impl Multiplicator {
             rk: None,
             mod_switch: false,
             level,
+            symmetric,
         })
     }
 
@@ -139,8 +145,10 @@ impl Multiplicator {
 
     /// Enable relinearization after multiplication.
     pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
-        let rk_ctx = self.par.context_at_level(rk.ksk.ciphertext_level)?;
-        if rk_ctx != &self.base_ctx {
+        if !Arc::ptr_eq(&self.par, &rk.ksk.par)
+            || rk.ksk.ciphertext_level != self.level
+            || rk.ksk.ctx_ciphertext != self.base_ctx
+        {
             return Err(Error::ParameterMismatch {
                 left: crate::ParameterSource::RelinearizationKey,
                 right: crate::ParameterSource::Multiplicator,
@@ -161,51 +169,109 @@ impl Multiplicator {
         }
     }
 
-    /// Multiply two ciphertexts using the defined multiplication strategy.
-    pub fn multiply(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Result<Ciphertext> {
-        lhs.validate_for(&self.par)?;
-        rhs.validate_for(&self.par)?;
-        if lhs.level != self.level {
-            return Err(Error::InvalidLevel {
-                level: lhs.level,
-                min_level: self.level,
-                max_level: self.level,
-            });
-        }
-        if rhs.level != self.level {
-            return Err(Error::InvalidLevel {
-                level: rhs.level,
-                min_level: self.level,
-                max_level: self.level,
-            });
-        }
-        if lhs.len() != 2 || rhs.len() != 2 {
+    /// Use the parameters' precomputed multiplication basis at `level`, without
+    /// relinearization or modulus switching. These can be enabled afterwards.
+    pub fn without_relinearization(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+        let mp = par.context_level_at(level)?.mul_params();
+        Ok(Self {
+            par: par.clone(),
+            extender_lhs: mp.extender.clone(),
+            extender_rhs: mp.extender.clone(),
+            down_scaler: mp.down_scaler.clone(),
+            base_ctx: mp.from.clone(),
+            mul_ctx: mp.to.clone(),
+            rk: None,
+            mod_switch: false,
+            level,
+            symmetric: true,
+        })
+    }
+
+    fn validate_operand(&self, ct: &Ciphertext) -> Result<()> {
+        ct.validate_for_context(&self.par, self.level, &self.base_ctx)?;
+        if ct.len() != 2 {
             return Err(crate::CiphertextError::MultiplicationPolynomialCount {
-                left: lhs.len(),
-                right: rhs.len(),
+                left: ct.len(),
+                right: ct.len(),
                 expected: 2,
             }
             .into());
         }
+        Ok(())
+    }
 
-        // Extend
-        let c00 = lhs[0].scale(&self.extender_lhs)?;
-        let c01 = lhs[1].scale(&self.extender_lhs)?;
-        let c10 = rhs[0].scale(&self.extender_rhs)?;
-        let c11 = rhs[1].scale(&self.extender_rhs)?;
+    /// Multiply two two-part ciphertexts using the defined strategy.
+    pub fn multiply(&self, lhs: &Ciphertext, rhs: &Ciphertext) -> Result<Ciphertext> {
+        if std::ptr::eq(lhs, rhs) && self.symmetric {
+            return self.square(lhs);
+        }
+        self.validate_operand(lhs)?;
+        self.validate_operand(rhs)?;
+        let left = Scratch([
+            lhs[0].scale(&self.extender_lhs)?,
+            lhs[1].scale(&self.extender_lhs)?,
+        ]);
+        let right = Scratch([
+            rhs[0].scale(&self.extender_rhs)?,
+            rhs[1].scale(&self.extender_rhs)?,
+        ]);
+        self.finish_product(tensor::product(&left.0, &right.0))
+    }
 
-        // Multiply
-        let c0 = &c00 * &c10;
-        let mut c1 = &c00 * &c11;
-        c1 += &(&c01 * &c10);
-        let c2 = &c01 * &c11;
+    /// Square a two-part ciphertext and apply the configured relinearization
+    /// and modulus switching. Symmetric strategies reuse one basis extension
+    /// and compute the cross product once. Asymmetric custom scaling factors
+    /// retain their separate left and right extensions.
+    pub fn square(&self, ct: &Ciphertext) -> Result<Ciphertext> {
+        self.validate_operand(ct)?;
+        if !self.symmetric {
+            return self.multiply(ct, ct);
+        }
+        let input = Scratch([
+            ct[0].scale(&self.extender_lhs)?,
+            ct[1].scale(&self.extender_lhs)?,
+        ]);
+        self.finish_product(tensor::square(&input.0))
+    }
 
-        // Scale
-        let c0 = c0.scale(&self.down_scaler)?;
-        let c1 = c1.scale(&self.down_scaler)?;
-        let c2 = c2.scale(&self.down_scaler)?;
+    /// Prepare a reusable left operand for this multiplication strategy.
+    ///
+    /// Caches its two extended NTT parts and their sum with Shoup quotients.
+    /// Subsequent products skip the left basis extension and use cheaper
+    /// multiplication by fixed polynomials. Preparation is useful when the
+    /// same ciphertext participates in several products.
+    ///
+    /// The result owns a snapshot of the operand and borrows this strategy,
+    /// preventing changes to its level, scalers, or relinearization settings
+    /// while the prepared value is in use. Cached coefficients are zeroized
+    /// on drop. Their storage is approximately `6*N*L` words, where `L` is the
+    /// number of primes in the extended multiplication basis.
+    pub fn prepare_lhs(&self, ct: &Ciphertext) -> Result<PreparedMultiplicand<'_>> {
+        self.validate_operand(ct)?;
+        let mut c0 = ct[0].scale(&self.extender_lhs)?;
+        let mut c1 = ct[1].scale(&self.extender_lhs)?;
+        if !ct.iter().all(Poly::allows_variable_time_computations) {
+            c0.disallow_variable_time_computations();
+            c1.disallow_variable_time_computations();
+        }
+        let sum = &c0 + &c1;
+        Ok(PreparedMultiplicand {
+            multiplicator: self,
+            c: Zeroizing::new([
+                c0.into_ntt_shoup(),
+                c1.into_ntt_shoup(),
+                sum.into_ntt_shoup(),
+            ]),
+        })
+    }
 
-        let mut c = vec![c0, c1, c2];
+    fn finish_product(&self, product: Vec<Poly<Ntt>>) -> Result<Ciphertext> {
+        let product = Scratch(product);
+        let mut c = product
+            .0
+            .iter()
+            .map(|p| p.scale(&self.down_scaler))
+            .collect::<fhe_math::Result<Vec<_>>>()?;
 
         // Relinearize
         if let Some(rk) = self.rk.as_ref() {
@@ -226,8 +292,6 @@ impl Multiplicator {
             c.truncate(2);
         }
 
-        // We construct a ciphertext, but it may not have the right representation for
-        // the polynomials yet.
         let mut c = Ciphertext {
             par: self.par.clone(),
             seed: None,
@@ -240,6 +304,44 @@ impl Multiplicator {
         }
 
         Ok(c)
+    }
+}
+
+/// A reusable, basis-extended left operand tied to a [`Multiplicator`].
+/// Construct with [`Multiplicator::prepare_lhs`].
+///
+/// This is an owned snapshot, so later changes to the source ciphertext do not
+/// affect its products. Each multiplication still rounds independently; use
+/// [`crate::bfv::CiphertextProductAccumulator`] to round a sum of products
+/// once.
+pub struct PreparedMultiplicand<'a> {
+    multiplicator: &'a Multiplicator,
+    c: Zeroizing<[Poly<NttShoup>; 3]>,
+}
+
+impl PreparedMultiplicand<'_> {
+    /// Multiply the prepared left operand by `rhs`, including the strategy's
+    /// optional relinearization and modulus switching. `rhs` must have two
+    /// parts and match the strategy's parameter instance and input level.
+    pub fn multiply(&self, rhs: &Ciphertext) -> Result<Ciphertext> {
+        let strategy = self.multiplicator;
+        strategy.validate_operand(rhs)?;
+        let mut right = Scratch([
+            rhs[0].scale(&strategy.extender_rhs)?,
+            rhs[1].scale(&strategy.extender_rhs)?,
+        ]);
+        if !rhs.iter().all(Poly::allows_variable_time_computations) {
+            for p in right.0.iter_mut() {
+                p.disallow_variable_time_computations();
+            }
+        }
+        let c0 = &right.0[0] * &self.c[0];
+        let c2 = &right.0[1] * &self.c[1];
+        let mut c1 = &right.0[0] + &right.0[1];
+        c1 *= &self.c[2];
+        c1 -= &c0;
+        c1 -= &c2;
+        strategy.finish_product(vec![c0, c1, c2])
     }
 }
 
@@ -258,6 +360,194 @@ mod tests {
     use std::error::Error;
 
     use super::Multiplicator;
+
+    #[test]
+    fn prepared_products_and_squares_at_every_level() -> Result<(), Box<dyn Error>> {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        use zeroize::Zeroize;
+
+        let par = BfvParameters::default_arc(3, 16);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xcac4e);
+        let sk = SecretKey::random(&par, &mut rng);
+        for level in 0..=par.max_level() {
+            let encoding = Encoding::simd_at_level(level);
+            let left: Vec<_> = (1..=par.degree() as u64).collect();
+            let right: Vec<_> = left.iter().map(|x| 2 * x + 1).collect();
+            let pt = Plaintext::try_encode(&left, encoding.clone(), &par)?;
+            let other_pt = Plaintext::try_encode(&right, encoding.clone(), &par)?;
+            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            let other: Ciphertext = sk.try_encrypt(&other_pt, &mut rng)?;
+            let base = Multiplicator::without_relinearization(&par, level)?;
+            let raw_product = ct.try_mul(&other)?;
+            let raw_square = ct.try_mul(&ct.clone())?;
+            assert_eq!(raw_square, ct.square()?);
+            assert_eq!(base.multiply(&ct, &other)?, raw_product);
+            for key_level in [0, level.min(par.max_level() - 1)] {
+                for mode in 0..3 {
+                    if mode == 2 && level == par.max_level() {
+                        continue;
+                    }
+                    let mut strategy = base.clone();
+                    let rk = RelinearizationKey::new_leveled(&sk, level, key_level, &mut rng)?;
+                    let mut expected = raw_product.clone();
+                    let mut expected_square = raw_square.clone();
+                    if mode > 0 {
+                        strategy.enable_relinearization(&rk)?;
+                        rk.relinearizes(&mut expected)?;
+                        rk.relinearizes(&mut expected_square)?;
+                    }
+                    if mode == 2 {
+                        strategy.enable_mod_switching()?;
+                        expected.switch_down()?;
+                        expected_square.switch_down()?;
+                    }
+                    let mut snapshot_source = ct.clone();
+                    let prepared = strategy.prepare_lhs(&snapshot_source)?;
+                    snapshot_source[0].zeroize();
+                    for _ in 0..2 {
+                        let result = prepared.multiply(&other)?;
+                        assert_eq!(result, expected);
+                        assert_eq!(strategy.square(&ct)?, expected_square);
+                        assert_eq!(strategy.multiply(&ct, &ct)?, expected_square);
+                        assert_eq!(prepared.multiply(&ct)?, expected_square);
+                        assert!(result.seed.is_none());
+                        assert_eq!(
+                            Vec::<u64>::try_decode(&sk.try_decrypt(&result)?, Encoding::simd())?,
+                            left.iter()
+                                .zip(&right)
+                                .map(|(x, y)| x * y % par.plaintext())
+                                .collect::<Vec<_>>()
+                        );
+                        assert_eq!(
+                            Vec::<u64>::try_decode(
+                                &sk.try_decrypt(&expected_square)?,
+                                Encoding::simd()
+                            )?,
+                            left.iter()
+                                .map(|x| x * x % par.plaintext())
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn prepared_products_preserve_all_timing_restrictions() -> Result<(), Box<dyn Error>> {
+        use fhe_math::rq::{Ntt, Poly};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let par = BfvParameters::default_arc(3, 16);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xc07);
+        for level in 0..=par.max_level() {
+            let ctx = par.context_at_level(level)?;
+            let strategy = Multiplicator::without_relinearization(&par, level)?;
+            for mask in 0..16 {
+                let mut parts: Vec<_> =
+                    (0..4).map(|_| Poly::<Ntt>::random(ctx, &mut rng)).collect();
+                for (i, p) in parts.iter_mut().enumerate() {
+                    if mask & (1 << i) != 0 {
+                        p.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                            fhe_traits::PublicData::assert_public(),
+                        ));
+                    }
+                }
+                let right = Ciphertext::new(parts.split_off(2), &par)?;
+                let left = Ciphertext::new(parts, &par)?;
+                let prepared = strategy.prepare_lhs(&left)?;
+                let result = prepared.multiply(&right)?;
+                assert_eq!(result, left.try_mul(&right)?);
+                assert!(
+                    result
+                        .iter()
+                        .all(|p| p.allows_variable_time_computations() == (mask == 15))
+                );
+                assert_eq!(prepared.multiply(&left)?, strategy.square(&left)?);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn checked_multiplication_rejects_invalid_inputs() -> Result<(), Box<dyn Error>> {
+        use fhe_math::rq::Poly;
+        let par = BfvParameters::default_arc(3, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&par, &mut rng);
+        let pt = Plaintext::try_encode(&[2u64], Encoding::poly(), &par)?;
+        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let strategy = Multiplicator::without_relinearization(&par, 0)?;
+        let prepared = strategy.prepare_lhs(&ct)?;
+        let expected = prepared.multiply(&ct)?;
+
+        let mut wrong_params = ct.clone();
+        wrong_params.par = BfvParameters::default_arc(3, 16);
+        let mut wrong_level = ct.clone();
+        wrong_level.switch_down()?;
+        let mut wrong_context = ct.clone();
+        wrong_context.c[1] = Poly::zero(par.context_at_level(1)?);
+        let mut one_part = ct.clone();
+        one_part.c.truncate(1);
+        let empty = Ciphertext::zero(&par);
+        for invalid in [
+            &wrong_params,
+            &wrong_level,
+            &wrong_context,
+            &one_part,
+            &empty,
+        ] {
+            let saved = invalid.clone();
+            assert!(ct.try_mul(invalid).is_err());
+            assert!(strategy.multiply(&ct, invalid).is_err());
+            assert!(strategy.multiply(invalid, &ct).is_err());
+            assert!(strategy.prepare_lhs(invalid).is_err());
+            assert!(strategy.square(invalid).is_err());
+            assert!(prepared.multiply(invalid).is_err());
+            assert_eq!(invalid, &saved);
+        }
+        for invalid in [&wrong_context, &one_part, &empty] {
+            assert!(invalid.square().is_err());
+        }
+        assert!(strategy.prepare_lhs(&expected).is_err());
+        assert!(prepared.multiply(&expected).is_err());
+        assert_eq!(prepared.multiply(&ct)?, expected);
+        assert!(Multiplicator::without_relinearization(&par, par.max_level() + 1).is_err());
+        // Identical moduli are insufficient: an evaluation key must belong
+        // to the same BFV parameter instance and ciphertext level.
+        let foreign_sk = SecretKey::random(&wrong_params.par, &mut rng);
+        let foreign_rk = RelinearizationKey::new(&foreign_sk, &mut rng)?;
+        let leveled_rk = RelinearizationKey::new_leveled(&sk, 1, 0, &mut rng)?;
+        let mut strategy = strategy.clone();
+        assert!(strategy.enable_relinearization(&foreign_rk).is_err());
+        assert!(strategy.enable_relinearization(&leveled_rk).is_err());
+        assert_eq!(strategy.square(&ct)?, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn square_supports_unrelinearized_ciphertexts() -> Result<(), Box<dyn Error>> {
+        let par = BfvParameters::default_arc(3, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&par, &mut rng);
+        let pt = Plaintext::try_encode(&[2u64, 3], Encoding::poly(), &par)?;
+        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let product = ct.square()?;
+        assert_eq!(product.len(), 3);
+        let fourth_power = product.square()?;
+        assert_eq!(fourth_power.len(), 5);
+        assert_eq!(fourth_power, product.try_mul(&product.clone())?);
+        let mut expected = vec![0u64; par.degree()];
+        expected[..5].copy_from_slice(&[16, 96, 216, 216, 81]);
+        assert_eq!(
+            Vec::<u64>::try_decode(&sk.try_decrypt(&fourth_power)?, Encoding::poly())?,
+            expected
+        );
+        Ok(())
+    }
 
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
@@ -402,6 +692,14 @@ mod tests {
             )?;
 
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
+            assert_eq!(multiplicator.prepare_lhs(&ct1)?.multiply(&ct2)?, ct3);
+            let squared = multiplicator.square(&ct1)?;
+            assert_eq!(squared, multiplicator.multiply(&ct1, &ct1.clone())?);
+            assert_eq!(squared, multiplicator.prepare_lhs(&ct1)?.multiply(&ct1)?);
+            assert_eq!(
+                Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
+                expected
+            );
             println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
@@ -409,6 +707,14 @@ mod tests {
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
+            assert_eq!(multiplicator.prepare_lhs(&ct1)?.multiply(&ct2)?, ct3);
+            let squared = multiplicator.square(&ct1)?;
+            assert_eq!(squared, multiplicator.multiply(&ct1, &ct1.clone())?);
+            assert_eq!(squared, multiplicator.prepare_lhs(&ct1)?.multiply(&ct1)?);
+            assert_eq!(
+                Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
+                expected
+            );
             println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);

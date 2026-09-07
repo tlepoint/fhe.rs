@@ -112,11 +112,9 @@ impl CiphertextProductAccumulator {
                 p.disallow_variable_time_computations();
             }
         }
-        for (i, a) in left.iter().enumerate() {
-            for (j, b) in right.iter().enumerate() {
-                let product = Zeroizing::new(a * b);
-                self.c[i + j] += &*product;
-            }
+        let product = Zeroizing::new(super::tensor::product(&left, &right));
+        for (sum, term) in self.c.iter_mut().zip(product.iter()) {
+            *sum += term;
         }
         self.products += 1;
         Ok(())

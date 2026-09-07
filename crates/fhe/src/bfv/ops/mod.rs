@@ -4,16 +4,18 @@ mod dot_product;
 pub use dot_product::{DotProductScalarWorkspace, dot_product_scalar};
 
 mod mul;
-pub use mul::Multiplicator;
+pub use mul::{Multiplicator, PreparedMultiplicand};
+
+mod tensor;
 
 mod product_accumulator;
 pub use product_accumulator::CiphertextProductAccumulator;
 
 use super::{Ciphertext, Plaintext};
-use crate::{Error, Result};
-use fhe_math::rq::{Ntt, Poly};
+use crate::Result;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::Arc;
+use tensor::Scratch;
 
 impl Add<&Ciphertext> for &Ciphertext {
     type Output = Ciphertext;
@@ -271,96 +273,67 @@ impl Mul<&Ciphertext> for &Ciphertext {
             return rhs.clone();
         }
 
-        if rhs == self {
-            // Squaring operation
-            let ctx_lvl = self.par.context_level_at(self.level).unwrap();
-            let mp = ctx_lvl.mul_params();
+        self.try_mul(rhs).unwrap()
+    }
+}
 
-            // Scale all ciphertexts
-            let self_c = self
-                .iter()
-                .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly<Ntt>>>>()
-                .unwrap();
-
-            // Multiply
-            let mut c = vec![Poly::<Ntt>::zero(&mp.to); 2 * self_c.len() - 1];
-            if self_c.iter().all(Poly::allows_variable_time_computations) {
-                let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
-                c.iter_mut()
-                    .for_each(|ci| ci.allow_variable_time_computations(variable_time));
-            }
-            for i in 0..self_c.len() {
-                for j in 0..self_c.len() {
-                    c[i + j] += &(&self_c[i] * &self_c[j])
-                }
-            }
-
-            // Scale
-            let c = c
-                .iter_mut()
-                .map(|ci| ci.scale(&mp.down_scaler).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly<Ntt>>>>()
-                .unwrap();
-
-            Ciphertext {
-                par: self.par.clone(),
-                seed: None,
-                c,
-                level: rhs.level,
-            }
-        } else {
-            assert!(Arc::ptr_eq(&self.par, &rhs.par));
-            assert_eq!(self.level, rhs.level);
-
-            let ctx_lvl = self.par.context_level_at(self.level).unwrap();
-            let mp = ctx_lvl.mul_params();
-
-            // Scale all ciphertexts
-            let self_c = self
-                .iter()
-                .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly<Ntt>>>>()
-                .unwrap();
-            let other_c = rhs
-                .iter()
-                .map(|ci| ci.scale(&mp.extender).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly<Ntt>>>>()
-                .unwrap();
-
-            // Multiply
-            let mut c = vec![Poly::<Ntt>::zero(&mp.to); self_c.len() + other_c.len() - 1];
-            if self_c
-                .iter()
-                .chain(other_c.iter())
-                .all(Poly::allows_variable_time_computations)
-            {
-                let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
-                c.iter_mut()
-                    .for_each(|ci| ci.allow_variable_time_computations(variable_time));
-            }
-            for i in 0..self_c.len() {
-                for j in 0..other_c.len() {
-                    c[i + j] += &(&self_c[i] * &other_c[j])
-                }
-            }
-
-            // Scale
-            let c = c
-                .iter_mut()
-                .map(|ci| ci.scale(&mp.down_scaler).map_err(Error::MathError))
-                .collect::<Result<Vec<Poly<Ntt>>>>()
-                .unwrap();
-
-            Ciphertext {
-                par: self.par.clone(),
-                seed: None,
-                c,
-                level: rhs.level,
-            }
+impl Ciphertext {
+    /// Multiply without relinearization, returning validation errors instead
+    /// of panicking. Both ciphertexts must use the same parameter instance and
+    /// level and contain at least two polynomial parts. Empty zero sentinels
+    /// are only supported by the multiplication operator.
+    ///
+    /// The two-part case uses three pointwise products (Karatsuba). Multiplying
+    /// an object by itself uses [`Self::square`] without comparing
+    /// coefficients.
+    pub fn try_mul(&self, rhs: &Ciphertext) -> Result<Ciphertext> {
+        if std::ptr::eq(self, rhs) {
+            return self.square();
         }
+        self.validate_for(&self.par)?;
+        let mp = self.par.context_level_at(self.level)?.mul_params();
+        rhs.validate_for_context(&self.par, self.level, &mp.from)?;
+        let left = Scratch(
+            self.iter()
+                .map(|p| p.scale(&mp.extender))
+                .collect::<fhe_math::Result<Vec<_>>>()?,
+        );
+        let right = Scratch(
+            rhs.iter()
+                .map(|p| p.scale(&mp.extender))
+                .collect::<fhe_math::Result<Vec<_>>>()?,
+        );
+        let product = Scratch(tensor::product(&left.0, &right.0));
+        let c = product
+            .0
+            .iter()
+            .map(|p| p.scale(&mp.down_scaler))
+            .collect::<fhe_math::Result<_>>()?;
+        Ciphertext::new(c, &self.par)
+    }
+
+    /// Square without relinearization. Each input part is extended once and
+    /// each off-diagonal product is computed once, then doubled before BFV
+    /// rounding. An input with `k` parts produces `2*k - 1` parts.
+    ///
+    /// Returns an error for an invalid ciphertext, including an empty zero
+    /// sentinel. Use [`Multiplicator::square`] to also relinearize or switch
+    /// down according to a configured strategy.
+    pub fn square(&self) -> Result<Ciphertext> {
+        self.validate_for(&self.par)?;
+        let mp = self.par.context_level_at(self.level)?.mul_params();
+        let input = Scratch(
+            self.iter()
+                .map(|p| p.scale(&mp.extender))
+                .collect::<fhe_math::Result<Vec<_>>>()?,
+        );
+        let product = Scratch(tensor::square(&input.0));
+        let c = product
+            .0
+            .iter()
+            .map(|p| p.scale(&mp.down_scaler))
+            .collect::<fhe_math::Result<_>>()?;
+        Ciphertext::new(c, &self.par)
     }
 }
 
