@@ -68,6 +68,33 @@ fn core_bfv(c: &mut Criterion) {
             par.degree(),
             par.moduli_sizes().iter().sum::<usize>()
         );
+        for (label, target) in [("one", 1), ("last", par.max_level())] {
+            let round_trips = || {
+                let mut parts = black_box(&ct).to_vec();
+                for _ in 0..target {
+                    for p in &mut parts {
+                        let mut pb = p.clone().into_power_basis();
+                        pb.switch_down().unwrap();
+                        *p = pb.into_ntt();
+                    }
+                }
+                Ciphertext::new(parts, &par).unwrap()
+            };
+            let retained_ntt = || {
+                let mut result = black_box(&ct).clone();
+                result.switch_to_level(target).unwrap();
+                result
+            };
+            assert_eq!(retained_ntt(), round_trips());
+            group.bench_function(
+                BenchmarkId::new(format!("modulus_switch/{label}/round_trips"), &parameter),
+                |b| b.iter(round_trips),
+            );
+            group.bench_function(
+                BenchmarkId::new(format!("modulus_switch/{label}/retained_ntt"), &parameter),
+                |b| b.iter(retained_ntt),
+            );
+        }
         let separate_sum = || {
             let mut sum = Ciphertext::zero(&par);
             for _ in 0..8 {

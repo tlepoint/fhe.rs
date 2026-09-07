@@ -152,17 +152,14 @@ impl Ciphertext {
             return Err(fhe_math::Error::NoMoreContext.into());
         }
 
-        self.seed = None;
-        for ci in self.c.iter_mut() {
-            let mut pb = ci.clone().into_power_basis();
-            pb.switch_down()?;
-            *ci = pb.into_ntt();
-        }
-        self.level += 1;
-        Ok(())
+        self.switch_to_level(self.level + 1)
     }
 
-    /// Switch to a specific level (only moving down)
+    /// Switch to a specific level (only moving down).
+    ///
+    /// One drop preserves the surviving NTT rows. Several drops use one
+    /// conversion to power basis and back, retaining the same sequence of
+    /// rounding operations. Invalid inputs return before changing any part.
     pub fn switch_to_level(&mut self, target_level: usize) -> Result<()> {
         if target_level < self.level {
             return Err(Error::InvalidLevel {
@@ -178,8 +175,16 @@ impl Ciphertext {
                 max_level: self.max_switchable_level(),
             });
         }
-        while self.level < target_level {
-            self.switch_down()?;
+        if !self.c.is_empty() {
+            self.validate_for(&self.par)?;
+        }
+        if self.level != target_level {
+            let target = self.par.context_at_level(target_level)?;
+            self.seed = None;
+            for ci in &mut self.c {
+                ci.switch_down_to(target)?;
+            }
+            self.level = target_level;
         }
         Ok(())
     }
@@ -410,6 +415,75 @@ mod tests {
             assert_eq!(ct3.level, params.max_level());
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn ntt_switching_matches_the_old_round_trip_at_every_level() -> Result<(), Box<dyn StdError>> {
+        use fhe_math::rq::{Ntt, Poly};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let par = BfvParameters::default_arc(4, 16);
+        let mut rng = ChaCha8Rng::seed_from_u64(0x57017c4);
+        for level in 0..=par.max_level() {
+            for parts in 2..=4 {
+                for restricted in [false, true] {
+                    let polynomials = (0..parts)
+                        .map(|i| {
+                            let mut p =
+                                Poly::<Ntt>::random(par.context_at_level(level).unwrap(), &mut rng);
+                            if !restricted || i != 1 {
+                                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
+                                    fhe_traits::PublicData::assert_public(),
+                                ));
+                            }
+                            p
+                        })
+                        .collect();
+                    let original = Ciphertext::new(polynomials, &par)?;
+                    for target in level..=par.max_level() {
+                        let mut expected = original.clone();
+                        while expected.level < target {
+                            for p in &mut expected.c {
+                                let mut pb = p.clone().into_power_basis();
+                                pb.switch_down()?;
+                                *p = pb.into_ntt();
+                            }
+                            expected.seed = None;
+                            expected.level += 1;
+                        }
+                        let mut actual = original.clone();
+                        actual.switch_to_level(target)?;
+                        assert_eq!(actual, expected);
+                        assert_eq!(actual.to_bytes(), expected.to_bytes());
+                        for (i, p) in actual.iter().enumerate() {
+                            assert_eq!(
+                                p.allows_variable_time_computations(),
+                                !restricted || i != 1
+                            );
+                        }
+                        if target == level + 1 {
+                            let mut single = original.clone();
+                            single.switch_down()?;
+                            assert_eq!(single, expected);
+                        }
+                    }
+                }
+            }
+        }
+        // A malformed later part must not leave the earlier part switched.
+        let ctx = par.context_at_level(0)?;
+        let mut malformed = Ciphertext::new(vec![Poly::zero(ctx); 2], &par)?;
+        malformed.c[1] = Poly::zero(par.context_at_level(1)?);
+        let saved = malformed.clone();
+        assert!(malformed.switch_down().is_err());
+        assert_eq!(malformed, saved);
+        assert!(malformed.switch_to_level(2).is_err());
+        assert_eq!(malformed, saved);
+        let mut zero = Ciphertext::zero(&par);
+        zero.switch_to_level(par.max_level())?;
+        assert!(zero.is_empty());
+        assert_eq!(zero.level, par.max_level());
         Ok(())
     }
 

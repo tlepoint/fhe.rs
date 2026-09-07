@@ -232,17 +232,22 @@ impl EvaluationKey {
                     })?;
                 let step = 1 << l;
                 let (low, high) = out.split_at_mut(step);
-                for i in 0..step {
-                    gk.relinearize_into(&low[i], &mut sub)?;
-                    let j = step | i;
-                    if j < size {
-                        let target = &mut high[i];
-                        target.clone_from(&low[i]);
-                        *target -= &sub;
+                let expand_node = |input: &mut Ciphertext,
+                                   target: Option<&mut Ciphertext>,
+                                   sub: &mut Ciphertext|
+                 -> Result<()> {
+                    gk.relinearize_into(input, sub)?;
+                    if let Some(target) = target {
+                        target.clone_from(input);
+                        *target -= &*sub;
                         target[0] *= monomial;
                         target[1] *= monomial;
                     }
-                    low[i] += &sub;
+                    *input += &*sub;
+                    Ok(())
+                };
+                for (i, (input, target)) in low.iter_mut().zip(high).enumerate() {
+                    expand_node(input, (step + i < size).then_some(target), &mut sub)?;
                 }
             }
             out.truncate(size);
