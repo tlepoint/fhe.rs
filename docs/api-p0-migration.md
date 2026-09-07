@@ -1,5 +1,7 @@
 # P0 API contract changes
 
+The later [P1 migration](api-p1-migration.md) supersedes the P0 signatures below.
+
 This implements the P0 work in the [API proposal](api-simplification-proposal.md).
 The changes intentionally break Rust source compatibility. The parameter
 ownership model, encoding API, ordinary operators, and protobuf wire format

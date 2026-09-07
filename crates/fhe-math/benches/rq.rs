@@ -42,7 +42,7 @@ macro_rules! bench_op {
             let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
                 let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                    fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
                 p.allow_variable_time_computations(variable_time);
                 q.allow_variable_time_computations(variable_time);
             }
@@ -71,8 +71,8 @@ macro_rules! bench_op_unary {
             let ctx = Arc::new(Context::new(&MODULI[..1], *degree).unwrap());
             let mut p = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
-                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                p.allow_variable_time_computations(fhe_util::VariableTime::new(
+                    fhe_util::PublicData::assert_public(),
                 ));
             }
 
@@ -102,7 +102,7 @@ macro_rules! bench_op_assign {
             let mut q = Poly::<Ntt>::random(&ctx, &mut rng);
             if $vt {
                 let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                    fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
                 p.allow_variable_time_computations(variable_time);
                 q.allow_variable_time_computations(variable_time);
             }
@@ -256,7 +256,7 @@ pub fn rq_benchmark(c: &mut Criterion) {
 
             {
                 let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                    fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
                 let mut q_vt = q.clone();
                 q_vt.allow_variable_time_computations(variable_time);
                 let mut p_vt = p.clone();

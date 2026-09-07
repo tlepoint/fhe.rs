@@ -1,9 +1,7 @@
 //! Relinearization keys for the BFV encryption scheme
 
-use std::sync::Arc;
-
 use super::key_switching_key::KeySwitchingKey;
-use crate::bfv::{BfvParameters, Ciphertext, SecretKey, traits::TryConvertFrom};
+use crate::bfv::{Ciphertext, Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
@@ -11,7 +9,7 @@ use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{
     Ntt, Poly, PowerBasis, switcher::Switcher, traits::TryConvertFrom as TryConvertFromPoly,
 };
-use fhe_traits::{DeserializeParametrized, FheParametrized, Serialize};
+
 use prost::Message;
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
@@ -65,7 +63,7 @@ impl RelinearizationKey {
 
     /// Relinearizes the supplied `(c0, c1, c2)` ciphertext in place, reducing
     /// it to two components.
-    pub fn relinearizes(&self, ct: &mut Ciphertext) -> Result<()> {
+    pub fn relinearize(&self, ct: &mut Ciphertext) -> Result<()> {
         ct.validate_for(&self.ksk.par)?;
         if ct.len() != 3 {
             Err(crate::CiphertextError::InvalidPolynomialCount {
@@ -117,11 +115,11 @@ impl From<&RelinearizationKey> for RelinearizationKeyProto {
     }
 }
 
-impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
-    fn try_convert_from(value: &RelinearizationKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
+impl FromProto<&RelinearizationKeyProto> for RelinearizationKey {
+    fn from_proto(value: &RelinearizationKeyProto, par: &Parameters) -> Result<Self> {
         if let Some(ksk) = &value.ksk {
             Ok(RelinearizationKey {
-                ksk: KeySwitchingKey::try_convert_from(ksk, par)?,
+                ksk: KeySwitchingKey::from_proto(ksk, par)?,
             })
         } else {
             Err(Error::SerializationError(
@@ -133,45 +131,42 @@ impl TryConvertFrom<&RelinearizationKeyProto> for RelinearizationKey {
     }
 }
 
-impl Serialize for RelinearizationKey {
-    fn to_bytes(&self) -> Vec<u8> {
+impl RelinearizationKey {
+    /// Serialize in the existing protobuf wire format.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
         RelinearizationKeyProto::from(self).encode_to_vec()
     }
 }
 
-impl FheParametrized for RelinearizationKey {
-    type Parameters = BfvParameters;
-}
-
-impl DeserializeParametrized for RelinearizationKey {
-    type Error = Error;
-
-    fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
+impl RelinearizationKey {
+    /// Import validated protobuf bytes, binding contextual values to the
+    /// supplied parameters.
+    pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
         let rk = Message::decode(bytes).map_err(|_| {
             Error::SerializationError(SerializationError::Decode {
                 object: crate::SerializedObject::RelinearizationKey,
             })
         })?;
-        RelinearizationKey::try_convert_from(&rk, par)
+        RelinearizationKey::from_proto(&rk, par)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::RelinearizationKey;
-    use crate::bfv::{BfvParameters, Ciphertext, Encoding, SecretKey, traits::TryConvertFrom};
+    use crate::bfv::{Ciphertext, Encoding, Parameters, SecretKey, wire::FromProto};
     use crate::proto::bfv::RelinearizationKey as RelinearizationKeyProto;
     use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly};
-    use fhe_traits::{FheDecoder, FheDecrypter};
+
     use rand::rng;
     use std::error::Error;
 
     #[test]
     fn relinearization_discards_a_serialized_last_component_seed() -> Result<(), Box<dyn Error>> {
-        use fhe_traits::{DeserializeParametrized, Serialize};
-        let params = BfvParameters::default_arc(2, 16);
+        let params = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
+        let sk = SecretKey::generate(&params, &mut rng);
         let rk = RelinearizationKey::new(&sk, &mut rng)?;
         let ctx = params.context_at_level(0)?;
         let seed = [23; 32];
@@ -186,7 +181,7 @@ mod tests {
         ct.seed = Some(seed);
         let mut restored = Ciphertext::from_bytes(&ct.to_bytes(), &params)?;
         assert!(restored.seed.is_some());
-        rk.relinearizes(&mut restored)?;
+        rk.relinearize(&mut restored)?;
         assert!(restored.seed.is_none());
         let round_trip = Ciphertext::from_bytes(&restored.to_bytes(), &params)?;
         assert_eq!(restored, round_trip);
@@ -197,9 +192,9 @@ mod tests {
     #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        for params in [BfvParameters::default_arc(6, 16)] {
+        for params in [Parameters::test_parameters(6, 16)] {
             for _ in 0..100 {
-                let sk = SecretKey::random(&params, &mut rng);
+                let sk = SecretKey::generate(&params, &mut rng);
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
                 let ctx = params.context_at_level(0)?;
@@ -219,7 +214,7 @@ mod tests {
                     Ciphertext::from_components(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
 
                 // Relinearize the extended ciphertext!
-                rk.relinearizes(&mut ct)?;
+                rk.relinearize(&mut ct)?;
                 assert_eq!(ct.len(), 2);
 
                 // Check that the relinearization by polynomials works the same way
@@ -241,11 +236,11 @@ mod tests {
                     "Noise: {}",
                     sk.measure_noise_vartime(
                         &ct,
-                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                        crate::SecretDependentDiagnostics::acknowledge_leakage()
                     )?
                 );
-                let pt = sk.try_decrypt(&ct)?;
-                let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
+                let pt = sk.decrypt(&ct)?;
+                let w = pt.decode(Encoding::Polynomial)?;
                 assert_eq!(w, &[0u64; 16]);
             }
         }
@@ -255,11 +250,11 @@ mod tests {
     #[test]
     fn relinearization_leveled() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        for params in [BfvParameters::default_arc(5, 16)] {
+        for params in [Parameters::test_parameters(5, 16)] {
             for ciphertext_level in 0..params.max_level() {
                 for key_level in 0..=ciphertext_level {
                     for _ in 0..10 {
-                        let sk = SecretKey::random(&params, &mut rng);
+                        let sk = SecretKey::generate(&params, &mut rng);
                         let rk = RelinearizationKey::new_leveled(
                             &sk,
                             ciphertext_level,
@@ -285,7 +280,7 @@ mod tests {
                         )?;
 
                         // Relinearize the extended ciphertext!
-                        rk.relinearizes(&mut ct)?;
+                        rk.relinearize(&mut ct)?;
                         assert_eq!(ct.len(), 2);
 
                         // Check that the relinearization by polynomials works the same way
@@ -307,11 +302,11 @@ mod tests {
                             "Noise: {}",
                             sk.measure_noise_vartime(
                                 &ct,
-                                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                                crate::SecretDependentDiagnostics::acknowledge_leakage()
                             )?
                         );
-                        let pt = sk.try_decrypt(&ct)?;
-                        let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
+                        let pt = sk.decrypt(&ct)?;
+                        let w = pt.decode(Encoding::Polynomial)?;
                         assert_eq!(w, &[0u64; 16]);
                     }
                 }
@@ -324,13 +319,13 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
             let proto = RelinearizationKeyProto::from(&rk);
-            assert_eq!(rk, RelinearizationKey::try_convert_from(&proto, &params)?);
+            assert_eq!(rk, RelinearizationKey::from_proto(&proto, &params)?);
         }
         Ok(())
     }

@@ -500,7 +500,6 @@ dependencies = [
  "doc-comment",
  "env_logger",
  "fhe-math",
- "fhe-traits",
  "fhe-util",
  "indicatif",
  "itertools 0.15.0",
@@ -523,7 +522,6 @@ version = "0.2.0"
 dependencies = [
  "criterion",
  "ethnum",
- "fhe-traits",
  "fhe-util",
  "itertools 0.15.0",
  "ndarray",
@@ -540,13 +538,6 @@ dependencies = [
  "tfhe-ntt",
  "thiserror",
  "zeroize",
-]
-
-[[package]]
-name = "fhe-traits"
-version = "0.1.1"
-dependencies = [
- "rand 0.10.2",
 ]
 
 [[package]]

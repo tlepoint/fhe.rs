@@ -1,12 +1,10 @@
 //! Ciphertext type in the BFV encryption scheme.
 
-use crate::bfv::{parameters::BfvParameters, traits::TryConvertFrom};
+use crate::bfv::{parameters::Parameters, wire::FromProto};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
 use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{Context, Ntt, Poly};
-use fhe_traits::{
-    DeserializeParametrized, DeserializeWithContext, FheCiphertext, FheParametrized, Serialize,
-};
+
 use prost::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -36,7 +34,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Eq)]
 pub struct Ciphertext {
     /// The parameters of the underlying BFV encryption scheme.
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
 
     /// The seed that generated the polynomial c1 in a fresh ciphertext.
     pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
@@ -60,7 +58,7 @@ impl Ciphertext {
     /// must have canonical Ntt residues and the same context. The context must
     /// belong to the supplied parameters; the level is inferred from it.
     #[expect(clippy::expect_used, reason = "bounds are validated before use")]
-    pub fn from_components(c: Vec<Poly<Ntt>>, par: &Arc<BfvParameters>) -> Result<Self> {
+    pub fn from_components(c: Vec<Poly<Ntt>>, par: &Parameters) -> Result<Self> {
         if c.len() < 2 {
             return Err(crate::CiphertextError::TooFewPolynomials {
                 actual: c.len(),
@@ -95,8 +93,8 @@ impl Ciphertext {
 
     /// Validate the structure and context of a ciphertext used as an input.
     #[inline]
-    pub(crate) fn validate_for(&self, par: &Arc<BfvParameters>) -> Result<()> {
-        if !Arc::ptr_eq(&self.par, par) {
+    pub(crate) fn validate_for(&self, par: &Parameters) -> Result<()> {
+        if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
                 left: crate::ParameterSource::Ciphertext,
                 right: crate::ParameterSource::Parameters,
@@ -110,11 +108,11 @@ impl Ciphertext {
     #[inline]
     pub(crate) fn validate_for_context(
         &self,
-        par: &Arc<BfvParameters>,
+        par: &Parameters,
         expected_level: usize,
         expected_ctx: &Arc<Context>,
     ) -> Result<()> {
-        if !Arc::ptr_eq(&self.par, par) {
+        if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
                 left: crate::ParameterSource::Ciphertext,
                 right: crate::ParameterSource::Parameters,
@@ -211,29 +209,25 @@ impl Ciphertext {
     }
 }
 
-impl FheCiphertext for Ciphertext {}
-
-impl FheParametrized for Ciphertext {
-    type Parameters = BfvParameters;
-}
-
-impl Serialize for Ciphertext {
-    fn to_bytes(&self) -> Vec<u8> {
+impl Ciphertext {
+    /// Serialize in the existing protobuf wire format.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
         CiphertextProto::from(self).encode_to_vec()
     }
 }
 
-impl DeserializeParametrized for Ciphertext {
-    fn from_bytes(bytes: &[u8], par: &Arc<BfvParameters>) -> Result<Self> {
+impl Ciphertext {
+    /// Import validated protobuf bytes, binding contextual values to the
+    /// supplied parameters.
+    pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
         let ctp = Message::decode(bytes).map_err(|_| {
             Error::SerializationError(SerializationError::Decode {
                 object: crate::SerializedObject::Ciphertext,
             })
         })?;
-        Ciphertext::try_convert_from(&ctp, par)
+        Ciphertext::from_proto(&ctp, par)
     }
-
-    type Error = Error;
 }
 
 impl Ciphertext {
@@ -242,18 +236,18 @@ impl Ciphertext {
     /// This has two polynomial components and can be evaluated, decrypted and
     /// serialized like any other ciphertext. It does not hide its value;
     /// encrypt a zero plaintext with a key and RNG to obtain a randomized zero.
-    pub fn trivial_zero(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+    pub fn trivial_zero(par: &Parameters, level: usize) -> Result<Self> {
         let ctx = par.context_at_level(level)?;
         let mut zero = Poly::<Ntt>::zero(ctx);
-        zero.allow_variable_time_computations(fhe_traits::VariableTime::new(
-            fhe_traits::PublicData::assert_public(),
+        zero.allow_variable_time_computations(crate::VariableTime::new(
+            crate::PublicData::assert_public(),
         ));
         Self::from_components(vec![zero; 2], par)
     }
 
     /// Borrow the ciphertext's parameters.
     #[must_use]
-    pub fn parameters(&self) -> &Arc<BfvParameters> {
+    pub fn parameters(&self) -> &Parameters {
         &self.par
     }
 
@@ -295,7 +289,7 @@ impl Ciphertext {
     }
 
     #[cfg(test)]
-    pub(crate) fn invalid_empty(par: &Arc<BfvParameters>) -> Self {
+    pub(crate) fn invalid_empty(par: &Parameters) -> Self {
         Self {
             par: par.clone(),
             seed: None,
@@ -336,8 +330,8 @@ impl From<&Ciphertext> for CiphertextProto {
     }
 }
 
-impl TryConvertFrom<&CiphertextProto> for Ciphertext {
-    fn try_convert_from(value: &CiphertextProto, par: &Arc<BfvParameters>) -> Result<Self> {
+impl FromProto<&CiphertextProto> for Ciphertext {
+    fn from_proto(value: &CiphertextProto, par: &Parameters) -> Result<Self> {
         if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
             return Err(Error::SerializationError(
                 SerializationError::InvalidCiphertextPolynomialCount {
@@ -373,15 +367,15 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
                 })?;
             seed = Some(try_seed);
             let mut c1 = Poly::<Ntt>::random_from_seed(ctx, try_seed);
-            c1.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                fhe_traits::PublicData::assert_public(),
+            c1.allow_variable_time_computations(crate::VariableTime::new(
+                crate::PublicData::assert_public(),
             ));
             c.push(c1)
         }
 
         // Ciphertexts are public once received. Grant timing permission only
         // at this trusted type boundary; polynomial wire data cannot grant it.
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
         c.iter_mut()
             .for_each(|ci| ci.allow_variable_time_computations(variable_time));
 
@@ -397,13 +391,9 @@ impl TryConvertFrom<&CiphertextProto> for Ciphertext {
 #[cfg(test)]
 mod tests {
     use crate::Error as FheError;
-    use crate::bfv::{
-        BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, traits::TryConvertFrom,
-    };
+    use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, SecretKey, wire::FromProto};
     use crate::proto::bfv::Ciphertext as CiphertextProto;
-    use fhe_traits::{
-        DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
-    };
+
     use rand::rng;
     use std::error::Error as StdError;
 
@@ -411,21 +401,21 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let v = fhe_math::zq::Modulus::new(params.plaintext())
+            let sk = SecretKey::generate(&params, &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                 .unwrap()
                 .random_vec(params.degree(), &mut rng);
-            let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-            let ct = sk.try_encrypt(&pt, &mut rng)?;
+            let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+            let ct = sk.encrypt(&pt, &mut rng)?;
             let ct_proto = CiphertextProto::from(&ct);
-            assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?);
+            assert_eq!(ct, Ciphertext::from_proto(&ct_proto, &params)?);
 
-            let ct = &ct * &ct;
+            let ct = ct.multiply(&ct).unwrap();
             let ct_proto = CiphertextProto::from(&ct);
-            assert_eq!(ct, Ciphertext::try_convert_from(&ct_proto, &params)?)
+            assert_eq!(ct, Ciphertext::from_proto(&ct_proto, &params)?)
         }
         Ok(())
     }
@@ -434,15 +424,15 @@ mod tests {
     fn serialize() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let v = fhe_math::zq::Modulus::new(params.plaintext())
+            let sk = SecretKey::generate(&params, &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                 .unwrap()
                 .random_vec(params.degree(), &mut rng);
-            let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+            let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
             let ct_bytes = ct.to_bytes();
             assert_eq!(ct, Ciphertext::from_bytes(&ct_bytes, &params)?);
         }
@@ -453,16 +443,16 @@ mod tests {
     fn new() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let v = fhe_math::zq::Modulus::new(params.plaintext())
+            let sk = SecretKey::generate(&params, &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                 .unwrap()
                 .random_vec(params.degree(), &mut rng);
-            let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
-            let mut ct3 = &ct * &ct;
+            let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+            let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
+            let mut ct3 = ct.multiply(&ct).unwrap();
 
             let c0 = &ct3.c[0];
             let c1 = &ct3.c[1];
@@ -494,7 +484,7 @@ mod tests {
         use fhe_math::rq::{Ntt, Poly};
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
-        let par = BfvParameters::default_arc(4, 16);
+        let par = Parameters::test_parameters(4, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0x57017c4);
         for level in 0..=par.max_level() {
             for parts in 2..=4 {
@@ -504,8 +494,8 @@ mod tests {
                             let mut p =
                                 Poly::<Ntt>::random(par.context_at_level(level).unwrap(), &mut rng);
                             if !restricted || i != 1 {
-                                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                                    fhe_traits::PublicData::assert_public(),
+                                p.allow_variable_time_computations(crate::VariableTime::new(
+                                    crate::PublicData::assert_public(),
                                 ));
                             }
                             p
@@ -562,24 +552,24 @@ mod tests {
     fn switch_to_last_level() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let v = fhe_math::zq::Modulus::new(params.plaintext())
+            let sk = SecretKey::generate(&params, &mut rng);
+            let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                 .unwrap()
                 .random_vec(params.degree(), &mut rng);
-            let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-            let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+            let mut ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
 
             assert_eq!(ct.level, 0);
             ct.switch_to_level(ct.max_switchable_level())?;
             assert_eq!(ct.level, params.max_level());
 
-            let decrypted = sk.try_decrypt(&ct)?;
+            let decrypted = sk.decrypt(&ct)?;
             assert_eq!(
-                Vec::<u64>::try_decode(&decrypted, Encoding::simd())?,
-                Vec::<u64>::try_decode(&pt, Encoding::simd())?
+                decrypted.decode(Encoding::Simd)?,
+                pt.decode(Encoding::Simd)?
             );
         }
 
@@ -589,10 +579,10 @@ mod tests {
     #[test]
     fn switch_down_from_last_level_returns_error() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(2, 16);
-        let sk = SecretKey::random(&params, &mut rng);
-        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &params)?;
-        let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let params = Parameters::test_parameters(2, 16);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pt = Plaintext::encode(&params, &[1u64][..], Encoding::Polynomial)?;
+        let mut ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
         ct.switch_to_level(params.max_level())?;
 
         assert!(matches!(
@@ -606,13 +596,13 @@ mod tests {
     #[expect(clippy::panic, reason = "panic indicates violated internal invariant")]
     fn switch_to_level_invalid() -> Result<(), Box<dyn StdError>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(2, 16);
-        let sk = SecretKey::random(&params, &mut rng);
-        let v = fhe_math::zq::Modulus::new(params.plaintext())
+        let params = Parameters::test_parameters(2, 16);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
             .unwrap()
             .random_vec(params.degree(), &mut rng);
-        let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-        let mut ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+        let mut ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
 
         // Move to level 1
         ct.switch_down()?;
@@ -652,11 +642,11 @@ mod tests {
 
     #[test]
     fn reconstructed_parts_discard_seed() -> Result<(), Box<dyn StdError>> {
-        let params = BfvParameters::default_arc(2, 16);
+        let params = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let pt = Plaintext::try_encode(&[3u64], Encoding::poly(), &params)?;
-        let original: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pt = Plaintext::encode(&params, &[3u64], Encoding::Polynomial)?;
+        let original: Ciphertext = sk.encrypt(&pt, &mut rng)?;
         assert!(original.seed.is_some());
         for index in [0, 1] {
             let mut parts = original.clone().into_components();
@@ -665,7 +655,7 @@ mod tests {
             assert!(ct.seed.is_none());
             let restored = Ciphertext::from_bytes(&ct.to_bytes(), &params)?;
             assert_eq!(ct, restored);
-            assert_eq!(sk.try_decrypt(&ct)?, sk.try_decrypt(&restored)?);
+            assert_eq!(sk.decrypt(&ct)?, sk.decrypt(&restored)?);
         }
         let mut ct = original;
         ct.iter_mut().for_each(|poly| *poly = -&*poly);

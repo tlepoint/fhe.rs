@@ -10,7 +10,7 @@
 #![allow(dead_code, unused_imports, unused_macros)]
 
 use fhe::bfv;
-use fhe_traits::{FheEncoder, FheEncoderVariableTime};
+
 use fhe_util::transcode_from_bytes;
 use std::{cmp::min, fmt, sync::Arc, time::Duration};
 
@@ -135,7 +135,7 @@ impl DatabaseLayout {
 #[must_use]
 pub fn encode_database(
     database: &[Vec<u8>],
-    par: Arc<bfv::BfvParameters>,
+    par: bfv::Parameters,
     level: usize,
     layout: DatabaseLayout,
 ) -> (Vec<bfv::Plaintext>, (usize, usize)) {
@@ -147,13 +147,13 @@ pub fn encode_database(
 
 fn encoded_shape(
     database: &[Vec<u8>],
-    par: &bfv::BfvParameters,
+    par: &bfv::Parameters,
     layout: DatabaseLayout,
 ) -> (usize, usize) {
     assert!(!database.is_empty());
     let per_plaintext = number_elements_per_plaintext(
         par.degree(),
-        par.plaintext().ilog2() as usize,
+        par.plaintext_modulus_u64().unwrap().ilog2() as usize,
         database[0].len(),
     );
     layout.dimensions(database.len().div_ceil(per_plaintext))
@@ -171,7 +171,7 @@ impl EncodedDatabase {
     /// Describe coefficient storage, including packing padding but excluding
     /// metadata and allocator overhead. `par` must match the encoded database.
     #[must_use]
-    pub fn storage_summary(&self, par: &bfv::BfvParameters) -> String {
+    pub fn storage_summary(&self, par: &bfv::Parameters) -> String {
         let (format, bytes) = match self {
             Self::Ntt(data) => (
                 "unpacked NTT",
@@ -214,7 +214,7 @@ impl EncodedDatabase {
 #[must_use]
 pub fn prepare_database(
     database: &[Vec<u8>],
-    par: Arc<bfv::BfvParameters>,
+    par: bfv::Parameters,
     level: usize,
     layout: DatabaseLayout,
     packed: bool,
@@ -233,7 +233,7 @@ pub fn prepare_database(
 
 fn encode_database_with(
     database: &[Vec<u8>],
-    par: Arc<bfv::BfvParameters>,
+    par: bfv::Parameters,
     level: usize,
     layout: DatabaseLayout,
     mut append: impl FnMut(bfv::Plaintext),
@@ -241,7 +241,7 @@ fn encode_database_with(
     assert!(!database.is_empty());
 
     let elements_size = database[0].len();
-    let plaintext_nbits = par.plaintext().ilog2() as usize;
+    let plaintext_nbits = par.plaintext_modulus_u64().unwrap().ilog2() as usize;
     let number_elements_per_plaintext =
         number_elements_per_plaintext(par.degree(), plaintext_nbits, elements_size);
     let number_rows = database.len().div_ceil(number_elements_per_plaintext);
@@ -254,11 +254,12 @@ fn encode_database_with(
     // The server database and its padding are public. Explicitly opt into
     // variable-time encoding so public PIR arithmetic retains its optimized
     // path without changing the constant-time default for other plaintexts.
-    let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
-    let public_zero = bfv::Plaintext::try_encode_vt(
-        &[] as &[u64],
-        bfv::Encoding::poly_at_level(level),
+    let variable_time = fhe::VariableTime::new(fhe::PublicData::assert_public());
+    let public_zero = bfv::Plaintext::encode_public_at_level(
         &par,
+        &[] as &[u64],
+        bfv::Encoding::Polynomial,
+        level,
         variable_time,
     )
     .unwrap();
@@ -273,10 +274,11 @@ fn encode_database_with(
         }
         let pt_values = transcode_from_bytes(&serialized_plaintext, plaintext_nbits);
         append(
-            bfv::Plaintext::try_encode_vt(
-                pt_values.as_slice(),
-                bfv::Encoding::poly_at_level(level),
+            bfv::Plaintext::encode_public_at_level(
                 &par,
+                pt_values.as_slice(),
+                bfv::Encoding::Polynomial,
+                level,
                 variable_time,
             )
             .unwrap(),
@@ -291,18 +293,18 @@ fn encode_database_with(
 #[cfg(test)]
 mod tests {
     use super::{DatabaseLayout, encode_database, number_elements_per_plaintext};
-    use fhe::bfv::{self, BfvParametersBuilder, Encoding};
-    use fhe_traits::FheDecoder;
+    use fhe::bfv::{self, Encoding, ParametersBuilder};
+
     use fhe_util::transcode_to_bytes;
 
     #[test]
     fn database_storage_summary_reports_format_size_and_level()
     -> Result<(), Box<dyn std::error::Error>> {
-        let params = BfvParametersBuilder::new()
-            .set_degree(32)
-            .set_plaintext_modulus(1153)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
+        let params = ParametersBuilder::new()
+            .degree(32)
+            .plaintext_modulus(1153_u64)
+            .ciphertext_modulus_bits(&[40, 40])
+            .build()?;
         // Nine records occupy two plaintexts; level one retains one RNS row.
         let database = vec![vec![1u8; 5]; 9];
         for (level, unpacked_bytes, packed_bytes) in [(0, 1024, 648), (1, 512, 328)] {
@@ -347,11 +349,11 @@ mod tests {
     #[test]
     fn database_layouts_preserve_every_byte_and_zero_pad() -> Result<(), Box<dyn std::error::Error>>
     {
-        let params = BfvParametersBuilder::new()
-            .set_degree(32)
-            .set_plaintext_modulus(1153)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
+        let params = ParametersBuilder::new()
+            .degree(32)
+            .plaintext_modulus(1153_u64)
+            .ciphertext_modulus_bits(&[40, 40])
+            .build()?;
         let element_size = 5;
         let database: Vec<Vec<u8>> = (0..329)
             .map(|row| {
@@ -360,7 +362,7 @@ mod tests {
                     .collect()
             })
             .collect();
-        let bits = params.plaintext().ilog2() as usize;
+        let bits = params.plaintext_modulus_u64().unwrap().ilog2() as usize;
         let per_plaintext = number_elements_per_plaintext(params.degree(), bits, element_size);
         for layout in [DatabaseLayout::Square, DatabaseLayout::FewerColumns] {
             let (encoded, (rows, columns)) = encode_database(&database, params.clone(), 1, layout);
@@ -373,9 +375,9 @@ mod tests {
             assert_eq!(packed.len(), encoded.len());
             let mut workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
             let mut rng = rand::rng();
-            let sk = bfv::SecretKey::random(&params, &mut rng);
+            let sk = bfv::SecretKey::generate(&params, &mut rng);
             let ct: bfv::Ciphertext =
-                fhe_traits::FheEncrypter::try_encrypt(&sk, encoded.first().unwrap(), &mut rng)?;
+                fhe_util::FheEncrypter::encrypt(&sk, encoded.first().unwrap(), &mut rng)?;
             assert_eq!(
                 workspace.dot_product_scalar_packed(
                     std::iter::repeat_n(&ct, packed.len()),
@@ -386,7 +388,7 @@ mod tests {
             );
             assert_eq!(encoded.len(), rows * columns);
             for (row, plaintext) in encoded.iter().enumerate() {
-                let coefficients = Vec::<u64>::try_decode(plaintext, Encoding::poly_at_level(1))?;
+                let coefficients = plaintext.decode(Encoding::Polynomial)?;
                 let bytes = transcode_to_bytes(&coefficients, bits);
                 for (column, element) in bytes
                     .chunks_exact(element_size)

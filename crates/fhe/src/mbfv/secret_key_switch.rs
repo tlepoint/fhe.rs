@@ -6,7 +6,7 @@ use num_bigint::BigUint;
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
-use crate::bfv::{BfvParameters, Ciphertext, Plaintext, SecretKey};
+use crate::bfv::{Ciphertext, Parameters, Plaintext, SecretKey};
 use crate::{Error, Result};
 
 use super::Aggregate;
@@ -15,13 +15,13 @@ use super::Aggregate;
 ///
 /// Each party uses the `SecretKeySwitchShare` to generate their share of the
 /// new ciphertext and participate in the "Protocol 3: KeySwitch" protocol
-/// detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the
+/// detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) p7. Use the [`Aggregate`] impl to combine the
 /// shares into a [`Ciphertext`].
 ///
 /// Note: this protocol assumes the output key is split into the same number of
 /// parties as the input key, and is likely only useful for niche scenarios.
 pub struct SecretKeySwitchShare {
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
     /// The original input ciphertext
     // Probably doesn't need to be Arc in real usage but w/e
     pub(crate) ct: Arc<Ciphertext>,
@@ -75,7 +75,7 @@ impl SecretKeySwitchShare {
 
         // Sample error
         // TODO this should be exponential in ciphertext noise!
-        let e = Zeroizing::new(Poly::<Ntt>::small(ct.c[0].ctx(), par.variance, rng)?);
+        let e = Zeroizing::new(Poly::<Ntt>::small(ct.c[0].ctx(), par.inner.variance, rng)?);
 
         // Create h_i share
         let mut h_share = s_in.as_ref() - s_out.as_ref();
@@ -155,20 +155,20 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         let v: Vec<BigUint> = Vec::<BigUint>::from(d.as_ref())
             .into_iter()
-            .map(|vi| vi + ct.par.plaintext_big())
+            .map(|vi| vi + ct.par.plaintext_modulus())
             .collect_vec();
 
         let mut w = v[..ct.par.degree()].to_vec();
         let q_poly = d.as_ref().ctx().modulus();
         w.iter_mut().for_each(|wi| *wi %= q_poly);
 
-        ct.par.plaintext.reduce_vec(&mut w);
+        ct.par.inner.plaintext.reduce_vec(&mut w);
 
         let poly = Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt();
 
         let pt = Plaintext {
             par: ct.par.clone(),
-            encoding: None,
+
             poly_ntt: poly,
         };
 
@@ -180,11 +180,10 @@ impl Aggregate<DecryptionShare> for Plaintext {
 mod tests {
     use std::sync::Arc;
 
-    use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
     use rand::rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        bfv::{Encoding, Parameters, Plaintext, PublicKey, SecretKey},
         mbfv::{
             Aggregate, AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare,
             SecretKeySwitchShare,
@@ -202,8 +201,8 @@ mod tests {
     fn encrypt_decrypt() {
         let mut rng = rng();
         for par in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -213,7 +212,7 @@ mod tests {
 
                     // Parties collectively generate public key
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
@@ -225,14 +224,16 @@ mod tests {
                         .unwrap();
 
                     // Use it to encrypt a random polynomial
-                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
-                    let pt1 = Plaintext::try_encode(
-                        &q.random_vec(par.degree(), &mut rng),
-                        Encoding::poly_at_level(level),
+                    let q =
+                        fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
+                    let pt1 = Plaintext::encode_at_level(
                         &par,
+                        &q.random_vec(par.degree(), &mut rng),
+                        Encoding::Polynomial,
+                        level,
                     )
                     .unwrap();
-                    let ct = Arc::new(public_key.try_encrypt(&pt1, &mut rng).unwrap());
+                    let ct = Arc::new(public_key.encrypt(&pt1, &mut rng).unwrap());
 
                     // Parties perform a collective decryption
                     let decryption_shares = parties
@@ -250,8 +251,8 @@ mod tests {
     fn encrypt_keyswitch_decrypt() {
         let mut rng = rng();
         for par in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -260,7 +261,7 @@ mod tests {
                     // Parties collectively generate public key
                     let mut parties: Vec<Party> = vec![];
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
@@ -270,19 +271,21 @@ mod tests {
                         PublicKey::from_shares(parties.iter().map(|p| p.pk_share.clone())).unwrap();
 
                     // Use it to encrypt a random polynomial ct1
-                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
-                    let pt1 = Plaintext::try_encode(
-                        &q.random_vec(par.degree(), &mut rng),
-                        Encoding::poly_at_level(level),
+                    let q =
+                        fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
+                    let pt1 = Plaintext::encode_at_level(
                         &par,
+                        &q.random_vec(par.degree(), &mut rng),
+                        Encoding::Polynomial,
+                        level,
                     )
                     .unwrap();
-                    let ct1 = Arc::new(public_key.try_encrypt(&pt1, &mut rng).unwrap());
+                    let ct1 = Arc::new(public_key.encrypt(&pt1, &mut rng).unwrap());
 
                     // Key switch ct1 to a different set of parties
                     let mut out_parties = Vec::new();
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         out_parties.push(Party { sk_share, pk_share })
@@ -319,8 +322,8 @@ mod tests {
     fn collective_keys_enable_homomorphic_addition() {
         let mut rng = rng();
         for par in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -330,7 +333,7 @@ mod tests {
 
                     // Parties collectively generate public key
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
@@ -342,33 +345,31 @@ mod tests {
                         .unwrap();
 
                     // Parties encrypt two plaintexts
-                    let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+                    let q =
+                        fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
                     let a = q.random_vec(par.degree(), &mut rng);
                     let b = q.random_vec(par.degree(), &mut rng);
                     let mut expected = a.clone();
                     q.add_vec(&mut expected, &b);
 
                     let pt_a =
-                        Plaintext::try_encode(&a, Encoding::poly_at_level(level), &par).unwrap();
+                        Plaintext::encode_at_level(&par, &a, Encoding::Polynomial, level).unwrap();
                     let pt_b =
-                        Plaintext::try_encode(&b, Encoding::poly_at_level(level), &par).unwrap();
-                    let ct_a = public_key.try_encrypt(&pt_a, &mut rng).unwrap();
-                    let ct_b = public_key.try_encrypt(&pt_b, &mut rng).unwrap();
+                        Plaintext::encode_at_level(&par, &b, Encoding::Polynomial, level).unwrap();
+                    let ct_a = public_key.encrypt(&pt_a, &mut rng).unwrap();
+                    let ct_b = public_key.encrypt(&pt_b, &mut rng).unwrap();
 
                     // and add them together
-                    let ct = Arc::new(&ct_a + &ct_b);
+                    let ct = Arc::new(ct_a.add(&ct_b).unwrap());
 
                     // Parties perform a collective decryption
-                    let pt = parties
+                    let pt: Plaintext = parties
                         .iter()
                         .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng))
                         .aggregate()
                         .unwrap();
 
-                    assert_eq!(
-                        Vec::<u64>::try_decode(&pt, Encoding::poly_at_level(level)).unwrap(),
-                        expected
-                    );
+                    assert_eq!(pt.decode(Encoding::Polynomial).unwrap(), expected);
                 }
             }
         }

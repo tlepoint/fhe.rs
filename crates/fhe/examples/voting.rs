@@ -16,7 +16,7 @@ use fhe::{
     bfv::{self, Ciphertext, Encoding, Plaintext, PublicKey, SecretKey},
     mbfv::{AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare},
 };
-use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
+
 use rand::{
     distr::{Distribution, Uniform},
     rng,
@@ -96,11 +96,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Let's generate the BFV parameters structure.
     let params = timeit!(
         "Parameters generation",
-        bfv::BfvParametersBuilder::new()
-            .set_degree(degree)
-            .set_plaintext_modulus(plaintext_modulus)
-            .set_moduli(&moduli)
-            .build_arc()?
+        bfv::ParametersBuilder::new()
+            .degree(degree)
+            .plaintext_modulus(plaintext_modulus)
+            .ciphertext_moduli(&moduli)
+            .build()?
     );
     let mut rng = rng();
     let crp = CommonRandomPoly::new(&params, &mut rng)?;
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut parties = Vec::with_capacity(num_parties);
     timeit_n!("Party setup (per party)", num_parties as u32, {
-        let sk_share = SecretKey::random(&params, &mut rng);
+        let sk_share = SecretKey::generate(&params, &mut rng);
         let pk_share = PublicKeyShare::new(&sk_share, crp.clone(), &mut rng)?;
         parties.push(Party { sk_share, pk_share });
     });
@@ -131,8 +131,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut votes_encrypted = Vec::with_capacity(num_voters);
     let mut _i = 0;
     timeit_n!("Vote casting (per voter)", num_voters as u32, {
-        let pt = Plaintext::try_encode(&[votes[_i]], Encoding::poly(), &params)?;
-        let ct = pk.try_encrypt(&pt, &mut rng)?;
+        let pt = Plaintext::encode(&params, &[votes[_i]], Encoding::Polynomial)?;
+        let ct = pk.encrypt(&pt, &mut rng)?;
         votes_encrypted.push(ct);
         _i += 1;
     });
@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally = timeit!("Vote tallying", {
         let mut sum = Ciphertext::trivial_zero(&params, 0)?;
         for ct in &votes_encrypted {
-            sum += ct;
+            sum.add_assign(ct)?;
         }
         Arc::new(sum)
     });
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let pt: Plaintext = decryption_shares.into_iter().aggregate()?;
         pt
     });
-    let tally_vec = Vec::<u64>::try_decode(&tally_pt, Encoding::poly())?;
+    let tally_vec = tally_pt.decode(Encoding::Polynomial)?;
     let tally_result = tally_vec[0];
 
     // Show vote result

@@ -7,7 +7,7 @@ mod errors;
 pub mod bfv;
 #[cfg(feature = "experimental-mbfv")]
 pub mod mbfv;
-pub mod proto;
+mod proto;
 pub use errors::{
     CiphertextError, CiphertextOperation, DotProductError, EncodingError, Error,
     EvaluationKeyComponent, EvaluationKeyError, EvaluationOperation, MultipartyError,
@@ -19,3 +19,6 @@ pub use errors::{
 #[macro_use]
 extern crate doc_comment;
 doctest!("../README.md");
+
+/// Explicit permissions for public variable-time operations and diagnostics.
+pub use fhe_util::{PublicData, SecretDependentDiagnostics, VariableTime};

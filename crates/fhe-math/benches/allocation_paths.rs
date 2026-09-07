@@ -4,7 +4,7 @@ use fhe_math::{
     rns::RnsContext,
     rq::{Context, NttShoup, Poly, PowerBasis},
 };
-use fhe_traits::{DeserializeWithContext, Serialize};
+
 use std::hint::black_box;
 
 fn benchmarks(c: &mut Criterion) {

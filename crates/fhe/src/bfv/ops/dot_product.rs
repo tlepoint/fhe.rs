@@ -1,12 +1,11 @@
 use fhe_math::rq::{DotProductWorkspace, Ntt, Poly, traits::TryConvertFrom};
 use itertools::izip;
 use ndarray::Array3;
-use std::sync::Arc;
 use zeroize::Zeroize;
 
 use crate::{
     Error, Result,
-    bfv::{BfvParameters, Ciphertext, Plaintext},
+    bfv::{Ciphertext, Parameters, Plaintext},
 };
 
 /// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
@@ -79,7 +78,7 @@ impl Drop for ClearAccumulator<'_> {
 /// cleared after each fast-path call, including unwinding; resizing or dropping
 /// the workspace therefore releases only cleared accumulator data.
 pub struct DotProductScalarWorkspace {
-    par: Arc<BfvParameters>,
+    par: Parameters,
     level: usize,
     min_limit: u128,
     accumulator: Array3<u128>,
@@ -89,7 +88,7 @@ pub struct DotProductScalarWorkspace {
 impl DotProductScalarWorkspace {
     /// Create a workspace bound to these parameters and level. Coefficient
     /// buffers are allocated on first use and reused for matching part counts.
-    pub fn new(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+    pub fn new(par: &Parameters, level: usize) -> Result<Self> {
         let ctx = par.context_at_level(level)?;
         let min_limit = ctx
             .moduli()
@@ -218,9 +217,8 @@ impl DotProductScalarWorkspace {
                 c.push(Poly::<Ntt>::try_convert_from_with_timing(
                     acci,
                     ctx,
-                    (allow_variable_time_computations).then(|| {
-                        fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
-                    }),
+                    (allow_variable_time_computations)
+                        .then(|| crate::VariableTime::new(crate::PublicData::assert_public())),
                 )?)
             }
 
@@ -237,8 +235,8 @@ impl DotProductScalarWorkspace {
 #[cfg(test)]
 mod tests {
     use super::dot_product_scalar;
-    use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey};
-    use fhe_traits::{FheEncoder, FheEncrypter};
+    use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, SecretKey};
+
     use itertools::{Itertools, izip};
     use rand::rng;
     use std::error::Error;
@@ -246,16 +244,16 @@ mod tests {
     #[test]
     fn workspace_reuses_fast_scratch_and_switches_paths_and_part_counts()
     -> Result<(), Box<dyn Error>> {
-        let params = crate::bfv::BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(1153)
-            .set_moduli_sizes(&[62, 62])
-            .build_arc()?;
+        let params = crate::bfv::ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(1153_u64)
+            .ciphertext_modulus_bits([62, 62])
+            .build()?;
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let original = Plaintext::try_encode(&[3u64, 5][..], Encoding::poly(), &params)?;
-        let ct: Ciphertext = sk.try_encrypt(&original, &mut rng)?;
-        let three_parts = &ct * &ct;
+        let sk = SecretKey::generate(&params, &mut rng);
+        let original = Plaintext::encode(&params, &[3u64, 5][..], Encoding::Polynomial)?;
+        let ct: Ciphertext = sk.encrypt(&original, &mut rng)?;
+        let three_parts = ct.multiply(&ct).unwrap();
         let mut workspace = super::DotProductScalarWorkspace::new(&params, 0)?;
         assert!(super::DotProductScalarWorkspace::new(&params, 3).is_err());
         for ciphertext in [&ct, &three_parts, &ct] {
@@ -264,17 +262,20 @@ mod tests {
                 for public in [true, false] {
                     let mut pt = original.clone();
                     if public {
-                        pt.poly_ntt.allow_variable_time_computations(
-                            fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
-                        );
+                        pt.poly_ntt
+                            .allow_variable_time_computations(crate::VariableTime::new(
+                                crate::PublicData::assert_public(),
+                            ));
                     }
                     let actual = workspace.dot_product_scalar(
                         std::iter::repeat_n(ciphertext, length),
                         std::iter::repeat_n(&pt, length),
                     )?;
-                    let mut expected = ciphertext * &pt;
+                    let mut expected = ciphertext.multiply_plaintext(&pt).unwrap();
                     for _ in 1..length {
-                        expected += &(ciphertext * &pt);
+                        (expected)
+                            .add_assign(&(ciphertext.multiply_plaintext(&pt).unwrap()))
+                            .unwrap();
                     }
                     assert_eq!(actual, expected);
                     assert!(
@@ -313,8 +314,8 @@ mod tests {
                 .dot_product_scalar(std::iter::once(&lower), std::iter::once(&original))
                 .is_err()
         );
-        let other = BfvParameters::default_arc(1, 16);
-        let foreign = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &other)?;
+        let other = Parameters::test_parameters(1, 16);
+        let foreign = Plaintext::encode(&other, &[1u64][..], Encoding::Polynomial)?;
         assert!(
             workspace
                 .dot_product_scalar(std::iter::once(&ct), std::iter::once(&foreign))
@@ -322,7 +323,7 @@ mod tests {
         );
         assert_eq!(
             workspace.dot_product_scalar(std::iter::once(&ct), std::iter::once(&original))?,
-            &ct * &original
+            ct.multiply_plaintext(&original).unwrap()
         );
         Ok(())
     }
@@ -330,22 +331,24 @@ mod tests {
     #[test]
     fn long_dot_product_reuses_scratch_across_ciphertext_components() -> Result<(), Box<dyn Error>>
     {
-        let params = crate::bfv::BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(1153)
-            .set_moduli_sizes(&[62, 62])
-            .build_arc()?;
+        let params = crate::bfv::ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(1153_u64)
+            .ciphertext_modulus_bits([62, 62])
+            .build()?;
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let pt = Plaintext::try_encode(&[3u64, 7][..], Encoding::poly(), &params)?;
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pt = Plaintext::encode(&params, &[3u64, 7][..], Encoding::Polynomial)?;
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
         for length in [17, 33] {
             let ciphertexts = vec![ct.clone(); length];
             let plaintexts = vec![pt.clone(); length];
             let actual = dot_product_scalar(ciphertexts.iter(), plaintexts.iter())?;
             let mut expected = Ciphertext::trivial_zero(&params, 0)?;
             for (ciphertext, plaintext) in ciphertexts.iter().zip(plaintexts.iter()) {
-                expected += &(ciphertext * plaintext);
+                (expected)
+                    .add_assign(&(ciphertext.multiply_plaintext(plaintext).unwrap()))
+                    .unwrap();
             }
             assert_eq!(actual, expected);
         }
@@ -360,26 +363,26 @@ mod tests {
         assert!(dot_product_scalar(empty_ct.iter(), empty_pt.iter()).is_err());
 
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(2, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(2, 32),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             for size in 1..128 {
                 let ct = (0..size)
                     .map(|_| {
-                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                        let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                             .unwrap()
                             .random_vec(params.degree(), &mut rng);
-                        let pt = Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap();
-                        sk.try_encrypt(&pt, &mut rng).unwrap()
+                        let pt = Plaintext::encode(&params, &v, Encoding::Simd).unwrap();
+                        sk.encrypt(&pt, &mut rng).unwrap()
                     })
                     .collect_vec();
                 let pt = (0..size)
                     .map(|_| {
-                        let v = fhe_math::zq::Modulus::new(params.plaintext())
+                        let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                             .unwrap()
                             .random_vec(params.degree(), &mut rng);
-                        Plaintext::try_encode(&v, Encoding::simd(), &params).unwrap()
+                        Plaintext::encode(&params, &v, Encoding::Simd).unwrap()
                     })
                     .collect_vec();
 
@@ -390,11 +393,14 @@ mod tests {
                 );
 
                 let mut expected = Ciphertext::trivial_zero(&params, 0)?;
-                izip!(&ct, &pt).for_each(|(cti, pti)| expected += &(cti * pti));
+                izip!(&ct, &pt).for_each(|(cti, pti)| {
+                    (expected)
+                        .add_assign(&(cti.multiply_plaintext(pti).unwrap()))
+                        .unwrap()
+                });
                 assert_eq!(r, expected);
 
-                let variable_time =
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+                let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
                 let mut public_pt = pt.clone();
                 public_pt.iter_mut().for_each(|plaintext| {
                     plaintext
@@ -415,10 +421,10 @@ mod tests {
     #[test]
     fn dot_product_scalar_rejects_mismatched_inputs() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(1, 16);
-        let sk = SecretKey::random(&params, &mut rng);
-        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &params)?;
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let params = Parameters::test_parameters(1, 16);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pt = Plaintext::encode(&params, &[1u64][..], Encoding::Polynomial)?;
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
 
         assert!(matches!(
             dot_product_scalar([&ct].into_iter(), [&pt, &pt].into_iter()),

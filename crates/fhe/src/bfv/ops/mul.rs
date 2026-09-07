@@ -11,19 +11,19 @@ use zeroize::Zeroizing;
 use super::tensor::{self, Scratch};
 use crate::{
     Error, ParametersError, Result,
-    bfv::{BfvParameters, Ciphertext, keys::RelinearizationKey},
+    bfv::{Ciphertext, Parameters, keys::RelinearizationKey},
 };
 
-/// Multiplicator that implements a strategy for multiplying. In particular, the
-/// following information can be specified:
+/// MultiplicationPlan that implements a strategy for multiplying. In
+/// particular, the following information can be specified:
 /// - Whether `lhs` must be scaled;
 /// - Whether `rhs` must be scaled;
 /// - The basis at which the multiplication will occur;
 /// - The scaling factor after multiplication;
 /// - Whether relinearization should be used.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Multiplicator {
-    par: Arc<BfvParameters>,
+pub struct MultiplicationPlan {
+    par: Parameters,
     pub(crate) extender_lhs: Scaler,
     pub(crate) extender_rhs: Scaler,
     pub(crate) down_scaler: Scaler,
@@ -35,7 +35,7 @@ pub struct Multiplicator {
     symmetric: bool,
 }
 
-impl Multiplicator {
+impl MultiplicationPlan {
     /// Construct a multiplicator using custom scaling factors and extended
     /// basis.
     pub fn new(
@@ -43,7 +43,7 @@ impl Multiplicator {
         rhs_scaling_factor: ScalingFactor,
         extended_basis: &[u64],
         post_mul_scaling_factor: ScalingFactor,
-        par: &Arc<BfvParameters>,
+        par: &Parameters,
     ) -> Result<Self> {
         Self::new_leveled_internal(
             lhs_scaling_factor,
@@ -63,7 +63,7 @@ impl Multiplicator {
         extended_basis: &[u64],
         post_mul_scaling_factor: ScalingFactor,
         level: usize,
-        par: &Arc<BfvParameters>,
+        par: &Parameters,
     ) -> Result<Self> {
         Self::new_leveled_internal(
             lhs_scaling_factor,
@@ -81,7 +81,7 @@ impl Multiplicator {
         extended_basis: &[u64],
         post_mul_scaling_factor: ScalingFactor,
         level: usize,
-        par: &Arc<BfvParameters>,
+        par: &Parameters,
     ) -> Result<Self> {
         let base_ctx = par.context_at_level(level)?;
         let mul_ctx = Arc::new(Context::new(extended_basis, par.degree())?);
@@ -104,7 +104,7 @@ impl Multiplicator {
     }
 
     /// Default multiplication strategy using relinearization.
-    pub fn default(rk: &RelinearizationKey) -> Result<Self> {
+    pub fn with_relinearization(rk: &RelinearizationKey) -> Result<Self> {
         let ctx = rk.ksk.par.context_at_level(rk.ksk.ciphertext_level)?;
 
         let modulus_size = rk.ksk.par.moduli_sizes()[..ctx.moduli().len()]
@@ -134,7 +134,7 @@ impl Multiplicator {
             ScalingFactor::one(),
             ScalingFactor::one(),
             &extended_basis,
-            ScalingFactor::new(rk.ksk.par.plaintext_big(), ctx.modulus()),
+            ScalingFactor::new(rk.ksk.par.plaintext_modulus(), ctx.modulus()),
             rk.ksk.ciphertext_level,
             &rk.ksk.par,
         )?;
@@ -145,13 +145,13 @@ impl Multiplicator {
 
     /// Enable relinearization after multiplication.
     pub fn enable_relinearization(&mut self, rk: &RelinearizationKey) -> Result<()> {
-        if !Arc::ptr_eq(&self.par, &rk.ksk.par)
+        if !Parameters::compatible(&self.par, &rk.ksk.par)
             || rk.ksk.ciphertext_level != self.level
             || rk.ksk.ctx_ciphertext != self.base_ctx
         {
             return Err(Error::ParameterMismatch {
                 left: crate::ParameterSource::RelinearizationKey,
-                right: crate::ParameterSource::Multiplicator,
+                right: crate::ParameterSource::MultiplicationPlan,
             });
         }
         self.rk = Some(rk.clone());
@@ -171,7 +171,7 @@ impl Multiplicator {
 
     /// Use the parameters' precomputed multiplication basis at `level`, without
     /// relinearization or modulus switching. These can be enabled afterwards.
-    pub fn without_relinearization(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+    pub fn without_relinearization(par: &Parameters, level: usize) -> Result<Self> {
         let mp = par.context_level_at(level)?.mul_params();
         Ok(Self {
             par: par.clone(),
@@ -307,22 +307,23 @@ impl Multiplicator {
     }
 }
 
-/// A reusable, basis-extended left operand tied to a [`Multiplicator`].
-/// Construct with [`Multiplicator::prepare_lhs`].
+/// A reusable, basis-extended left operand tied to a [`MultiplicationPlan`].
+/// Construct with [`MultiplicationPlan::prepare_lhs`].
 ///
 /// This is an owned snapshot, so later changes to the source ciphertext do not
 /// affect its products. Each multiplication still rounds independently; use
 /// [`crate::bfv::CiphertextProductAccumulator`] to round a sum of products
 /// once.
 pub struct PreparedMultiplicand<'a> {
-    multiplicator: &'a Multiplicator,
+    multiplicator: &'a MultiplicationPlan,
     c: Zeroizing<[Poly<NttShoup>; 3]>,
 }
 
 impl PreparedMultiplicand<'_> {
     /// Multiply the prepared left operand by `rhs`, including the strategy's
     /// optional relinearization and modulus switching. `rhs` must have two
-    /// parts and match the strategy's parameter instance and input level.
+    /// parts and use compatible parameter settings and the strategy's input
+    /// level.
     pub fn multiply(&self, rhs: &Ciphertext) -> Result<Ciphertext> {
         let strategy = self.multiplicator;
         strategy.validate_operand(rhs)?;
@@ -347,19 +348,17 @@ impl PreparedMultiplicand<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::bfv::{
-        BfvParameters, Ciphertext, Encoding, Plaintext, RelinearizationKey, SecretKey,
-    };
+    use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, RelinearizationKey, SecretKey};
     use fhe_math::{
         rns::{RnsContext, ScalingFactor},
         zq::primes::generate_prime,
     };
-    use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+
     use num_bigint::BigUint;
     use rand::rng;
     use std::error::Error;
 
-    use super::Multiplicator;
+    use super::MultiplicationPlan;
 
     #[test]
     fn prepared_products_and_squares_at_every_level() -> Result<(), Box<dyn Error>> {
@@ -367,20 +366,20 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         use zeroize::Zeroize;
 
-        let par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0xcac4e);
-        let sk = SecretKey::random(&par, &mut rng);
+        let sk = SecretKey::generate(&par, &mut rng);
         for level in 0..=par.max_level() {
-            let encoding = Encoding::simd_at_level(level);
+            let encoding = Encoding::Simd;
             let left: Vec<_> = (1..=par.degree() as u64).collect();
             let right: Vec<_> = left.iter().map(|x| 2 * x + 1).collect();
-            let pt = Plaintext::try_encode(&left, encoding.clone(), &par)?;
-            let other_pt = Plaintext::try_encode(&right, encoding.clone(), &par)?;
-            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
-            let other: Ciphertext = sk.try_encrypt(&other_pt, &mut rng)?;
-            let base = Multiplicator::without_relinearization(&par, level)?;
-            let raw_product = ct.try_mul(&other)?;
-            let raw_square = ct.try_mul(&ct.clone())?;
+            let pt = Plaintext::encode_at_level(&par, &left, encoding, level)?;
+            let other_pt = Plaintext::encode_at_level(&par, &right, encoding, level)?;
+            let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
+            let other: Ciphertext = sk.encrypt(&other_pt, &mut rng)?;
+            let base = MultiplicationPlan::without_relinearization(&par, level)?;
+            let raw_product = ct.multiply(&other)?;
+            let raw_square = ct.multiply(&ct.clone())?;
             assert_eq!(raw_square, ct.square()?);
             assert_eq!(base.multiply(&ct, &other)?, raw_product);
             for key_level in [0, level.min(par.max_level() - 1)] {
@@ -394,8 +393,8 @@ mod tests {
                     let mut expected_square = raw_square.clone();
                     if mode > 0 {
                         strategy.enable_relinearization(&rk)?;
-                        rk.relinearizes(&mut expected)?;
-                        rk.relinearizes(&mut expected_square)?;
+                        rk.relinearize(&mut expected)?;
+                        rk.relinearize(&mut expected_square)?;
                     }
                     if mode == 2 {
                         strategy.enable_mod_switching()?;
@@ -413,19 +412,16 @@ mod tests {
                         assert_eq!(prepared.multiply(&ct)?, expected_square);
                         assert!(result.seed.is_none());
                         assert_eq!(
-                            Vec::<u64>::try_decode(&sk.try_decrypt(&result)?, Encoding::simd())?,
+                            sk.decrypt(&result)?.decode(Encoding::Simd)?,
                             left.iter()
                                 .zip(&right)
-                                .map(|(x, y)| x * y % par.plaintext())
+                                .map(|(x, y)| x * y % par.plaintext_modulus_u64().unwrap())
                                 .collect::<Vec<_>>()
                         );
                         assert_eq!(
-                            Vec::<u64>::try_decode(
-                                &sk.try_decrypt(&expected_square)?,
-                                Encoding::simd()
-                            )?,
+                            sk.decrypt(&expected_square)?.decode(Encoding::Simd)?,
                             left.iter()
-                                .map(|x| x * x % par.plaintext())
+                                .map(|x| x * x % par.plaintext_modulus_u64().unwrap())
                                 .collect::<Vec<_>>()
                         );
                     }
@@ -441,18 +437,18 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
-        let par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0xc07);
         for level in 0..=par.max_level() {
             let ctx = par.context_at_level(level)?;
-            let strategy = Multiplicator::without_relinearization(&par, level)?;
+            let strategy = MultiplicationPlan::without_relinearization(&par, level)?;
             for mask in 0..16 {
                 let mut parts: Vec<_> =
                     (0..4).map(|_| Poly::<Ntt>::random(ctx, &mut rng)).collect();
                 for (i, p) in parts.iter_mut().enumerate() {
                     if mask & (1 << i) != 0 {
-                        p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                            fhe_traits::PublicData::assert_public(),
+                        p.allow_variable_time_computations(crate::VariableTime::new(
+                            crate::PublicData::assert_public(),
                         ));
                     }
                 }
@@ -460,7 +456,7 @@ mod tests {
                 let left = Ciphertext::from_components(parts, &par)?;
                 let prepared = strategy.prepare_lhs(&left)?;
                 let result = prepared.multiply(&right)?;
-                assert_eq!(result, left.try_mul(&right)?);
+                assert_eq!(result, left.multiply(&right)?);
                 assert!(
                     result
                         .iter()
@@ -475,17 +471,22 @@ mod tests {
     #[test]
     fn checked_multiplication_rejects_invalid_inputs() -> Result<(), Box<dyn Error>> {
         use fhe_math::rq::Poly;
-        let par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(3, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&par, &mut rng);
-        let pt = Plaintext::try_encode(&[2u64], Encoding::poly(), &par)?;
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
-        let strategy = Multiplicator::without_relinearization(&par, 0)?;
+        let sk = SecretKey::generate(&par, &mut rng);
+        let pt = Plaintext::encode(&par, &[2u64], Encoding::Polynomial)?;
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
+        let strategy = MultiplicationPlan::without_relinearization(&par, 0)?;
         let prepared = strategy.prepare_lhs(&ct)?;
         let expected = prepared.multiply(&ct)?;
 
         let mut wrong_params = ct.clone();
-        wrong_params.par = BfvParameters::default_arc(3, 16);
+        wrong_params.par = Parameters::builder()
+            .degree(16)
+            .plaintext_modulus(1153_u64)
+            .ciphertext_moduli(par.moduli())
+            .noise_variance(11)
+            .build()?;
         let mut wrong_level = ct.clone();
         wrong_level.switch_down()?;
         let mut wrong_context = ct.clone();
@@ -501,7 +502,7 @@ mod tests {
             &empty,
         ] {
             let saved = invalid.clone();
-            assert!(ct.try_mul(invalid).is_err());
+            assert!(ct.multiply(invalid).is_err());
             assert!(strategy.multiply(&ct, invalid).is_err());
             assert!(strategy.multiply(invalid, &ct).is_err());
             assert!(strategy.prepare_lhs(invalid).is_err());
@@ -515,10 +516,10 @@ mod tests {
         assert!(strategy.prepare_lhs(&expected).is_err());
         assert!(prepared.multiply(&expected).is_err());
         assert_eq!(prepared.multiply(&ct)?, expected);
-        assert!(Multiplicator::without_relinearization(&par, par.max_level() + 1).is_err());
+        assert!(MultiplicationPlan::without_relinearization(&par, par.max_level() + 1).is_err());
         // Identical moduli are insufficient: an evaluation key must belong
-        // to the same BFV parameter instance and ciphertext level.
-        let foreign_sk = SecretKey::random(&wrong_params.par, &mut rng);
+        // to compatible BFV parameter settings and the same ciphertext level.
+        let foreign_sk = SecretKey::generate(&wrong_params.par, &mut rng);
         let foreign_rk = RelinearizationKey::new(&foreign_sk, &mut rng)?;
         let leveled_rk = RelinearizationKey::new_leveled(&sk, 1, 0, &mut rng)?;
         let mut strategy = strategy.clone();
@@ -530,20 +531,20 @@ mod tests {
 
     #[test]
     fn square_supports_unrelinearized_ciphertexts() -> Result<(), Box<dyn Error>> {
-        let par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(3, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&par, &mut rng);
-        let pt = Plaintext::try_encode(&[2u64, 3], Encoding::poly(), &par)?;
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+        let sk = SecretKey::generate(&par, &mut rng);
+        let pt = Plaintext::encode(&par, &[2u64, 3], Encoding::Polynomial)?;
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
         let product = ct.square()?;
         assert_eq!(product.len(), 3);
         let fourth_power = product.square()?;
         assert_eq!(fourth_power.len(), 5);
-        assert_eq!(fourth_power, product.try_mul(&product.clone())?);
+        assert_eq!(fourth_power, product.multiply(&product.clone())?);
         let mut expected = vec![0u64; par.degree()];
         expected[..5].copy_from_slice(&[16, 96, 216, 216, 81]);
         assert_eq!(
-            Vec::<u64>::try_decode(&sk.try_decrypt(&fourth_power)?, Encoding::poly())?,
+            sk.decrypt(&fourth_power)?.decode(Encoding::Polynomial)?,
             expected
         );
         Ok(())
@@ -552,8 +553,8 @@ mod tests {
     #[test]
     fn mul() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let par = BfvParameters::default_arc(3, 16);
-        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+        let par = Parameters::test_parameters(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -561,23 +562,23 @@ mod tests {
             let mut expected = values.clone();
             q.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut rng);
+            let sk = SecretKey::generate(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
-            let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
-            let ct1 = sk.try_encrypt(&pt, &mut rng)?;
-            let ct2 = sk.try_encrypt(&pt, &mut rng)?;
+            let pt = Plaintext::encode(&par, &values, Encoding::Simd)?;
+            let ct1 = sk.encrypt(&pt, &mut rng)?;
+            let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = Multiplicator::default(&rk)?;
+            let mut multiplicator = MultiplicationPlan::with_relinearization(&rk)?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             println!(
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -586,11 +587,11 @@ mod tests {
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
         }
         Ok(())
     }
@@ -598,33 +599,33 @@ mod tests {
     #[test]
     fn mul_at_level() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let par = BfvParameters::default_arc(3, 16);
-        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+        let par = Parameters::test_parameters(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
         for _ in 0..15 {
             for level in 0..2 {
                 let values = q.random_vec(par.degree(), &mut rng);
                 let mut expected = values.clone();
                 q.mul_vec(&mut expected, &values);
 
-                let sk = SecretKey::random(&par, &mut rng);
+                let sk = SecretKey::generate(&par, &mut rng);
                 let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
-                let pt = Plaintext::try_encode(&values, Encoding::simd_at_level(level), &par)?;
-                let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
-                let ct2: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+                let pt = Plaintext::encode_at_level(&par, &values, Encoding::Simd, level)?;
+                let ct1: Ciphertext = sk.encrypt(&pt, &mut rng)?;
+                let ct2: Ciphertext = sk.encrypt(&pt, &mut rng)?;
                 assert_eq!(ct1.level, level);
                 assert_eq!(ct2.level, level);
 
-                let mut multiplicator = Multiplicator::default(&rk).unwrap();
+                let mut multiplicator = MultiplicationPlan::with_relinearization(&rk).unwrap();
                 let ct3 = multiplicator.multiply(&ct1, &ct2).unwrap();
                 println!(
                     "Noise: {}",
                     sk.measure_noise_vartime(
                         &ct3,
-                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                        crate::SecretDependentDiagnostics::acknowledge_leakage()
                     )?
                 );
-                let pt = sk.try_decrypt(&ct3)?;
-                assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+                let pt = sk.decrypt(&ct3)?;
+                assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
                 multiplicator.enable_mod_switching()?;
                 let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -633,11 +634,11 @@ mod tests {
                     "Noise: {}",
                     sk.measure_noise_vartime(
                         &ct3,
-                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                        crate::SecretDependentDiagnostics::acknowledge_leakage()
                     )?
                 );
-                let pt = sk.try_decrypt(&ct3)?;
-                assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+                let pt = sk.decrypt(&ct3)?;
+                assert_eq!(pt.decode(Encoding::Simd)?, expected);
             }
         }
         Ok(())
@@ -646,8 +647,8 @@ mod tests {
     #[test]
     fn mul_no_relin() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let par = BfvParameters::default_arc(6, 16);
-        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+        let par = Parameters::test_parameters(6, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
         for _ in 0..30 {
             // We will encode `values` in an Simd format, and check that the product is
             // computed correctly.
@@ -655,13 +656,13 @@ mod tests {
             let mut expected = values.clone();
             q.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut rng);
+            let sk = SecretKey::generate(&par, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
-            let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
-            let ct1 = sk.try_encrypt(&pt, &mut rng)?;
-            let ct2 = sk.try_encrypt(&pt, &mut rng)?;
+            let pt = Plaintext::encode(&par, &values, Encoding::Simd)?;
+            let ct1 = sk.encrypt(&pt, &mut rng)?;
+            let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = Multiplicator::default(&rk)?;
+            let mut multiplicator = MultiplicationPlan::with_relinearization(&rk)?;
             // Remove the relinearization key.
             multiplicator.rk = None;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -669,11 +670,11 @@ mod tests {
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -682,11 +683,11 @@ mod tests {
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
         }
         Ok(())
     }
@@ -696,8 +697,8 @@ mod tests {
         // Implement the second multiplication strategy from <https://eprint.iacr.org/2021/204>
 
         let mut rng = rng();
-        let par = BfvParameters::default_arc(3, 16);
-        let q = fhe_math::zq::Modulus::new(par.plaintext()).unwrap();
+        let par = Parameters::test_parameters(3, 16);
+        let q = fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap()).unwrap();
         let mut extended_basis = par.moduli().to_vec();
         extended_basis
             .push(generate_prime(62, 2 * par.degree() as u64, extended_basis[2]).unwrap());
@@ -714,16 +715,19 @@ mod tests {
             let mut expected = values.clone();
             q.mul_vec(&mut expected, &values);
 
-            let sk = SecretKey::random(&par, &mut rng);
-            let pt = Plaintext::try_encode(&values, Encoding::simd(), &par)?;
-            let ct1 = sk.try_encrypt(&pt, &mut rng)?;
-            let ct2 = sk.try_encrypt(&pt, &mut rng)?;
+            let sk = SecretKey::generate(&par, &mut rng);
+            let pt = Plaintext::encode(&par, &values, Encoding::Simd)?;
+            let ct1 = sk.encrypt(&pt, &mut rng)?;
+            let ct2 = sk.encrypt(&pt, &mut rng)?;
 
-            let mut multiplicator = Multiplicator::new(
+            let mut multiplicator = MultiplicationPlan::new(
                 ScalingFactor::one(),
                 ScalingFactor::new(rns.modulus(), par.context_at_level(0)?.modulus()),
                 &extended_basis,
-                ScalingFactor::new(&BigUint::from(par.plaintext()), rns.modulus()),
+                ScalingFactor::new(
+                    &BigUint::from(par.plaintext_modulus_u64().unwrap()),
+                    rns.modulus(),
+                ),
                 &par,
             )?;
 
@@ -732,19 +736,16 @@ mod tests {
             let squared = multiplicator.square(&ct1)?;
             assert_eq!(squared, multiplicator.multiply(&ct1, &ct1.clone())?);
             assert_eq!(squared, multiplicator.prepare_lhs(&ct1)?.multiply(&ct1)?);
-            assert_eq!(
-                Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
-                expected
-            );
+            assert_eq!(sk.decrypt(&squared)?.decode(Encoding::Simd)?, expected);
             println!(
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
 
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
@@ -753,19 +754,16 @@ mod tests {
             let squared = multiplicator.square(&ct1)?;
             assert_eq!(squared, multiplicator.multiply(&ct1, &ct1.clone())?);
             assert_eq!(squared, multiplicator.prepare_lhs(&ct1)?.multiply(&ct1)?);
-            assert_eq!(
-                Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
-                expected
-            );
+            assert_eq!(sk.decrypt(&squared)?.decode(Encoding::Simd)?, expected);
             println!(
                 "Noise: {}",
                 sk.measure_noise_vartime(
                     &ct3,
-                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    crate::SecretDependentDiagnostics::acknowledge_leakage()
                 )?
             );
-            let pt = sk.try_decrypt(&ct3)?;
-            assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
+            let pt = sk.decrypt(&ct3)?;
+            assert_eq!(pt.decode(Encoding::Simd)?, expected);
         }
 
         Ok(())

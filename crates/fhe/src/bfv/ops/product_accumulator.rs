@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use fhe_math::rq::{Ntt, Poly};
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -7,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     CiphertextError, DotProductError, Result,
-    bfv::{BfvParameters, Ciphertext},
+    bfv::{Ciphertext, Parameters},
 };
 
 /// Accumulate products of two-part BFV ciphertexts, then scale the sum once.
@@ -26,7 +24,7 @@ use crate::{
 /// The accumulator checks a conservative coefficient bound to prevent wrapping
 /// in the extended basis. Its scratch is zeroized when finished or dropped.
 pub struct CiphertextProductAccumulator {
-    par: Arc<BfvParameters>,
+    par: Parameters,
     level: usize,
     products: usize,
     max_products: usize,
@@ -45,12 +43,12 @@ fn product_limit(q: &BigUint, m: &BigUint, degree: usize) -> usize {
 
 impl CiphertextProductAccumulator {
     /// Create an empty accumulator at a fixed ciphertext level.
-    pub fn new(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+    pub fn new(par: &Parameters, level: usize) -> Result<Self> {
         let mp = par.context_level_at(level)?.mul_params();
         let max_products = product_limit(mp.from.modulus(), mp.to.modulus(), par.degree());
         let mut zero = Poly::zero(&mp.to);
-        zero.allow_variable_time_computations(fhe_traits::VariableTime::new(
-            fhe_traits::PublicData::assert_public(),
+        zero.allow_variable_time_computations(crate::VariableTime::new(
+            crate::PublicData::assert_public(),
         ));
         Ok(Self {
             par: par.clone(),
@@ -139,9 +137,9 @@ impl CiphertextProductAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{BfvParametersBuilder, Encoding, Plaintext, RelinearizationKey, SecretKey};
+    use crate::bfv::{Encoding, ParametersBuilder, Plaintext, RelinearizationKey, SecretKey};
     use fhe_math::rq::traits::TryConvertFrom;
-    use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+
     use num_bigint::BigInt;
     use num_traits::{Signed, Zero};
     use rand::SeedableRng;
@@ -149,11 +147,11 @@ mod tests {
 
     #[test]
     fn exact_negacyclic_product_sum() -> Result<()> {
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[12, 12])
-            .build_arc()?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([12, 12])
+            .build()?;
         for level in 0..=par.max_level() {
             let ctx = par.context_at_level(level)?;
             let q = BigInt::from(ctx.modulus().clone());
@@ -219,7 +217,7 @@ mod tests {
                     let expected: Vec<_> = expected
                         .iter()
                         .map(|x| {
-                            let numerator = x * BigInt::from(par.plaintext());
+                            let numerator = x * BigInt::from(par.plaintext_modulus_u64().unwrap());
                             let rounded =
                                 numerator.signum() * ((numerator.abs() + (&q >> 1usize)) / &q);
                             (((rounded % &q) + &q) % &q).to_biguint().unwrap()
@@ -234,11 +232,11 @@ mod tests {
 
     #[test]
     fn decrypts_product_sums_at_multiple_levels() -> Result<()> {
-        let par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0xf053d);
-        let sk = SecretKey::random(&par, &mut rng);
+        let sk = SecretKey::generate(&par, &mut rng);
         for level in 0..=par.max_level() {
-            let encoding = Encoding::simd_at_level(level);
+            let encoding = Encoding::Simd;
             let rk = RelinearizationKey::new_leveled(
                 &sk,
                 level,
@@ -253,26 +251,31 @@ mod tests {
                     let values: Vec<_> = (0..2)
                         .map(|side| {
                             (0..par.degree())
-                                .map(|i| (17 * i + 5 * pair + 31 * side) as u64 % par.plaintext())
+                                .map(|i| {
+                                    (17 * i + 5 * pair + 31 * side) as u64
+                                        % par.plaintext_modulus_u64().unwrap()
+                                })
                                 .collect::<Vec<_>>()
                         })
                         .collect();
                     let ct = values
                         .iter()
                         .map(|v| {
-                            let pt = Plaintext::try_encode(v.as_slice(), encoding.clone(), &par)?;
-                            sk.try_encrypt(&pt, &mut rng)
+                            let pt =
+                                Plaintext::encode_at_level(&par, v.as_slice(), encoding, level)?;
+                            sk.encrypt(&pt, &mut rng)
                         })
                         .collect::<Result<Vec<Ciphertext>>>()?;
                     accumulator.add_product(&ct[0], &ct[1])?;
-                    let product = &ct[0] * &ct[1];
+                    let product = ct[0].multiply(&ct[1]).unwrap();
                     if let Some(sum) = separate.as_mut() {
-                        *sum += &product;
+                        sum.add_assign(&product).unwrap();
                     } else {
                         separate = Some(product);
                     }
                     for (i, expected) in expected.iter_mut().enumerate() {
-                        *expected = (*expected + values[0][i] * values[1][i]) % par.plaintext();
+                        *expected = (*expected + values[0][i] * values[1][i])
+                            % par.plaintext_modulus_u64().unwrap();
                     }
                 }
                 let separate = separate.unwrap();
@@ -281,16 +284,10 @@ mod tests {
                     assert_eq!(result, separate);
                 }
                 for ciphertext in [&result, &separate] {
-                    assert_eq!(
-                        Vec::<u64>::try_decode(&sk.try_decrypt(ciphertext)?, encoding.clone())?,
-                        expected
-                    );
+                    assert_eq!(sk.decrypt(ciphertext)?.decode(encoding)?, expected);
                 }
-                rk.relinearizes(&mut result)?;
-                assert_eq!(
-                    Vec::<u64>::try_decode(&sk.try_decrypt(&result)?, encoding.clone())?,
-                    expected
-                );
+                rk.relinearize(&mut result)?;
+                assert_eq!(sk.decrypt(&result)?.decode(encoding)?, expected);
             }
         }
         Ok(())
@@ -298,8 +295,8 @@ mod tests {
 
     #[test]
     fn validates_inputs_and_preserves_sum_on_errors() -> Result<()> {
-        let par = BfvParameters::default_arc(2, 16);
-        let other_par = BfvParameters::default_arc(3, 16);
+        let par = Parameters::test_parameters(2, 16);
+        let other_par = Parameters::test_parameters(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(31);
         let ctx = par.context_at_level(0)?;
         let ct = Ciphertext::from_components(vec![Poly::random(ctx, &mut rng); 2], &par)?;
@@ -340,7 +337,7 @@ mod tests {
             Err(DotProductError::TooManyProducts { maximum: 1 }.into())
         );
         assert_eq!(*accumulator.c, *saved);
-        assert_eq!(accumulator.finish()?, &ct * &ct);
+        assert_eq!(accumulator.finish()?, ct.multiply(&ct).unwrap());
         Ok(())
     }
 
@@ -363,11 +360,11 @@ mod tests {
 
     #[test]
     fn timing_permission_includes_every_part_and_pair() -> Result<()> {
-        let par = BfvParameters::default_arc(2, 16);
+        let par = Parameters::test_parameters(2, 16);
         let ctx = par.context_at_level(0)?;
         let mut p = Poly::zero(ctx);
-        p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-            fhe_traits::PublicData::assert_public(),
+        p.allow_variable_time_computations(crate::VariableTime::new(
+            crate::PublicData::assert_public(),
         ));
         let public = Ciphertext::from_components(vec![p; 2], &par)?;
         for secret_pair in 0..=2 {

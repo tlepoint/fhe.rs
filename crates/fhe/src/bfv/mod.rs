@@ -17,7 +17,7 @@ mod plaintext;
 mod plaintext_vec;
 mod rgsw_ciphertext;
 
-pub mod traits;
+mod wire;
 pub use ciphertext::Ciphertext;
 pub use context::ContextLevel;
 pub use encoding::Encoding;
@@ -25,12 +25,12 @@ pub use encoding::Encoding;
 pub(crate) use keys::KeySwitchingKey;
 pub use keys::{EvaluationKey, EvaluationKeyBuilder, PublicKey, RelinearizationKey, SecretKey};
 pub use ops::{
-    CiphertextProductAccumulator, DotProductScalarWorkspace, Multiplicator, PreparedMultiplicand,
-    dot_product_scalar,
+    CiphertextProductAccumulator, DotProductScalarWorkspace, MultiplicationPlan,
+    PreparedMultiplicand, dot_product_scalar,
 };
-pub use parameters::{BfvParameters, BfvParametersBuilder};
+pub use parameters::{ParameterProfile, Parameters, ParametersBuilder};
 pub use plaintext::Plaintext;
 mod packed_plaintext;
 pub use packed_plaintext::{PackedPlaintext, PackedPlaintextVec, PackedPlaintextView};
 pub use plaintext_vec::PlaintextVec;
-pub use rgsw_ciphertext::RGSWCiphertext;
+pub use rgsw_ciphertext::RgswCiphertext;

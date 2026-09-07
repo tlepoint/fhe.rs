@@ -549,7 +549,7 @@ mod tests {
     fn dot_product_requires_all_operands_to_allow_variable_time() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(&MODULI[..1], 16)?);
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
         let mut p = (0..2)
             .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
             .collect_vec();

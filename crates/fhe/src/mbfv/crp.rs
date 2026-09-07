@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use crate::Result;
-use crate::bfv::BfvParameters;
+use crate::bfv::Parameters;
 use fhe_math::rq::{Ntt, Poly};
 use rand::{CryptoRng, Rng as RngCore};
 
@@ -14,7 +12,7 @@ pub struct CommonRandomPoly {
 
 impl CommonRandomPoly {
     /// Generate a new random CRP.
-    pub fn new<R: RngCore + CryptoRng>(par: &Arc<BfvParameters>, rng: &mut R) -> Result<Self> {
+    pub fn new<R: RngCore + CryptoRng>(par: &Parameters, rng: &mut R) -> Result<Self> {
         Self::new_leveled(par, 0, rng)
     }
 
@@ -22,10 +20,7 @@ impl CommonRandomPoly {
     ///
     /// The size of the vector is equal to the number of ciphertext moduli, as
     /// required for the relinearization key generation protocol.
-    pub fn new_vec<R: RngCore + CryptoRng>(
-        par: &Arc<BfvParameters>,
-        rng: &mut R,
-    ) -> Result<Vec<Self>> {
+    pub fn new_vec<R: RngCore + CryptoRng>(par: &Parameters, rng: &mut R) -> Result<Vec<Self>> {
         (0..par.moduli().len())
             .map(|_| Self::new(par, rng))
             .collect()
@@ -33,7 +28,7 @@ impl CommonRandomPoly {
 
     /// Generate a new random leveled CRP.
     pub fn new_leveled<R: RngCore + CryptoRng>(
-        par: &Arc<BfvParameters>,
+        par: &Parameters,
         level: usize,
         rng: &mut R,
     ) -> Result<Self> {

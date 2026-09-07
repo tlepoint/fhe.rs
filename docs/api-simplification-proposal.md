@@ -4,12 +4,13 @@ Reviewed on 2026-09-07 against commit `f2ac193` and the current working tree.
 Scope: the four workspace crates, their public interfaces, BFV examples,
 selected implementations and tests, and experimental multiparty BFV.
 This document proposes a breaking release; it does not implement the redesign.
-All examples under “Proposed” describe APIs that do not exist yet.
+Examples under “Proposed” describe the target design; see the migration notes
+below for the implemented APIs.
 
 Implementation update: the P0 contract work is now implemented. See the
 [P0 migration notes](api-p0-migration.md) for the actual changes and current
-signatures. The analysis below records the original findings; P1/P2 remain
-proposals.
+signatures. P1 is also implemented; see the [P1 migration notes](api-p1-migration.md).
+The analysis below records the original findings; P2 remains a proposal.
 
 ## Recommendation
 
@@ -434,7 +435,7 @@ assumptions; ordinary builder validation is not a security estimator.
 `DeserializeParametrized`, and `DeserializeWithContext`, with inconsistent
 `from_bytes` / `try_deserialize` naming. There are two unrelated
 `TryConvertFrom` traits in
-[`bfv::traits`](../crates/fhe/src/bfv/traits.rs) and
+[`bfv::traits` (now private wire helpers)](../crates/fhe/src/bfv/wire.rs) and
 [`rq::traits`](../crates/fhe-math/src/rq/traits.rs). The `fhe` crate also publicly
 exports generated protobuf types through [`proto`](../crates/fhe/src/proto/mod.rs).
 

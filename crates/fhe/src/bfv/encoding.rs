@@ -1,68 +1,13 @@
-//! The encoding type for BFV.
+//! Interpretation of a BFV plaintext polynomial.
 
-use std::fmt::Display;
-
-use fhe_traits::FhePlaintextEncoding;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum EncodingEnum {
-    Poly,
+/// Interpretation supplied when encoding or decoding a plaintext.
+/// It does not change the plaintext's modulus-switching level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Encoding {
+    /// Values are coefficients in a negacyclic polynomial ring.
+    Polynomial,
+    /// Values are slots with component-wise arithmetic. The current backend
+    /// requires a machine-word prime plaintext modulus congruent to 1 modulo
+    /// twice the polynomial degree.
     Simd,
 }
-
-impl Display for EncodingEnum {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-/// An encoding for the plaintext.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Encoding {
-    pub(crate) encoding: EncodingEnum,
-    pub(crate) level: usize,
-}
-
-impl Encoding {
-    /// A Poly encoding encodes a vector as coefficients of a polynomial;
-    /// homomorphic operations are therefore polynomial operations.
-    #[must_use]
-    pub fn poly() -> Self {
-        Self {
-            encoding: EncodingEnum::Poly,
-            level: 0,
-        }
-    }
-
-    /// A Simd encoding encodes a vector so that homomorphic operations are
-    /// component-wise operations on the coefficients of the underlying vectors.
-    /// The Simd encoding require that the plaintext modulus is congruent to 1
-    /// modulo the degree of the underlying polynomial.
-    #[must_use]
-    pub fn simd() -> Self {
-        Self {
-            encoding: EncodingEnum::Simd,
-            level: 0,
-        }
-    }
-
-    /// A poly encoding at a given level.
-    #[must_use]
-    pub fn poly_at_level(level: usize) -> Self {
-        Self {
-            encoding: EncodingEnum::Poly,
-            level,
-        }
-    }
-
-    /// A simd encoding at a given level.
-    #[must_use]
-    pub fn simd_at_level(level: usize) -> Self {
-        Self {
-            encoding: EncodingEnum::Simd,
-            level,
-        }
-    }
-}
-
-impl FhePlaintextEncoding for Encoding {}

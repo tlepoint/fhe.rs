@@ -1,7 +1,7 @@
 //! Galois keys for the BFV encryption scheme
 
 use super::key_switching_key::KeySwitchingKey;
-use crate::bfv::{BfvParameters, Ciphertext, SecretKey, traits::TryConvertFrom};
+use crate::bfv::{Ciphertext, Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
 use crate::{Error, Result, SerializationError};
 use fhe_math::rq::{
@@ -9,7 +9,6 @@ use fhe_math::rq::{
     traits::TryConvertFrom as TryConvertFromPoly,
 };
 use rand::{CryptoRng, Rng as RngCore};
-use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Galois key for the BFV encryption scheme.
@@ -59,6 +58,7 @@ impl GaloisKey {
     }
 
     /// Relinearize a [`Ciphertext`] using the [`GaloisKey`]
+    #[cfg(test)]
     pub fn relinearize(&self, ct: &Ciphertext) -> Result<Ciphertext> {
         self.validate_ciphertext(ct)?;
 
@@ -143,10 +143,10 @@ impl From<&GaloisKey> for GaloisKeyProto {
     }
 }
 
-impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
-    fn try_convert_from(value: &GaloisKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
+impl FromProto<&GaloisKeyProto> for GaloisKey {
+    fn from_proto(value: &GaloisKeyProto, par: &Parameters) -> Result<Self> {
         if let Some(ksk) = &value.ksk {
-            let ksk = KeySwitchingKey::try_convert_from(ksk, par)?;
+            let ksk = KeySwitchingKey::from_proto(ksk, par)?;
 
             let ctx = par.context_at_level(ksk.ciphertext_level)?;
             let element = SubstitutionExponent::new(ctx, value.exponent as usize)
@@ -166,11 +166,9 @@ impl TryConvertFrom<&GaloisKeyProto> for GaloisKey {
 #[cfg(test)]
 mod tests {
     use super::GaloisKey;
-    use crate::bfv::{
-        BfvParameters, Ciphertext, Encoding, Plaintext, SecretKey, traits::TryConvertFrom,
-    };
+    use crate::bfv::{Ciphertext, Encoding, Parameters, Plaintext, SecretKey, wire::FromProto};
     use crate::proto::bfv::GaloisKey as GaloisKeyProto;
-    use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+
     use rand::rng;
     use std::error::Error;
 
@@ -178,18 +176,18 @@ mod tests {
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
             for _ in 0..30 {
-                let sk = SecretKey::random(&params, &mut rng);
-                let v = fhe_math::zq::Modulus::new(params.plaintext())
+                let sk = SecretKey::generate(&params, &mut rng);
+                let v = fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                     .unwrap()
                     .random_vec(params.degree(), &mut rng);
                 let row_size = params.degree() >> 1;
 
-                let pt = Plaintext::try_encode(&v, Encoding::simd(), &params)?;
-                let ct = sk.try_encrypt(&pt, &mut rng)?;
+                let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
+                let ct = sk.encrypt(&pt, &mut rng)?;
 
                 for i in 1..2 * params.degree() {
                     if i & 1 == 0 {
@@ -201,12 +199,12 @@ mod tests {
                             "Noise: {}",
                             sk.measure_noise_vartime(
                                 &ct2,
-                                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                                crate::SecretDependentDiagnostics::acknowledge_leakage()
                             )?
                         );
 
                         if i == 3 {
-                            let pt = sk.try_decrypt(&ct2)?;
+                            let pt = sk.decrypt(&ct2)?;
 
                             // The expected result is rotated one on the left
                             let mut expected = vec![0u64; params.degree()];
@@ -215,15 +213,15 @@ mod tests {
                             expected[row_size..2 * row_size - 1]
                                 .copy_from_slice(&v[row_size + 1..]);
                             expected[2 * row_size - 1] = v[row_size];
-                            assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::simd())?, &expected)
+                            assert_eq!(&pt.decode(Encoding::Simd)?, &expected)
                         } else if i == params.degree() * 2 - 1 {
-                            let pt = sk.try_decrypt(&ct2)?;
+                            let pt = sk.decrypt(&ct2)?;
 
                             // The expected result has its rows swapped
                             let mut expected = vec![0u64; params.degree()];
                             expected[..row_size].copy_from_slice(&v[row_size..]);
                             expected[row_size..].copy_from_slice(&v[..row_size]);
-                            assert_eq!(&Vec::<u64>::try_decode(&pt, Encoding::simd())?, &expected)
+                            assert_eq!(&pt.decode(Encoding::Simd)?, &expected)
                         }
                     }
                 }
@@ -236,12 +234,12 @@ mod tests {
     fn relinearization_into() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let pt = Plaintext::try_encode(&[1u64, 2, 3, 4][..], Encoding::simd(), &params)?;
-            let ct = sk.try_encrypt(&pt, &mut rng)?;
+            let sk = SecretKey::generate(&params, &mut rng);
+            let pt = Plaintext::encode(&params, &[1u64, 2, 3, 4][..], Encoding::Simd)?;
+            let ct = sk.encrypt(&pt, &mut rng)?;
             let gk = GaloisKey::new(&sk, 3, 0, 0, &mut rng)?;
 
             let ct_expected = gk.relinearize(&ct)?;
@@ -259,16 +257,13 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
-        let params = BfvParameters::default_arc(4, 16);
+        let params = Parameters::test_parameters(4, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0x6a1015);
-        let sk = SecretKey::random(&params, &mut rng);
+        let sk = SecretKey::generate(&params, &mut rng);
         for level in 0..=params.max_level() {
-            let pt = Plaintext::try_encode(
-                &[1u64, 2, 3, 4][..],
-                Encoding::simd_at_level(level),
-                &params,
-            )?;
-            let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            let pt =
+                Plaintext::encode_at_level(&params, &[1u64, 2, 3, 4][..], Encoding::Simd, level)?;
+            let ct: Ciphertext = sk.encrypt(&pt, &mut rng)?;
             for key_level in 0..=level {
                 for exponent in [3, params.degree() + 1] {
                     let gk = GaloisKey::new(&sk, exponent, level, key_level, &mut rng)?;
@@ -308,8 +303,8 @@ mod tests {
     #[test]
     fn relinearization_rejects_invalid_ciphertexts() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(3, 16);
-        let sk = SecretKey::random(&params, &mut rng);
+        let params = Parameters::test_parameters(3, 16);
+        let sk = SecretKey::generate(&params, &mut rng);
         let gk = GaloisKey::new(&sk, 3, 0, 0, &mut rng)?;
         let invalid = Ciphertext::invalid_empty(&params);
 
@@ -329,13 +324,13 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(4, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(4, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             let gk = GaloisKey::new(&sk, 9, 0, 0, &mut rng)?;
             let proto = GaloisKeyProto::from(&gk);
-            assert_eq!(gk, GaloisKey::try_convert_from(&proto, &params)?);
+            assert_eq!(gk, GaloisKey::from_proto(&proto, &params)?);
         }
         Ok(())
     }

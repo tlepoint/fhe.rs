@@ -2,10 +2,10 @@
 
 use criterion::{BatchSize, BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
 use fhe::bfv::{
-    BfvParameters, Ciphertext, CiphertextProductAccumulator, Encoding, Plaintext,
-    RelinearizationKey, SecretKey,
+    Ciphertext, CiphertextProductAccumulator, Encoding, Parameters, Plaintext, RelinearizationKey,
+    SecretKey,
 };
-use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{hint::black_box, time::Duration};
@@ -17,49 +17,52 @@ fn core_bfv(c: &mut Criterion) {
     group.warm_up_time(Duration::from_millis(100));
     group.measurement_time(Duration::from_millis(600));
 
-    for par in BfvParameters::default_parameters_128(20)
+    for par in Parameters::profiles_128(20)
         .unwrap()
         .filter(|par| matches!(par.degree(), 4096 | 8192))
     {
+        let par = par.build().unwrap();
         let mut rng = ChaCha8Rng::seed_from_u64(0xbf00 + par.degree() as u64);
-        let sk = SecretKey::random(&par, &mut rng);
+        let sk = SecretKey::generate(&par, &mut rng);
         let rk = RelinearizationKey::new(&sk, &mut rng).unwrap();
         let left: Vec<_> = (0..par.degree())
-            .map(|i| (17 * i as u64 + 3) % par.plaintext())
+            .map(|i| (17 * i as u64 + 3) % par.plaintext_modulus_u64().unwrap())
             .collect();
         let right: Vec<_> = (0..par.degree())
-            .map(|i| (31 * i as u64 + 5) % par.plaintext())
+            .map(|i| (31 * i as u64 + 5) % par.plaintext_modulus_u64().unwrap())
             .collect();
-        let pt = Plaintext::try_encode(left.as_slice(), Encoding::simd(), &par).unwrap();
-        let other_pt = Plaintext::try_encode(right.as_slice(), Encoding::simd(), &par).unwrap();
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng).unwrap();
-        let other: Ciphertext = sk.try_encrypt(&other_pt, &mut rng).unwrap();
-        let product = &ct * &other;
+        let pt = Plaintext::encode(&par, left.as_slice(), Encoding::Simd).unwrap();
+        let other_pt = Plaintext::encode(&par, right.as_slice(), Encoding::Simd).unwrap();
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng).unwrap();
+        let other: Ciphertext = sk.encrypt(&other_pt, &mut rng).unwrap();
+        let product = ct.multiply(&other).unwrap();
         let mut relinearized = product.clone();
-        rk.relinearizes(&mut relinearized).unwrap();
+        rk.relinearize(&mut relinearized).unwrap();
         let expected: Vec<_> = left
             .iter()
             .zip(&right)
-            .map(|(a, b)| a * b % par.plaintext())
+            .map(|(a, b)| a * b % par.plaintext_modulus_u64().unwrap())
             .collect();
         // Verify fixtures before timing; the operations below reuse these
         // operands instead of accumulating noise across benchmark iterations.
         for ciphertext in [&product, &relinearized] {
             assert_eq!(
-                Vec::<u64>::try_decode(&sk.try_decrypt(ciphertext).unwrap(), Encoding::simd())
+                (sk.decrypt(ciphertext).unwrap())
+                    .decode(Encoding::Simd)
                     .unwrap(),
                 expected
             );
         }
         assert_eq!(
-            Vec::<u64>::try_decode(&sk.try_decrypt(&ct).unwrap(), Encoding::simd()).unwrap(),
+            (sk.decrypt(&ct).unwrap()).decode(Encoding::Simd).unwrap(),
             left
         );
         assert_eq!(
-            Vec::<u64>::try_decode(&sk.try_decrypt(&(&ct * &ct)).unwrap(), Encoding::simd())
+            (sk.decrypt(&(ct.multiply(&ct).unwrap())).unwrap())
+                .decode(Encoding::Simd)
                 .unwrap(),
             left.iter()
-                .map(|a| a * a % par.plaintext())
+                .map(|a| a * a % par.plaintext_modulus_u64().unwrap())
                 .collect::<Vec<_>>()
         );
 
@@ -96,9 +99,10 @@ fn core_bfv(c: &mut Criterion) {
             );
         }
         let separate_sum = || {
-            let mut sum = Ciphertext::trivial_zero(&par, 0).unwrap();
-            for _ in 0..8 {
-                sum += &(black_box(&ct) * black_box(&other));
+            let mut sum = black_box(&ct).multiply(black_box(&other)).unwrap();
+            for _ in 1..8 {
+                sum.add_assign(&black_box(&ct).multiply(black_box(&other)).unwrap())
+                    .unwrap();
             }
             sum
         };
@@ -113,10 +117,10 @@ fn core_bfv(c: &mut Criterion) {
         };
         for sum in [separate_sum(), fused_sum()] {
             assert_eq!(
-                Vec::<u64>::try_decode(&sk.try_decrypt(&sum).unwrap(), Encoding::simd()).unwrap(),
+                (sk.decrypt(&sum).unwrap()).decode(Encoding::Simd).unwrap(),
                 expected
                     .iter()
-                    .map(|x| 8 * x % par.plaintext())
+                    .map(|x| 8 * x % par.plaintext_modulus_u64().unwrap())
                     .collect::<Vec<_>>()
             );
         }
@@ -131,30 +135,30 @@ fn core_bfv(c: &mut Criterion) {
         });
         group.bench_function(BenchmarkId::new("encrypt_sk", &parameter), |b| {
             b.iter(|| {
-                let encrypted: Ciphertext = sk.try_encrypt(black_box(&pt), &mut rng).unwrap();
+                let encrypted: Ciphertext = sk.encrypt(black_box(&pt), &mut rng).unwrap();
                 encrypted
             });
         });
         group.bench_function(BenchmarkId::new("decrypt", &parameter), |b| {
-            b.iter(|| sk.try_decrypt(black_box(&ct)).unwrap());
+            b.iter(|| sk.decrypt(black_box(&ct)).unwrap());
         });
         group.bench_function(BenchmarkId::new("multiply", &parameter), |b| {
-            b.iter(|| black_box(&ct) * black_box(&other));
+            b.iter(|| (black_box(&ct)).multiply(black_box(&other)).unwrap());
         });
         group.bench_function(BenchmarkId::new("square", &parameter), |b| {
-            b.iter(|| black_box(&ct) * black_box(&ct));
+            b.iter(|| (black_box(&ct)).multiply(black_box(&ct)).unwrap());
         });
         group.bench_function(BenchmarkId::new("multiply_relinearize", &parameter), |b| {
             b.iter(|| {
-                let mut result = black_box(&ct) * black_box(&other);
-                rk.relinearizes(&mut result).unwrap();
+                let mut result = (black_box(&ct)).multiply(black_box(&other)).unwrap();
+                rk.relinearize(&mut result).unwrap();
                 result
             });
         });
         group.bench_function(BenchmarkId::new("relinearize", &parameter), |b| {
             b.iter_batched_ref(
                 || product.clone(),
-                |input| rk.relinearizes(black_box(input)).unwrap(),
+                |input| rk.relinearize(black_box(input)).unwrap(),
                 BatchSize::PerIteration,
             );
         });
@@ -162,5 +166,28 @@ fn core_bfv(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, core_bfv);
+criterion_group!(benches, core_bfv, parameter_compatibility);
 criterion_main!(benches);
+
+fn parameter_compatibility(c: &mut Criterion) {
+    let par = Parameters::profile_128(4096, 20).unwrap();
+    let shared = par.clone();
+    let independent = Parameters::from_bytes(&par.to_bytes()).unwrap();
+    let mut group = c.benchmark_group("parameter_compatibility");
+    group.sample_size(20);
+    group.warm_up_time(Duration::from_millis(250));
+    group.measurement_time(Duration::from_millis(500));
+    for (name, other) in [("shared", &shared), ("independent", &independent)] {
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(&par).compatible(black_box(other)))
+        });
+    }
+    let left = Ciphertext::trivial_zero(&par, 0).unwrap();
+    for (name, other) in [("add_shared", &shared), ("add_independent", &independent)] {
+        let right = Ciphertext::trivial_zero(other, 0).unwrap();
+        group.bench_function(name, |b| {
+            b.iter(|| black_box(&left).add(black_box(&right)).unwrap())
+        });
+    }
+    group.finish();
+}

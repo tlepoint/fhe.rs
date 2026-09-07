@@ -16,3 +16,6 @@ pub use errors::{Error, PolynomialSerializationError, Result};
 #[cfg(test)]
 #[macro_use]
 extern crate proptest;
+
+/// Explicit permissions for public variable-time operations and diagnostics.
+pub use fhe_util::{PublicData, SecretDependentDiagnostics, VariableTime};

@@ -18,9 +18,7 @@ mod util;
 
 use clap::Parser;
 use fhe::bfv;
-use fhe_traits::{
-    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize,
-};
+
 use fhe_util::{inverse, transcode_to_bytes};
 use indicatif::HumanBytes;
 use rand::{Rng as RngCore, rng};
@@ -70,11 +68,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Let's generate the BFV parameters structure.
     let params = timeit!(
         "Parameters generation",
-        bfv::BfvParametersBuilder::new()
-            .set_degree(degree)
-            .set_plaintext_modulus(plaintext_modulus)
-            .set_moduli_sizes(&moduli_sizes)
-            .build_arc()?
+        bfv::ParametersBuilder::new()
+            .degree(degree)
+            .plaintext_modulus(plaintext_modulus)
+            .ciphertext_modulus_bits(moduli_sizes)
+            .build()?
     );
 
     // Proprocess the database on the server side: the database will be reshaped
@@ -97,11 +95,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // dim2) values, i.e. with expansion level ceil(log2(dim1 + dim2)), and a
     // relinearization key.
     let (sk, ek_expansion_serialized, rk_serialized) = timeit!("Client setup", {
-        let sk = bfv::SecretKey::random(&params, &mut rng);
+        let sk = bfv::SecretKey::generate(&params, &mut rng);
         let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("level = {level}");
-        let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
-            .enable_expansion(level)?
+        let ek_expansion = bfv::EvaluationKeyBuilder::new(&sk)
+            .ciphertext_level(1)
+            .key_level(0)
+            .enable_expansion(level)
             .build(&mut rng)?;
         let rk = bfv::RelinearizationKey::new_leveled(&sk, 1, 1, &mut rng)?;
         let ek_expansion_serialized = ek_expansion.to_bytes();
@@ -149,15 +149,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
-        let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
-        let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut rng)?;
+        let query_pt = bfv::Plaintext::encode_at_level(&params, &pt, bfv::Encoding::Polynomial, 1)?;
+        let query: bfv::Ciphertext = sk.encrypt(&query_pt, &mut rng)?;
         query.to_bytes()
     });
     println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
     // Server response: The server receives the query, and after deserializing it,
     // performs the following steps:
-    // 1- It expands the query ciphertext into `dim1 + dim2` ciphertexts.
+    // 1- It expand the query ciphertext into `dim1 + dim2` ciphertexts.
     //    If the client created the query correctly, the server will have obtained
     //    `dim1 + dim2` ciphertexts all encrypting `0`, expect the `i`th and
     //    `dim1 + j`th ones encrypting `1`.
@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let response = timeit_n!("Server response", 5, {
         let start = Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
-        let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
+        let expanded_query = ek_expansion.expand(&query, dim1 + dim2)?;
         println!("Expand: {:?}", start.elapsed());
 
         let query_vec = &expanded_query[..dim1];
@@ -186,7 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             products.add_product(&dot_product_mod_switch(i, &preprocessed_database)?, ci)?;
         }
         let mut out = products.finish()?;
-        rk.relinearizes(&mut out)?;
+        rk.relinearize(&mut out)?;
         out.switch_to_level(out.max_switchable_level())?;
         out.to_bytes()
     });
@@ -199,8 +199,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let answer = timeit!("Client answer", {
         let response = bfv::Ciphertext::from_bytes(&response, &params)?;
 
-        let pt = sk.try_decrypt(&response)?;
-        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
+        let pt = sk.decrypt(&response)?;
+        let pt = pt.decode(bfv::Encoding::Polynomial)?;
         let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
         let offset = index
             % number_elements_per_plaintext(
@@ -213,7 +213,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "Noise in response: {:?}",
             sk.measure_noise_vartime(
                 &response,
-                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                fhe::SecretDependentDiagnostics::acknowledge_leakage()
             )
         );
 

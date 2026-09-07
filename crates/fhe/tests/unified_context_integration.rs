@@ -1,20 +1,20 @@
 // Integration test to verify the unified context management API works correctly
 #![expect(missing_docs, reason = "examples/benches/tests omit docs by design")]
 
-use fhe::bfv::BfvParametersBuilder;
+use fhe::bfv::ParametersBuilder;
 
 #[test]
 fn test_unified_context_api() -> Result<(), Box<dyn std::error::Error>> {
     // Create parameters using the builder
-    let params = BfvParametersBuilder::new()
-        .set_degree(16)
-        .set_plaintext_modulus(1153)
-        .set_moduli_sizes(&[62, 62])
+    let params = ParametersBuilder::new()
+        .degree(16)
+        .plaintext_modulus(1153_u64)
+        .ciphertext_modulus_bits([62, 62])
         .build()?;
 
     // Test basic properties
     assert_eq!(params.degree(), 16);
-    assert_eq!(params.plaintext(), 1153);
+    assert_eq!(params.plaintext_modulus_u64().unwrap(), 1153);
     assert_eq!(params.max_level(), 1);
     assert_eq!(params.context_levels().len(), 2);
 
@@ -39,10 +39,10 @@ fn test_unified_context_api() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_unified_context_error_handling() -> Result<(), Box<dyn std::error::Error>> {
-    let params = BfvParametersBuilder::new()
-        .set_degree(16)
-        .set_plaintext_modulus(1153)
-        .set_moduli_sizes(&[62, 62])
+    let params = ParametersBuilder::new()
+        .degree(16)
+        .plaintext_modulus(1153_u64)
+        .ciphertext_modulus_bits([62, 62])
         .build()?;
 
     // Test invalid level access
@@ -54,10 +54,10 @@ fn test_unified_context_error_handling() -> Result<(), Box<dyn std::error::Error
 
 #[test]
 fn test_context_consistency() -> Result<(), Box<dyn std::error::Error>> {
-    let params = BfvParametersBuilder::new()
-        .set_degree(32)
-        .set_plaintext_modulus(65537)
-        .set_moduli_sizes(&[60, 60, 60])
+    let params = ParametersBuilder::new()
+        .degree(32)
+        .plaintext_modulus(65537_u64)
+        .ciphertext_modulus_bits([60, 60, 60])
         .build()?;
 
     // Verify context chain consistency

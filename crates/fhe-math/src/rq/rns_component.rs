@@ -147,7 +147,7 @@ mod tests {
                 let one = Poly::<PowerBasis>::try_convert_from_public(
                     &[1u64][..],
                     &target,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                    fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
                 )?
                 .into_ntt_shoup();
                 for input in &inputs {
@@ -160,8 +160,8 @@ mod tests {
                                 source_row.as_slice().unwrap(),
                                 &target,
                                 (public).then(|| {
-                                    fhe_traits::VariableTime::new(
-                                        fhe_traits::PublicData::assert_public(),
+                                    fhe_util::VariableTime::new(
+                                        fhe_util::PublicData::assert_public(),
                                     )
                                 }),
                             )?
@@ -205,7 +205,7 @@ mod tests {
         let lazy = Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
             &[3u64; 16],
             &ctx,
-            fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+            fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
         );
         assert_eq!(
             lazy.lift_rns_component_for_shoup(0, &ctx),

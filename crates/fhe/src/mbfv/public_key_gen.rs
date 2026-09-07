@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
+use crate::bfv::{Ciphertext, Parameters, PublicKey, SecretKey};
 use crate::errors::Result;
 use fhe_math::rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom};
 use rand::{CryptoRng, Rng as RngCore};
@@ -10,10 +8,10 @@ use super::{Aggregate, CommonRandomPoly};
 
 /// A party's share in public key generation protocol.
 ///
-/// Each party uses the `PublicKeyShare` to generate their share of the public key and participate in the in the "Protocol 1: EncKeyGen", as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p6). Use the [`Aggregate`] impl to combine the shares into a [`PublicKey`].
+/// Each party uses the `PublicKeyShare` to generate their share of the public key and participate in the in the "Protocol 1: EncKeyGen", as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) p6. Use the [`Aggregate`] impl to combine the shares into a [`PublicKey`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PublicKeyShare {
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
     pub(crate) crp: CommonRandomPoly,
     pub(crate) p0_share: Poly<Ntt>,
 }
@@ -27,7 +25,7 @@ impl PublicKeyShare {
     // Implementation note: This is largely the same approach taken by fhe.rs, a
     // symmetric encryption of zero, the difference being that the crp is used
     // instead of a random poly. Might be possible to just pass a valid seed to
-    // each party and basically take the SecretKey::try_encrypt implementation,
+    // each party and basically take the SecretKey::encrypt implementation,
     // but with the hardcoded seed.
     pub fn new<R: RngCore + CryptoRng>(
         sk_share: &SecretKey,
@@ -43,14 +41,14 @@ impl PublicKeyShare {
         );
 
         // Sample error
-        let e = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
+        let e = Zeroizing::new(Poly::<Ntt>::small(ctx, par.inner.variance, rng)?);
         // Create p0_i share
         let mut p0_share = -crp.poly.clone();
         p0_share.disallow_variable_time_computations();
         p0_share *= s.as_ref();
         p0_share += e.as_ref();
-        p0_share.allow_variable_time_computations(fhe_traits::VariableTime::new(
-            fhe_traits::PublicData::assert_public(),
+        p0_share.allow_variable_time_computations(crate::VariableTime::new(
+            crate::PublicData::assert_public(),
         ));
 
         Ok(Self { par, crp, p0_share })
@@ -78,11 +76,11 @@ impl Aggregate<PublicKeyShare> for PublicKey {
 
 #[cfg(test)]
 mod tests {
-    use fhe_traits::{FheEncoder, FheEncrypter};
+
     use rand::rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        bfv::{Encoding, Parameters, Plaintext, PublicKey, SecretKey},
         mbfv::{Aggregate as _, CommonRandomPoly},
     };
 
@@ -97,8 +95,8 @@ mod tests {
     fn protocol_creates_valid_pk() {
         let mut rng = rng();
         for par in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -108,7 +106,7 @@ mod tests {
 
                     // Parties collectively generate public key
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         pk_shares.push(pk_share);
@@ -116,15 +114,16 @@ mod tests {
                     let public_key = PublicKey::from_shares(pk_shares).unwrap();
 
                     // Use it to encrypt a random polynomial
-                    let pt = Plaintext::try_encode(
-                        &fhe_math::zq::Modulus::new(par.plaintext())
+                    let pt = Plaintext::encode_at_level(
+                        &par,
+                        &fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap())
                             .unwrap()
                             .random_vec(par.degree(), &mut rng),
-                        Encoding::poly_at_level(level),
-                        &par,
+                        Encoding::Polynomial,
+                        level,
                     )
                     .unwrap();
-                    let _ct = public_key.try_encrypt(&pt, &mut rng).unwrap();
+                    let _ct = public_key.encrypt(&pt, &mut rng).unwrap();
                 }
             }
         }

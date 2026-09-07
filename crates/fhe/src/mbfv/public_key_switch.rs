@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
 
-use crate::bfv::{BfvParameters, Ciphertext, PublicKey, SecretKey};
+use crate::bfv::{Ciphertext, Parameters, PublicKey, SecretKey};
 use crate::{Error, Result};
 
 use super::Aggregate;
@@ -14,9 +12,9 @@ use super::Aggregate;
 /// A party's share in the public key switch protocol.
 ///
 /// Each party uses the `PublicKeySwitchShare` to generate their share of the
-/// new ciphertext and participate in the "Protocol 4: PubKeySwitch" protocol detailed in as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) (p7). Use the [`Aggregate`] impl to combine the shares into a [`Ciphertext`].
+/// new ciphertext and participate in the "Protocol 4: PubKeySwitch" protocol detailed in as detailed in [Multiparty BFV](https://eprint.iacr.org/2020/304.pdf) p7. Use the [`Aggregate`] impl to combine the shares into a [`Ciphertext`].
 pub struct PublicKeySwitchShare {
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
     /// The first component of the input ciphertext
     pub(crate) c0: Poly<Ntt>,
     pub(crate) h0_share: Poly<Ntt>,
@@ -71,10 +69,10 @@ impl PublicKeySwitchShare {
         );
         s.disallow_variable_time_computations();
 
-        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
+        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, par.inner.variance, rng)?);
         // TODO this should be exponential in ciphertext noise!
-        let e0 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
-        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
+        let e0 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.inner.variance, rng)?);
+        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.inner.variance, rng)?);
 
         let mut h0 = pk_ct.c[0].clone();
         h0.disallow_variable_time_computations();
@@ -88,7 +86,7 @@ impl PublicKeySwitchShare {
         h1 *= u.as_ref();
         h1 += e1.as_ref();
 
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
         h0.allow_variable_time_computations(variable_time);
         h1.allow_variable_time_computations(variable_time);
 
@@ -125,11 +123,10 @@ impl Aggregate<PublicKeySwitchShare> for Ciphertext {
 mod tests {
     use std::sync::Arc;
 
-    use fhe_traits::{FheDecrypter, FheEncoder, FheEncrypter};
     use rand::rng;
 
     use crate::{
-        bfv::{BfvParameters, Encoding, Plaintext, PublicKey, SecretKey},
+        bfv::{Encoding, Parameters, Plaintext, PublicKey, SecretKey},
         mbfv::{AggregateIter, CommonRandomPoly, PublicKeyShare, PublicKeySwitchShare},
     };
 
@@ -144,8 +141,8 @@ mod tests {
     fn encrypt_keyswitch_decrypt() {
         let mut rng = rng();
         for par in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 32),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 32),
         ] {
             for level in 0..=par.max_level() {
                 for _ in 0..20 {
@@ -154,7 +151,7 @@ mod tests {
                     // Parties collectively generate public key
                     let mut parties: Vec<Party> = vec![];
                     for _ in 0..NUM_PARTIES {
-                        let sk_share = SecretKey::random(&par, &mut rng);
+                        let sk_share = SecretKey::generate(&par, &mut rng);
                         let pk_share =
                             PublicKeyShare::new(&sk_share, crp.clone(), &mut rng).unwrap();
                         parties.push(Party { sk_share, pk_share })
@@ -167,26 +164,27 @@ mod tests {
                         .unwrap();
 
                     // Use it to encrypt a random polynomial ct1
-                    let pt1 = Plaintext::try_encode(
-                        &fhe_math::zq::Modulus::new(par.plaintext())
+                    let pt1 = Plaintext::encode_at_level(
+                        &par,
+                        &fhe_math::zq::Modulus::new(par.plaintext_modulus_u64().unwrap())
                             .unwrap()
                             .random_vec(par.degree(), &mut rng),
-                        Encoding::poly_at_level(level),
-                        &par,
+                        Encoding::Polynomial,
+                        level,
                     )
                     .unwrap();
-                    let ct1 = Arc::new(public_key.try_encrypt(&pt1, &mut rng).unwrap());
+                    let ct1 = Arc::new(public_key.encrypt(&pt1, &mut rng).unwrap());
 
                     // Key switch ct1 to a new keypair
-                    let sk_out = SecretKey::random(&par, &mut rng);
-                    let pk_out = PublicKey::new(&sk_out, &mut rng);
+                    let sk_out = SecretKey::generate(&par, &mut rng);
+                    let pk_out = PublicKey::from_secret_key(&sk_out, &mut rng);
                     let ct2 = parties
                         .iter()
                         .map(|p| PublicKeySwitchShare::new(&p.sk_share, &pk_out, &ct1, &mut rng))
                         .aggregate()
                         .unwrap();
 
-                    let pt2 = sk_out.try_decrypt(&ct2).unwrap();
+                    let pt2 = sk_out.decrypt(&ct2).unwrap();
                     assert_eq!(pt1.poly_ntt, pt2.poly_ntt);
                 }
             }
@@ -195,15 +193,15 @@ mod tests {
 
     #[test]
     fn rejects_unrelinearized_and_empty_ciphertexts() {
-        let params = BfvParameters::default_arc(2, 16);
+        let params = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let pk = PublicKey::new(&sk, &mut rng);
-        let pt = Plaintext::try_encode(&[3u64], Encoding::poly(), &params).unwrap();
-        let ct: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut rng).unwrap();
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pk = PublicKey::from_secret_key(&sk, &mut rng);
+        let pt = Plaintext::encode(&params, &[3u64], Encoding::Polynomial).unwrap();
+        let ct: crate::bfv::Ciphertext = sk.encrypt(&pt, &mut rng).unwrap();
         assert!(PublicKeySwitchShare::new(&sk, &pk, &ct, &mut rng).is_ok());
         assert!(matches!(
-            PublicKeySwitchShare::new(&sk, &pk, &(&ct * &ct), &mut rng),
+            PublicKeySwitchShare::new(&sk, &pk, &(ct.multiply(&ct).unwrap()), &mut rng),
             Err(crate::Error::Ciphertext(
                 crate::CiphertextError::InvalidPolynomialCount { actual: 3, .. }
             ))

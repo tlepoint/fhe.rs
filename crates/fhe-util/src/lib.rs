@@ -1859,3 +1859,6 @@ mod tests {
         assert!(inverse(28, 996).is_none());
     }
 }
+
+mod timing;
+pub use timing::{PublicData, SecretDependentDiagnostics, VariableTime};

@@ -15,11 +15,10 @@ The library features:
 
 ## fhe.rs crates
 
-`fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of four public crates (packages):
+`fhe.rs` is implemented using the Rust programming language. The ecosystem is composed of three public crates (packages):
 
 * [![fhe crate version](https://img.shields.io/crates/v/fhe.svg)](https://crates.io/crates/fhe) [`fhe`](https://crates.io/crates/fhe): This crate contains the implementations of the homomorphic encryption schemes;
 * [![fhe-math crate version](https://img.shields.io/crates/v/fhe-math.svg)](https://crates.io/crates/fhe-math) [`fhe-math`](https://crates.io/crates/fhe-math): This crate contains the core mathematical operations for the `fhe` crate;
-* [![fhe-traits crate version](https://img.shields.io/crates/v/fhe-traits.svg)](https://crates.io/crates/fhe-traits) [`fhe-traits`](https://crates.io/crates/fhe-traits): This crate contains traits for homomorphic encryption schemes;
 * [![fhe-util crate version](https://img.shields.io/crates/v/fhe-util.svg)](https://crates.io/crates/fhe-util) [`fhe-util`](https://crates.io/crates/fhe-util): This crate contains utility functions for the `fhe` crate.
 
 ### Installation
@@ -29,7 +28,6 @@ To install, add the following to your project's `Cargo.toml` file:
 ```toml
 [dependencies]
 fhe = "0.2.0"
-fhe-traits = "0.1.1"
 ```
 
 ## Minimum supported version / toolchain

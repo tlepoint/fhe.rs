@@ -204,12 +204,12 @@ impl<R: RepresentationTag> Poly<R> {
     /// Convert explicitly public values into a polynomial using variable-time
     /// reduction when available.
     ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that `value` is public.
+    /// Passing [`fhe_util::VariableTime`] asserts that `value` is public.
     /// Classifying secret values as public may expose them through timing.
     pub fn try_convert_from_public<T>(
         value: T,
         ctx: &Arc<Context>,
-        variable_time: fhe_traits::VariableTime,
+        variable_time: fhe_util::VariableTime,
     ) -> Result<Self>
     where
         Self: traits::TryConvertFrom<T>,
@@ -238,10 +238,10 @@ impl<R: RepresentationTag> Poly<R> {
 
     /// Enable variable-time computations for this public polynomial.
     ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that every coefficient is
+    /// Passing [`fhe_util::VariableTime`] asserts that every coefficient is
     /// public. Classifying secret coefficients as public may expose them
     /// through timing.
-    pub fn allow_variable_time_computations(&mut self, _variable_time: fhe_traits::VariableTime) {
+    pub fn allow_variable_time_computations(&mut self, _variable_time: fhe_util::VariableTime) {
         self.allow_variable_time_computations = true
     }
 
@@ -382,8 +382,8 @@ impl<R: RepresentationTag> Poly<R> {
         }
         let mut q = Poly::<R>::zero(&self.ctx);
         if self.allow_variable_time_computations {
-            q.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                fhe_traits::PublicData::assert_public(),
+            q.allow_variable_time_computations(fhe_util::VariableTime::new(
+                fhe_util::PublicData::assert_public(),
             ));
         }
         match R::REPRESENTATION {
@@ -579,14 +579,14 @@ impl Poly<Ntt> {
     /// Create a polynomial which can only be multiplied by a polynomial in
     /// NttShoup representation. All other operations may panic.
     ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that the coefficients are
+    /// Passing [`fhe_util::VariableTime`] asserts that the coefficients are
     /// public. Classifying secret coefficients as public may expose them
     /// through timing.
     #[must_use]
     pub fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
         power_basis_coefficients: &[u64],
         ctx: &Arc<Context>,
-        _variable_time: fhe_traits::VariableTime,
+        _variable_time: fhe_util::VariableTime,
     ) -> Poly<Ntt> {
         let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
         izip!(coefficients.outer_iter_mut(), ctx.q.iter(), ctx.ops.iter()).for_each(
@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
         let mut rng = rand::rng();
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let mut p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -942,7 +942,7 @@ mod tests {
             Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                 &coeffs,
                 &ctx,
-                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
             );
 
         assert_eq!(poly.representation(), Representation::Ntt);

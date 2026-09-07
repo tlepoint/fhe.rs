@@ -1,15 +1,14 @@
 //! Compact in-memory storage of plaintext NTT coefficients.
 
-use super::{BfvParameters, Encoding, Plaintext};
+use super::{Parameters, Plaintext};
 use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
-use std::sync::Arc;
 use zeroize::Zeroize;
 
 /// Compact in-memory plaintext storage with bit-packed NTT residues.
 ///
 /// Each residue uses the bit width of its ciphertext modulus. For example, two
 /// 36-bit moduli occupy 72 bits per coefficient instead of 128. Packing is
-/// exact: [`Self::unpack`] restores the same plaintext, encoding, level, and
+/// exact: [`Self::unpack`] restores the same plaintext, level, and
 /// local timing permission without any transforms.
 /// [`super::DotProductScalarWorkspace::dot_product_scalar_packed`]
 /// consumes this storage directly. This type is not a wire format.
@@ -18,8 +17,8 @@ use zeroize::Zeroize;
 /// decoding work during dot products for lower retained database memory.
 #[derive(Clone)]
 pub struct PackedPlaintext {
-    pub(crate) par: Arc<BfvParameters>,
-    pub(crate) encoding: Option<Encoding>,
+    pub(crate) par: Parameters,
+
     pub(crate) level: usize,
     pub(crate) public: bool,
     pub(crate) coefficients: Vec<u8>,
@@ -28,7 +27,7 @@ pub struct PackedPlaintext {
 /// A borrowed row of packed NTT residues for scalar dot products.
 #[derive(Clone, Copy)]
 pub struct PackedPlaintextView<'a> {
-    pub(crate) par: &'a Arc<BfvParameters>,
+    pub(crate) par: &'a Parameters,
     pub(crate) level: usize,
     pub(crate) public: bool,
     pub(crate) coefficients: &'a [u8],
@@ -52,7 +51,7 @@ impl<'a> From<&'a PackedPlaintext> for PackedPlaintextView<'a> {
 /// collection retains each row's timing permission; its borrowed views can be
 /// consumed directly by scalar dot products. Stored bytes are cleared on drop.
 pub struct PackedPlaintextVec {
-    par: Arc<BfvParameters>,
+    par: Parameters,
     level: usize,
     row_bytes: usize,
     coefficients: Vec<u8>,
@@ -61,11 +60,7 @@ pub struct PackedPlaintextVec {
 
 impl PackedPlaintextVec {
     /// Reserve coefficient storage for `capacity` plaintexts at this level.
-    pub fn with_capacity(
-        par: &Arc<BfvParameters>,
-        level: usize,
-        capacity: usize,
-    ) -> crate::Result<Self> {
+    pub fn with_capacity(par: &Parameters, level: usize, capacity: usize) -> crate::Result<Self> {
         let ctx = par.context_at_level(level)?;
         let row_bytes = ctx
             .moduli_operators()
@@ -218,7 +213,7 @@ impl From<&Plaintext> for PackedPlaintext {
         coefficients.resize(coefficients.len() + 8, 0);
         Self {
             par: pt.par.clone(),
-            encoding: pt.encoding.clone(),
+
             level: pt.level(),
             public: pt.poly_ntt.allows_variable_time_computations(),
             coefficients,
@@ -261,13 +256,11 @@ impl PackedPlaintext {
         }
         Plaintext {
             par: self.par.clone(),
-            encoding: self.encoding.clone(),
+
             poly_ntt: Poly::<Ntt>::try_convert_from_with_timing(
                 coefficients,
                 ctx,
-                (self.public).then(|| {
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
-                }),
+                (self.public).then(|| crate::VariableTime::new(crate::PublicData::assert_public())),
             )
             .unwrap(),
         }
@@ -284,8 +277,8 @@ impl PackedPlaintext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{BfvParametersBuilder, Ciphertext, DotProductScalarWorkspace};
-    use fhe_traits::{FheEncoder, PublicData, VariableTime};
+    use crate::bfv::{Ciphertext, DotProductScalarWorkspace, Encoding, ParametersBuilder};
+    use crate::{PublicData, VariableTime};
 
     #[test]
     fn word_packing_matches_byte_packing_for_every_width() {
@@ -312,17 +305,17 @@ mod tests {
     #[test]
     fn contiguous_storage_grows_validates_and_preserves_each_rows_permission() -> crate::Result<()>
     {
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[36, 62])
-            .build_arc()?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([36, 62])
+            .build()?;
         let mut data = PackedPlaintextVec::with_capacity(&par, 0, 2)?;
         assert!(data.is_empty());
         assert_eq!(data.iter().len(), 0);
         let mut originals = Vec::new();
         for i in 0..5 {
-            let mut pt = Plaintext::try_encode(&[i as u64, 16, 0, 1][..], Encoding::poly(), &par)?;
+            let mut pt = Plaintext::encode(&par, &[i as u64, 16, 0, 1][..], Encoding::Polynomial)?;
             if i % 2 == 0 {
                 pt.poly_ntt
                     .allow_variable_time_computations(VariableTime::new(
@@ -349,7 +342,7 @@ mod tests {
             );
             assert_eq!(
                 workspace.dot_product_scalar_packed(std::iter::once(&ct), std::iter::once(view))?,
-                &ct * original
+                ct.multiply_plaintext(original).unwrap()
             );
         }
         assert_eq!(
@@ -359,18 +352,19 @@ mod tests {
                 .dot_product_scalar(std::iter::repeat_n(&ct, 3), originals.iter().step_by(2))?
         );
         let previous = data.coefficients.clone();
-        let lower = Plaintext::try_encode(&[3u64][..], Encoding::poly_at_level(1), &par)?;
+        let lower = Plaintext::encode_at_level(&par, &[3u64][..], Encoding::Polynomial, 1)?;
         assert!(data.push(&lower).is_err());
-        let foreign = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[36, 62])
-            .build_arc()?;
+        let foreign = ParametersBuilder::new()
+            .noise_variance(11)
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([36, 62])
+            .build()?;
         assert!(
-            data.push(&Plaintext::try_encode(
+            data.push(&Plaintext::encode(
+                &foreign,
                 &[3u64][..],
-                Encoding::poly(),
-                &foreign
+                Encoding::Polynomial
             )?)
             .is_err()
         );

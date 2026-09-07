@@ -18,7 +18,6 @@ bench = false  # Disable default bench (we use criterion)
 tfhe-ntt = ["dep:tfhe-ntt"]
 
 [dependencies]
-fhe-traits = { version = "=0.1.1", path = "../fhe-traits" }
 fhe-util = { version = "=0.1.1", path = "../fhe-util" }
 
 ethnum.workspace = true

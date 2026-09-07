@@ -1,13 +1,13 @@
 //! Fused unpacking and accumulation of compact plaintext NTT residues.
 
 use super::{ClearAccumulator, DotProductScalarWorkspace};
+use crate::bfv::Parameters;
 use crate::{
     Error, Result,
     bfv::{Ciphertext, PackedPlaintextView},
 };
 use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
 use ndarray::Array3;
-use std::sync::Arc;
 
 // Specialize the eight possible bit offsets, rather than particular moduli.
 // Each group of eight residues starts at a byte boundary. Narrow residues
@@ -119,7 +119,7 @@ impl DotProductScalarWorkspace {
         let mut public = true;
         for (ct, pt) in ct.clone().zip(pt.clone()) {
             ct.validate_for_context(&self.par, self.level, ctx)?;
-            if !Arc::ptr_eq(&self.par, pt.par) {
+            if !Parameters::compatible(&self.par, pt.par) {
                 return Err(Error::ParameterMismatch {
                     left: crate::ParameterSource::Plaintext,
                     right: crate::ParameterSource::Parameters,
@@ -198,9 +198,7 @@ impl DotProductScalarWorkspace {
                 Poly::<Ntt>::try_convert_from_with_timing(
                     a,
                     ctx,
-                    (public).then(|| {
-                        fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
-                    }),
+                    public.then(|| crate::VariableTime::new(crate::PublicData::assert_public())),
                 )
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -216,8 +214,8 @@ impl DotProductScalarWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{BfvParametersBuilder, Encoding, PackedPlaintext, Plaintext};
-    use fhe_traits::{PublicData, VariableTime};
+    use crate::bfv::{Encoding, PackedPlaintext, ParametersBuilder, Plaintext};
+    use crate::{PublicData, VariableTime};
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -251,11 +249,11 @@ mod tests {
         for bits in [
             13, 14, 15, 16, 17, 18, 19, 20, 36, 50, 55, 57, 58, 59, 60, 61, 62,
         ] {
-            let par = BfvParametersBuilder::new()
-                .set_degree(16)
-                .set_plaintext_modulus(17)
-                .set_moduli_sizes(&[bits, bits])
-                .build_arc()?;
+            let par = ParametersBuilder::new()
+                .degree(16)
+                .plaintext_modulus(17_u64)
+                .ciphertext_modulus_bits([bits, bits])
+                .build()?;
             for level in [0, 1] {
                 let ctx = par.context_at_level(level)?;
                 // Worst canonical residues exercise carries and the exact
@@ -268,11 +266,11 @@ mod tests {
                 let worst = Poly::<Ntt>::try_convert_from_public(
                     values,
                     ctx,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                    crate::VariableTime::new(crate::PublicData::assert_public()),
                 )?;
                 let mut pt = Plaintext {
                     par: par.clone(),
-                    encoding: Some(Encoding::poly_at_level(level)),
+
                     poly_ntt: worst.clone(),
                 };
                 let mut workspace = DotProductScalarWorkspace::new(&par, level)?;
@@ -305,9 +303,11 @@ mod tests {
                                 std::iter::repeat_n(&ct, length),
                                 std::iter::repeat_n(&packed, length),
                             )?;
-                            let mut expected = &ct * &pt;
+                            let mut expected = ct.multiply_plaintext(&pt).unwrap();
                             for _ in 1..length {
-                                expected += &(&ct * &pt);
+                                (expected)
+                                    .add_assign(&(ct.multiply_plaintext(&pt).unwrap()))
+                                    .unwrap();
                             }
                             assert_eq!(actual, expected);
                             assert!(
@@ -350,13 +350,12 @@ mod tests {
 
     #[test]
     fn validation_leaves_workspace_reusable() -> Result<()> {
-        use fhe_traits::FheEncoder;
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
-        let pt = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &par)?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40, 40])
+            .build()?;
+        let pt = Plaintext::encode(&par, &[3u64][..], Encoding::Polynomial)?;
         let packed = PackedPlaintext::from(&pt);
         let ct = Ciphertext {
             par: par.clone(),
@@ -381,14 +380,15 @@ mod tests {
                 .is_err()
         );
         assert!(compute(&mut workspace, &Ciphertext::invalid_empty(&par), &packed).is_err());
-        let lower = Plaintext::try_encode(&[3u64][..], Encoding::poly_at_level(1), &par)?;
+        let lower = Plaintext::encode_at_level(&par, &[3u64][..], Encoding::Polynomial, 1)?;
         assert!(compute(&mut workspace, &ct, &PackedPlaintext::from(&lower)).is_err());
-        let foreign = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
-        let foreign = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &foreign)?;
+        let foreign = ParametersBuilder::new()
+            .noise_variance(11)
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40, 40])
+            .build()?;
+        let foreign = Plaintext::encode(&foreign, &[3u64][..], Encoding::Polynomial)?;
         assert!(compute(&mut workspace, &ct, &PackedPlaintext::from(&foreign)).is_err());
         let mut three = ct.clone();
         three.c.push(pt.poly_ntt.clone());
@@ -422,14 +422,13 @@ mod tests {
         reason = "exercise scratch cleanup during iterator unwinding"
     )]
     fn scratch_is_cleared_when_the_input_iterator_panics() -> Result<()> {
-        use fhe_traits::FheEncoder;
         use std::cell::Cell;
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40])
-            .build_arc()?;
-        let pt = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &par)?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40])
+            .build()?;
+        let pt = Plaintext::encode(&par, &[3u64][..], Encoding::Polynomial)?;
         let packed = PackedPlaintext::from(&pt);
         let ct = Ciphertext {
             par: par.clone(),
@@ -457,7 +456,7 @@ mod tests {
         assert!(workspace.accumulator.iter().all(|x| *x == 0));
         assert_eq!(
             workspace.dot_product_scalar_packed(std::iter::once(&ct), std::iter::once(&packed))?,
-            &ct * &pt
+            ct.multiply_plaintext(&pt).unwrap()
         );
         Ok(())
     }

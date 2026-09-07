@@ -93,8 +93,8 @@ pub fn bfv_scaling_benchmark(c: &mut Criterion) {
     for public in [false, true] {
         let mut input = Poly::<Ntt>::random(&from, &mut rng);
         if public {
-            input.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                fhe_traits::PublicData::assert_public(),
+            input.allow_variable_time_computations(fhe_util::VariableTime::new(
+                fhe_util::PublicData::assert_public(),
             ));
         }
         group.bench_function(format!("ntt_downscale_5_to_2/public={public}"), |b| {

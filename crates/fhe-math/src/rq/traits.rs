@@ -4,7 +4,7 @@
 
 use super::Context;
 use crate::Result;
-use fhe_traits::VariableTime;
+use fhe_util::VariableTime;
 use std::sync::Arc;
 
 /// Conversions to create polynomials.
