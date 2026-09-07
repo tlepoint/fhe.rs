@@ -7,47 +7,59 @@
 
 use std::error::Error;
 
-use fhe::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext, RGSWCiphertext, SecretKey};
-use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::RgswCiphertext,
+};
+
 use rand::rng;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng = rng();
-    let params = BfvParameters::default_parameters_128(20)
-        .unwrap()
-        .nth(2)
-        .unwrap();
-    let sk = SecretKey::random(&params, &mut rng);
+    let params = Parameters::profile_128(4096, 20)?;
+    let sk = SecretKey::generate(&params, &mut rng);
 
     let v1 = vec![1u64, 2, 3, 4];
     let v2 = vec![5u64, 6, 7, 8];
-    let pt1 = Plaintext::try_encode(&v1, Encoding::simd(), &params)?;
-    let pt2 = Plaintext::try_encode(&v2, Encoding::simd(), &params)?;
-    let ct1: Ciphertext = sk.try_encrypt(&pt1, &mut rng)?;
-    let ct2: Ciphertext = sk.try_encrypt(&pt2, &mut rng)?;
-    let ct2_rgsw: RGSWCiphertext = sk.try_encrypt(&pt2, &mut rng)?;
+    let pt1 = Plaintext::encode(&params, &v1, Encoding::Simd)?;
+    let pt2 = Plaintext::encode(&params, &v2, Encoding::Simd)?;
+    let ct1: Ciphertext = sk.encrypt(&pt1, &mut rng)?;
+    let ct2: Ciphertext = sk.encrypt(&pt2, &mut rng)?;
+    let ct2_rgsw: RgswCiphertext = sk.encrypt_rgsw(&pt2, &mut rng)?;
 
-    let mut product = &ct1 * &ct2_rgsw;
-    let expected = &ct1 * &ct2;
+    let mut product = ct1.multiply_rgsw(&ct2_rgsw)?;
+    let expected = ct1.multiply(&ct2)?;
 
-    println!("Noise in product: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in product: {}",
+        sk.measure_noise_vartime(
+            &product,
+            fhe::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
     println!("Size of product: {} bytes", product.to_bytes().len());
-    println!("Noise in expected: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in expected: {}",
+        sk.measure_noise_vartime(
+            &expected,
+            fhe::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
 
     product.switch_to_level(product.max_switchable_level())?;
-    println!("Noise in product: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in product: {}",
+        sk.measure_noise_vartime(
+            &product,
+            fhe::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
     println!("Size of product: {} bytes", product.to_bytes().len());
 
-    let pt_prod = sk.try_decrypt(&product)?;
-    let pt_exp = sk.try_decrypt(&expected)?;
-    assert_eq!(pt_prod, pt_exp);
-    let decoded = Vec::<u64>::try_decode(&pt_prod, Encoding::simd())?;
+    let pt_prod = sk.decrypt(&product)?;
+    let pt_exp = sk.decrypt(&expected)?;
+    let decoded = pt_prod.decode(Encoding::Simd)?;
+    // These plaintexts have different levels; compare the decoded messages.
+    assert_eq!(decoded, pt_exp.decode(Encoding::Simd)?);
     println!(
         "RGSW external product successful: {:?}",
         &decoded[..v1.len()]

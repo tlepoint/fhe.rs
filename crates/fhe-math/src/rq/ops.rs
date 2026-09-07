@@ -269,7 +269,7 @@ mod tests {
     use num_bigint::BigUint;
     use rand::rng;
 
-    use crate::rq::dot_product;
+    use crate::rq::dot_product_iter;
     use crate::{
         rq::{Context, Ntt, NttShoup, Poly, PowerBasis},
         zq::Modulus,
@@ -519,7 +519,7 @@ mod tests {
                     let q = (0..len)
                         .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
                         .collect_vec();
-                    let r = dot_product(p.iter(), q.iter())?;
+                    let r = dot_product_iter(p.iter(), q.iter())?;
 
                     let mut expected = Poly::<Ntt>::zero(&ctx);
                     izip!(&p, &q).for_each(|(pi, qi)| expected += &(pi * qi));
@@ -535,7 +535,7 @@ mod tests {
                 let q = (0..len)
                     .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
                     .collect_vec();
-                let r = dot_product(p.iter(), q.iter())?;
+                let r = dot_product_iter(p.iter(), q.iter())?;
 
                 let mut expected = Poly::<Ntt>::zero(&ctx);
                 izip!(&p, &q).for_each(|(pi, qi)| expected += &(pi * qi));
@@ -549,7 +549,7 @@ mod tests {
     fn dot_product_requires_all_operands_to_allow_variable_time() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         let ctx = Arc::new(Context::new(&MODULI[..1], 16)?);
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
         let mut p = (0..2)
             .map(|_| Poly::<Ntt>::random(&ctx, &mut rng))
             .collect_vec();
@@ -560,11 +560,11 @@ mod tests {
         p.iter_mut()
             .chain(q.iter_mut())
             .for_each(|poly| poly.allow_variable_time_computations(variable_time));
-        let all_public = dot_product(p.iter(), q.iter())?;
+        let all_public = dot_product_iter(p.iter(), q.iter())?;
         assert!(all_public.allows_variable_time_computations());
 
         q[1].disallow_variable_time_computations();
-        let mixed = dot_product(p.iter(), q.iter())?;
+        let mixed = dot_product_iter(p.iter(), q.iter())?;
         assert!(!mixed.allows_variable_time_computations());
         Ok(())
     }
@@ -581,13 +581,13 @@ mod tests {
         ];
 
         assert!(matches!(
-            dot_product(p.iter(), q.iter()),
+            dot_product_iter(p.iter(), q.iter()),
             Err(crate::Error::DotProductLengthMismatch { left: 1, right: 2 })
         ));
 
         let q = [Poly::<Ntt>::random(&other_ctx, &mut rng)];
         assert_eq!(
-            dot_product(p.iter(), q.iter()),
+            dot_product_iter(p.iter(), q.iter()),
             Err(crate::Error::PolynomialContextMismatch)
         );
         Ok(())

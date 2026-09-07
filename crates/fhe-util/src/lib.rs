@@ -6,10 +6,13 @@
 #[cfg(test)]
 extern crate proptest;
 
-use rand::{CryptoRng, Rng as RngCore};
-
+mod decode_limits;
+mod timing;
+pub use decode_limits::{DecodeLimitError, DecodeLimits};
 use num_bigint_dig::{BigUint, ModInverse, prime::probably_prime};
 use num_traits::{PrimInt, cast::ToPrimitive};
+use rand::{CryptoRng, Rng as RngCore};
+pub use timing::{PublicData, SecretDependentDiagnostics, VariableTime};
 
 /// Returns whether the modulus p is prime; this function is 100% accurate.
 #[must_use]
@@ -17,15 +20,29 @@ pub fn is_prime(p: u64) -> bool {
     probably_prime(&BigUint::from(p), 0)
 }
 
+/// A centered binomial sampler variance outside the supported range 1..=32.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct InvalidVariance {
+    /// The supplied variance.
+    pub actual: usize,
+}
+impl std::fmt::Display for InvalidVariance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "variance {} is outside 1..=32", self.actual)
+    }
+}
+impl std::error::Error for InvalidVariance {}
+
 /// Sample a vector of independent centered binomial distributions of a given
 /// variance. Returns an error if the variance is not between 1 and 32.
 pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     vector_size: usize,
     variance: usize,
     rng: &mut R,
-) -> Result<Vec<i64>, &'static str> {
+) -> Result<Vec<i64>, InvalidVariance> {
     if !(1..=32).contains(&variance) {
-        return Err("The variance should be between 1 and 32");
+        return Err(InvalidVariance { actual: variance });
     }
 
     let mut out = Vec::with_capacity(vector_size);
@@ -65,21 +82,85 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     Ok(out)
 }
 
-/// Transcodes a vector of u64 of `nbits`-bit numbers into a vector of bytes.
-#[must_use]
-pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Vec<u8> {
+/// Invalid input to a bit-transcoding operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TranscodeError {
+    /// Word widths must lie in 1..=64.
+    InvalidWidth(usize),
+    /// At least one word would be truncated at the requested width.
+    ValueTooWide,
+    /// A computed input or output length cannot be represented by `usize`.
+    LengthOverflow,
+    /// The byte length does not match the requested word count and width.
+    LengthMismatch,
+    /// Unused bits in the last byte must be zero.
+    NonZeroPadding,
+}
+
+impl std::fmt::Display for TranscodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidWidth(width) => write!(f, "bit width {width} is outside 1..=64"),
+            Self::ValueTooWide => f.write_str("input word exceeds its declared bit width"),
+            Self::LengthOverflow => f.write_str("bit-transcoding length overflow"),
+            Self::LengthMismatch => {
+                f.write_str("byte length does not match the declared word count")
+            }
+            Self::NonZeroPadding => f.write_str("nonzero padding bits"),
+        }
+    }
+}
+impl std::error::Error for TranscodeError {}
+
+fn validate_width(width: usize) -> Result<(), TranscodeError> {
+    if !(1..=64).contains(&width) {
+        return Err(TranscodeError::InvalidWidth(width));
+    }
+    Ok(())
+}
+
+fn validate_words(values: &[u64], width: usize) -> Result<usize, TranscodeError> {
+    validate_width(width)?;
+    let bits = values
+        .len()
+        .checked_mul(width)
+        .ok_or(TranscodeError::LengthOverflow)?;
+    // Visit every word; the check does not stop at a secret-dependent index.
+    let used = values.iter().fold(0, |used, word| used | word);
+    if used & !(u64::MAX >> (64 - width)) != 0 {
+        return Err(TranscodeError::ValueTooWide);
+    }
+    Ok(bits)
+}
+
+/// Pack words least-significant-bit first, padding the final byte with zeros.
+/// Rejects invalid widths, overflowing lengths, and words that would truncate.
+pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Result<Vec<u8>, TranscodeError> {
     let mut out = Vec::new();
-    transcode_to_bytes_into(a, nbits, &mut out);
-    out
+    transcode_to_bytes_into(a, nbits, &mut out)?;
+    Ok(out)
 }
 
 /// Appends packed `nbits`-bit numbers to `out`, padding the final byte with
 /// zeros. Each call starts at a byte boundary and preserves the existing
-/// prefix. Panics unless `nbits` is in 1..=64.
-#[expect(clippy::expect_used, reason = "bounds are validated before use")]
-pub fn transcode_to_bytes_into(a: &[u64], nbits: usize, out: &mut Vec<u8>) {
-    assert!(0 < nbits && nbits <= 64);
+/// prefix. Invalid input leaves `out` unchanged, including its allocation.
+pub fn transcode_to_bytes_into(
+    a: &[u64],
+    nbits: usize,
+    out: &mut Vec<u8>,
+) -> Result<(), TranscodeError> {
+    let bits = validate_words(a, nbits)?;
+    out.len()
+        .checked_add(bits.div_ceil(8))
+        .ok_or(TranscodeError::LengthOverflow)?;
+    pack_prevalidated(a, nbits, out);
+    Ok(())
+}
 
+// Width, word range, and output length are checked by the public boundary.
+#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
+fn pack_prevalidated(a: &[u64], nbits: usize, out: &mut Vec<u8>) {
     let mask = (u64::MAX >> (64 - nbits)) as u128;
     let nbytes = (a.len() * nbits).div_ceil(8);
     let start = out.len();
@@ -114,11 +195,21 @@ pub fn transcode_to_bytes_into(a: &[u64], nbits: usize, out: &mut Vec<u8>) {
     }
 }
 
-/// Transcodes a vector of u8 into a vector of u64 of `nbits`-bit numbers.
-#[must_use]
-#[expect(clippy::expect_used, reason = "bounds are validated before use")]
-pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
-    assert!(0 < nbits && nbits <= 64);
+/// Interpret every input bit as a stream of `nbits`-bit words,
+/// least-significant bit first. Zero-extend a partial final word. Byte padding
+/// is interpreted as data; use [`transcode_from_bytes_exact`] when the original
+/// word count is known.
+pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Result<Vec<u64>, TranscodeError> {
+    validate_width(nbits)?;
+    b.len()
+        .checked_mul(8)
+        .ok_or(TranscodeError::LengthOverflow)?;
+    Ok(unpack_prevalidated(b, nbits))
+}
+
+// The checked boundary guarantees a valid width and bit length.
+#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
+fn unpack_prevalidated(b: &[u8], nbits: usize) -> Vec<u64> {
     let mask = (u64::MAX >> (64 - nbits)) as u128;
 
     let nelements = (b.len() * 8).div_ceil(nbits);
@@ -152,14 +243,45 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Vec<u64> {
     out
 }
 
-/// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
-/// of `output_nbits`-bit numbers.
-#[must_use]
-#[expect(clippy::expect_used, reason = "bounds are validated before use")]
-pub fn transcode_bidirectional(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
-    assert!(0 < input_nbits && input_nbits <= 64);
-    assert!(0 < output_nbits && output_nbits <= 64);
+/// Decode exactly `count` packed words, rejecting extra/missing bytes and
+/// nonzero padding. This is the inverse of [`transcode_to_bytes`] when the
+/// caller supplies the original word count, including for empty inputs.
+pub fn transcode_from_bytes_exact(
+    b: &[u8],
+    nbits: usize,
+    count: usize,
+) -> Result<Vec<u64>, TranscodeError> {
+    validate_width(nbits)?;
+    let bits = count
+        .checked_mul(nbits)
+        .ok_or(TranscodeError::LengthOverflow)?;
+    if b.len() != bits.div_ceil(8) {
+        return Err(TranscodeError::LengthMismatch);
+    }
+    if !bits.is_multiple_of(8) && b.last().is_some_and(|byte| *byte >> (bits % 8) != 0) {
+        return Err(TranscodeError::NonZeroPadding);
+    }
+    let mut words = transcode_from_bytes(b, nbits)?;
+    words.truncate(count);
+    Ok(words)
+}
 
+/// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
+/// of `output_nbits`-bit numbers. Rejects truncation and invalid widths. A
+/// partial final output word is zero-extended; the output does not retain the
+/// bit length.
+pub fn transcode_bidirectional(
+    a: &[u64],
+    input_nbits: usize,
+    output_nbits: usize,
+) -> Result<Vec<u64>, TranscodeError> {
+    validate_words(a, input_nbits)?;
+    validate_width(output_nbits)?;
+    Ok(transcode_words_prevalidated(a, input_nbits, output_nbits))
+}
+
+#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
+fn transcode_words_prevalidated(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
     let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
     let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
     let output_size = (a.len() * input_nbits).div_ceil(output_nbits);
@@ -284,10 +406,10 @@ mod tests {
                     expected.push(byte);
                 }
                 let mut actual = vec![0xa5, 0x5a];
-                super::transcode_to_bytes_into(&values, width, &mut actual);
+                super::transcode_to_bytes_into(&values, width, &mut actual).unwrap();
                 assert_eq!(actual, expected);
                 assert_eq!(
-                    super::transcode_to_bytes(&values, width),
+                    super::transcode_to_bytes(&values, width).unwrap(),
                     expected.into_iter().skip(2).collect::<Vec<_>>()
                 );
             }
@@ -375,22 +497,24 @@ mod tests {
                     .iter()
                     .map(|i| (*i) & (u64::MAX >> (64 - input_nbits)))
                     .collect_vec();
-                let bytes = transcode_to_bytes(&masked_input, input_nbits);
-                let bytes_as_u64 = transcode_bidirectional(&masked_input, input_nbits, 8);
+                let bytes = transcode_to_bytes(&masked_input, input_nbits).unwrap();
+                let bytes_as_u64 = transcode_bidirectional(&masked_input, input_nbits, 8).unwrap();
                 assert_eq!(bytes, bytes_as_u64.iter().map(|e| *e as u8).collect_vec());
 
-                let input_from_bytes = transcode_from_bytes(&bytes, input_nbits);
+                let input_from_bytes = transcode_from_bytes(&bytes, input_nbits).unwrap();
                 assert!(input_from_bytes.len() >= masked_input.len());
                 assert_eq!(input_from_bytes[..masked_input.len()], masked_input);
 
-                let input_from_u64 = transcode_bidirectional(&bytes_as_u64, 8, input_nbits);
+                let input_from_u64 =
+                    transcode_bidirectional(&bytes_as_u64, 8, input_nbits).unwrap();
                 assert!(input_from_u64.len() >= masked_input.len());
                 assert_eq!(input_from_u64[..masked_input.len()], masked_input);
 
                 for output_nbits in 1..63 {
-                    let output = transcode_bidirectional(&masked_input, input_nbits, output_nbits);
+                    let output =
+                        transcode_bidirectional(&masked_input, input_nbits, output_nbits).unwrap();
                     let input_from_output =
-                        transcode_bidirectional(&output, output_nbits, input_nbits);
+                        transcode_bidirectional(&output, output_nbits, input_nbits).unwrap();
                     assert!(input_from_output.len() >= masked_input.len());
                     assert_eq!(input_from_output[..masked_input.len()], masked_input);
                 }
@@ -401,17 +525,17 @@ mod tests {
     #[test]
     fn transcode_known_roundtrip() {
         let input = vec![0x1u64, 0x2u64, 0x3u64, 0x4u64];
-        let bytes = transcode_to_bytes(&input, 4);
-        let decoded = transcode_from_bytes(&bytes, 4);
+        let bytes = transcode_to_bytes(&input, 4).unwrap();
+        let decoded = transcode_from_bytes(&bytes, 4).unwrap();
         assert_eq!(&decoded[..input.len()], input);
     }
 
     #[test]
     fn transcode_empty_roundtrip() {
         let input: Vec<u64> = Vec::new();
-        let bytes = transcode_to_bytes(&input, 8);
+        let bytes = transcode_to_bytes(&input, 8).unwrap();
         assert!(bytes.is_empty());
-        let decoded = transcode_from_bytes(&bytes, 8);
+        let decoded = transcode_from_bytes(&bytes, 8).unwrap();
         assert!(decoded.is_empty());
     }
 
@@ -1857,5 +1981,94 @@ mod tests {
         assert!(inverse(22, 996).is_none());
         assert_eq!(inverse(25, 996), Some(757));
         assert!(inverse(28, 996).is_none());
+    }
+}
+
+#[cfg(test)]
+mod checked_transcoding_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_inputs_never_truncate_or_modify_output() {
+        let mut out = vec![0xaa, 0x55];
+        let pointer = out.as_ptr();
+        for width in [0, 65, usize::MAX] {
+            assert_eq!(
+                transcode_to_bytes_into(&[1], width, &mut out),
+                Err(TranscodeError::InvalidWidth(width))
+            );
+            assert_eq!(
+                transcode_from_bytes(&[], width),
+                Err(TranscodeError::InvalidWidth(width))
+            );
+            assert!(transcode_bidirectional(&[], 8, width).is_err());
+        }
+        assert_eq!(
+            transcode_to_bytes_into(&[1, 256], 8, &mut out),
+            Err(TranscodeError::ValueTooWide)
+        );
+        assert_eq!(
+            transcode_bidirectional(&[u64::MAX], 63, 8),
+            Err(TranscodeError::ValueTooWide)
+        );
+        assert_eq!(out, [0xaa, 0x55]);
+        assert_eq!(out.as_ptr(), pointer);
+        assert_eq!(
+            transcode_from_bytes_exact(&[], 64, usize::MAX),
+            Err(TranscodeError::LengthOverflow)
+        );
+        assert_eq!(
+            sample_vec_cbd(0, 0, &mut rand::rng()),
+            Err(InvalidVariance { actual: 0 })
+        );
+        assert_eq!(
+            sample_vec_cbd(1, 33, &mut rand::rng()),
+            Err(InvalidVariance { actual: 33 })
+        );
+    }
+
+    #[test]
+    fn exact_decoding_covers_every_width_and_padding_length() {
+        for width in 1..=64 {
+            let mask = u64::MAX >> (64 - width);
+            for count in 0..35 {
+                let words: Vec<_> = (0..count)
+                    .map(|i| (i as u64).wrapping_mul(0xabcd_1234_6789) & mask)
+                    .collect();
+                let bytes = transcode_to_bytes(&words, width).unwrap();
+                assert_eq!(
+                    transcode_from_bytes_exact(&bytes, width, count).unwrap(),
+                    words
+                );
+                let mut extra = bytes.clone();
+                extra.push(0);
+                assert_eq!(
+                    transcode_from_bytes_exact(&extra, width, count),
+                    Err(TranscodeError::LengthMismatch)
+                );
+                if !bytes.is_empty() {
+                    let mut missing = bytes.clone();
+                    missing.pop();
+                    assert_eq!(
+                        transcode_from_bytes_exact(&missing, width, count),
+                        Err(TranscodeError::LengthMismatch)
+                    );
+                    if !(width * count).is_multiple_of(8) {
+                        let mut bad = bytes.clone();
+                        *bad.last_mut().unwrap() |= 0x80;
+                        assert_eq!(
+                            transcode_from_bytes_exact(&bad, width, count),
+                            Err(TranscodeError::NonZeroPadding)
+                        );
+                    }
+                }
+                assert_eq!(
+                    transcode_bidirectional(&words, width, width).unwrap(),
+                    words
+                );
+            }
+        }
+        // Stream decoding intentionally includes a zero-extended final word.
+        assert_eq!(transcode_from_bytes(&[0xff], 6).unwrap(), [63, 3]);
     }
 }

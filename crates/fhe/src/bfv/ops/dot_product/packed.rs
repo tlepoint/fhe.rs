@@ -1,13 +1,13 @@
 //! Fused unpacking and accumulation of compact plaintext NTT residues.
 
 use super::{ClearAccumulator, DotProductScalarWorkspace};
+use crate::bfv::Parameters;
 use crate::{
     Error, Result,
     bfv::{Ciphertext, PackedPlaintextView},
 };
-use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
+use fhe_math::rq::{Ntt, Poly};
 use ndarray::Array3;
-use std::sync::Arc;
 
 // Specialize the eight possible bit offsets, rather than particular moduli.
 // Each group of eight residues starts at a byte boundary. Narrow residues
@@ -54,8 +54,8 @@ unsafe fn fma_packed<const REM: usize, const WIDE: bool>(
     }
 }
 
-// Check memory bounds even if a caller's cloned iterator changes its operands
-// after validation. The workspace separately bounds unreduced sums to u128.
+// Check layout bounds before entering the unsafe decoder. The workspace
+// separately bounds unreduced sums to u128.
 fn fma_packed_row(out: &mut [u128], x: &[u64], packed: &[u8], bits: usize) {
     assert_eq!(x.len(), out.len());
     assert!(out.len().is_multiple_of(8));
@@ -86,28 +86,61 @@ fn fma_packed_row(out: &mut [u128], x: &[u64], packed: &[u8], bits: usize) {
 }
 
 impl DotProductScalarWorkspace {
-    /// Compute a dot product directly from bit-packed NTT residues.
-    ///
-    /// No transforms or unpacked plaintext buffers are needed. Returns the same
-    /// result and timing permission as [`Self::dot_product_scalar`] on unpacked
-    /// inputs. Errors cover empty or unequal inputs, foreign parameters, wrong
-    /// levels, and inconsistent ciphertext part counts. Cloned iterators must
-    /// yield the same operands. Long products periodically reduce the shared
-    /// accumulator to preserve its overflow bound.
-    pub fn dot_product_scalar_packed<'a, 'b, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
+    /// Compute a dot product from slices of ciphertexts and packed views.
+    /// No transforms, operand lists, or unpacked plaintext buffers are
+    /// allocated. Validation errors leave workspace storage unchanged. Long
+    /// products reduce the shared accumulator periodically to preserve its
+    /// overflow bound.
+    pub fn dot_product_scalar_packed(
+        &mut self,
+        ct: &[Ciphertext],
+        pt: &[PackedPlaintextView<'_>],
+    ) -> Result<Ciphertext> {
+        self.dot_product_packed_slices(ct.iter(), pt.iter().copied())
+    }
+
+    /// Compute from slices of ciphertext references and packed views without
+    /// allocating reference lists.
+    pub fn dot_product_scalar_packed_refs(
+        &mut self,
+        ct: &[&Ciphertext],
+        pt: &[PackedPlaintextView<'_>],
+    ) -> Result<Ciphertext> {
+        self.dot_product_packed_slices(ct.iter().copied(), pt.iter().copied())
+    }
+
+    /// Snapshot each iterator once, then validate and evaluate the same
+    /// operands. Accepts borrowed packed plaintexts or views from a packed
+    /// batch.
+    pub fn dot_product_scalar_packed_iter<'a, 'b, I, J>(
+        &mut self,
+        ct: I,
+        pt: J,
+    ) -> Result<Ciphertext>
     where
-        I: Iterator<Item = &'a Ciphertext> + Clone,
-        J: Iterator + Clone,
+        I: IntoIterator<Item = &'a Ciphertext>,
+        J: IntoIterator,
         J::Item: Into<PackedPlaintextView<'b>>,
     {
-        let pt = pt.map(Into::into);
+        self.dot_product_scalar_packed_refs(
+            &ct.into_iter().collect::<Vec<_>>(),
+            &pt.into_iter().map(Into::into).collect::<Vec<_>>(),
+        )
+    }
+
+    // Only immutable slice iterators reach this kernel.
+    fn dot_product_packed_slices<'a, 'b, I, J>(&mut self, ct: I, pt: J) -> Result<Ciphertext>
+    where
+        I: Iterator<Item = &'a Ciphertext> + Clone,
+        J: Iterator<Item = PackedPlaintextView<'b>> + Clone,
+    {
         let count = ct.clone().count();
         let pt_count = pt.clone().count();
         if count == 0 || pt_count == 0 {
-            return Err(crate::DotProductError::EmptyInput.into());
+            return Err(crate::error::DotProductError::EmptyInput.into());
         }
         if count != pt_count {
-            return Err(crate::DotProductError::OperandCountMismatch {
+            return Err(crate::error::DotProductError::OperandCountMismatch {
                 ciphertexts: count,
                 plaintexts: pt_count,
             }
@@ -119,10 +152,10 @@ impl DotProductScalarWorkspace {
         let mut public = true;
         for (ct, pt) in ct.clone().zip(pt.clone()) {
             ct.validate_for_context(&self.par, self.level, ctx)?;
-            if !Arc::ptr_eq(&self.par, pt.par) {
+            if !Parameters::compatible(&self.par, pt.par) {
                 return Err(Error::ParameterMismatch {
-                    left: crate::ParameterSource::Plaintext,
-                    right: crate::ParameterSource::Parameters,
+                    left: crate::error::ParameterSource::Plaintext,
+                    right: crate::error::ParameterSource::Parameters,
                 });
             }
             if pt.level != self.level {
@@ -133,11 +166,13 @@ impl DotProductScalarWorkspace {
                 });
             }
             if ct.len() != first.len() {
-                return Err(crate::DotProductError::CiphertextPolynomialCountMismatch {
-                    actual: ct.len(),
-                    expected: first.len(),
-                }
-                .into());
+                return Err(
+                    crate::error::DotProductError::CiphertextPolynomialCountMismatch {
+                        actual: ct.len(),
+                        expected: first.len(),
+                    }
+                    .into(),
+                );
             }
             public &= pt.public && ct.iter().all(Poly::allows_variable_time_computations);
         }
@@ -194,7 +229,13 @@ impl DotProductScalarWorkspace {
         let c = acc
             .0
             .outer_iter()
-            .map(|a| Poly::<Ntt>::try_convert_from(a, ctx, public))
+            .map(|a| {
+                Poly::<Ntt>::from_wide_ntt_residues_with_timing(
+                    a,
+                    ctx,
+                    public.then(|| crate::VariableTime::new(crate::PublicData::assert_public())),
+                )
+            })
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(Ciphertext {
             par: first.par.clone(),
@@ -208,8 +249,8 @@ impl DotProductScalarWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{BfvParametersBuilder, Encoding, PackedPlaintext, Plaintext};
-    use fhe_traits::{PublicData, VariableTime};
+    use crate::bfv::{Encoding, ParametersBuilder, Plaintext, packing::PackedPlaintext};
+    use crate::{PublicData, VariableTime};
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -225,7 +266,7 @@ mod tests {
                     vec![mask; degree],
                     (0..degree).map(|_| rng.random::<u64>() & mask).collect(),
                 ] {
-                    let mut bytes = fhe_util::transcode_to_bytes(&y, bits);
+                    let mut bytes = fhe_util::transcode_to_bytes(&y, bits).unwrap();
                     bytes.resize(bytes.len() + 8, 0);
                     let mut out = vec![7; degree];
                     fma_packed_row(&mut out, &x, &bytes, bits);
@@ -243,11 +284,11 @@ mod tests {
         for bits in [
             13, 14, 15, 16, 17, 18, 19, 20, 36, 50, 55, 57, 58, 59, 60, 61, 62,
         ] {
-            let par = BfvParametersBuilder::new()
-                .set_degree(16)
-                .set_plaintext_modulus(17)
-                .set_moduli_sizes(&[bits, bits])
-                .build_arc()?;
+            let par = ParametersBuilder::new()
+                .degree(16)
+                .plaintext_modulus(17_u64)
+                .ciphertext_modulus_bits([bits, bits])
+                .build()?;
             for level in [0, 1] {
                 let ctx = par.context_at_level(level)?;
                 // Worst canonical residues exercise carries and the exact
@@ -257,10 +298,14 @@ mod tests {
                     .iter()
                     .flat_map(|q| vec![q - 1; par.degree()])
                     .collect();
-                let worst = Poly::<Ntt>::try_convert_from(values, ctx, true)?;
+                let worst = Poly::<Ntt>::from_rns_slice_with_timing(
+                    &values,
+                    ctx,
+                    Some(crate::VariableTime::new(crate::PublicData::assert_public())),
+                )?;
                 let mut pt = Plaintext {
                     par: par.clone(),
-                    encoding: Some(Encoding::poly_at_level(level)),
+
                     poly_ntt: worst.clone(),
                 };
                 let mut workspace = DotProductScalarWorkspace::new(&par, level)?;
@@ -289,13 +334,15 @@ mod tests {
                                 packed.size_bytes(),
                                 par.degree() * ctx.moduli().len() * bits / 8 + 8
                             );
-                            let actual = workspace.dot_product_scalar_packed(
+                            let actual = workspace.dot_product_scalar_packed_iter(
                                 std::iter::repeat_n(&ct, length),
                                 std::iter::repeat_n(&packed, length),
                             )?;
-                            let mut expected = Ciphertext::zero(&par);
-                            for _ in 0..length {
-                                expected += &(&ct * &pt);
+                            let mut expected = ct.multiply_plaintext(&pt).unwrap();
+                            for _ in 1..length {
+                                (expected)
+                                    .add_assign(&(ct.multiply_plaintext(&pt).unwrap()))
+                                    .unwrap();
                             }
                             assert_eq!(actual, expected);
                             assert!(
@@ -309,7 +356,7 @@ mod tests {
                             }
                             pointer = Some(workspace.accumulator.as_ptr());
                             assert_eq!(
-                                workspace.dot_product_scalar(
+                                workspace.dot_product_scalar_iter(
                                     std::iter::repeat_n(&ct, length),
                                     std::iter::repeat_n(&pt, length)
                                 )?,
@@ -323,7 +370,7 @@ mod tests {
                     let packed = PackedPlaintext::from(&pt);
                     assert!(
                         workspace
-                            .dot_product_scalar_packed(
+                            .dot_product_scalar_packed_iter(
                                 std::iter::once(&ct),
                                 std::iter::once(&packed)
                             )?
@@ -338,13 +385,12 @@ mod tests {
 
     #[test]
     fn validation_leaves_workspace_reusable() -> Result<()> {
-        use fhe_traits::FheEncoder;
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
-        let pt = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &par)?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40, 40])
+            .build()?;
+        let pt = Plaintext::encode(&par, &[3u64][..], Encoding::Polynomial)?;
         let packed = PackedPlaintext::from(&pt);
         let ct = Ciphertext {
             par: par.clone(),
@@ -355,34 +401,38 @@ mod tests {
         let mut workspace = DotProductScalarWorkspace::new(&par, 0)?;
         let compute =
             |workspace: &mut DotProductScalarWorkspace, ct: &Ciphertext, pt: &PackedPlaintext| {
-                workspace.dot_product_scalar_packed(std::iter::once(ct), std::iter::once(pt))
+                workspace.dot_product_scalar_packed_iter(std::iter::once(ct), std::iter::once(pt))
             };
         let expected = compute(&mut workspace, &ct, &packed)?;
         assert!(
             workspace
-                .dot_product_scalar_packed(std::iter::empty(), std::iter::once(&packed))
+                .dot_product_scalar_packed_iter(std::iter::empty(), std::iter::once(&packed))
                 .is_err()
         );
         assert!(
             workspace
-                .dot_product_scalar_packed(std::iter::once(&ct), std::iter::repeat_n(&packed, 2))
+                .dot_product_scalar_packed_iter(
+                    std::iter::once(&ct),
+                    std::iter::repeat_n(&packed, 2)
+                )
                 .is_err()
         );
-        assert!(compute(&mut workspace, &Ciphertext::zero(&par), &packed).is_err());
-        let lower = Plaintext::try_encode(&[3u64][..], Encoding::poly_at_level(1), &par)?;
+        assert!(compute(&mut workspace, &Ciphertext::invalid_empty(&par), &packed).is_err());
+        let lower = Plaintext::encode_at_level(&par, &[3u64][..], Encoding::Polynomial, 1)?;
         assert!(compute(&mut workspace, &ct, &PackedPlaintext::from(&lower)).is_err());
-        let foreign = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40, 40])
-            .build_arc()?;
-        let foreign = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &foreign)?;
+        let foreign = ParametersBuilder::new()
+            .noise_variance(11)
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40, 40])
+            .build()?;
+        let foreign = Plaintext::encode(&foreign, &[3u64][..], Encoding::Polynomial)?;
         assert!(compute(&mut workspace, &ct, &PackedPlaintext::from(&foreign)).is_err());
         let mut three = ct.clone();
         three.c.push(pt.poly_ntt.clone());
         assert!(
             workspace
-                .dot_product_scalar_packed(
+                .dot_product_scalar_packed_iter(
                     [&ct, &three].into_iter(),
                     std::iter::repeat_n(&packed, 2)
                 )
@@ -405,19 +455,44 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::panic, reason = "test collection before workspace mutation")]
+    fn public_iterator_panics_before_touching_workspace() -> Result<()> {
+        let par = crate::bfv::Parameters::test_parameters(2, 16);
+        let pt = Plaintext::encode(&par, &[1], Encoding::Polynomial)?;
+        let packed = PackedPlaintext::from(&pt);
+        let ct = Ciphertext::trivial_zero(&par, 0)?;
+        let mut workspace = DotProductScalarWorkspace::new(&par, 0)?;
+        workspace.dot_product_scalar_packed_iter([&ct], [&packed])?;
+        let pointer = workspace.accumulator.as_ptr();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            workspace.dot_product_scalar_packed_iter(
+                std::iter::once(&ct).chain(std::iter::once_with(|| panic!("input failed"))),
+                [&packed, &packed],
+            )
+        }));
+        assert!(result.is_err());
+        assert_eq!(workspace.accumulator.as_ptr(), pointer);
+        assert!(workspace.accumulator.iter().all(|value| *value == 0));
+        assert_eq!(
+            workspace.dot_product_scalar_packed_iter([&ct], [&packed])?,
+            ct.multiply_plaintext(&pt)?
+        );
+        Ok(())
+    }
+
+    #[test]
     #[expect(
         clippy::panic,
         reason = "exercise scratch cleanup during iterator unwinding"
     )]
-    fn scratch_is_cleared_when_the_input_iterator_panics() -> Result<()> {
-        use fhe_traits::FheEncoder;
+    fn scratch_is_cleared_when_the_kernel_unwinds() -> Result<()> {
         use std::cell::Cell;
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[40])
-            .build_arc()?;
-        let pt = Plaintext::try_encode(&[3u64][..], Encoding::poly(), &par)?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([40])
+            .build()?;
+        let pt = Plaintext::encode(&par, &[3u64][..], Encoding::Polynomial)?;
         let packed = PackedPlaintext::from(&pt);
         let ct = Ciphertext {
             par: par.clone(),
@@ -437,15 +512,17 @@ mod tests {
             }
         });
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            workspace.dot_product_scalar_packed(ciphertexts, std::iter::repeat_n(&packed, 2))
+            workspace
+                .dot_product_packed_slices(ciphertexts, std::iter::repeat_n((&packed).into(), 2))
         }));
         assert!(result.is_err());
         assert_eq!(visits.get(), 7);
         assert!(!workspace.accumulator.is_empty());
         assert!(workspace.accumulator.iter().all(|x| *x == 0));
         assert_eq!(
-            workspace.dot_product_scalar_packed(std::iter::once(&ct), std::iter::once(&packed))?,
-            &ct * &pt
+            workspace
+                .dot_product_scalar_packed_iter(std::iter::once(&ct), std::iter::once(&packed))?,
+            ct.multiply_plaintext(&pt).unwrap()
         );
         Ok(())
     }

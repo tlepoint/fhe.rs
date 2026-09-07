@@ -1,0 +1,75 @@
+name: Coverage
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Rust coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # Codecov OIDC authentication; no stored upload token.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - name: Install coverage tool
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        with:
+          tool: cargo-llvm-cov
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: coverage
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends protobuf-compiler
+      - name: Generate combined coverage
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --workspace --locked --no-report
+          cargo llvm-cov --workspace --locked --all-features --no-report
+          mkdir -p target/coverage
+          cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex '/(proto|tests|benches|examples)/|/build\.rs$'
+      - name: Save coverage report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: target/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload coverage to Codecov
+        # Dependabot has a read-only token. Its coverage remains in the artifact.
+        # The Codecov action automatically uses tokenless uploads for public forks.
+        if: github.actor != 'dependabot[bot]'
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          use_oidc: true
+          files: target/coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: true

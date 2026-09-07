@@ -7,7 +7,12 @@ use crate::{Result, rns::ScalingFactor};
 use std::sync::Arc;
 
 /// Context switcher.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rq::switcher::Switcher::default();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switcher {
     pub(crate) scaler: Scaler,
 }

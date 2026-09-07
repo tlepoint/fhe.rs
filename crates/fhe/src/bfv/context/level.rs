@@ -5,10 +5,19 @@ use fhe_math::rq::Context;
 use crate::bfv::{context::CipherPlainContext, parameters::MultiplicationParameters};
 
 /// Precomputed data for one level of the ciphertext modulus hierarchy.
+///
+/// ```compile_fail
+/// use fhe::bfv::ContextLevel;
+/// use fhe_math::rq::Context;
+/// use std::sync::Arc;
+/// fn replace(level: &mut ContextLevel, context: Arc<Context>) {
+///     level.poly_context = context;
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextLevel {
     /// The polynomial context at this level.
-    pub poly_context: Arc<Context>,
+    pub(crate) poly_context: Arc<Context>,
     /// Bridge to plaintext operations.
     pub(crate) cipher_plain_context: Arc<CipherPlainContext>,
     /// Level number (0 = highest, increases as moduli are removed).
@@ -31,6 +40,12 @@ impl ContextLevel {
             level,
             mul_params,
         }
+    }
+
+    /// Borrow the immutable polynomial context for this level.
+    #[must_use]
+    pub fn poly_context(&self) -> &Arc<Context> {
+        &self.poly_context
     }
 
     /// Return this context's level number.

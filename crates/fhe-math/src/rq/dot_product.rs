@@ -98,14 +98,12 @@ impl DotProductWorkspace {
         }
     }
 
-    /// Compute a dot product, allocating only its result polynomial.
-    /// Returns an error for empty or unequal inputs, foreign contexts, or lazy
-    /// coefficients. Iterators must yield the same operands when cloned.
-    pub fn dot_product<'a, 'b, I, J>(&mut self, p: I, q: J) -> Result<Poly<Ntt>>
-    where
-        I: Iterator<Item = &'a Poly<Ntt>> + Clone,
-        J: Iterator<Item = &'b Poly<Ntt>> + Clone,
-    {
+    /// Compute a checked dot product from slices of polynomials.
+    /// Allocates only the result polynomial. Rejects empty/unequal inputs,
+    /// foreign contexts, and lazy residues before changing workspace storage.
+    pub fn dot_product(&mut self, p: &[Poly<Ntt>], q: &[Poly<Ntt>]) -> Result<Poly<Ntt>> {
+        let p = p.iter();
+        let q = q.iter();
         let prepared = prepare(p.clone(), q.clone())?;
         if prepared.ctx != self.ctx {
             return Err(Error::PolynomialContextMismatch);
@@ -115,23 +113,81 @@ impl DotProductWorkspace {
         Ok(out)
     }
 
-    /// Overwrite `out` with a dot product without allocating coefficient
-    /// buffers. Inputs and output must match this workspace's context.
-    /// Returns the same input errors as [`Self::dot_product`]; validation
-    /// errors leave `out` unchanged. Timing permission is recomputed from
-    /// all inputs on every call. Iterators must yield the same operands
-    /// when cloned.
-    pub fn dot_product_into<'a, 'b, I, J>(&mut self, p: I, q: J, out: &mut Poly<Ntt>) -> Result<()>
-    where
-        I: Iterator<Item = &'a Poly<Ntt>> + Clone,
-        J: Iterator<Item = &'b Poly<Ntt>> + Clone,
-    {
+    /// Compute from slices of references without allocating operand lists.
+    pub fn dot_product_refs(&mut self, p: &[&Poly<Ntt>], q: &[&Poly<Ntt>]) -> Result<Poly<Ntt>> {
+        let prepared = prepare(p.iter().copied(), q.iter().copied())?;
+        if prepared.ctx != self.ctx {
+            return Err(Error::PolynomialContextMismatch);
+        }
+        let mut out = Poly::zero(&self.ctx);
+        self.compute(p.iter().copied(), q.iter().copied(), &mut out, prepared);
+        Ok(out)
+    }
+
+    /// Consume each borrowed iterator once, then validate and evaluate the same
+    /// snapshot. Slice callers can avoid reference vectors with
+    /// [`Self::dot_product`].
+    pub fn dot_product_iter<'a, 'b>(
+        &mut self,
+        p: impl IntoIterator<Item = &'a Poly<Ntt>>,
+        q: impl IntoIterator<Item = &'b Poly<Ntt>>,
+    ) -> Result<Poly<Ntt>> {
+        self.dot_product_refs(
+            &p.into_iter().collect::<Vec<_>>(),
+            &q.into_iter().collect::<Vec<_>>(),
+        )
+    }
+
+    /// Overwrite `out` with a dot product from slices without allocating.
+    /// All inputs and the output must use this workspace's context. Returned
+    /// errors leave the output and workspace unchanged. Timing permission is
+    /// recomputed from all inputs on every call.
+    pub fn dot_product_into(
+        &mut self,
+        p: &[Poly<Ntt>],
+        q: &[Poly<Ntt>],
+        out: &mut Poly<Ntt>,
+    ) -> Result<()> {
+        let p = p.iter();
+        let q = q.iter();
         let prepared = prepare(p.clone(), q.clone())?;
         if prepared.ctx != self.ctx || out.ctx != self.ctx {
             return Err(Error::PolynomialContextMismatch);
         }
         self.compute(p, q, out, prepared);
         Ok(())
+    }
+
+    /// Overwrite output using slices of references without allocating.
+    /// Validation errors leave the output and workspace unchanged.
+    pub fn dot_product_into_refs(
+        &mut self,
+        p: &[&Poly<Ntt>],
+        q: &[&Poly<Ntt>],
+        out: &mut Poly<Ntt>,
+    ) -> Result<()> {
+        let prepared = prepare(p.iter().copied(), q.iter().copied())?;
+        if prepared.ctx != self.ctx || out.ctx != self.ctx {
+            return Err(Error::PolynomialContextMismatch);
+        }
+        self.compute(p.iter().copied(), q.iter().copied(), out, prepared);
+        Ok(())
+    }
+
+    /// Snapshot borrowed iterators once, then overwrite `out` on successful
+    /// validation. Prefer [`Self::dot_product_into`] for allocation-free
+    /// inputs.
+    pub fn dot_product_into_iter<'a, 'b>(
+        &mut self,
+        p: impl IntoIterator<Item = &'a Poly<Ntt>>,
+        q: impl IntoIterator<Item = &'b Poly<Ntt>>,
+        out: &mut Poly<Ntt>,
+    ) -> Result<()> {
+        self.dot_product_into_refs(
+            &p.into_iter().collect::<Vec<_>>(),
+            &q.into_iter().collect::<Vec<_>>(),
+            out,
+        )
     }
 
     fn compute<'a, 'b>(
@@ -204,19 +260,28 @@ impl DotProductWorkspace {
     }
 }
 
-/// Compute a dot product of NTT polynomials, allocating workspace and output.
-/// Returns an error for empty or unequal inputs, incompatible contexts, or lazy
-/// coefficients. Iterators must yield the same operands when cloned. For
-/// repeated calls, use [`DotProductWorkspace`] to reuse storage.
-pub fn dot_product<'a, 'b, I, J>(p: I, q: J) -> Result<Poly<Ntt>>
-where
-    I: Iterator<Item = &'a Poly<Ntt>> + Clone,
-    J: Iterator<Item = &'b Poly<Ntt>> + Clone,
-{
-    let prepared = prepare(p.clone(), q.clone())?;
+/// Compute a dot product of NTT polynomial slices, allocating workspace and
+/// output. For repeated calls, use [`DotProductWorkspace`] to reuse storage.
+pub fn dot_product(p: &[Poly<Ntt>], q: &[Poly<Ntt>]) -> Result<Poly<Ntt>> {
+    let prepared = prepare(p.iter(), q.iter())?;
     let mut workspace = DotProductWorkspace::new(&prepared.ctx);
     let mut out = Poly::zero(&prepared.ctx);
-    workspace.compute(p, q, &mut out, prepared);
+    workspace.compute(p.iter(), q.iter(), &mut out, prepared);
+    Ok(out)
+}
+
+/// Snapshot both borrowed input iterators once before validation and
+/// arithmetic.
+pub fn dot_product_iter<'a, 'b>(
+    p: impl IntoIterator<Item = &'a Poly<Ntt>>,
+    q: impl IntoIterator<Item = &'b Poly<Ntt>>,
+) -> Result<Poly<Ntt>> {
+    let p: Vec<_> = p.into_iter().collect();
+    let q: Vec<_> = q.into_iter().collect();
+    let prepared = prepare(p.iter().copied(), q.iter().copied())?;
+    let mut workspace = DotProductWorkspace::new(&prepared.ctx);
+    let mut out = Poly::zero(&prepared.ctx);
+    workspace.compute(p.iter().copied(), q.iter().copied(), &mut out, prepared);
     Ok(out)
 }
 /// Computes the Fused-Mul-Add operation `out[i] += x[i] * y[i]`
@@ -248,7 +313,6 @@ fn fma(out: &mut [u128], x: &[u64], y: &[u64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rq::traits::TryConvertFrom;
 
     fn context() -> Arc<Context> {
         Context::new_arc(&[1153, 4611686018326724609], 16).unwrap()
@@ -262,7 +326,7 @@ mod tests {
             .iter()
             .flat_map(|q| vec![**q - 1; ctx.degree])
             .collect();
-        let worst = Poly::<Ntt>::try_convert_from(values, &ctx, false).unwrap();
+        let worst = Poly::<Ntt>::from_rns_slice(&values, &ctx).unwrap();
         let mut workspace = DotProductWorkspace::new(&ctx);
         let mut out = Poly::zero(&ctx);
         let output_pointer = out.coefficients.as_ptr();
@@ -278,17 +342,19 @@ mod tests {
                 right.last_mut().unwrap().allow_variable_time_computations = public;
                 out.has_lazy_coefficients = true;
                 workspace
-                    .dot_product_into(left.iter(), right.iter(), &mut out)
+                    .dot_product_into_iter(left.iter(), right.iter(), &mut out)
                     .unwrap();
                 assert_eq!(out.allows_variable_time_computations(), public);
                 assert!(!out.has_lazy_coefficients);
                 for (row, q) in out.coefficients.outer_iter().zip(ctx.q.iter()) {
                     assert!(row.iter().all(|x| *x == q.reduce(length as u64)));
                 }
-                assert_eq!(out, dot_product(left.iter(), right.iter()).unwrap());
+                assert_eq!(out, dot_product_iter(left.iter(), right.iter()).unwrap());
                 assert_eq!(
                     out,
-                    workspace.dot_product(left.iter(), right.iter()).unwrap()
+                    workspace
+                        .dot_product_iter(left.iter(), right.iter())
+                        .unwrap()
                 );
                 assert_eq!(out.coefficients.as_ptr(), output_pointer);
                 assert_eq!(workspace.accumulator.as_ptr(), scratch_pointer);
@@ -304,35 +370,39 @@ mod tests {
         let mut out = p.clone();
         let mut workspace = DotProductWorkspace::new(&ctx);
         assert_eq!(
-            workspace.dot_product_into(std::iter::empty(), std::iter::once(&p), &mut out),
+            workspace.dot_product_into_iter(std::iter::empty(), std::iter::once(&p), &mut out),
             Err(Error::EmptyDotProduct)
         );
         assert_eq!(
-            workspace.dot_product_into(std::iter::once(&p), std::iter::empty(), &mut out),
+            workspace.dot_product_into_iter(std::iter::once(&p), std::iter::empty(), &mut out),
             Err(Error::EmptyDotProduct)
         );
         assert_eq!(
-            workspace.dot_product_into([&p].into_iter(), [&p, &p].into_iter(), &mut out),
+            workspace.dot_product_into_iter([&p].into_iter(), [&p, &p].into_iter(), &mut out),
             Err(Error::DotProductLengthMismatch { left: 1, right: 2 })
         );
         let foreign_ctx = Context::new_arc(&[1153], 16).unwrap();
         let foreign = Poly::zero(&foreign_ctx);
         assert_eq!(
-            workspace.dot_product_into([&p].into_iter(), [&foreign].into_iter(), &mut out),
+            workspace.dot_product_into_iter([&p].into_iter(), [&foreign].into_iter(), &mut out),
             Err(Error::PolynomialContextMismatch)
         );
         assert_eq!(
-            workspace.dot_product_into([&foreign].into_iter(), [&foreign].into_iter(), &mut out),
+            workspace.dot_product_into_iter(
+                [&foreign].into_iter(),
+                [&foreign].into_iter(),
+                &mut out
+            ),
             Err(Error::PolynomialContextMismatch)
         );
         let mut lazy = p.clone();
         lazy.has_lazy_coefficients = true;
         assert_eq!(
-            workspace.dot_product_into([&p].into_iter(), [&lazy].into_iter(), &mut out),
+            workspace.dot_product_into_iter([&p].into_iter(), [&lazy].into_iter(), &mut out),
             Err(Error::LazyDotProductOperand)
         );
         assert_eq!(
-            dot_product([&lazy].into_iter(), [&p].into_iter()),
+            dot_product_iter([&lazy].into_iter(), [&p].into_iter()),
             Err(Error::LazyDotProductOperand)
         );
         assert_eq!(out, p);
@@ -342,27 +412,31 @@ mod tests {
         );
         let mut foreign_output = foreign.clone();
         assert_eq!(
-            workspace.dot_product_into([&p].into_iter(), [&p].into_iter(), &mut foreign_output),
+            workspace.dot_product_into_iter(
+                [&p].into_iter(),
+                [&p].into_iter(),
+                &mut foreign_output
+            ),
             Err(Error::PolynomialContextMismatch)
         );
         assert_eq!(foreign_output, foreign);
         let separate = context();
         let equivalent = Poly::<Ntt>::random_from_seed(&separate, [1; 32]);
         workspace
-            .dot_product_into([&equivalent].into_iter(), [&p].into_iter(), &mut out)
+            .dot_product_into_iter([&equivalent], [&p], &mut out)
             .unwrap();
         assert_eq!(out, &p * &p);
         assert!(workspace.accumulator.iter().all(|x| *x == 0));
     }
 
     #[test]
-    fn inputs_are_visited_once_for_validation_and_once_for_arithmetic() {
+    fn external_inputs_are_visited_once() {
         use std::cell::Cell;
         let ctx = context();
         let operands = vec![Poly::<Ntt>::random_from_seed(&ctx, [3; 32]); 4];
         let left_visits = Cell::new(0);
         let right_visits = Cell::new(0);
-        dot_product(
+        dot_product_iter(
             operands
                 .iter()
                 .filter(|_| true)
@@ -373,8 +447,8 @@ mod tests {
                 .inspect(|_| right_visits.set(right_visits.get() + 1)),
         )
         .unwrap();
-        assert_eq!(left_visits.get(), 8);
-        assert_eq!(right_visits.get(), 8);
+        assert_eq!(left_visits.get(), 4);
+        assert_eq!(right_visits.get(), 4);
     }
 
     #[test]
@@ -397,7 +471,7 @@ mod tests {
         assert!(workspace.accumulator.iter().all(|x| *x == 0));
         assert_eq!(out, p);
         workspace
-            .dot_product_into([&p].into_iter(), [&p].into_iter(), &mut out)
+            .dot_product_into_iter([&p], [&p], &mut out)
             .unwrap();
         assert_eq!(out, &p * &p);
     }

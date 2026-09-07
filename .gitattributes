@@ -1,0 +1,2 @@
+# Persisted protobuf fixtures are binary, including messages without NUL bytes.
+crates/fhe/tests/data/**/*.bin binary

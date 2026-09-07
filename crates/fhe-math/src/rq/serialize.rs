@@ -2,40 +2,52 @@
 
 use std::sync::Arc;
 
-use super::{Context, Poly, RepresentationTag, traits::TryConvertFrom};
-use crate::{Error, PolynomialSerializationError, proto::rq::Rq};
-use fhe_traits::{DeserializeWithContext, Serialize};
+use super::{Context, Poly, RepresentationTag, wire::FromProto};
+use crate::{Error, error::PolynomialSerializationError, proto::rq::Rq};
+
 use prost::Message;
 
-impl<R: RepresentationTag> Serialize for Poly<R> {
-    fn to_bytes(&self) -> Vec<u8> {
+impl<R: RepresentationTag> Poly<R> {
+    /// Serialize this polynomial using the existing protobuf wire format.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
         Rq::from(self).encode_to_vec()
     }
 }
 
-impl<R: RepresentationTag> DeserializeWithContext for Poly<R>
-where
-    Poly<R>: for<'a> TryConvertFrom<&'a Rq>,
-{
-    type Error = Error;
-    type Context = Context;
+macro_rules! impl_from_bytes {
+    ($($representation:ty),+ $(,)?) => {
+        $(
+        impl Poly<$representation> {
+            /// Import validated polynomial bytes bound to `ctx`.
+            /// Wire data never grants permission for variable-time computation.
+            pub fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Error> {
+                Self::from_bytes_with_limits(bytes, ctx, &crate::DecodeLimits::default())
+            }
 
-    fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Self::Error> {
-        let rq: Rq = Message::decode(bytes).map_err(|_| PolynomialSerializationError::Decode)?;
-        Poly::try_convert_from(&rq, ctx, false)
-    }
+            /// Import with explicit bounds on wire and expanded residue storage.
+            pub fn from_bytes_with_limits(bytes: &[u8], ctx: &Arc<Context>, limits: &crate::DecodeLimits) -> Result<Self, Error> {
+                limits.check_context(bytes.len(), ctx.degree, ctx.moduli().len())?;
+                limits.check_polynomials(1, ctx.degree, ctx.moduli().len())?;
+                let rq: Rq = Message::decode(bytes).map_err(|source| PolynomialSerializationError::Decode { source })?;
+                Self::from_proto(&rq, ctx)
+            }
+        }
+        )+
+    };
 }
+impl_from_bytes!(super::PowerBasis, super::Ntt, super::NttShoup);
 
 #[cfg(test)]
 mod tests {
     use std::{error::Error as StdError, sync::Arc};
 
-    use fhe_traits::{DeserializeWithContext, Serialize};
     use rand::rng;
 
-    use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, traits::TryConvertFrom};
+    use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, wire::FromProto};
     use crate::{
-        Error, PolynomialSerializationError,
+        Error,
+        error::PolynomialSerializationError,
         proto::rq::{Representation as RepresentationProto, Rq},
     };
     use prost::Message;
@@ -56,7 +68,7 @@ mod tests {
             .coefficients
             .outer_iter()
             .zip(ctx.q.iter())
-            .flat_map(|(row, modulus)| modulus.serialize_vec(row.as_slice().unwrap()))
+            .flat_map(|(row, modulus)| modulus.serialize_vec(row.as_slice().unwrap()).unwrap())
             .collect();
         for (bytes, representation) in [
             (pb.to_bytes(), RepresentationProto::Powerbasis),
@@ -165,7 +177,7 @@ mod tests {
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        let err = Poly::<PowerBasis>::try_convert_from(&proto, &ctx, false).unwrap_err();
+        let err = Poly::<PowerBasis>::from_proto(&proto, &ctx).unwrap_err();
         assert_eq!(
             err,
             Error::PolynomialSerialization(PolynomialSerializationError::RepresentationMismatch {

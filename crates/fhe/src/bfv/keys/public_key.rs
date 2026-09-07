@@ -1,15 +1,14 @@
 //! Public keys for the BFV encryption scheme
 
-use crate::bfv::traits::TryConvertFrom;
-use crate::bfv::{BfvParameters, Ciphertext, Encoding, Plaintext};
+use crate::bfv::wire::FromProto;
+use crate::bfv::{Ciphertext, Parameters, Plaintext};
 use crate::proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto};
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Ntt, Poly};
-use fhe_traits::{DeserializeParametrized, FheEncrypter, FheParametrized, Serialize};
+
 use prost::Message;
 use rand::{CryptoRng, Rng as RngCore};
 use std::borrow::Cow;
-use std::sync::Arc;
 use zeroize::Zeroizing;
 
 use super::SecretKey;
@@ -17,15 +16,15 @@ use super::SecretKey;
 /// Public key for the BFV encryption scheme.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PublicKey {
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
     pub(crate) c: Ciphertext,
 }
 
 impl PublicKey {
     /// Generate a new [`PublicKey`] from a [`SecretKey`].
-    pub fn new<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Self {
-        let zero = Plaintext::zero(Encoding::poly(), &sk.par).unwrap();
-        let mut c: Ciphertext = sk.try_encrypt(&zero, rng).unwrap();
+    pub fn from_secret_key<R: RngCore + CryptoRng>(sk: &SecretKey, rng: &mut R) -> Self {
+        let zero = Plaintext::zero(&sk.par, 0).unwrap();
+        let mut c: Ciphertext = sk.encrypt(&zero, rng).unwrap();
         // The polynomials of a public key should not allow for variable time
         // computation. Only timing metadata changes, so the seed remains valid.
         c.c.iter_mut()
@@ -37,14 +36,10 @@ impl PublicKey {
     }
 }
 
-impl FheParametrized for PublicKey {
-    type Parameters = BfvParameters;
-}
-
-impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
-    type Error = Error;
-
-    fn try_encrypt<R: RngCore + CryptoRng>(
+impl PublicKey {
+    /// Encrypt a plaintext with compatible parameters using caller-owned
+    /// cryptographic randomness.
+    pub fn encrypt<R: RngCore + CryptoRng>(
         &self,
         pt: &Plaintext,
         rng: &mut R,
@@ -72,19 +67,19 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         };
 
         let ctx = self.par.context_at_level(ct.level)?;
-        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
-        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
-        let e2 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
+        let u = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.inner.variance, rng)?);
+        let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.inner.variance, rng)?);
+        let e2 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.inner.variance, rng)?);
 
         let m = Zeroizing::new(pt.to_poly());
-        let mut c0 = u.as_ref() * &ct[0];
+        let mut c0 = u.as_ref() * &ct.c[0];
         c0 += &e1;
         c0 += &m;
-        let mut c1 = u.as_ref() * &ct[1];
+        let mut c1 = u.as_ref() * &ct.c[1];
         c1 += &e2;
 
         // It is now safe to enable variable time computations.
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
         c0.allow_variable_time_computations(variable_time);
         c1.allow_variable_time_computations(variable_time);
 
@@ -105,23 +100,41 @@ impl From<&PublicKey> for PublicKeyProto {
     }
 }
 
-impl Serialize for PublicKey {
-    fn to_bytes(&self) -> Vec<u8> {
+impl PublicKey {
+    /// Serialize in the existing protobuf wire format.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
         PublicKeyProto::from(self).encode_to_vec()
     }
 }
 
-impl DeserializeParametrized for PublicKey {
-    type Error = Error;
+impl PublicKey {
+    /// Import validated protobuf bytes, binding contextual values to the
+    /// supplied parameters.
+    pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
 
-    fn from_bytes(bytes: &[u8], par: &Arc<Self::Parameters>) -> Result<Self> {
-        let proto: PublicKeyProto = Message::decode(bytes).map_err(|_| {
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::PublicKey,
+            Some(par),
+            limits,
+        )?;
+        let proto: PublicKeyProto = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::PublicKey,
+                object: crate::error::SerializedObject::PublicKey,
+                source,
             })
         })?;
         if let Some(proto_c) = &proto.c {
-            let mut c = Ciphertext::try_convert_from(proto_c, par)?;
+            let mut c = Ciphertext::from_proto(proto_c, par, limits)?;
             if c.level != 0 {
                 Err(Error::SerializationError(
                     SerializationError::InvalidPublicKeyLevel {
@@ -142,7 +155,7 @@ impl DeserializeParametrized for PublicKey {
         } else {
             Err(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::PublicKeyCiphertext,
+                    field: crate::error::SerializedField::PublicKeyCiphertext,
                 },
             ))
         }
@@ -152,21 +165,21 @@ impl DeserializeParametrized for PublicKey {
 #[cfg(test)]
 mod tests {
     use super::PublicKey;
-    use crate::bfv::{Encoding, Plaintext, SecretKey, parameters::BfvParameters};
-    use fhe_traits::{DeserializeParametrized, FheDecrypter, FheEncoder, FheEncrypter, Serialize};
+    use crate::bfv::{Encoding, Plaintext, SecretKey, parameters::Parameters};
+
     use rand::rng;
     use std::error::Error;
 
     #[test]
     fn keygen() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(1, 16);
-        let sk = SecretKey::random(&params, &mut rng);
-        let pk = PublicKey::new(&sk, &mut rng);
+        let params = Parameters::test_parameters(1, 16);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pk = PublicKey::from_secret_key(&sk, &mut rng);
         assert_eq!(pk.par, params);
         assert_eq!(
-            sk.try_decrypt(&pk.c)?,
-            Plaintext::zero(Encoding::poly(), &params)?
+            sk.decrypt(&pk.c)?.poly_ntt,
+            Plaintext::zero(&params, 0)?.poly_ntt
         );
         Ok(())
     }
@@ -175,26 +188,33 @@ mod tests {
     fn encrypt_decrypt() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
             for level in 0..params.max_level() {
                 for _ in 0..20 {
-                    let sk = SecretKey::random(&params, &mut rng);
-                    let pk = PublicKey::new(&sk, &mut rng);
+                    let sk = SecretKey::generate(&params, &mut rng);
+                    let pk = PublicKey::from_secret_key(&sk, &mut rng);
 
-                    let pt = Plaintext::try_encode(
-                        &fhe_math::zq::Modulus::new(params.plaintext())
+                    let pt = Plaintext::encode_at_level(
+                        &params,
+                        &fhe_math::zq::Modulus::new(params.plaintext_modulus_u64().unwrap())
                             .unwrap()
                             .random_vec(params.degree(), &mut rng),
-                        Encoding::poly_at_level(level),
-                        &params,
+                        Encoding::Polynomial,
+                        level,
                     )?;
-                    let ct = pk.try_encrypt(&pt, &mut rng)?;
-                    let pt2 = sk.try_decrypt(&ct)?;
+                    let ct = pk.encrypt(&pt, &mut rng)?;
+                    let pt2 = sk.decrypt(&ct)?;
 
-                    println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-                    assert_eq!(pt2, pt);
+                    println!(
+                        "Noise: {}",
+                        sk.measure_noise_vartime(
+                            &ct,
+                            crate::SecretDependentDiagnostics::acknowledge_leakage()
+                        )?
+                    );
+                    assert_eq!(pt2.poly_ntt, pt.poly_ntt);
                 }
             }
         }
@@ -205,13 +225,13 @@ mod tests {
     #[test]
     fn encrypt_rejects_mismatched_parameters() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        let params = BfvParameters::default_arc(1, 16);
-        let other_params = BfvParameters::default_arc(1, 16);
-        let sk = SecretKey::random(&params, &mut rng);
-        let pk = PublicKey::new(&sk, &mut rng);
-        let pt = Plaintext::try_encode(&[1u64][..], Encoding::poly(), &other_params)?;
+        let params = Parameters::test_parameters(1, 16);
+        let other_params = Parameters::test_parameters(1, 32);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pk = PublicKey::from_secret_key(&sk, &mut rng);
+        let pt = Plaintext::encode(&other_params, &[1u64][..], Encoding::Polynomial)?;
 
-        assert!(pk.try_encrypt(&pt, &mut rng).is_err());
+        assert!(pk.encrypt(&pt, &mut rng).is_err());
         Ok(())
     }
 
@@ -219,11 +239,11 @@ mod tests {
     fn test_serialize() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(1, 16),
-            BfvParameters::default_arc(6, 16),
+            Parameters::test_parameters(1, 16),
+            Parameters::test_parameters(6, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
-            let pk = PublicKey::new(&sk, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
+            let pk = PublicKey::from_secret_key(&sk, &mut rng);
             let bytes = pk.to_bytes();
             assert_eq!(pk, PublicKey::from_bytes(&bytes, &params)?);
         }
@@ -231,10 +251,10 @@ mod tests {
     }
     #[test]
     fn timing_policy_preserves_seeded_serialization() -> Result<(), Box<dyn Error>> {
-        let params = BfvParameters::default_arc(2, 16);
+        let params = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let pk = PublicKey::new(&sk, &mut rng);
+        let sk = SecretKey::generate(&params, &mut rng);
+        let pk = PublicKey::from_secret_key(&sk, &mut rng);
         assert!(pk.c.seed.is_some());
         let bytes = pk.to_bytes();
         let restored = PublicKey::from_bytes(&bytes, &params)?;

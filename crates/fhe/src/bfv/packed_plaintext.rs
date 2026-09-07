@@ -1,25 +1,24 @@
 //! Compact in-memory storage of plaintext NTT coefficients.
 
-use super::{BfvParameters, Encoding, Plaintext};
-use fhe_math::rq::{Ntt, Poly, traits::TryConvertFrom};
-use std::sync::Arc;
+use super::{Parameters, Plaintext};
+use fhe_math::rq::{Ntt, Poly};
 use zeroize::Zeroize;
 
 /// Compact in-memory plaintext storage with bit-packed NTT residues.
 ///
 /// Each residue uses the bit width of its ciphertext modulus. For example, two
 /// 36-bit moduli occupy 72 bits per coefficient instead of 128. Packing is
-/// exact: [`Self::unpack`] restores the same plaintext, encoding, level, and
+/// exact: [`Self::unpack`] restores the same plaintext, level, and
 /// local timing permission without any transforms.
-/// [`super::DotProductScalarWorkspace::dot_product_scalar_packed`]
+/// [`super::evaluation::DotProductScalarWorkspace::dot_product_scalar_packed_iter`]
 /// consumes this storage directly. This type is not a wire format.
 ///
 /// Packing still requires the initial plaintext NTT. It trades additional
 /// decoding work during dot products for lower retained database memory.
 #[derive(Clone)]
 pub struct PackedPlaintext {
-    pub(crate) par: Arc<BfvParameters>,
-    pub(crate) encoding: Option<Encoding>,
+    pub(crate) par: Parameters,
+
     pub(crate) level: usize,
     pub(crate) public: bool,
     pub(crate) coefficients: Vec<u8>,
@@ -28,7 +27,7 @@ pub struct PackedPlaintext {
 /// A borrowed row of packed NTT residues for scalar dot products.
 #[derive(Clone, Copy)]
 pub struct PackedPlaintextView<'a> {
-    pub(crate) par: &'a Arc<BfvParameters>,
+    pub(crate) par: &'a Parameters,
     pub(crate) level: usize,
     pub(crate) public: bool,
     pub(crate) coefficients: &'a [u8],
@@ -51,21 +50,17 @@ impl<'a> From<&'a PackedPlaintext> for PackedPlaintextView<'a> {
 /// A single allocation avoids per-plaintext allocator size-class padding. The
 /// collection retains each row's timing permission; its borrowed views can be
 /// consumed directly by scalar dot products. Stored bytes are cleared on drop.
-pub struct PackedPlaintextVec {
-    par: Arc<BfvParameters>,
+pub struct PackedPlaintextBatch {
+    par: Parameters,
     level: usize,
     row_bytes: usize,
     coefficients: Vec<u8>,
     public: Vec<bool>,
 }
 
-impl PackedPlaintextVec {
+impl PackedPlaintextBatch {
     /// Reserve coefficient storage for `capacity` plaintexts at this level.
-    pub fn with_capacity(
-        par: &Arc<BfvParameters>,
-        level: usize,
-        capacity: usize,
-    ) -> crate::Result<Self> {
+    pub fn with_capacity(par: &Parameters, level: usize, capacity: usize) -> crate::Result<Self> {
         let ctx = par.context_at_level(level)?;
         let row_bytes = ctx
             .moduli_operators()
@@ -84,17 +79,75 @@ impl PackedPlaintextVec {
         })
     }
 
+    /// Pack borrowed plaintexts with these shared parameters and level. Empty
+    /// input creates an empty batch. Context validation is fallible.
+    pub fn try_from_iter<'a>(
+        par: &Parameters,
+        level: usize,
+        plaintexts: impl IntoIterator<Item = &'a Plaintext>,
+    ) -> crate::Result<Self> {
+        let mut batch = Self::with_capacity(par, level, 0)?;
+        batch.try_extend(plaintexts)?;
+        Ok(batch)
+    }
+
     /// Pack and append a plaintext. Parameter/level errors leave storage
     /// unchanged.
     pub fn push(&mut self, pt: &Plaintext) -> crate::Result<()> {
         let ctx = self.par.context_at_level(self.level)?;
         pt.validate_for_context(&self.par, self.level, ctx)?;
+        self.reserve_rows(1);
+        self.append_validated(pt);
+        Ok(())
+    }
+
+    /// Snapshot and validate all inputs before appending. A returned error
+    /// leaves the batch unchanged, including its allocation. Each iterator
+    /// is used once.
+    pub fn try_extend<'a>(
+        &mut self,
+        plaintexts: impl IntoIterator<Item = &'a Plaintext>,
+    ) -> crate::Result<()> {
+        let plaintexts: Vec<_> = plaintexts.into_iter().collect();
+        let ctx = self.par.context_at_level(self.level)?;
+        for pt in &plaintexts {
+            pt.validate_for_context(&self.par, self.level, ctx)?;
+        }
+        self.reserve_rows(plaintexts.len());
+        for pt in plaintexts {
+            self.append_validated(pt);
+        }
+        Ok(())
+    }
+
+    fn reserve_rows(&mut self, additional: usize) {
+        let needed = self
+            .coefficients
+            .len()
+            .saturating_add(additional.saturating_mul(self.row_bytes));
+        if needed > self.coefficients.capacity() {
+            let mut replacement =
+                Vec::with_capacity(needed.max(self.coefficients.capacity().saturating_mul(2)));
+            replacement.extend_from_slice(&self.coefficients);
+            self.coefficients.as_mut_slice().zeroize();
+            self.coefficients = replacement;
+        }
+        self.public.reserve(additional);
+    }
+
+    fn append_validated(&mut self, pt: &Plaintext) {
         self.coefficients.truncate(self.coefficients.len() - 8);
         append_coefficients(pt, &mut self.coefficients);
         self.coefficients.resize(self.coefficients.len() + 8, 0);
         self.public
             .push(pt.poly_ntt.allows_variable_time_computations());
-        Ok(())
+    }
+
+    /// Clear all rows and their bytes, retaining capacity for reuse.
+    pub fn clear(&mut self) {
+        self.zeroize();
+        self.coefficients.truncate(8);
+        self.public.clear();
     }
 
     /// Number of stored plaintexts.
@@ -116,32 +169,67 @@ impl PackedPlaintextVec {
         self.coefficients.len()
     }
 
-    /// Iterate over borrowed rows without allocating or unpacking coefficients.
-    pub fn iter(
-        &self,
-    ) -> impl ExactSizeIterator<Item = PackedPlaintextView<'_>> + DoubleEndedIterator + Clone {
-        self.public.iter().enumerate().map(|(index, &public)| {
-            let start = index * self.row_bytes;
-            PackedPlaintextView {
-                par: &self.par,
-                level: self.level,
-                public,
-                coefficients: self
-                    .coefficients
-                    .get(start..start + self.row_bytes + 8)
-                    .unwrap(),
-            }
+    /// Borrow one row, without allocating or unpacking coefficients.
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<PackedPlaintextView<'_>> {
+        let &public = self.public.get(index)?;
+        let start = index * self.row_bytes;
+        Some(PackedPlaintextView {
+            par: &self.par,
+            level: self.level,
+            public,
+            coefficients: self.coefficients.get(start..start + self.row_bytes + 8)?,
         })
+    }
+
+    /// Iterate over borrowed rows without allocating or unpacking coefficients.
+    #[must_use]
+    pub fn iter(&self) -> PackedPlaintextIter<'_> {
+        PackedPlaintextIter {
+            batch: self,
+            indices: 0..self.len(),
+        }
     }
 }
 
-impl Zeroize for PackedPlaintextVec {
+/// Borrowed iteration over the validated rows of a [`PackedPlaintextBatch`].
+#[derive(Clone)]
+pub struct PackedPlaintextIter<'a> {
+    batch: &'a PackedPlaintextBatch,
+    indices: std::ops::Range<usize>,
+}
+
+impl<'a> Iterator for PackedPlaintextIter<'a> {
+    type Item = PackedPlaintextView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.batch.get(self.indices.next()?)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.indices.size_hint()
+    }
+}
+impl DoubleEndedIterator for PackedPlaintextIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.batch.get(self.indices.next_back()?)
+    }
+}
+impl ExactSizeIterator for PackedPlaintextIter<'_> {}
+impl std::iter::FusedIterator for PackedPlaintextIter<'_> {}
+impl<'a> IntoIterator for &'a PackedPlaintextBatch {
+    type Item = PackedPlaintextView<'a>;
+    type IntoIter = PackedPlaintextIter<'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl Zeroize for PackedPlaintextBatch {
     fn zeroize(&mut self) {
         self.coefficients.as_mut_slice().zeroize();
     }
 }
 
-impl Drop for PackedPlaintextVec {
+impl Drop for PackedPlaintextBatch {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -218,7 +306,7 @@ impl From<&Plaintext> for PackedPlaintext {
         coefficients.resize(coefficients.len() + 8, 0);
         Self {
             par: pt.par.clone(),
-            encoding: pt.encoding.clone(),
+
             level: pt.level(),
             public: pt.poly_ntt.allows_variable_time_computations(),
             coefficients,
@@ -261,8 +349,17 @@ impl PackedPlaintext {
         }
         Plaintext {
             par: self.par.clone(),
-            encoding: self.encoding.clone(),
-            poly_ntt: Poly::<Ntt>::try_convert_from(coefficients, ctx, self.public).unwrap(),
+
+            poly_ntt: Poly::<Ntt>::from_rns_residues_with_timing(
+                ndarray::Array2::from_shape_vec(
+                    (ctx.moduli().len(), self.par.degree()),
+                    coefficients,
+                )
+                .unwrap(),
+                ctx,
+                (self.public).then(|| crate::VariableTime::new(crate::PublicData::assert_public())),
+            )
+            .unwrap(),
         }
     }
 
@@ -277,8 +374,10 @@ impl PackedPlaintext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfv::{BfvParametersBuilder, Ciphertext, DotProductScalarWorkspace};
-    use fhe_traits::{FheEncoder, PublicData, VariableTime};
+    use crate::bfv::{
+        Ciphertext, Encoding, ParametersBuilder, evaluation::DotProductScalarWorkspace,
+    };
+    use crate::{PublicData, VariableTime};
 
     #[test]
     fn word_packing_matches_byte_packing_for_every_width() {
@@ -295,7 +394,7 @@ mod tests {
                     let mut actual = vec![1, 2, 3];
                     append_row(&row, bits, &mut actual);
                     let mut expected = vec![1, 2, 3];
-                    fhe_util::transcode_to_bytes_into(&row, bits, &mut expected);
+                    fhe_util::transcode_to_bytes_into(&row, bits, &mut expected).unwrap();
                     assert_eq!(actual, expected);
                 }
             }
@@ -305,17 +404,17 @@ mod tests {
     #[test]
     fn contiguous_storage_grows_validates_and_preserves_each_rows_permission() -> crate::Result<()>
     {
-        let par = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[36, 62])
-            .build_arc()?;
-        let mut data = PackedPlaintextVec::with_capacity(&par, 0, 2)?;
+        let par = ParametersBuilder::new()
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([36, 62])
+            .build()?;
+        let mut data = PackedPlaintextBatch::with_capacity(&par, 0, 2)?;
         assert!(data.is_empty());
         assert_eq!(data.iter().len(), 0);
         let mut originals = Vec::new();
         for i in 0..5 {
-            let mut pt = Plaintext::try_encode(&[i as u64, 16, 0, 1][..], Encoding::poly(), &par)?;
+            let mut pt = Plaintext::encode(&par, &[i as u64, 16, 0, 1][..], Encoding::Polynomial)?;
             if i % 2 == 0 {
                 pt.poly_ntt
                     .allow_variable_time_computations(VariableTime::new(
@@ -341,29 +440,35 @@ mod tests {
                 original.poly_ntt.allows_variable_time_computations()
             );
             assert_eq!(
-                workspace.dot_product_scalar_packed(std::iter::once(&ct), std::iter::once(view))?,
-                &ct * original
+                workspace
+                    .dot_product_scalar_packed_iter(std::iter::once(&ct), std::iter::once(view))?,
+                ct.multiply_plaintext(original).unwrap()
             );
         }
         assert_eq!(
-            workspace
-                .dot_product_scalar_packed(std::iter::repeat_n(&ct, 3), data.iter().step_by(2))?,
-            workspace
-                .dot_product_scalar(std::iter::repeat_n(&ct, 3), originals.iter().step_by(2))?
+            workspace.dot_product_scalar_packed_iter(
+                std::iter::repeat_n(&ct, 3),
+                data.iter().step_by(2)
+            )?,
+            workspace.dot_product_scalar_iter(
+                std::iter::repeat_n(&ct, 3),
+                originals.iter().step_by(2)
+            )?
         );
         let previous = data.coefficients.clone();
-        let lower = Plaintext::try_encode(&[3u64][..], Encoding::poly_at_level(1), &par)?;
+        let lower = Plaintext::encode_at_level(&par, &[3u64][..], Encoding::Polynomial, 1)?;
         assert!(data.push(&lower).is_err());
-        let foreign = BfvParametersBuilder::new()
-            .set_degree(16)
-            .set_plaintext_modulus(17)
-            .set_moduli_sizes(&[36, 62])
-            .build_arc()?;
+        let foreign = ParametersBuilder::new()
+            .noise_variance(11)
+            .degree(16)
+            .plaintext_modulus(17_u64)
+            .ciphertext_modulus_bits([36, 62])
+            .build()?;
         assert!(
-            data.push(&Plaintext::try_encode(
+            data.push(&Plaintext::encode(
+                &foreign,
                 &[3u64][..],
-                Encoding::poly(),
-                &foreign
+                Encoding::Polynomial
             )?)
             .is_err()
         );
@@ -372,12 +477,13 @@ mod tests {
         data.zeroize();
         assert_eq!(data.len(), 5);
         assert!(data.coefficients.iter().all(|x| *x == 0));
-        let zero = workspace.dot_product_scalar_packed(std::iter::repeat_n(&ct, 5), data.iter())?;
+        let zero =
+            workspace.dot_product_scalar_packed_iter(std::iter::repeat_n(&ct, 5), data.iter())?;
         assert!(
             zero.iter()
                 .all(|p| p.coefficients().iter().all(|x| *x == 0))
         );
-        assert!(PackedPlaintextVec::with_capacity(&par, 9, 0).is_err());
+        assert!(PackedPlaintextBatch::with_capacity(&par, 9, 0).is_err());
         Ok(())
     }
 }

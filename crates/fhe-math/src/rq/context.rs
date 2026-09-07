@@ -5,7 +5,12 @@ use std::{fmt::Debug, sync::Arc};
 use crate::{Error, Result, ntt::NttOperator, rns::RnsContext, zq::Modulus};
 
 /// Struct that holds the context associated with elements in rq.
-#[derive(Default, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rq::Context::default();
+/// ```
+#[derive(Clone, PartialEq, Eq)]
 pub struct Context {
     pub(crate) moduli: Box<[u64]>,
     pub(crate) q: Box<[Modulus]>,

@@ -1,15 +1,36 @@
 name: Security audit
+
 on:
-  schedule:
-    - cron: '0 0 * * 1'
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Avoid the start-of-hour scheduling peak; audit even without code changes.
+    - cron: '23 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rs/audit-check@v1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+      - name: Install CI tools
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        with:
+          tool: cargo-audit
+      # The CLI reports failures directly, including on forks and Dependabot PRs,
+      # without needing write access to checks or issues.
+      - name: Audit locked dependencies
+        run: cargo audit --file Cargo.lock

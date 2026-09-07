@@ -3,10 +3,11 @@
     reason = "error enums rely on variant docs and error messages"
 )]
 
+/// Resource-limit errors shared with the utility crate.
+pub use fhe_util::DecodeLimitError;
+
 use num_bigint::BigUint;
 use thiserror::Error;
-
-use crate::bfv::Encoding;
 
 /// The Result type for this library.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -16,6 +17,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum Error {
+    /// An import exceeded a configured resource limit.
+    #[error(transparent)]
+    DecodeLimit(#[from] DecodeLimitError),
+
     /// An error from the underlying mathematical library.
     #[error("Math library error: {0}")]
     MathError(#[from] fhe_math::Error),
@@ -82,7 +87,7 @@ pub enum ParameterSource {
     Polynomial,
     KeySwitchingKey,
     RelinearizationKey,
-    Multiplicator,
+    MultiplicationPlan,
 }
 
 /// Ciphertext validation failures.
@@ -90,6 +95,11 @@ pub enum ParameterSource {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum CiphertextError {
+    #[error("Ciphertext component count mismatch: {left} and {right}")]
+    ComponentCountMismatch { left: usize, right: usize },
+    #[error("Ciphertext components must have canonical polynomial coefficients")]
+    NonCanonicalPolynomial,
+
     #[error("Expected at least {minimum} polynomials, found {actual}")]
     TooFewPolynomials { actual: usize, minimum: usize },
 
@@ -115,6 +125,7 @@ pub enum CiphertextError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CiphertextOperation {
+    RgswProduct,
     Galois,
     EvaluationKey,
     Relinearization,
@@ -128,9 +139,6 @@ pub enum CiphertextOperation {
 pub enum PlaintextError {
     #[error("Polynomial context does not match plaintext level {level}")]
     PolynomialContextMismatch { level: usize },
-
-    #[error("No plaintext encoding was specified")]
-    MissingEncoding,
 
     #[error("No NTT operator is available for the plaintext parameters")]
     NttOperatorUnavailable,
@@ -150,9 +158,6 @@ pub enum PlaintextError {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum EncodingError {
-    #[error("Encoding mismatch: found {found:?}, expected {expected:?}")]
-    Mismatch { found: Encoding, expected: Encoding },
-
     #[error("SIMD encoding requires an NTT operator for the plaintext modulus")]
     SimdUnavailable,
 }
@@ -232,8 +237,11 @@ pub enum MultipartyError {
     #[error("Expected {expected} common random polynomials, got {actual}")]
     InvalidCommonRandomPolynomialCount { actual: usize, expected: usize },
 
-    #[error("Round-two relinearization share is missing its round-one aggregation")]
-    MissingRelinearizationRoundOneShare,
+    #[error("Protocol shares have incompatible parameters, levels, or shapes")]
+    IncompatibleShares,
+
+    #[error("Round-two shares depend on different first-round aggregations")]
+    RoundOneAggregationMismatch,
 }
 
 /// Separate enum for errors arising from serialization.
@@ -246,7 +254,11 @@ pub enum SerializationError {
 
     /// A protobuf payload could not be decoded.
     #[error("Failed to decode {object:?}")]
-    Decode { object: SerializedObject },
+    Decode {
+        object: SerializedObject,
+        #[source]
+        source: prost::DecodeError,
+    },
 
     /// A required protobuf field is absent.
     #[error("Missing required field {field:?}")]
@@ -341,6 +353,20 @@ pub enum SerializedPolynomialComponent {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum ParametersError {
+    /// The polynomial degree has not been configured.
+    #[error("Missing polynomial degree")]
+    MissingDegree,
+    /// The plaintext modulus has not been configured.
+    #[error("Missing plaintext modulus")]
+    MissingPlaintextModulus,
+    /// No existing preselected profile matches the requested settings.
+    #[error("No profile for degree {degree} and {plaintext_bits}-bit plaintext modulus")]
+    UnavailableProfile {
+        /// Polynomial degree.
+        degree: usize,
+        /// Plaintext modulus bit length.
+        plaintext_bits: usize,
+    },
     /// Indicates that the degree is invalid.
     #[error("Invalid polynomial degree {degree}: must be a power of 2 between {min} and {max}")]
     InvalidDegree {
@@ -519,6 +545,7 @@ mod tests {
         assert_eq!(
             Error::SerializationError(SerializationError::Decode {
                 object: SerializedObject::Ciphertext,
+                source: prost::encoding::decode_varint(&mut &[][..]).unwrap_err(),
             })
             .to_string(),
             "Serialization error: Failed to decode Ciphertext"

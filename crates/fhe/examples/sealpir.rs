@@ -19,10 +19,7 @@ mod util;
 use clap::Parser;
 use fhe::bfv;
 use fhe_math::rq::{Ntt, Poly};
-use fhe_traits::{
-    DeserializeParametrized, FheDecoder, FheDecrypter, FheEncoder, FheEncoderVariableTime,
-    FheEncrypter, Serialize,
-};
+
 use fhe_util::{inverse, transcode_bidirectional, transcode_to_bytes};
 use indicatif::HumanBytes;
 use itertools::Itertools;
@@ -74,11 +71,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Let's generate the BFV parameters structure.
     let params = timeit!(
         "Parameters generation",
-        bfv::BfvParametersBuilder::new()
-            .set_degree(degree)
-            .set_plaintext_modulus(plaintext_modulus)
-            .set_moduli_sizes(&moduli_sizes)
-            .build_arc()?
+        bfv::ParametersBuilder::new()
+            .degree(degree)
+            .plaintext_modulus(plaintext_modulus)
+            .ciphertext_modulus_bits(moduli_sizes)
+            .build()?
     );
 
     // Proprocess the database on the server side: the database will be reshaped
@@ -100,11 +97,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // the server will which enable to obliviously expand a ciphertext up to (dim1 +
     // dim2) values, i.e. with expansion level ceil(log2(dim1 + dim2)).
     let (sk, ek_expansion_serialized) = timeit!("Client setup", {
-        let sk = bfv::SecretKey::random(&params, &mut rng);
+        let sk = bfv::SecretKey::generate(&params, &mut rng);
         let level = (dim1 + dim2).next_power_of_two().ilog2() as usize;
         println!("expansion_level = {level}");
-        let ek_expansion = bfv::EvaluationKeyBuilder::new_leveled(&sk, 1, 0)?
-            .enable_expansion(level)?
+        let ek_expansion = bfv::evaluation::EvaluationKeyBuilder::new(&sk)
+            .ciphertext_level(1)
+            .key_level(0)
+            .enable_expansion(level)
             .build(&mut rng)?;
         let ek_expansion_serialized = ek_expansion.to_bytes();
         (sk, ek_expansion_serialized)
@@ -117,7 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Server setup: the server receives the evaluation key and deserializes it.
     let ek_expansion = timeit!(
         "Server setup",
-        bfv::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
+        bfv::evaluation::EvaluationKey::from_bytes(&ek_expansion_serialized, &params)?
     );
 
     // Client query: when the client wants to retrieve the `index`-th row of the
@@ -143,15 +142,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         let inv = inverse(1 << level, plaintext_modulus).ok_or("No inverse")?;
         pt[query_index / dim2] = inv;
         pt[dim1 + (query_index % dim2)] = inv;
-        let query_pt = bfv::Plaintext::try_encode(&pt, bfv::Encoding::poly_at_level(1), &params)?;
-        let query: bfv::Ciphertext = sk.try_encrypt(&query_pt, &mut rng)?;
+        let query_pt = bfv::Plaintext::encode_at_level(&params, &pt, bfv::Encoding::Polynomial, 1)?;
+        let query: bfv::Ciphertext = sk.encrypt(&query_pt, &mut rng)?;
         query.to_bytes()
     });
     println!("📄 Query: {}", HumanBytes(query.len() as u64));
 
     // Server response: The server receives the query, and after deserializing it,
     // performs the following steps:
-    // 1- It expands the query ciphertext into `dim1 + dim2` ciphertexts.
+    // 1- It expand the query ciphertext into `dim1 + dim2` ciphertexts.
     //    If the client created the query correctly, the server will have obtained
     //    `dim1 + dim2` ciphertexts all encrypting `0`, expect the `i`th and
     //    `dim1 + j`th ones encrypting `1`.
@@ -162,11 +161,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     //    the inner product of the last `dim2` ciphertexts from step 1 with the
     //    transposed of the plaintext obtained above.
     // The operation is done `5` times to compute an average response time.
-    let mut dot_workspace = bfv::DotProductScalarWorkspace::new(&params, 1)?;
+    let mut dot_workspace = bfv::evaluation::DotProductScalarWorkspace::new(&params, 1)?;
     let responses: Vec<Vec<u8>> = timeit_n!("Server response", 5, {
         let start = std::time::Instant::now();
         let query = bfv::Ciphertext::from_bytes(&query, &params)?;
-        let expanded_query = ek_expansion.expands(&query, dim1 + dim2)?;
+        let expanded_query = ek_expansion.expand(&query, dim1 + dim2)?;
         println!("Expand: {}", DisplayDuration(start.elapsed()));
 
         let query_vec = &expanded_query[..dim1];
@@ -187,27 +186,44 @@ fn main() -> Result<(), Box<dyn Error>> {
                     2 * (params.degree() * (64 - params.moduli()[0].leading_zeros() as usize))
                         .div_ceil(plaintext_modulus.ilog2() as usize),
                 );
-                pt_values.append(&mut transcode_bidirectional(
-                    c.first().unwrap().coefficients().as_slice().unwrap(),
-                    64 - params.moduli()[0].leading_zeros() as usize,
-                    plaintext_modulus.ilog2() as usize,
-                ));
-                pt_values.append(&mut transcode_bidirectional(
-                    c.get(1).unwrap().coefficients().as_slice().unwrap(),
-                    64 - params.moduli()[0].leading_zeros() as usize,
-                    plaintext_modulus.ilog2() as usize,
-                ));
-                bfv::PlaintextVec::try_encode_vt(
-                    &pt_values,
-                    bfv::Encoding::poly_at_level(1),
+                pt_values.append(
+                    &mut transcode_bidirectional(
+                        c.components()
+                            .first()
+                            .unwrap()
+                            .coefficients()
+                            .as_slice()
+                            .unwrap(),
+                        64 - params.moduli()[0].leading_zeros() as usize,
+                        plaintext_modulus.ilog2() as usize,
+                    )
+                    .unwrap(),
+                );
+                pt_values.append(
+                    &mut transcode_bidirectional(
+                        c.components()
+                            .get(1)
+                            .unwrap()
+                            .coefficients()
+                            .as_slice()
+                            .unwrap(),
+                        64 - params.moduli()[0].leading_zeros() as usize,
+                        plaintext_modulus.ilog2() as usize,
+                    )
+                    .unwrap(),
+                );
+                bfv::Plaintext::encode_chunks_public_at_level(
                     &params,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                    &pt_values,
+                    bfv::Encoding::Polynomial,
+                    1,
+                    fhe::VariableTime::new(fhe::PublicData::assert_public()),
                 )
             })
-            .collect::<fhe::Result<Vec<bfv::PlaintextVec>>>()?;
+            .collect::<fhe::Result<Vec<Vec<bfv::Plaintext>>>>()?;
         (0..fold[0].len())
             .map(|i| {
-                let mut outi = dot_workspace.dot_product_scalar(
+                let mut outi = dot_workspace.dot_product_scalar_iter(
                     expanded_query[dim1..].iter(),
                     fold.iter().map(|pts| &pts[i]),
                 )?;
@@ -231,13 +247,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             .iter()
             .map(|r| bfv::Ciphertext::from_bytes(r, &params).unwrap())
             .collect_vec();
-        let decrypted_pt = responses
-            .iter()
-            .flat_map(|r| sk.try_decrypt(r))
-            .collect_vec();
+        let decrypted_pt = responses.iter().flat_map(|r| sk.decrypt(r)).collect_vec();
         let decrypted_vec = decrypted_pt
             .iter()
-            .flat_map(|pt| Vec::<u64>::try_decode(pt, bfv::Encoding::poly_at_level(2)).unwrap())
+            .flat_map(|pt| pt.decode(bfv::Encoding::Polynomial).unwrap())
             .collect_vec();
         let expect_ncoefficients = (params.degree()
             * (64 - params.moduli()[0].leading_zeros() as usize))
@@ -247,37 +260,39 @@ fn main() -> Result<(), Box<dyn Error>> {
             &decrypted_vec[..expect_ncoefficients],
             plaintext_modulus.ilog2() as usize,
             64 - params.moduli()[0].leading_zeros() as usize,
-        );
+        )
+        .unwrap();
         let mut poly1 = transcode_bidirectional(
             &decrypted_vec[expect_ncoefficients..2 * expect_ncoefficients],
             plaintext_modulus.ilog2() as usize,
             64 - params.moduli()[0].leading_zeros() as usize,
-        );
+        )
+        .unwrap();
         assert!(poly0.len() >= params.degree());
         assert!(poly1.len() >= params.degree());
         poly0.truncate(params.degree());
         poly1.truncate(params.degree());
 
         let ctx = params.context_at_level(2)?;
-        let ct = bfv::Ciphertext::new(
+        let ct = bfv::Ciphertext::from_components(
             vec![
-                Poly::<Ntt>::try_convert_from_public(
-                    poly0,
+                Poly::<Ntt>::from_rns_slice_with_timing(
+                    &poly0,
                     ctx,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                    Some(fhe::VariableTime::new(fhe::PublicData::assert_public())),
                 )?,
-                Poly::<Ntt>::try_convert_from_public(
-                    poly1,
+                Poly::<Ntt>::from_rns_slice_with_timing(
+                    &poly1,
                     ctx,
-                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                    Some(fhe::VariableTime::new(fhe::PublicData::assert_public())),
                 )?,
             ],
             &params,
         )?;
 
-        let pt = sk.try_decrypt(&ct).unwrap();
-        let pt = Vec::<u64>::try_decode(&pt, bfv::Encoding::poly_at_level(2))?;
-        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize);
+        let pt = sk.decrypt(&ct).unwrap();
+        let pt = pt.decode(bfv::Encoding::Polynomial)?;
+        let plaintext = transcode_to_bytes(&pt, plaintext_modulus.ilog2() as usize).unwrap();
         let offset = index
             % number_elements_per_plaintext(
                 params.degree(),
@@ -285,9 +300,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 elements_size,
             );
 
-        println!("Noise in response (ct): {:?}", unsafe {
-            sk.measure_noise(&ct)
-        });
+        println!(
+            "Noise in response (ct): {:?}",
+            sk.measure_noise_vartime(&ct, fhe::SecretDependentDiagnostics::acknowledge_leakage())
+        );
 
         plaintext[offset * elements_size..(offset + 1) * elements_size].to_vec()
     });

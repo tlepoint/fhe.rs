@@ -12,6 +12,67 @@ pub use native::NttOperator;
 #[cfg(feature = "tfhe-ntt")]
 pub use tfhe::NttOperator;
 
+impl NttOperator {
+    fn validate_input(&self, input: &[u64]) -> crate::Result<()> {
+        if input.len() != self.size() {
+            return Err(crate::Error::NttLengthMismatch {
+                actual: input.len(),
+                expected: self.size(),
+            });
+        }
+        // Visit every coefficient: do not reveal the first noncanonical index.
+        let invalid = input
+            .iter()
+            .fold(0_u64, |bad, &x| bad | u64::from(x >= self.modulus()));
+        if invalid != 0 {
+            return Err(crate::Error::NonCanonicalNttInput {
+                modulus: self.modulus(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Forward transform of canonical residues, with validation before
+    /// mutation.
+    pub fn try_forward(&self, input: &mut [u64]) -> crate::Result<()> {
+        self.validate_input(input)?;
+        self.forward(input);
+        Ok(())
+    }
+
+    /// Inverse transform of canonical residues, with validation before
+    /// mutation.
+    pub fn try_backward(&self, input: &mut [u64]) -> crate::Result<()> {
+        self.validate_input(input)?;
+        self.backward(input);
+        Ok(())
+    }
+
+    /// Checked variable-time forward transform of explicitly public residues.
+    pub fn try_forward_public(
+        &self,
+        input: &mut [u64],
+        _permission: crate::VariableTime,
+    ) -> crate::Result<()> {
+        self.validate_input(input)?;
+        // Length and canonical range were checked; the mutable slice is live
+        // and exclusive for the full duration of the raw kernel.
+        unsafe { self.forward_vt(input.as_mut_ptr()) };
+        Ok(())
+    }
+
+    /// Checked variable-time inverse transform of explicitly public residues.
+    pub fn try_backward_public(
+        &self,
+        input: &mut [u64],
+        _permission: crate::VariableTime,
+    ) -> crate::Result<()> {
+        self.validate_input(input)?;
+        unsafe { self.backward_vt(input.as_mut_ptr()) };
+        Ok(())
+    }
+}
+
 /// Returns whether a modulus p is prime and supports the Number Theoretic
 /// Transform of size n.
 ///

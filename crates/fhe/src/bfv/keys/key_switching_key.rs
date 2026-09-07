@@ -1,15 +1,14 @@
 //! Key-switching keys for the BFV encryption scheme
 
-use crate::bfv::{BfvParameters, SecretKey, traits::TryConvertFrom as BfvTryConvertFrom};
+use crate::bfv::{Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::Context;
-use fhe_math::rq::traits::TryConvertFrom;
 use fhe_math::{
     rns::RnsContext,
     rq::{Ntt, NttShoup, Poly, PowerBasis, RepresentationTag},
 };
-use fhe_traits::{DeserializeWithContext, Serialize};
+
 use itertools::{Itertools, izip};
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng as RngCore, RngExt, SeedableRng};
@@ -21,7 +20,7 @@ use zeroize::{Zeroize, Zeroizing};
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct KeySwitchingKey {
     /// The parameters of the underlying BFV encryption scheme.
-    pub(crate) par: Arc<BfvParameters>,
+    pub(crate) par: Parameters,
 
     /// The (optional) seed that generated the polynomials c1.
     pub(crate) seed: Option<<ChaCha8Rng as SeedableRng>::Seed>,
@@ -61,8 +60,7 @@ impl KeySwitchingKey {
         c1: &mut Poly<Ntt>,
     ) {
         if self.permits_variable_time_with(p) {
-            let variable_time =
-                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+            let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
             c0.allow_variable_time_computations(variable_time);
             c1.allow_variable_time_computations(variable_time);
         } else {
@@ -96,13 +94,10 @@ impl KeySwitchingKey {
             Ok(Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                 coefficients,
                 &self.ctx_ksk,
-                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                crate::VariableTime::new(crate::PublicData::assert_public()),
             ))
         } else {
-            Ok(
-                Poly::<PowerBasis>::try_convert_from(coefficients, &self.ctx_ksk, false)?
-                    .into_ntt(),
-            )
+            Ok(Poly::<PowerBasis>::from_coefficients(coefficients, &self.ctx_ksk)?.into_ntt())
         }
     }
 
@@ -121,8 +116,8 @@ impl KeySwitchingKey {
 
         if from.ctx() != &ctx_ksk {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
 
@@ -174,7 +169,7 @@ impl KeySwitchingKey {
     ) -> Vec<Poly<NttShoup>> {
         let mut c1 = Vec::with_capacity(size);
         let mut rng = ChaCha8Rng::from_seed(seed);
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
         (0..size).for_each(|_| {
             let mut seed_i = <ChaCha8Rng as SeedableRng>::Seed::default();
             rng.fill(&mut seed_i);
@@ -193,17 +188,17 @@ impl KeySwitchingKey {
         rng: &mut R,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
+            return Err(crate::error::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
 
         let size = c1.len();
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx(), false)?
+            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), c1[0].ctx())?
                 .into_ntt(),
         );
 
-        let rns = RnsContext::new(&sk.par.moduli[..size])?;
+        let rns = RnsContext::new(&sk.par.inner.moduli[..size])?;
         let c0 = c1
             .iter()
             .enumerate()
@@ -215,7 +210,7 @@ impl KeySwitchingKey {
                 let a_s_inner = std::mem::replace(a_s.as_mut(), Poly::<Ntt>::zero(&ctx));
                 let a_s_pb = a_s_inner.into_power_basis();
 
-                let mut b = Poly::<PowerBasis>::small(a_s_pb.ctx(), sk.par.variance, rng)?;
+                let mut b = Poly::<PowerBasis>::small(a_s_pb.ctx(), sk.par.inner.variance, rng)?;
                 b -= &a_s_pb;
 
                 let gi = rns.get_garner(i).unwrap();
@@ -223,8 +218,8 @@ impl KeySwitchingKey {
                 b += &g_i_from;
 
                 // It is now safe to enable variable time computations.
-                b.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                b.allow_variable_time_computations(crate::VariableTime::new(
+                    crate::PublicData::assert_public(),
                 ));
                 Ok(b.into_ntt_shoup())
             })
@@ -242,10 +237,10 @@ impl KeySwitchingKey {
         log_base: usize,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
+            return Err(crate::error::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx(), false)?
+            Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), c1[0].ctx())?
                 .into_ntt(),
         );
 
@@ -260,15 +255,15 @@ impl KeySwitchingKey {
                 let a_s_inner = std::mem::replace(a_s.as_mut(), Poly::<Ntt>::zero(&ctx));
                 let a_s_pb = a_s_inner.into_power_basis();
 
-                let mut b = Poly::<PowerBasis>::small(a_s_pb.ctx(), sk.par.variance, rng)?;
+                let mut b = Poly::<PowerBasis>::small(a_s_pb.ctx(), sk.par.inner.variance, rng)?;
                 b -= &a_s_pb;
 
                 let power = BigUint::from(1u64 << (i * log_base));
                 b += &(from * &power);
 
                 // It is now safe to enable variable time computations.
-                b.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                b.allow_variable_time_computations(crate::VariableTime::new(
+                    crate::PublicData::assert_public(),
                 ));
                 Ok(b.into_ntt_shoup())
             })
@@ -285,8 +280,8 @@ impl KeySwitchingKey {
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         let mut c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
@@ -320,8 +315,8 @@ impl KeySwitchingKey {
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         self.reset_accumulators(p, c0, c1);
@@ -340,6 +335,7 @@ impl KeySwitchingKey {
 
     /// Key switch an NTT input, retaining its existing RNS-component
     /// transforms.
+    #[cfg(test)]
     pub(crate) fn key_switch_ntt(&self, p: Poly<Ntt>) -> Result<(Poly<Ntt>, Poly<Ntt>)> {
         let mut c0 = Poly::zero(&self.ctx_ksk);
         let mut c1 = Poly::zero(&self.ctx_ksk);
@@ -356,8 +352,8 @@ impl KeySwitchingKey {
     ) -> Result<()> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         // Bit-decomposition digits are not RNS rows. Also preserve the existing
@@ -389,8 +385,8 @@ impl KeySwitchingKey {
     fn key_switch_decomposition(&self, p: &Poly<PowerBasis>) -> Result<(Poly<Ntt>, Poly<Ntt>)> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
 
@@ -445,8 +441,12 @@ impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
     }
 }
 
-impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
-    fn try_convert_from(value: &KeySwitchingKeyProto, par: &Arc<BfvParameters>) -> Result<Self> {
+impl FromProto<&KeySwitchingKeyProto> for KeySwitchingKey {
+    fn from_proto(
+        value: &KeySwitchingKeyProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         let ciphertext_level = value.ciphertext_level as usize;
         let ksk_level = value.ksk_level as usize;
         let ctx_ksk = par.context_at_level(ksk_level)?.clone();
@@ -482,7 +482,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
         if value.c0.len() != c0_size {
             return Err(Error::SerializationError(
                 SerializationError::WrongPolynomialCount {
-                    component: crate::SerializedPolynomialComponent::KeySwitchingKeyC0,
+                    component: crate::error::SerializedPolynomialComponent::KeySwitchingKeyC0,
                     expected: c0_size,
                     actual: value.c0.len(),
                 },
@@ -493,7 +493,7 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             if value.c1.len() != c0_size {
                 return Err(Error::SerializationError(
                     SerializationError::WrongPolynomialCount {
-                        component: crate::SerializedPolynomialComponent::KeySwitchingKeyC1,
+                        component: crate::error::SerializedPolynomialComponent::KeySwitchingKeyC1,
                         expected: c0_size,
                         actual: value.c1.len(),
                     },
@@ -517,20 +517,26 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
             value
                 .c1
                 .iter()
-                .map(|c1i| Poly::<NttShoup>::from_bytes(c1i, &ctx_ksk).map_err(Error::MathError))
+                .map(|c1i| {
+                    Poly::<NttShoup>::from_bytes_with_limits(c1i, &ctx_ksk, limits)
+                        .map_err(Error::MathError)
+                })
                 .collect::<Result<Vec<Poly<NttShoup>>>>()?
         };
 
         let mut c0 = value
             .c0
             .iter()
-            .map(|c0i| Poly::<NttShoup>::from_bytes(c0i, &ctx_ksk).map_err(Error::MathError))
+            .map(|c0i| {
+                Poly::<NttShoup>::from_bytes_with_limits(c0i, &ctx_ksk, limits)
+                    .map_err(Error::MathError)
+            })
             .collect::<Result<Vec<Poly<NttShoup>>>>()?;
 
         // Key-switching keys are public cryptographic material. Grant timing
         // permission at this trusted type boundary; the polynomial wire flag
         // itself remains ignored.
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = crate::VariableTime::new(crate::PublicData::assert_public());
         c0.iter_mut()
             .chain(c1.iter_mut())
             .for_each(|poly| poly.allow_variable_time_computations(variable_time));
@@ -552,12 +558,12 @@ impl BfvTryConvertFrom<&KeySwitchingKeyProto> for KeySwitchingKey {
 #[cfg(test)]
 mod tests {
     use crate::bfv::{
-        BfvParameters, SecretKey, keys::key_switching_key::KeySwitchingKey, traits::TryConvertFrom,
+        Parameters, SecretKey, keys::key_switching_key::KeySwitchingKey, wire::FromProto,
     };
     use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
     use fhe_math::{
         rns::RnsContext,
-        rq::{Ntt, Poly, PowerBasis, traits::TryConvertFrom as TryConvertFromPoly},
+        rq::{Ntt, Poly, PowerBasis},
     };
     use num_bigint::BigUint;
     use rand::rng;
@@ -567,10 +573,10 @@ mod tests {
     fn constructor() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             let ctx = params.context_at_level(0)?;
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng);
@@ -583,11 +589,11 @@ mod tests {
     fn constructor_last_level() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
             let level = params.moduli().len() - 1;
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             let ctx = params.context_at_level(level)?;
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, level, level, &mut rng);
@@ -599,13 +605,13 @@ mod tests {
     #[test]
     fn key_switch() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        for params in [BfvParameters::default_arc(6, 16)] {
+        for params in [Parameters::test_parameters(6, 16)] {
             for _ in 0..100 {
-                let sk = SecretKey::random(&params, &mut rng);
+                let sk = SecretKey::generate(&params, &mut rng);
                 let ctx = params.context_at_level(0)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
+                let s = Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 
@@ -618,7 +624,7 @@ mod tests {
                 let p_ntt = p.into_ntt();
                 let c3 = (&input_ntt * &p_ntt).into_power_basis();
 
-                let rns = RnsContext::new(&params.moduli)?;
+                let rns = RnsContext::new(&params.inner.moduli)?;
                 Vec::<BigUint>::from(&(&c2 - &c3)).iter().for_each(|b| {
                     assert!(std::cmp::min(b.bits(), (rns.modulus() - b).bits()) <= 70)
                 });
@@ -629,10 +635,10 @@ mod tests {
 
     #[test]
     fn key_switch_restricts_decomposition_timing() -> Result<(), Box<dyn Error>> {
-        let params = BfvParameters::default_arc(2, 16);
+        let params = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&params, &mut rng);
-        let permission = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let sk = SecretKey::generate(&params, &mut rng);
+        let permission = crate::VariableTime::new(crate::PublicData::assert_public());
         for level in [0, 1] {
             let ctx = params.context_at_level(level)?;
             let from = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
@@ -685,14 +691,14 @@ mod tests {
     fn key_switch_assign_matches() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         {
-            let params = BfvParameters::default_arc(6, 16);
-            let sk = SecretKey::random(&params, &mut rng);
+            let params = Parameters::test_parameters(6, 16);
+            let sk = SecretKey::generate(&params, &mut rng);
             let ctx = params.context_at_level(0)?;
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let mut input = Poly::<PowerBasis>::random(ctx, &mut rng);
-            input.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                fhe_traits::PublicData::assert_public(),
+            input.allow_variable_time_computations(crate::VariableTime::new(
+                crate::PublicData::assert_public(),
             ));
 
             let (c0, c1) = ksk.key_switch(&input)?;
@@ -719,9 +725,9 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
-        let params = BfvParameters::default_arc(3, 16);
+        let params = Parameters::test_parameters(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(0x517c4);
-        let sk = SecretKey::random(&params, &mut rng);
+        let sk = SecretKey::generate(&params, &mut rng);
         for level in 0..=params.max_level() {
             let ctx = params.context_at_level(level)?;
             let original = Poly::<PowerBasis>::random(ctx, &mut rng);
@@ -741,8 +747,8 @@ mod tests {
                     for public in [true, false, true] {
                         let mut input = original.clone();
                         if public {
-                            input.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                                fhe_traits::PublicData::assert_public(),
+                            input.allow_variable_time_computations(crate::VariableTime::new(
+                                crate::PublicData::assert_public(),
                             ));
                         }
                         let expected = key.key_switch(&input)?;
@@ -780,13 +786,13 @@ mod tests {
     #[test]
     fn key_switch_decomposition() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
-        for params in [BfvParameters::default_arc(6, 16)] {
+        for params in [Parameters::test_parameters(6, 16)] {
             for _ in 0..100 {
-                let sk = SecretKey::random(&params, &mut rng);
+                let sk = SecretKey::generate(&params, &mut rng);
                 let ctx = params.context_at_level(5)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 5, 5, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
+                let s = Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 
@@ -815,15 +821,16 @@ mod tests {
     fn proto_conversion() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [
-            BfvParameters::default_arc(6, 16),
-            BfvParameters::default_arc(3, 16),
+            Parameters::test_parameters(6, 16),
+            Parameters::test_parameters(3, 16),
         ] {
-            let sk = SecretKey::random(&params, &mut rng);
+            let sk = SecretKey::generate(&params, &mut rng);
             let ctx = params.context_at_level(0)?;
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let ksk_proto = KeySwitchingKeyProto::from(&ksk);
-            let decoded = KeySwitchingKey::try_convert_from(&ksk_proto, &params)?;
+            let decoded =
+                KeySwitchingKey::from_proto(&ksk_proto, &params, &crate::DecodeLimits::default())?;
             assert_eq!(ksk, decoded);
             assert!(
                 decoded
@@ -838,22 +845,25 @@ mod tests {
 
     #[test]
     fn serialized_decomposition_rejects_oversized_bases() -> Result<(), Box<dyn Error>> {
-        let par = BfvParameters::default_arc(2, 16);
+        let par = Parameters::test_parameters(2, 16);
         let mut rng = rng();
-        let sk = SecretKey::random(&par, &mut rng);
+        let sk = SecretKey::generate(&par, &mut rng);
         let ctx = par.context_at_level(1)?;
         let from = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
         let key = KeySwitchingKey::new(&sk, &from, 1, 1, &mut rng)?;
         let proto = KeySwitchingKeyProto::from(&key);
-        assert_eq!(KeySwitchingKey::try_convert_from(&proto, &par)?, key);
+        assert_eq!(
+            KeySwitchingKey::from_proto(&proto, &par, &crate::DecodeLimits::default())?,
+            key
+        );
         for log_base in [63, 64, 65, u32::MAX] {
             let mut malformed = proto.clone();
             malformed.log_base = log_base;
             malformed.c0.truncate(1);
             assert!(matches!(
-                KeySwitchingKey::try_convert_from(&malformed, &par),
+                KeySwitchingKey::from_proto(&malformed, &par, &crate::DecodeLimits::default()),
                 Err(crate::Error::SerializationError(
-                    crate::SerializationError::InvalidKeySwitchingLogBase { .. }
+                    crate::error::SerializationError::InvalidKeySwitchingLogBase { .. }
                 ))
             ));
         }

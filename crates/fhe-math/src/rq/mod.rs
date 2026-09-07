@@ -19,11 +19,11 @@ mod serialize;
 
 pub mod scaler;
 pub mod switcher;
-pub mod traits;
-use self::{scaler::Scaler, switcher::Switcher, traits::TryConvertFrom};
+mod wire;
+use self::{scaler::Scaler, switcher::Switcher};
 use crate::{Error, Result, zq::Modulus};
 pub use context::Context;
-pub use dot_product::{DotProductWorkspace, dot_product};
+pub use dot_product::{DotProductWorkspace, dot_product, dot_product_iter};
 use fhe_util::sample_vec_cbd;
 use itertools::{Itertools, izip};
 use ndarray::{Array2, ArrayView2, Axis, s};
@@ -61,8 +61,17 @@ pub struct Ntt;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NttShoup;
 
-/// Trait implemented by representation marker types.
-pub trait RepresentationTag: Default + Copy + 'static {
+/// Sealed trait implemented by the three supported representation markers.
+///
+/// ```compile_fail
+/// use fhe_math::rq::{Representation, RepresentationTag};
+/// #[derive(Default, Clone, Copy)]
+/// struct Custom;
+/// impl RepresentationTag for Custom {
+///     const REPRESENTATION: Representation = Representation::Ntt;
+/// }
+/// ```
+pub trait RepresentationTag: sealed::Representation + Default + Copy + 'static {
     /// Associated runtime representation.
     const REPRESENTATION: Representation;
 }
@@ -80,23 +89,53 @@ impl RepresentationTag for NttShoup {
 }
 
 /// Marker trait for representations that can be scaled/switched without
-/// requiring Shoup coefficients.
-pub trait ScaleRepresentation: RepresentationTag {}
+/// requiring Shoup coefficients. Sealed to the supported transitions.
+///
+/// ```compile_fail
+/// use fhe_math::rq::{NttShoup, ScaleRepresentation};
+/// fn scalable<T: ScaleRepresentation>() {}
+/// scalable::<NttShoup>();
+/// ```
+pub trait ScaleRepresentation: RepresentationTag + sealed::Scalable {}
+
+mod sealed {
+    pub trait Representation {}
+    pub trait Scalable {}
+    impl Representation for super::PowerBasis {}
+    impl Representation for super::Ntt {}
+    impl Representation for super::NttShoup {}
+    impl Scalable for super::PowerBasis {}
+    impl Scalable for super::Ntt {}
+}
 
 impl ScaleRepresentation for PowerBasis {}
 impl ScaleRepresentation for Ntt {}
 
 /// An exponent for a substitution.
+///
+/// The exponent and its cached permutation cannot be changed independently.
+/// ```compile_fail
+/// use fhe_math::rq::SubstitutionExponent;
+/// fn invalidate(exponent: &mut SubstitutionExponent) {
+///     exponent.exponent = 2;
+/// }
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct SubstitutionExponent {
     /// The value of the exponent.
-    pub exponent: usize,
+    exponent: usize,
 
     ctx: Arc<Context>,
     power_bitrev: Vec<usize>,
 }
 
 impl SubstitutionExponent {
+    /// Return the validated exponent modulo twice the polynomial degree.
+    #[must_use]
+    pub const fn exponent(&self) -> usize {
+        self.exponent
+    }
+
     /// Creates a substitution element from an exponent.
     /// Returns an error if the exponent is even modulo 2 * degree.
     pub fn new(ctx: &Arc<Context>, exponent: usize) -> Result<Self> {
@@ -125,7 +164,7 @@ impl SubstitutionExponent {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Poly<R: RepresentationTag> {
     ctx: Arc<Context>,
     has_lazy_coefficients: bool,
@@ -133,6 +172,15 @@ pub struct Poly<R: RepresentationTag> {
     coefficients: Array2<u64>,
     coefficients_shoup: Option<Array2<u64>>,
     _repr: PhantomData<R>,
+}
+
+impl<R: RepresentationTag> std::fmt::Debug for Poly<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Poly")
+            .field("context", &self.ctx)
+            .field("representation", &R::REPRESENTATION)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R: RepresentationTag> PartialEq for Poly<R> {
@@ -171,20 +219,11 @@ impl<R: RepresentationTag> AsMut<Poly<R>> for Poly<R> {
 }
 
 impl<R: RepresentationTag> Poly<R> {
-    /// Convert explicitly public values into a polynomial using variable-time
-    /// reduction when available.
-    ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that `value` is public.
-    /// Classifying secret values as public may expose them through timing.
-    pub fn try_convert_from_public<T>(
-        value: T,
-        ctx: &Arc<Context>,
-        _variable_time: fhe_traits::VariableTime,
-    ) -> Result<Self>
-    where
-        Self: traits::TryConvertFrom<T>,
-    {
-        Self::try_convert_from(value, ctx, true)
+    /// Whether the residues are reduced to the canonical range for each
+    /// modulus.
+    #[must_use]
+    pub const fn is_canonical(&self) -> bool {
+        !self.has_lazy_coefficients
     }
 
     /// Creates a polynomial holding the constant 0.
@@ -208,10 +247,10 @@ impl<R: RepresentationTag> Poly<R> {
 
     /// Enable variable-time computations for this public polynomial.
     ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that every coefficient is
+    /// Passing [`fhe_util::VariableTime`] asserts that every coefficient is
     /// public. Classifying secret coefficients as public may expose them
     /// through timing.
-    pub fn allow_variable_time_computations(&mut self, _variable_time: fhe_traits::VariableTime) {
+    pub fn allow_variable_time_computations(&mut self, _variable_time: fhe_util::VariableTime) {
         self.allow_variable_time_computations = true
     }
 
@@ -304,7 +343,7 @@ impl<R: RepresentationTag> Poly<R> {
                 maximum: 32,
             }
         })?);
-        let p = Poly::<PowerBasis>::try_convert_from(coeffs.as_ref() as &[i64], ctx, false)?;
+        let p = Poly::<PowerBasis>::from_signed_coefficients(coeffs.as_ref() as &[i64], ctx)?;
         if R::REPRESENTATION == Representation::PowerBasis {
             Ok(Poly::from_parts(p))
         } else if R::REPRESENTATION == Representation::Ntt {
@@ -352,8 +391,8 @@ impl<R: RepresentationTag> Poly<R> {
         }
         let mut q = Poly::<R>::zero(&self.ctx);
         if self.allow_variable_time_computations {
-            q.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                fhe_traits::PublicData::assert_public(),
+            q.allow_variable_time_computations(fhe_util::VariableTime::new(
+                fhe_util::PublicData::assert_public(),
             ));
         }
         match R::REPRESENTATION {
@@ -549,14 +588,14 @@ impl Poly<Ntt> {
     /// Create a polynomial which can only be multiplied by a polynomial in
     /// NttShoup representation. All other operations may panic.
     ///
-    /// Passing [`fhe_traits::VariableTime`] asserts that the coefficients are
+    /// Passing [`fhe_util::VariableTime`] asserts that the coefficients are
     /// public. Classifying secret coefficients as public may expose them
     /// through timing.
     #[must_use]
     pub fn create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
         power_basis_coefficients: &[u64],
         ctx: &Arc<Context>,
-        _variable_time: fhe_traits::VariableTime,
+        _variable_time: fhe_util::VariableTime,
     ) -> Poly<Ntt> {
         let mut coefficients = Array2::zeros((ctx.q.len(), ctx.degree));
         izip!(coefficients.outer_iter_mut(), ctx.q.iter(), ctx.ops.iter()).for_each(
@@ -849,7 +888,7 @@ mod tests {
     #[test]
     fn allow_variable_time_computations() -> Result<(), Box<dyn Error>> {
         let mut rng = rand::rng();
-        let variable_time = fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public());
+        let variable_time = fhe_util::VariableTime::new(fhe_util::PublicData::assert_public());
         for modulus in MODULI {
             let ctx = Arc::new(Context::new(&[*modulus], 16)?);
             let mut p = Poly::<PowerBasis>::random(&ctx, &mut rng);
@@ -912,7 +951,7 @@ mod tests {
             Poly::<Ntt>::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
                 &coeffs,
                 &ctx,
-                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
             );
 
         assert_eq!(poly.representation(), Representation::Ntt);

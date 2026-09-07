@@ -48,8 +48,8 @@ pub(super) fn product(lhs: &[Poly<Ntt>], rhs: &[Poly<Ntt>]) -> Vec<Poly<Ntt>> {
         let mut output = vec![Poly::zero(lhs[0].ctx()); lhs.len() + rhs.len() - 1];
         if public {
             for p in &mut output {
-                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                p.allow_variable_time_computations(crate::VariableTime::new(
+                    crate::PublicData::assert_public(),
                 ));
             }
         }
@@ -74,8 +74,8 @@ pub(super) fn square(input: &[Poly<Ntt>]) -> Vec<Poly<Ntt>> {
         let mut output = vec![Poly::zero(input[0].ctx()); 2 * input.len() - 1];
         if public {
             for p in &mut output {
-                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                p.allow_variable_time_computations(crate::VariableTime::new(
+                    crate::PublicData::assert_public(),
                 ));
             }
         }
@@ -110,8 +110,8 @@ mod tests {
             .all(Poly::allows_variable_time_computations);
         for p in &mut c {
             if public {
-                p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                    fhe_traits::PublicData::assert_public(),
+                p.allow_variable_time_computations(crate::VariableTime::new(
+                    crate::PublicData::assert_public(),
                 ));
             }
         }
@@ -131,8 +131,8 @@ mod tests {
             Poly::<Ntt>::random(&ctx, &mut rng),
             Poly::<Ntt>::random(&ctx, &mut rng),
         ];
-        parts[1].allow_variable_time_computations(fhe_traits::VariableTime::new(
-            fhe_traits::PublicData::assert_public(),
+        parts[1].allow_variable_time_computations(crate::VariableTime::new(
+            crate::PublicData::assert_public(),
         ));
         let public = parts[1].clone();
         drop(Scratch(&mut parts));
@@ -153,8 +153,8 @@ mod tests {
                         .collect();
                     for (i, p) in parts.iter_mut().enumerate() {
                         if i != restricted {
-                            p.allow_variable_time_computations(fhe_traits::VariableTime::new(
-                                fhe_traits::PublicData::assert_public(),
+                            p.allow_variable_time_computations(crate::VariableTime::new(
+                                crate::PublicData::assert_public(),
                             ));
                         }
                     }

@@ -1,8 +1,10 @@
 //! Repeated-operand multiplication, including the cost of preparing it.
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, criterion_group, criterion_main};
-use fhe::bfv::{BfvParameters, Ciphertext, Encoding, Multiplicator, Plaintext, SecretKey};
-use fhe_traits::{FheDecoder, FheDecrypter, FheEncoder, FheEncrypter};
+use fhe::bfv::{
+    Ciphertext, Encoding, Parameters, Plaintext, SecretKey, evaluation::MultiplicationPlan,
+};
+
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::{hint::black_box, time::Duration};
@@ -13,29 +15,31 @@ fn multiplication(c: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.warm_up_time(Duration::from_millis(200));
     group.measurement_time(Duration::from_secs(1));
-    for par in BfvParameters::default_parameters_128(20)
+    for par in Parameters::profiles_128(20)
         .unwrap()
         .filter(|p| matches!(p.degree(), 4096 | 8192))
     {
+        let par = par.build().unwrap();
         let mut rng = ChaCha8Rng::seed_from_u64(0x0f4e + par.degree() as u64);
-        let sk = SecretKey::random(&par, &mut rng);
+        let sk = SecretKey::generate(&par, &mut rng);
         let values: Vec<_> = (0..par.degree()).map(|i| i as u64 % 19).collect();
-        let pt = Plaintext::try_encode(&values, Encoding::simd(), &par).unwrap();
-        let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng).unwrap();
-        let rhs: Ciphertext = sk.try_encrypt(&pt, &mut rng).unwrap();
-        let rhs_batch: Vec<Ciphertext> = (0..8)
-            .map(|_| sk.try_encrypt(&pt, &mut rng).unwrap())
-            .collect();
+        let pt = Plaintext::encode(&par, &values, Encoding::Simd).unwrap();
+        let ct: Ciphertext = sk.encrypt(&pt, &mut rng).unwrap();
+        let rhs: Ciphertext = sk.encrypt(&pt, &mut rng).unwrap();
+        let rhs_batch: Vec<Ciphertext> =
+            (0..8).map(|_| sk.encrypt(&pt, &mut rng).unwrap()).collect();
         let ct_copy = ct.clone();
-        let strategy = Multiplicator::without_relinearization(&par, 0).unwrap();
+        let strategy = MultiplicationPlan::builder(&par).level(0).build().unwrap();
         let prepared = strategy.prepare_lhs(&ct).unwrap();
         let product = strategy.multiply(&ct, &rhs).unwrap();
         assert_eq!(prepared.multiply(&rhs).unwrap(), product);
         assert_eq!(
-            Vec::<u64>::try_decode(&sk.try_decrypt(&product).unwrap(), Encoding::simd()).unwrap(),
+            (sk.decrypt(&product).unwrap())
+                .decode(Encoding::Simd)
+                .unwrap(),
             values
                 .iter()
-                .map(|x| x * x % par.plaintext())
+                .map(|x| x * x % par.plaintext_modulus_u64().unwrap())
                 .collect::<Vec<_>>()
         );
         assert_eq!(strategy.square(&ct).unwrap(), ct.square().unwrap());

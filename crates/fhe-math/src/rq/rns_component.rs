@@ -103,7 +103,7 @@ impl Poly<Ntt> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rq::{PowerBasis, traits::TryConvertFrom};
+    use crate::rq::PowerBasis;
     use crate::zq::primes::generate_prime;
     use ndarray::Array2;
     use rand::SeedableRng;
@@ -130,7 +130,7 @@ mod tests {
                 }
             });
             let inputs = [
-                Poly::<PowerBasis>::try_convert_from(edges, &source, false)?,
+                Poly::<PowerBasis>::from_rns_residues(edges, &source)?,
                 Poly::<PowerBasis>::random(&source, &mut rng),
             ];
             // Match at the start, middle, or workspace row; include no overlap
@@ -144,18 +144,28 @@ mod tests {
                 vec![moduli[1], moduli[3]],
             ] {
                 let target = Context::new_arc(&target_moduli, degree)?;
-                let one = Poly::<PowerBasis>::try_convert_from(&[1u64][..], &target, true)?
-                    .into_ntt_shoup();
+                let one = Poly::<PowerBasis>::from_coefficients_with_timing(
+                    &[1u64][..],
+                    &target,
+                    Some(fhe_util::VariableTime::new(
+                        fhe_util::PublicData::assert_public(),
+                    )),
+                )?
+                .into_ntt_shoup();
                 for input in &inputs {
                     for public in [false, true] {
                         let mut transformed = input.clone().into_ntt();
                         transformed.allow_variable_time_computations = public;
                         for index in 0..source.moduli.len() {
                             let source_row = input.coefficients.row(index);
-                            let expected = Poly::<PowerBasis>::try_convert_from(
+                            let expected = Poly::<PowerBasis>::from_coefficients_with_timing(
                                 source_row.as_slice().unwrap(),
                                 &target,
-                                public,
+                                (public).then(|| {
+                                    fhe_util::VariableTime::new(
+                                        fhe_util::PublicData::assert_public(),
+                                    )
+                                }),
                             )?
                             .into_ntt();
                             let mut actual =
@@ -197,7 +207,7 @@ mod tests {
         let lazy = Poly::create_constant_ntt_polynomial_with_lazy_coefficients_and_variable_time(
             &[3u64; 16],
             &ctx,
-            fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+            fhe_util::VariableTime::new(fhe_util::PublicData::assert_public()),
         );
         assert_eq!(
             lazy.lift_rns_component_for_shoup(0, &ctx),
