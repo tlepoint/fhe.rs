@@ -1,4 +1,4 @@
-use crate::errors::Result;
+use crate::error::Result;
 
 /// Aggregate shares in an MPC protocol.
 ///
@@ -70,7 +70,7 @@ impl<I: Iterator<Item = S>, S> AggregateIter for I {
 #[cfg(test)]
 mod tests {
     use super::{Aggregate, AggregateIter};
-    use crate::errors::Result;
+    use crate::error::Result;
 
     #[derive(Debug, PartialEq, Eq)]
     struct Sum(u64);
@@ -128,7 +128,7 @@ mod streaming_tests {
         let result = PollAgain::from_shares(
             [
                 Ok(1),
-                Err(crate::MultipartyError::IncompatibleShares.into()),
+                Err(crate::error::MultipartyError::IncompatibleShares.into()),
                 Ok(2),
             ]
             .into_iter()
@@ -143,7 +143,7 @@ mod streaming_tests {
         let visits = Cell::new(0);
         let inputs = [
             Ok(1),
-            Err(crate::MultipartyError::IncompatibleShares.into()),
+            Err(crate::error::MultipartyError::IncompatibleShares.into()),
             Ok(2),
         ];
         let result =
@@ -151,7 +151,7 @@ mod streaming_tests {
         assert!(matches!(
             result,
             Err(crate::Error::Multiparty(
-                crate::MultipartyError::IncompatibleShares
+                crate::error::MultipartyError::IncompatibleShares
             ))
         ));
         assert_eq!(visits.get(), 2);

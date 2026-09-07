@@ -8,7 +8,7 @@ The crate contains helper routines such as primality testing, centered binomial 
 
 ```toml
 [dependencies]
-fhe-util = "0.1.1"
+fhe-util = "0.1.2"
 ```
 
 ## Checked bit transcoding
@@ -27,6 +27,14 @@ out-of-range input words.
 
 `sample_vec_cbd` returns the typed `InvalidVariance` error for variances outside
 1..=32. The sampling algorithm and randomness consumption are unchanged.
+
+## Decode limits
+
+`DecodeLimits` and `DecodeLimitError` provide resource bounds used by BFV and
+polynomial imports. They check encoded size, context dimensions, and expanded
+polynomial storage before allocation. Limits can be tightened or raised through
+explicit fields; arithmetic overflow is always rejected. These bounds are not a
+quota for allocator overhead or total process RSS.
 
 ## Testing
 

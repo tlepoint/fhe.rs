@@ -137,10 +137,10 @@ impl DotProductScalarWorkspace {
         let count = ct.clone().count();
         let pt_count = pt.clone().count();
         if count == 0 || pt_count == 0 {
-            return Err(crate::DotProductError::EmptyInput.into());
+            return Err(crate::error::DotProductError::EmptyInput.into());
         }
         if count != pt_count {
-            return Err(crate::DotProductError::OperandCountMismatch {
+            return Err(crate::error::DotProductError::OperandCountMismatch {
                 ciphertexts: count,
                 plaintexts: pt_count,
             }
@@ -154,8 +154,8 @@ impl DotProductScalarWorkspace {
             ct.validate_for_context(&self.par, self.level, ctx)?;
             if !Parameters::compatible(&self.par, pt.par) {
                 return Err(Error::ParameterMismatch {
-                    left: crate::ParameterSource::Plaintext,
-                    right: crate::ParameterSource::Parameters,
+                    left: crate::error::ParameterSource::Plaintext,
+                    right: crate::error::ParameterSource::Parameters,
                 });
             }
             if pt.level != self.level {
@@ -166,11 +166,13 @@ impl DotProductScalarWorkspace {
                 });
             }
             if ct.len() != first.len() {
-                return Err(crate::DotProductError::CiphertextPolynomialCountMismatch {
-                    actual: ct.len(),
-                    expected: first.len(),
-                }
-                .into());
+                return Err(
+                    crate::error::DotProductError::CiphertextPolynomialCountMismatch {
+                        actual: ct.len(),
+                        expected: first.len(),
+                    }
+                    .into(),
+                );
             }
             public &= pt.public && ct.iter().all(Poly::allows_variable_time_computations);
         }

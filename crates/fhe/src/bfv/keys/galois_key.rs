@@ -3,7 +3,7 @@
 use super::key_switching_key::KeySwitchingKey;
 use crate::bfv::{Ciphertext, Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::{GaloisKey as GaloisKeyProto, KeySwitchingKey as KeySwitchingKeyProto};
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Ntt, Poly, PowerBasis, SubstitutionExponent, switcher::Switcher};
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::{Zeroize, Zeroizing};
@@ -113,8 +113,8 @@ impl GaloisKey {
     fn validate_ciphertext(&self, ct: &Ciphertext) -> Result<()> {
         ct.validate_for(&self.ksk.par)?;
         if ct.len() != 2 {
-            return Err(crate::CiphertextError::InvalidPolynomialCount {
-                operation: crate::CiphertextOperation::Galois,
+            return Err(crate::error::CiphertextError::InvalidPolynomialCount {
+                operation: crate::error::CiphertextOperation::Galois,
                 actual: ct.len(),
                 expected: 2,
             }
@@ -141,9 +141,13 @@ impl From<&GaloisKey> for GaloisKeyProto {
 }
 
 impl FromProto<&GaloisKeyProto> for GaloisKey {
-    fn from_proto(value: &GaloisKeyProto, par: &Parameters) -> Result<Self> {
+    fn from_proto(
+        value: &GaloisKeyProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         if let Some(ksk) = &value.ksk {
-            let ksk = KeySwitchingKey::from_proto(ksk, par)?;
+            let ksk = KeySwitchingKey::from_proto(ksk, par, limits)?;
 
             let ctx = par.context_at_level(ksk.ciphertext_level)?;
             let element = SubstitutionExponent::new(ctx, value.exponent as usize)
@@ -153,7 +157,7 @@ impl FromProto<&GaloisKeyProto> for GaloisKey {
         } else {
             Err(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::GaloisKeySwitchingKey,
+                    field: crate::error::SerializedField::GaloisKeySwitchingKey,
                 },
             ))
         }
@@ -327,7 +331,10 @@ mod tests {
             let sk = SecretKey::generate(&params, &mut rng);
             let gk = GaloisKey::new(&sk, 9, 0, 0, &mut rng)?;
             let proto = GaloisKeyProto::from(&gk);
-            assert_eq!(gk, GaloisKey::from_proto(&proto, &params)?);
+            assert_eq!(
+                gk,
+                GaloisKey::from_proto(&proto, &params, &crate::DecodeLimits::default())?
+            );
         }
         Ok(())
     }

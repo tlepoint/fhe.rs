@@ -3,7 +3,7 @@
 use crate::bfv::wire::FromProto;
 use crate::bfv::{Ciphertext, Parameters, Plaintext};
 use crate::proto::bfv::{Ciphertext as CiphertextProto, PublicKey as PublicKeyProto};
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Ntt, Poly};
 
 use prost::Message;
@@ -112,13 +112,29 @@ impl PublicKey {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
-        let proto: PublicKeyProto = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::PublicKey,
+            Some(par),
+            limits,
+        )?;
+        let proto: PublicKeyProto = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::PublicKey,
+                object: crate::error::SerializedObject::PublicKey,
+                source,
             })
         })?;
         if let Some(proto_c) = &proto.c {
-            let mut c = Ciphertext::from_proto(proto_c, par)?;
+            let mut c = Ciphertext::from_proto(proto_c, par, limits)?;
             if c.level != 0 {
                 Err(Error::SerializationError(
                     SerializationError::InvalidPublicKeyLevel {
@@ -139,7 +155,7 @@ impl PublicKey {
         } else {
             Err(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::PublicKeyCiphertext,
+                    field: crate::error::SerializedField::PublicKeyCiphertext,
                 },
             ))
         }

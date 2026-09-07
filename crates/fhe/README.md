@@ -83,6 +83,20 @@ and
 cargo run --release --example mulpir
 ```
 
+## Key configuration and imports
+
+Use `RelinearizationKey::builder(&secret_key).ciphertext_level(level).key_level(key_level).build(&mut rng)`
+for named levels; its type lives in `bfv::evaluation`. Both levels default to zero.
+The key level must not exceed the ciphertext level.
+
+Byte imports apply `DecodeLimits::default()` before allocating wire objects and
+expanded polynomial storage. Use `from_bytes_with_limits` to supply explicit
+bounds for a larger workload. Limits cover input bytes, degree, modulus count,
+big plaintext modulus bytes, polynomial slots, and charged residue storage;
+they are not a process memory quota. Detailed errors live in `fhe::error`, while
+`Error` and `Result` remain at the root. Decode errors retain their underlying
+protobuf cause through `std::error::Error::source()`.
+
 ## Performance
 
 Micro benchmarks can be obtained by running `cargo bench`. This crate uses [criterion.rs](https://criterion.rs) for benchmarks.

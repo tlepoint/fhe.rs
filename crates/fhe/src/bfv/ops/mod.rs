@@ -51,7 +51,7 @@ impl Ciphertext {
             self.par.context_at_level(self.level)?,
         )?;
         if self.c.len() != rhs.c.len() {
-            return Err(crate::CiphertextError::ComponentCountMismatch {
+            return Err(crate::error::CiphertextError::ComponentCountMismatch {
                 left: self.c.len(),
                 right: rhs.c.len(),
             }

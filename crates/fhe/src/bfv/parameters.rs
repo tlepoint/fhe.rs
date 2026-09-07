@@ -4,7 +4,7 @@ use crate::bfv::{context::CipherPlainContext, context::ContextLevel};
 use crate::proto::bfv::{
     Parameters as ParametersProto, parameters::PlaintextModulus as PlaintextModulusProto,
 };
-use crate::{Error, ParametersError, Result, SerializationError};
+use crate::{Error, Result, error::ParametersError, error::SerializationError};
 use fhe_math::{
     ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
@@ -851,9 +851,21 @@ impl Parameters {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let params: ParametersProto = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(bytes: &[u8], limits: &crate::DecodeLimits) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::Parameters,
+            None,
+            limits,
+        )?;
+        let params: ParametersProto = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::Parameters,
+                object: crate::error::SerializedObject::Parameters,
+                source,
             })
         })?;
 
@@ -863,7 +875,7 @@ impl Parameters {
             None => {
                 return Err(Error::SerializationError(
                     SerializationError::MissingField {
-                        field: crate::SerializedField::ParametersPlaintextModulus,
+                        field: crate::error::SerializedField::ParametersPlaintextModulus,
                     },
                 ));
             }
@@ -909,7 +921,7 @@ mod tests {
     use crate::proto::bfv::{
         Parameters as ParametersProto, parameters::PlaintextModulus as PlaintextModulusProto,
     };
-    use crate::{Error as FheError, ParametersError};
+    use crate::{Error as FheError, error::ParametersError};
 
     use num_bigint::BigUint;
     use prost::Message;
@@ -1039,8 +1051,8 @@ mod tests {
         let err = Parameters::from_bytes(&bytes).unwrap_err();
         assert_eq!(
             err,
-            FheError::SerializationError(crate::SerializationError::MissingField {
-                field: crate::SerializedField::ParametersPlaintextModulus,
+            FheError::SerializationError(crate::error::SerializationError::MissingField {
+                field: crate::error::SerializedField::ParametersPlaintextModulus,
             })
         );
     }

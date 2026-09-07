@@ -1,5 +1,5 @@
 use crate::bfv::{Ciphertext, Parameters, PublicKey, SecretKey};
-use crate::errors::Result;
+use crate::error::Result;
 use fhe_math::rq::{Ntt, Poly, PowerBasis};
 use rand::{CryptoRng, Rng as RngCore};
 use zeroize::Zeroizing;
@@ -61,7 +61,9 @@ impl Aggregate<PublicKeyShare> for PublicKey {
         T: IntoIterator<Item = PublicKeyShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
+        let share = shares
+            .next()
+            .ok_or(crate::error::MultipartyError::NoShares)?;
         let mut p0 = share.p0_share;
         for sh in shares {
             p0 += &sh.p0_share;

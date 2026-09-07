@@ -8,7 +8,7 @@ use fhe::bfv::{
     evaluation::MultiplicationPlan, evaluation::RelinearizationKey, evaluation::RgswCiphertext,
     packing::PackedPlaintext, packing::PackedPlaintextBatch,
 };
-use fhe::{CiphertextError, Error, ParametersError, PublicData, VariableTime};
+use fhe::{Error, PublicData, VariableTime, error::CiphertextError, error::ParametersError};
 
 fn parameters() -> fhe::Result<Parameters> {
     Parameters::builder()

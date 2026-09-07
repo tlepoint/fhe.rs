@@ -12,7 +12,7 @@ pub mod primes;
 
 use std::ops::Deref;
 
-use crate::errors::{Error, Result};
+use crate::error::{Error, Result};
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
 use itertools::{Itertools, izip};
 use num_bigint::BigUint;

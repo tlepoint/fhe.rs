@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::bfv::{KeySwitchingKey, Parameters, SecretKey, evaluation::RelinearizationKey};
-use crate::errors::Result;
+use crate::error::Result;
 use fhe_math::rns::RnsContext;
 use fhe_math::rq::{Ntt, NttShoup, Poly, PowerBasis};
 use itertools::izip;
@@ -93,16 +93,18 @@ impl<'a, 'b> RelinKeyGenerator<'a, 'b> {
         let par = sk_share.par.clone();
         let ctx = par.context_at_level(0)?;
         if ctx.moduli().len() == 1 {
-            Err(crate::EvaluationKeyError::KeySwitchingNotSupported.into())
+            Err(crate::error::EvaluationKeyError::KeySwitchingNotSupported.into())
         } else if crp.len() != ctx.moduli().len() {
-            Err(crate::MultipartyError::InvalidCommonRandomPolynomialCount {
-                actual: crp.len(),
-                expected: ctx.moduli().len(),
-            }
-            .into())
+            Err(
+                crate::error::MultipartyError::InvalidCommonRandomPolynomialCount {
+                    actual: crp.len(),
+                    expected: ctx.moduli().len(),
+                }
+                .into(),
+            )
         } else {
             if crp.iter().any(|a| a.poly.ctx() != ctx) {
-                return Err(crate::MultipartyError::IncompatibleShares.into());
+                return Err(crate::error::MultipartyError::IncompatibleShares.into());
             }
             let u = Zeroizing::new(Poly::<Ntt>::small(ctx, par.inner.variance, rng)?);
             Ok(Self {
@@ -160,7 +162,7 @@ impl<R: Round> RelinKeyShare<R> {
                 .chain(self.h1.iter())
                 .any(|p| p.ctx() != ctx || !p.is_canonical())
         {
-            return Err(crate::MultipartyError::IncompatibleShares.into());
+            return Err(crate::error::MultipartyError::IncompatibleShares.into());
         }
         Ok(())
     }
@@ -177,11 +179,13 @@ impl RelinKeyShare<R1> {
 
         let expected_crp_count = par.context_at_level(0)?.moduli().len();
         if crp.len() != expected_crp_count {
-            Err(crate::MultipartyError::InvalidCommonRandomPolynomialCount {
-                actual: crp.len(),
-                expected: expected_crp_count,
-            }
-            .into())
+            Err(
+                crate::error::MultipartyError::InvalidCommonRandomPolynomialCount {
+                    actual: crp.len(),
+                    expected: expected_crp_count,
+                }
+                .into(),
+            )
         } else {
             let h0 = Self::generate_h0(sk_share, crp, u, rng)?;
             let h1 = Self::generate_h1(sk_share, crp, rng)?;
@@ -259,7 +263,9 @@ impl Aggregate<RelinKeyShare<R1>> for RelinKeyShare<R1Aggregated> {
         T: IntoIterator<Item = RelinKeyShare<R1>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
+        let share = shares
+            .next()
+            .ok_or(crate::error::MultipartyError::NoShares)?;
         share.validate_for(&share.par)?;
         let mut h0 = share.h0;
         let mut h1 = share.h1;
@@ -359,7 +365,9 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
         T: IntoIterator<Item = RelinKeyShare<R2>>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
+        let share = shares
+            .next()
+            .ok_or(crate::error::MultipartyError::NoShares)?;
         share.validate_for(&share.par)?;
         let par = share.par.clone();
         let ctx = par.context_at_level(0)?.clone();
@@ -371,7 +379,7 @@ impl Aggregate<RelinKeyShare<R2>> for RelinearizationKey {
         for sh in shares {
             sh.validate_for(&par)?;
             if !Arc::ptr_eq(&r1, &sh.last_round) && r1 != sh.last_round {
-                return Err(crate::MultipartyError::RoundOneAggregationMismatch.into());
+                return Err(crate::error::MultipartyError::RoundOneAggregationMismatch.into());
             }
             izip!(h0.iter_mut(), h1.iter_mut(), sh.h0.iter(), sh.h1.iter()).for_each(
                 |(h0, h1, h0i, h1i)| {
@@ -557,7 +565,7 @@ mod state_tests {
         assert!(matches!(
             RelinearizationKey::from_shares([two_a.clone(), two_b]),
             Err(crate::Error::Multiparty(
-                crate::MultipartyError::RoundOneAggregationMismatch
+                crate::error::MultipartyError::RoundOneAggregationMismatch
             ))
         ));
         // An equivalent independently allocated aggregate is accepted.

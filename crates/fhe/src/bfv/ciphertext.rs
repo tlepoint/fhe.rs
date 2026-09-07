@@ -2,7 +2,7 @@
 
 use crate::bfv::{parameters::Parameters, wire::FromProto};
 use crate::proto::bfv::Ciphertext as CiphertextProto;
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Context, Ntt, Poly};
 
 use prost::Message;
@@ -60,7 +60,7 @@ impl Ciphertext {
     #[expect(clippy::expect_used, reason = "bounds are validated before use")]
     pub fn from_components(c: Vec<Poly<Ntt>>, par: &Parameters) -> Result<Self> {
         if c.len() < 2 {
-            return Err(crate::CiphertextError::TooFewPolynomials {
+            return Err(crate::error::CiphertextError::TooFewPolynomials {
                 actual: c.len(),
                 minimum: 2,
             }
@@ -76,10 +76,12 @@ impl Ciphertext {
         // Check that all polynomials have the expected context.
         for ci in c.iter() {
             if !ci.is_canonical() {
-                return Err(crate::CiphertextError::NonCanonicalPolynomial.into());
+                return Err(crate::error::CiphertextError::NonCanonicalPolynomial.into());
             }
             if ci.ctx() != ctx {
-                return Err(crate::CiphertextError::PolynomialContextMismatch { level }.into());
+                return Err(
+                    crate::error::CiphertextError::PolynomialContextMismatch { level }.into(),
+                );
             }
         }
 
@@ -96,8 +98,8 @@ impl Ciphertext {
     pub(crate) fn validate_for(&self, par: &Parameters) -> Result<()> {
         if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Ciphertext,
-                right: crate::ParameterSource::Parameters,
+                left: crate::error::ParameterSource::Ciphertext,
+                right: crate::error::ParameterSource::Parameters,
             });
         }
         let expected_ctx = par.context_at_level(self.level)?;
@@ -114,8 +116,8 @@ impl Ciphertext {
     ) -> Result<()> {
         if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Ciphertext,
-                right: crate::ParameterSource::Parameters,
+                left: crate::error::ParameterSource::Ciphertext,
+                right: crate::error::ParameterSource::Parameters,
             });
         }
         self.validate_context(expected_level, expected_ctx)
@@ -124,10 +126,10 @@ impl Ciphertext {
     #[inline]
     fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
         if self.c.iter().any(|poly| !poly.is_canonical()) {
-            return Err(crate::CiphertextError::NonCanonicalPolynomial.into());
+            return Err(crate::error::CiphertextError::NonCanonicalPolynomial.into());
         }
         if self.c.len() < 2 {
-            return Err(crate::CiphertextError::TooFewPolynomials {
+            return Err(crate::error::CiphertextError::TooFewPolynomials {
                 actual: self.c.len(),
                 minimum: 2,
             }
@@ -145,7 +147,7 @@ impl Ciphertext {
             .iter()
             .any(|poly| !Arc::ptr_eq(poly.ctx(), expected_ctx) && poly.ctx() != expected_ctx)
         {
-            return Err(crate::CiphertextError::PolynomialContextMismatch {
+            return Err(crate::error::CiphertextError::PolynomialContextMismatch {
                 level: expected_level,
             }
             .into());
@@ -221,12 +223,28 @@ impl Ciphertext {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
-        let ctp = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::Ciphertext,
+            Some(par),
+            limits,
+        )?;
+        let ctp = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::Ciphertext,
+                object: crate::error::SerializedObject::Ciphertext,
+                source,
             })
         })?;
-        Ciphertext::from_proto(&ctp, par)
+        Ciphertext::from_proto(&ctp, par, limits)
     }
 }
 
@@ -331,7 +349,11 @@ impl From<&Ciphertext> for CiphertextProto {
 }
 
 impl FromProto<&CiphertextProto> for Ciphertext {
-    fn from_proto(value: &CiphertextProto, par: &Parameters) -> Result<Self> {
+    fn from_proto(
+        value: &CiphertextProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         if value.c.is_empty() || (value.c.len() == 1 && value.seed.is_empty()) {
             return Err(Error::SerializationError(
                 SerializationError::InvalidCiphertextPolynomialCount {
@@ -353,7 +375,7 @@ impl FromProto<&CiphertextProto> for Ciphertext {
 
         let mut c = Vec::with_capacity(value.c.len() + 1);
         for cip in &value.c {
-            c.push(Poly::<Ntt>::from_bytes(cip, ctx)?)
+            c.push(Poly::<Ntt>::from_bytes_with_limits(cip, ctx, limits)?)
         }
 
         let mut seed = None;
@@ -411,11 +433,17 @@ mod tests {
             let pt = Plaintext::encode(&params, &v, Encoding::Simd)?;
             let ct = sk.encrypt(&pt, &mut rng)?;
             let ct_proto = CiphertextProto::from(&ct);
-            assert_eq!(ct, Ciphertext::from_proto(&ct_proto, &params)?);
+            assert_eq!(
+                ct,
+                Ciphertext::from_proto(&ct_proto, &params, &crate::DecodeLimits::default())?
+            );
 
             let ct = ct.multiply(&ct).unwrap();
             let ct_proto = CiphertextProto::from(&ct);
-            assert_eq!(ct, Ciphertext::from_proto(&ct_proto, &params)?)
+            assert_eq!(
+                ct,
+                Ciphertext::from_proto(&ct_proto, &params, &crate::DecodeLimits::default())?
+            )
         }
         Ok(())
     }

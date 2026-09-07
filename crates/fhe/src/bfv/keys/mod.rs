@@ -8,7 +8,7 @@ mod secret_key;
 pub use evaluation_key::{EvaluationKey, EvaluationKeyBuilder};
 pub use galois_key::GaloisKey;
 pub use public_key::PublicKey;
-pub use relinearization_key::RelinearizationKey;
+pub use relinearization_key::{RelinearizationKey, RelinearizationKeyBuilder};
 pub use secret_key::SecretKey;
 
 pub(crate) use key_switching_key::KeySwitchingKey;

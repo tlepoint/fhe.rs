@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::{Context, Poly, RepresentationTag, wire::FromProto};
-use crate::{Error, PolynomialSerializationError, proto::rq::Rq};
+use crate::{Error, error::PolynomialSerializationError, proto::rq::Rq};
 
 use prost::Message;
 
@@ -22,7 +22,14 @@ macro_rules! impl_from_bytes {
             /// Import validated polynomial bytes bound to `ctx`.
             /// Wire data never grants permission for variable-time computation.
             pub fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Error> {
-                let rq: Rq = Message::decode(bytes).map_err(|_| PolynomialSerializationError::Decode)?;
+                Self::from_bytes_with_limits(bytes, ctx, &crate::DecodeLimits::default())
+            }
+
+            /// Import with explicit bounds on wire and expanded residue storage.
+            pub fn from_bytes_with_limits(bytes: &[u8], ctx: &Arc<Context>, limits: &crate::DecodeLimits) -> Result<Self, Error> {
+                limits.check_context(bytes.len(), ctx.degree, ctx.moduli().len())?;
+                limits.check_polynomials(1, ctx.degree, ctx.moduli().len())?;
+                let rq: Rq = Message::decode(bytes).map_err(|source| PolynomialSerializationError::Decode { source })?;
                 Self::from_proto(&rq, ctx)
             }
         }
@@ -39,7 +46,8 @@ mod tests {
 
     use crate::rq::{Context, Ntt, NttShoup, Poly, PowerBasis, wire::FromProto};
     use crate::{
-        Error, PolynomialSerializationError,
+        Error,
+        error::PolynomialSerializationError,
         proto::rq::{Representation as RepresentationProto, Rq},
     };
     use prost::Message;

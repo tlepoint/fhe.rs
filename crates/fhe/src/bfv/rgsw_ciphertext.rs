@@ -1,7 +1,7 @@
 use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RgswCiphertext as RgswCiphertextProto,
 };
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Ntt, Poly, PowerBasis};
 
 use prost::Message;
@@ -27,22 +27,28 @@ impl From<&RgswCiphertext> for RgswCiphertextProto {
 }
 
 impl FromProto<&RgswCiphertextProto> for RgswCiphertext {
-    fn from_proto(value: &RgswCiphertextProto, par: &Parameters) -> Result<Self> {
+    fn from_proto(
+        value: &RgswCiphertextProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         let ksk0 = KeySwitchingKey::from_proto(
             value.ksk0.as_ref().ok_or(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::RgswKeySwitchingKey0,
+                    field: crate::error::SerializedField::RgswKeySwitchingKey0,
                 },
             ))?,
             par,
+            limits,
         )?;
         let ksk1 = KeySwitchingKey::from_proto(
             value.ksk1.as_ref().ok_or(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::RgswKeySwitchingKey1,
+                    field: crate::error::SerializedField::RgswKeySwitchingKey1,
                 },
             ))?,
             par,
+            limits,
         )?;
         if ksk0.ksk_level != ksk0.ciphertext_level
             || ksk0.ciphertext_level != ksk1.ciphertext_level
@@ -61,12 +67,28 @@ impl RgswCiphertext {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
-        let proto = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::RgswCiphertext,
+            Some(par),
+            limits,
+        )?;
+        let proto = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::RgswCiphertext,
+                object: crate::error::SerializedObject::RgswCiphertext,
+                source,
             })
         })?;
-        RgswCiphertext::from_proto(&proto, par)
+        RgswCiphertext::from_proto(&proto, par, limits)
     }
 }
 
@@ -122,8 +144,8 @@ impl Ciphertext {
             &rhs.ksk0.ctx_ciphertext,
         )?;
         if self.len() != 2 {
-            return Err(crate::CiphertextError::InvalidPolynomialCount {
-                operation: crate::CiphertextOperation::RgswProduct,
+            return Err(crate::error::CiphertextError::InvalidPolynomialCount {
+                operation: crate::error::CiphertextOperation::RgswProduct,
                 actual: self.len(),
                 expected: 2,
             }
@@ -178,7 +200,7 @@ mod tests {
         assert!(matches!(
             RgswCiphertext::from_bytes(&rgsw.to_bytes(), &par),
             Err(crate::Error::SerializationError(
-                crate::SerializationError::InconsistentKeySwitchingLevels
+                crate::error::SerializationError::InconsistentKeySwitchingLevels
             ))
         ));
         Ok(())

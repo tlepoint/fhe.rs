@@ -5,7 +5,7 @@ use crate::bfv::{Ciphertext, Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::{
     KeySwitchingKey as KeySwitchingKeyProto, RelinearizationKey as RelinearizationKeyProto,
 };
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::{Ntt, Poly, PowerBasis, switcher::Switcher};
 
 use prost::Message;
@@ -26,14 +26,15 @@ impl RelinearizationKey {
         Self::new_leveled_internal(sk, 0, 0, rng)
     }
 
-    /// Generate a [`RelinearizationKey`] from a [`SecretKey`].
-    pub fn new_leveled<R: RngCore + CryptoRng>(
-        sk: &SecretKey,
-        ciphertext_level: usize,
-        key_level: usize,
-        rng: &mut R,
-    ) -> Result<Self> {
-        Self::new_leveled_internal(sk, ciphertext_level, key_level, rng)
+    /// Configure distinct ciphertext and evaluation-key levels before
+    /// generation.
+    #[must_use]
+    pub fn builder(sk: &SecretKey) -> RelinearizationKeyBuilder<'_> {
+        RelinearizationKeyBuilder {
+            sk,
+            ciphertext_level: 0,
+            key_level: 0,
+        }
     }
 
     fn new_leveled_internal<R: RngCore + CryptoRng>(
@@ -42,11 +43,18 @@ impl RelinearizationKey {
         key_level: usize,
         rng: &mut R,
     ) -> Result<Self> {
-        let ctx_relin_key = sk.par.context_at_level(key_level)?;
         let ctx_ciphertext = sk.par.context_at_level(ciphertext_level)?;
+        if key_level > ciphertext_level {
+            return Err(Error::InvalidLevel {
+                level: key_level,
+                min_level: 0,
+                max_level: ciphertext_level,
+            });
+        }
+        let ctx_relin_key = sk.par.context_at_level(key_level)?;
 
         if ctx_relin_key.moduli().len() == 1 {
-            return Err(crate::EvaluationKeyError::KeySwitchingNotSupported.into());
+            return Err(crate::error::EvaluationKeyError::KeySwitchingNotSupported.into());
         }
 
         let s = Zeroizing::new(
@@ -65,8 +73,8 @@ impl RelinearizationKey {
     pub fn relinearize(&self, ct: &mut Ciphertext) -> Result<()> {
         ct.validate_for(&self.ksk.par)?;
         if ct.len() != 3 {
-            Err(crate::CiphertextError::InvalidPolynomialCount {
-                operation: crate::CiphertextOperation::Relinearization,
+            Err(crate::error::CiphertextError::InvalidPolynomialCount {
+                operation: crate::error::CiphertextOperation::Relinearization,
                 actual: ct.len(),
                 expected: 3,
             }
@@ -106,6 +114,42 @@ impl RelinearizationKey {
     }
 }
 
+/// Consuming configuration for a relinearization key, borrowing its secret.
+/// Both levels default to zero. Validation happens before randomness is used.
+#[derive(Debug, Clone)]
+pub struct RelinearizationKeyBuilder<'key> {
+    sk: &'key SecretKey,
+    ciphertext_level: usize,
+    key_level: usize,
+}
+
+impl RelinearizationKeyBuilder<'_> {
+    /// Level of the ciphertexts this key will relinearize.
+    #[must_use]
+    pub fn ciphertext_level(mut self, level: usize) -> Self {
+        self.ciphertext_level = level;
+        self
+    }
+
+    /// Level at which the key-switching material is stored.
+    /// Must not exceed the ciphertext level; a one-modulus key is unsupported.
+    #[must_use]
+    pub fn key_level(mut self, level: usize) -> Self {
+        self.key_level = level;
+        self
+    }
+
+    /// Validate the levels and generate the key using caller-owned randomness.
+    pub fn build<R: RngCore + CryptoRng>(self, rng: &mut R) -> Result<RelinearizationKey> {
+        RelinearizationKey::new_leveled_internal(
+            self.sk,
+            self.ciphertext_level,
+            self.key_level,
+            rng,
+        )
+    }
+}
+
 impl From<&RelinearizationKey> for RelinearizationKeyProto {
     fn from(value: &RelinearizationKey) -> Self {
         RelinearizationKeyProto {
@@ -115,15 +159,19 @@ impl From<&RelinearizationKey> for RelinearizationKeyProto {
 }
 
 impl FromProto<&RelinearizationKeyProto> for RelinearizationKey {
-    fn from_proto(value: &RelinearizationKeyProto, par: &Parameters) -> Result<Self> {
+    fn from_proto(
+        value: &RelinearizationKeyProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         if let Some(ksk) = &value.ksk {
             Ok(RelinearizationKey {
-                ksk: KeySwitchingKey::from_proto(ksk, par)?,
+                ksk: KeySwitchingKey::from_proto(ksk, par, limits)?,
             })
         } else {
             Err(Error::SerializationError(
                 SerializationError::MissingField {
-                    field: crate::SerializedField::RelinearizationKeySwitchingKey,
+                    field: crate::error::SerializedField::RelinearizationKeySwitchingKey,
                 },
             ))
         }
@@ -142,12 +190,28 @@ impl RelinearizationKey {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
-        let rk = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::RelinearizationKey,
+            Some(par),
+            limits,
+        )?;
+        let rk = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::RelinearizationKey,
+                object: crate::error::SerializedObject::RelinearizationKey,
+                source,
             })
         })?;
-        RelinearizationKey::from_proto(&rk, par)
+        RelinearizationKey::from_proto(&rk, par, limits)
     }
 }
 
@@ -254,12 +318,10 @@ mod tests {
                 for key_level in 0..=ciphertext_level {
                     for _ in 0..10 {
                         let sk = SecretKey::generate(&params, &mut rng);
-                        let rk = RelinearizationKey::new_leveled(
-                            &sk,
-                            ciphertext_level,
-                            key_level,
-                            &mut rng,
-                        )?;
+                        let rk = RelinearizationKey::builder(&sk)
+                            .ciphertext_level(ciphertext_level)
+                            .key_level(key_level)
+                            .build(&mut rng)?;
 
                         let ctx = params.context_at_level(ciphertext_level)?;
                         let s =
@@ -325,7 +387,10 @@ mod tests {
             let sk = SecretKey::generate(&params, &mut rng);
             let rk = RelinearizationKey::new(&sk, &mut rng)?;
             let proto = RelinearizationKeyProto::from(&rk);
-            assert_eq!(rk, RelinearizationKey::from_proto(&proto, &params)?);
+            assert_eq!(
+                rk,
+                RelinearizationKey::from_proto(&proto, &params, &crate::DecodeLimits::default())?
+            );
         }
         Ok(())
     }

@@ -95,7 +95,7 @@ fn component_import_rejects_invalid_structure_and_lazy_residues() -> fhe::Result
     assert!(matches!(
         Ciphertext::from_components(vec![lazy; 2], &par),
         Err(fhe::Error::Ciphertext(
-            fhe::CiphertextError::NonCanonicalPolynomial
+            fhe::error::CiphertextError::NonCanonicalPolynomial
         ))
     ));
     let lower = Ciphertext::from_components(vec![Poly::zero(tail); 3], &par)?;

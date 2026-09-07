@@ -43,20 +43,20 @@ impl SecretKeySwitchShare {
     ) -> Result<Self> {
         if sk_input_share.par != sk_output_share.par {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::InputSecretKey,
-                right: crate::ParameterSource::OutputSecretKey,
+                left: crate::error::ParameterSource::InputSecretKey,
+                right: crate::error::ParameterSource::OutputSecretKey,
             });
         }
         if sk_output_share.par != ct.par {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::OutputSecretKey,
-                right: crate::ParameterSource::Ciphertext,
+                left: crate::error::ParameterSource::OutputSecretKey,
+                right: crate::error::ParameterSource::Ciphertext,
             });
         }
         // Note: M-BFV implementation only supports ciphertext of length 2
         if ct.len() != 2 {
-            return Err(crate::CiphertextError::InvalidPolynomialCount {
-                operation: crate::CiphertextOperation::MultipartyKeySwitch,
+            return Err(crate::error::CiphertextError::InvalidPolynomialCount {
+                operation: crate::error::CiphertextOperation::MultipartyKeySwitch,
                 actual: ct.len(),
                 expected: 2,
             }
@@ -99,7 +99,9 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
         T: IntoIterator<Item = SecretKeySwitchShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
+        let share = shares
+            .next()
+            .ok_or(crate::error::MultipartyError::NoShares)?;
         let mut h = share.h_share;
         for sh in shares {
             h += &sh.h_share;

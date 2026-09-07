@@ -54,7 +54,9 @@ mod packed;
 /// Accepts slices without allocating operand lists.
 /// For repeated calls at the same level, use [`DotProductScalarWorkspace`].
 pub fn dot_product_scalar(ct: &[Ciphertext], pt: &[Plaintext]) -> Result<Ciphertext> {
-    let first = ct.first().ok_or(crate::DotProductError::EmptyInput)?;
+    let first = ct
+        .first()
+        .ok_or(crate::error::DotProductError::EmptyInput)?;
     DotProductScalarWorkspace::new(&first.par, first.level)?.dot_product_scalar(ct, pt)
 }
 
@@ -67,7 +69,9 @@ pub fn dot_product_scalar_iter<'a, 'b>(
 ) -> Result<Ciphertext> {
     let ct: Vec<_> = ct.into_iter().collect();
     let pt: Vec<_> = pt.into_iter().collect();
-    let first = ct.first().ok_or(crate::DotProductError::EmptyInput)?;
+    let first = ct
+        .first()
+        .ok_or(crate::error::DotProductError::EmptyInput)?;
     DotProductScalarWorkspace::new(&first.par, first.level)?.dot_product_scalar_refs(&ct, &pt)
 }
 
@@ -157,10 +161,10 @@ impl DotProductScalarWorkspace {
         let ct_count = ct.clone().count();
         let pt_count = pt.clone().count();
         if ct_count == 0 || pt_count == 0 {
-            return Err(crate::DotProductError::EmptyInput.into());
+            return Err(crate::error::DotProductError::EmptyInput.into());
         }
         if ct_count != pt_count {
-            return Err(crate::DotProductError::OperandCountMismatch {
+            return Err(crate::error::DotProductError::OperandCountMismatch {
                 ciphertexts: ct_count,
                 plaintexts: pt_count,
             }
@@ -170,7 +174,7 @@ impl DotProductScalarWorkspace {
         let ct_first = ct
             .clone()
             .next()
-            .ok_or(crate::DotProductError::EmptyInput)?;
+            .ok_or(crate::error::DotProductError::EmptyInput)?;
         ct_first.validate_for(&ct_first.par)?;
         let ctx = self.par.context_at_level(self.level)?;
         ct_first.validate_for_context(&self.par, self.level, ctx)?;
@@ -192,11 +196,13 @@ impl DotProductScalarWorkspace {
             cti.validate_for_context(&self.par, self.level, ctx)?;
             pti.validate_for_context(&self.par, self.level, ctx)?;
             if cti.len() != ct_first.len() {
-                return Err(crate::DotProductError::CiphertextPolynomialCountMismatch {
-                    actual: cti.len(),
-                    expected: ct_first.len(),
-                }
-                .into());
+                return Err(
+                    crate::error::DotProductError::CiphertextPolynomialCountMismatch {
+                        actual: cti.len(),
+                        expected: ct_first.len(),
+                    }
+                    .into(),
+                );
             }
         }
 
@@ -468,7 +474,7 @@ mod tests {
         assert!(matches!(
             dot_product_scalar_iter([&ct].into_iter(), [&pt, &pt].into_iter()),
             Err(crate::Error::DotProduct(
-                crate::DotProductError::OperandCountMismatch { .. }
+                crate::error::DotProductError::OperandCountMismatch { .. }
             ))
         ));
         assert!(matches!(

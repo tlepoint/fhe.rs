@@ -44,8 +44,8 @@ impl Plaintext {
     pub(crate) fn validate_for(&self, par: &Parameters) -> Result<()> {
         if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Plaintext,
-                right: crate::ParameterSource::Parameters,
+                left: crate::error::ParameterSource::Plaintext,
+                right: crate::error::ParameterSource::Parameters,
             });
         }
         let level = self.level();
@@ -62,8 +62,8 @@ impl Plaintext {
     ) -> Result<()> {
         if !Parameters::compatible(&self.par, par) {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Plaintext,
-                right: crate::ParameterSource::Parameters,
+                left: crate::error::ParameterSource::Plaintext,
+                right: crate::error::ParameterSource::Parameters,
             });
         }
         self.validate_context(expected_level, expected_ctx)
@@ -80,7 +80,7 @@ impl Plaintext {
             });
         }
         if !Arc::ptr_eq(self.poly_ntt.ctx(), expected_ctx) && self.poly_ntt.ctx() != expected_ctx {
-            return Err(crate::PlaintextError::PolynomialContextMismatch {
+            return Err(crate::error::PlaintextError::PolynomialContextMismatch {
                 level: expected_level,
             }
             .into());
@@ -128,7 +128,7 @@ impl Plaintext {
             .inner
             .ntt_operator
             .as_ref()
-            .ok_or(crate::EncodingError::SimdUnavailable)?;
+            .ok_or(crate::error::EncodingError::SimdUnavailable)?;
         op.forward(&mut values);
         let reordered = self
             .par
@@ -320,14 +320,14 @@ impl Plaintext {
         encode: impl FnOnce(&[T], &Encoding, &Parameters, &Arc<Context>) -> Result<Poly<Ntt>>,
     ) -> Result<Self> {
         if values.len() > par.degree() {
-            return Err(crate::PlaintextError::TooManyValues {
+            return Err(crate::error::PlaintextError::TooManyValues {
                 actual: values.len(),
                 maximum: par.degree(),
             }
             .into());
         }
         if encoding == Encoding::Simd && par.inner.ntt_operator.is_none() {
-            return Err(crate::EncodingError::SimdUnavailable.into());
+            return Err(crate::error::EncodingError::SimdUnavailable.into());
         }
         let ctx = par.context_at_level(level)?;
         let poly_ntt = encode(values, &encoding, par, ctx)?;
@@ -354,7 +354,7 @@ impl Plaintext {
                     .map(|value| {
                         value
                             .to_u64()
-                            .ok_or(crate::PlaintextError::ValueTooLargeForU64)
+                            .ok_or(crate::error::PlaintextError::ValueTooLargeForU64)
                     })
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 Ok(self
@@ -378,7 +378,7 @@ impl Plaintext {
                 .map(|value| {
                     value
                         .to_u64()
-                        .ok_or(crate::PlaintextError::ValueTooLargeForU64.into())
+                        .ok_or(crate::error::PlaintextError::ValueTooLargeForU64.into())
                 })
                 .collect::<Result<Vec<_>>>()?,
         };
@@ -413,7 +413,7 @@ impl Plaintext {
                     } else {
                         value.to_i64()
                     };
-                    centered.ok_or(crate::PlaintextError::ValueTooLargeForI64.into())
+                    centered.ok_or(crate::error::PlaintextError::ValueTooLargeForI64.into())
                 })
                 .collect()
         }
@@ -586,7 +586,7 @@ mod tests {
         let plaintext = Plaintext::zero(&non_simd, 0)?;
         assert_eq!(
             plaintext.decode(Encoding::Simd),
-            Err(crate::EncodingError::SimdUnavailable.into())
+            Err(crate::error::EncodingError::SimdUnavailable.into())
         );
         Ok(())
     }
@@ -674,7 +674,7 @@ mod tests {
                 assert!(matches!(
                     pt.decode_signed(Encoding::Polynomial),
                     Err(crate::Error::Plaintext(
-                        crate::PlaintextError::ValueTooLargeForI64
+                        crate::error::PlaintextError::ValueTooLargeForI64
                     ))
                 ));
             }

@@ -4,8 +4,10 @@ use num_traits::ToPrimitive;
 use zeroize::Zeroizing;
 
 use crate::{
-    CiphertextError, DotProductError, Result,
+    Result,
     bfv::{Ciphertext, Parameters},
+    error::CiphertextError,
+    error::DotProductError,
 };
 
 /// Accumulate products of two-part BFV ciphertexts, then scale the sum once.
@@ -242,12 +244,10 @@ mod tests {
         let sk = SecretKey::generate(&par, &mut rng);
         for level in 0..=par.max_level() {
             let encoding = Encoding::Simd;
-            let rk = RelinearizationKey::new_leveled(
-                &sk,
-                level,
-                level.min(par.max_level() - 1),
-                &mut rng,
-            )?;
+            let rk = RelinearizationKey::builder(&sk)
+                .ciphertext_level(level)
+                .key_level(level.min(par.max_level() - 1))
+                .build(&mut rng)?;
             for count in [1, 2, 17, 81] {
                 let mut accumulator = CiphertextProductAccumulator::new(&par, level)?;
                 let mut expected = vec![0u64; par.degree()];

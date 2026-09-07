@@ -4,7 +4,8 @@ use super::{
     Context, Ntt, NttShoup, Poly, PowerBasis, Representation, RepresentationTag, wire::FromProto,
 };
 use crate::{
-    Error, PolynomialSerializationError, Result,
+    Error, Result,
+    error::PolynomialSerializationError,
     proto::rq::{Representation as RepresentationProto, Rq},
 };
 use itertools::{Itertools, izip};
@@ -526,7 +527,8 @@ impl From<&Poly<NttShoup>> for Vec<BigUint> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Error as CrateError, PolynomialSerializationError,
+        Error as CrateError,
+        error::PolynomialSerializationError,
         proto::rq::Rq,
         rq::{Context, Ntt, NttShoup, Poly, PowerBasis, wire::FromProto},
     };

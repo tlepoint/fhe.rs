@@ -2,7 +2,7 @@
 
 use crate::bfv::{Parameters, SecretKey, wire::FromProto};
 use crate::proto::bfv::KeySwitchingKey as KeySwitchingKeyProto;
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::rq::Context;
 use fhe_math::{
     rns::RnsContext,
@@ -116,8 +116,8 @@ impl KeySwitchingKey {
 
         if from.ctx() != &ctx_ksk {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
 
@@ -188,7 +188,7 @@ impl KeySwitchingKey {
         rng: &mut R,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
+            return Err(crate::error::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
 
         let size = c1.len();
@@ -237,7 +237,7 @@ impl KeySwitchingKey {
         log_base: usize,
     ) -> Result<Vec<Poly<NttShoup>>> {
         if c1.is_empty() {
-            return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
+            return Err(crate::error::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
         let s = Zeroizing::new(
             Poly::<PowerBasis>::from_signed_coefficients(sk.coeffs.as_ref(), c1[0].ctx())?
@@ -280,8 +280,8 @@ impl KeySwitchingKey {
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         let mut c0 = Poly::<Ntt>::zero(&self.ctx_ksk);
@@ -315,8 +315,8 @@ impl KeySwitchingKey {
 
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         self.reset_accumulators(p, c0, c1);
@@ -352,8 +352,8 @@ impl KeySwitchingKey {
     ) -> Result<()> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
         // Bit-decomposition digits are not RNS rows. Also preserve the existing
@@ -385,8 +385,8 @@ impl KeySwitchingKey {
     fn key_switch_decomposition(&self, p: &Poly<PowerBasis>) -> Result<(Poly<Ntt>, Poly<Ntt>)> {
         if p.ctx().as_ref() != self.ctx_ciphertext.as_ref() {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::Polynomial,
-                right: crate::ParameterSource::KeySwitchingKey,
+                left: crate::error::ParameterSource::Polynomial,
+                right: crate::error::ParameterSource::KeySwitchingKey,
             });
         }
 
@@ -442,7 +442,11 @@ impl From<&KeySwitchingKey> for KeySwitchingKeyProto {
 }
 
 impl FromProto<&KeySwitchingKeyProto> for KeySwitchingKey {
-    fn from_proto(value: &KeySwitchingKeyProto, par: &Parameters) -> Result<Self> {
+    fn from_proto(
+        value: &KeySwitchingKeyProto,
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
         let ciphertext_level = value.ciphertext_level as usize;
         let ksk_level = value.ksk_level as usize;
         let ctx_ksk = par.context_at_level(ksk_level)?.clone();
@@ -478,7 +482,7 @@ impl FromProto<&KeySwitchingKeyProto> for KeySwitchingKey {
         if value.c0.len() != c0_size {
             return Err(Error::SerializationError(
                 SerializationError::WrongPolynomialCount {
-                    component: crate::SerializedPolynomialComponent::KeySwitchingKeyC0,
+                    component: crate::error::SerializedPolynomialComponent::KeySwitchingKeyC0,
                     expected: c0_size,
                     actual: value.c0.len(),
                 },
@@ -489,7 +493,7 @@ impl FromProto<&KeySwitchingKeyProto> for KeySwitchingKey {
             if value.c1.len() != c0_size {
                 return Err(Error::SerializationError(
                     SerializationError::WrongPolynomialCount {
-                        component: crate::SerializedPolynomialComponent::KeySwitchingKeyC1,
+                        component: crate::error::SerializedPolynomialComponent::KeySwitchingKeyC1,
                         expected: c0_size,
                         actual: value.c1.len(),
                     },
@@ -513,14 +517,20 @@ impl FromProto<&KeySwitchingKeyProto> for KeySwitchingKey {
             value
                 .c1
                 .iter()
-                .map(|c1i| Poly::<NttShoup>::from_bytes(c1i, &ctx_ksk).map_err(Error::MathError))
+                .map(|c1i| {
+                    Poly::<NttShoup>::from_bytes_with_limits(c1i, &ctx_ksk, limits)
+                        .map_err(Error::MathError)
+                })
                 .collect::<Result<Vec<Poly<NttShoup>>>>()?
         };
 
         let mut c0 = value
             .c0
             .iter()
-            .map(|c0i| Poly::<NttShoup>::from_bytes(c0i, &ctx_ksk).map_err(Error::MathError))
+            .map(|c0i| {
+                Poly::<NttShoup>::from_bytes_with_limits(c0i, &ctx_ksk, limits)
+                    .map_err(Error::MathError)
+            })
             .collect::<Result<Vec<Poly<NttShoup>>>>()?;
 
         // Key-switching keys are public cryptographic material. Grant timing
@@ -819,7 +829,8 @@ mod tests {
             let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
             let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
             let ksk_proto = KeySwitchingKeyProto::from(&ksk);
-            let decoded = KeySwitchingKey::from_proto(&ksk_proto, &params)?;
+            let decoded =
+                KeySwitchingKey::from_proto(&ksk_proto, &params, &crate::DecodeLimits::default())?;
             assert_eq!(ksk, decoded);
             assert!(
                 decoded
@@ -841,15 +852,18 @@ mod tests {
         let from = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
         let key = KeySwitchingKey::new(&sk, &from, 1, 1, &mut rng)?;
         let proto = KeySwitchingKeyProto::from(&key);
-        assert_eq!(KeySwitchingKey::from_proto(&proto, &par)?, key);
+        assert_eq!(
+            KeySwitchingKey::from_proto(&proto, &par, &crate::DecodeLimits::default())?,
+            key
+        );
         for log_base in [63, 64, 65, u32::MAX] {
             let mut malformed = proto.clone();
             malformed.log_base = log_base;
             malformed.c0.truncate(1);
             assert!(matches!(
-                KeySwitchingKey::from_proto(&malformed, &par),
+                KeySwitchingKey::from_proto(&malformed, &par, &crate::DecodeLimits::default()),
                 Err(crate::Error::SerializationError(
-                    crate::SerializationError::InvalidKeySwitchingLogBase { .. }
+                    crate::error::SerializationError::InvalidKeySwitchingLogBase { .. }
                 ))
             ));
         }

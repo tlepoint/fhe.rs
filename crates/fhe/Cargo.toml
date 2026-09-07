@@ -20,7 +20,7 @@ tfhe-ntt = ["fhe-math/tfhe-ntt"]
 
 [dependencies]
 fhe-math = { version = "=0.2.0", path = "../fhe-math" }
-fhe-util = { version = "=0.1.1", path = "../fhe-util" }
+fhe-util = { version = "=0.1.2", path = "../fhe-util" }
 
 doc-comment.workspace = true
 itertools.workspace = true

@@ -6,10 +6,13 @@
 #[cfg(test)]
 extern crate proptest;
 
-use rand::{CryptoRng, Rng as RngCore};
-
+mod decode_limits;
+mod timing;
+pub use decode_limits::{DecodeLimitError, DecodeLimits};
 use num_bigint_dig::{BigUint, ModInverse, prime::probably_prime};
 use num_traits::{PrimInt, cast::ToPrimitive};
+use rand::{CryptoRng, Rng as RngCore};
+pub use timing::{PublicData, SecretDependentDiagnostics, VariableTime};
 
 /// Returns whether the modulus p is prime; this function is 100% accurate.
 #[must_use]
@@ -1980,9 +1983,6 @@ mod tests {
         assert!(inverse(28, 996).is_none());
     }
 }
-
-mod timing;
-pub use timing::{PublicData, SecretDependentDiagnostics, VariableTime};
 
 #[cfg(test)]
 mod checked_transcoding_tests {

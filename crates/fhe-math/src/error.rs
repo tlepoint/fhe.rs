@@ -1,3 +1,6 @@
+/// Resource-limit errors shared with the utility crate.
+pub use fhe_util::DecodeLimitError;
+
 use thiserror::Error;
 
 use crate::rq::Representation;
@@ -10,6 +13,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum Error {
+    /// An import exceeded a configured resource limit.
+    #[error(transparent)]
+    DecodeLimit(#[from] DecodeLimitError),
+
     /// Indicates an invalid modulus
     #[error("Invalid modulus: modulus {0} should be between 2 and (1 << 62) - 1.")]
     InvalidModulus(u64),
@@ -37,6 +44,14 @@ pub enum Error {
     /// Indicates an invalid polynomial degree.
     #[error("Invalid polynomial degree {degree}: expected a power of two at least {minimum}.")]
     InvalidPolynomialDegree { degree: usize, minimum: usize },
+
+    /// The transform input has the wrong number of coefficients.
+    #[error("NTT input length {actual}, expected {expected}.")]
+    NttLengthMismatch { actual: usize, expected: usize },
+
+    /// Checked transforms require canonical residues.
+    #[error("NTT input contains a coefficient outside [0, {modulus}).")]
+    NonCanonicalNttInput { modulus: u64 },
 
     /// Indicates that an NTT operator is unavailable for a modulus and degree.
     #[error("No NTT operator for modulus {modulus} and degree {degree}.")]
@@ -136,7 +151,10 @@ pub enum PolynomialSerializationError {
 
     /// The protobuf payload could not be decoded.
     #[error("Failed to decode polynomial serialization.")]
-    Decode,
+    Decode {
+        #[source]
+        source: prost::DecodeError,
+    },
 
     /// The protobuf representation discriminant is invalid.
     #[error("Invalid polynomial representation value {value}.")]
@@ -164,7 +182,7 @@ pub enum PolynomialSerializationError {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Error, PolynomialSerializationError};
+    use crate::{Error, error::PolynomialSerializationError};
 
     #[test]
     fn error_strings() {
@@ -173,7 +191,10 @@ mod tests {
             "Invalid modulus: modulus 0 should be between 2 and (1 << 62) - 1."
         );
         assert_eq!(
-            Error::PolynomialSerialization(PolynomialSerializationError::Decode).to_string(),
+            Error::PolynomialSerialization(PolynomialSerializationError::Decode {
+                source: prost::encoding::decode_varint(&mut &[][..]).unwrap_err()
+            })
+            .to_string(),
             "Polynomial serialization error: Failed to decode polynomial serialization."
         );
         assert_eq!(

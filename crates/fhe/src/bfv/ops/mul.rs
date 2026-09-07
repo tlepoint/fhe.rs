@@ -85,8 +85,8 @@ impl<'key> MultiplicationPlanBuilder<'key> {
                 || &rk.ksk.ctx_ciphertext != base_ctx)
         {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::RelinearizationKey,
-                right: crate::ParameterSource::MultiplicationPlan,
+                left: crate::error::ParameterSource::RelinearizationKey,
+                right: crate::error::ParameterSource::MultiplicationPlan,
             });
         }
         if self.mod_switch && self.level == self.par.max_level() {
@@ -187,12 +187,14 @@ impl<'key> MultiplicationPlan<'key> {
     fn validate_operand(&self, ct: &Ciphertext) -> Result<()> {
         ct.validate_for_context(&self.par, self.level, &self.base_ctx)?;
         if ct.len() != 2 {
-            return Err(crate::CiphertextError::MultiplicationPolynomialCount {
-                left: ct.len(),
-                right: ct.len(),
-                expected: 2,
-            }
-            .into());
+            return Err(
+                crate::error::CiphertextError::MultiplicationPolynomialCount {
+                    left: ct.len(),
+                    right: ct.len(),
+                    expected: 2,
+                }
+                .into(),
+            );
         }
         Ok(())
     }
@@ -385,7 +387,10 @@ mod tests {
                         continue;
                     }
                     let mut builder = MultiplicationPlan::builder(&par).level(level);
-                    let rk = RelinearizationKey::new_leveled(&sk, level, key_level, &mut rng)?;
+                    let rk = RelinearizationKey::builder(&sk)
+                        .ciphertext_level(level)
+                        .key_level(key_level)
+                        .build(&mut rng)?;
                     let mut expected = raw_product.clone();
                     let mut expected_square = raw_square.clone();
                     if mode > 0 {
@@ -524,7 +529,10 @@ mod tests {
         // to compatible BFV parameter settings and the same ciphertext level.
         let foreign_sk = SecretKey::generate(&wrong_params.par, &mut rng);
         let foreign_rk = RelinearizationKey::new(&foreign_sk, &mut rng)?;
-        let leveled_rk = RelinearizationKey::new_leveled(&sk, 1, 0, &mut rng)?;
+        let leveled_rk = RelinearizationKey::builder(&sk)
+            .ciphertext_level(1)
+            .key_level(0)
+            .build(&mut rng)?;
         assert!(
             MultiplicationPlan::builder(&par)
                 .relinearization(&foreign_rk)
@@ -623,7 +631,10 @@ mod tests {
                 q.mul_vec(&mut expected, &values);
 
                 let sk = SecretKey::generate(&par, &mut rng);
-                let rk = RelinearizationKey::new_leveled(&sk, level, level, &mut rng)?;
+                let rk = RelinearizationKey::builder(&sk)
+                    .ciphertext_level(level)
+                    .key_level(level)
+                    .build(&mut rng)?;
                 let pt = Plaintext::encode_at_level(&par, &values, Encoding::Simd, level)?;
                 let ct1: Ciphertext = sk.encrypt(&pt, &mut rng)?;
                 let ct2: Ciphertext = sk.encrypt(&pt, &mut rng)?;

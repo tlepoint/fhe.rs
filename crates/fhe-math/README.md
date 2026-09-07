@@ -33,6 +33,18 @@ avoid allocating lists for borrowed operands; `_iter` methods consume each
 iterator once before validation and arithmetic. `dot_product_into` reuses both
 workspace and output storage, leaving them unchanged on validation errors.
 
+## Checked boundaries
+
+`NttOperator::try_forward` and `try_backward` validate length and canonical
+residues before changing the slice. Their `_public` counterparts require an
+explicit `VariableTime` token. The existing safe slice transforms reject wrong
+lengths in release builds too; raw-pointer kernels remain `unsafe`.
+
+Polynomial `from_bytes` uses `DecodeLimits::default()` to bound input and expanded
+residue storage; `from_bytes_with_limits` accepts explicit bounds. Decode errors
+retain their protobuf source. Detailed classifications are available through
+`fhe_math::error`; `Error` and `Result` remain root exports.
+
 ## Testing
 
 ```bash

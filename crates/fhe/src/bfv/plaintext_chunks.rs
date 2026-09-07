@@ -19,7 +19,7 @@ impl Plaintext {
         mut encode_chunk: impl FnMut(&[T], &Encoding, &Parameters, &Arc<Context>) -> Result<Poly<Ntt>>,
     ) -> Result<Vec<Plaintext>> {
         if encoding == Encoding::Simd && par.inner.ntt_operator.is_none() {
-            return Err(crate::EncodingError::SimdUnavailable.into());
+            return Err(crate::error::EncodingError::SimdUnavailable.into());
         }
 
         let ctx = par.context_at_level(level)?;
@@ -74,7 +74,7 @@ impl Plaintext {
                     .inner
                     .ntt_operator
                     .as_ref()
-                    .ok_or(crate::PlaintextError::NttOperatorUnavailable)?;
+                    .ok_or(crate::error::PlaintextError::NttOperatorUnavailable)?;
                 if variable_time.is_some() {
                     unsafe { ntt_operator.backward_vt(coefficients.as_mut_ptr()) };
                 } else {
@@ -121,7 +121,7 @@ impl Plaintext {
                     .map(|coefficient| {
                         coefficient
                             .to_u64()
-                            .ok_or(crate::PlaintextError::ValueTooLargeForU64)
+                            .ok_or(crate::error::PlaintextError::ValueTooLargeForU64)
                     })
                     .collect::<std::result::Result<Vec<_>, _>>()?;
                 Self::encode_u64_chunk(&values, encoding, par, ctx, None)
@@ -310,7 +310,7 @@ mod tests {
         assert!(matches!(
             Plaintext::encode_chunks(&params, a.as_slice(), Encoding::Simd),
             Err(crate::Error::Encoding(
-                crate::EncodingError::SimdUnavailable
+                crate::error::EncodingError::SimdUnavailable
             ))
         ));
         assert!(matches!(
@@ -321,7 +321,7 @@ mod tests {
                 crate::VariableTime::new(crate::PublicData::assert_public())
             ),
             Err(crate::Error::Encoding(
-                crate::EncodingError::SimdUnavailable
+                crate::error::EncodingError::SimdUnavailable
             ))
         ));
         Ok(())

@@ -2,7 +2,7 @@
 
 use crate::bfv::{Ciphertext, Parameters, Plaintext};
 use crate::proto::bfv::SecretKey as SecretKeyProto;
-use crate::{Error, Result, SerializationError};
+use crate::{Error, Result, error::SerializationError};
 use fhe_math::{
     rq::{Ntt, Poly, PowerBasis},
     zq::Modulus,
@@ -181,9 +181,25 @@ impl SecretKey {
     /// Import validated protobuf bytes, binding contextual values to the
     /// supplied parameters.
     pub fn from_bytes(bytes: &[u8], par: &Parameters) -> Result<Self> {
-        let mut proto: SecretKeyProto = Message::decode(bytes).map_err(|_| {
+        Self::from_bytes_with_limits(bytes, par, &crate::DecodeLimits::default())
+    }
+
+    /// Import with explicit resource bounds checked before allocation.
+    pub fn from_bytes_with_limits(
+        bytes: &[u8],
+        par: &Parameters,
+        limits: &crate::DecodeLimits,
+    ) -> Result<Self> {
+        crate::bfv::wire::preflight(
+            bytes,
+            crate::error::SerializedObject::SecretKey,
+            Some(par),
+            limits,
+        )?;
+        let mut proto: SecretKeyProto = Message::decode(bytes).map_err(|source| {
             Error::SerializationError(SerializationError::Decode {
-                object: crate::SerializedObject::SecretKey,
+                object: crate::error::SerializedObject::SecretKey,
+                source,
             })
         })?;
 
@@ -445,7 +461,7 @@ mod tests {
         assert!(matches!(
             err,
             crate::Error::SerializationError(
-                crate::SerializationError::InvalidSecretKeyCoefficientCount { .. }
+                crate::error::SerializationError::InvalidSecretKeyCoefficientCount { .. }
             )
         ));
     }

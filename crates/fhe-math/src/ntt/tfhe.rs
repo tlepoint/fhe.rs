@@ -28,6 +28,18 @@ impl PartialEq for NttOperator {
 impl Eq for NttOperator {}
 
 impl NttOperator {
+    /// Number of coefficients transformed by this operator.
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Prime modulus of the transform.
+    #[must_use]
+    pub const fn modulus(&self) -> u64 {
+        self.modulus
+    }
+
     /// Create an NTT operator given a modulus for a specific size.
     ///
     /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
@@ -52,6 +64,7 @@ impl NttOperator {
     /// Compute the forward NTT in place.
     /// Aborts if a is not of the size handled by the operator.
     pub fn forward(&self, a: &mut [u64]) {
+        assert_eq!(a.len(), self.size, "NTT input length mismatch");
         match &self.backend {
             Backend::Tfhe(tfhe_operator) => {
                 tfhe_operator.fwd(a);
@@ -63,6 +76,7 @@ impl NttOperator {
     /// Compute the backward NTT in place.
     /// Aborts if a is not of the size handled by the operator.
     pub fn backward(&self, a: &mut [u64]) {
+        assert_eq!(a.len(), self.size, "NTT input length mismatch");
         match &self.backend {
             Backend::Tfhe(tfhe_operator) => {
                 tfhe_operator.inv(a);

@@ -3,6 +3,9 @@
     reason = "error enums rely on variant docs and error messages"
 )]
 
+/// Resource-limit errors shared with the utility crate.
+pub use fhe_util::DecodeLimitError;
+
 use num_bigint::BigUint;
 use thiserror::Error;
 
@@ -14,6 +17,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum Error {
+    /// An import exceeded a configured resource limit.
+    #[error(transparent)]
+    DecodeLimit(#[from] DecodeLimitError),
+
     /// An error from the underlying mathematical library.
     #[error("Math library error: {0}")]
     MathError(#[from] fhe_math::Error),
@@ -247,7 +254,11 @@ pub enum SerializationError {
 
     /// A protobuf payload could not be decoded.
     #[error("Failed to decode {object:?}")]
-    Decode { object: SerializedObject },
+    Decode {
+        object: SerializedObject,
+        #[source]
+        source: prost::DecodeError,
+    },
 
     /// A required protobuf field is absent.
     #[error("Missing required field {field:?}")]
@@ -534,6 +545,7 @@ mod tests {
         assert_eq!(
             Error::SerializationError(SerializationError::Decode {
                 object: SerializedObject::Ciphertext,
+                source: prost::encoding::decode_varint(&mut &[][..]).unwrap_err(),
             })
             .to_string(),
             "Serialization error: Failed to decode Ciphertext"

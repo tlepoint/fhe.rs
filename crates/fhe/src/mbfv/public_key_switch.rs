@@ -35,20 +35,20 @@ impl PublicKeySwitchShare {
     ) -> Result<Self> {
         if sk_share.par != public_key.par {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::SecretKey,
-                right: crate::ParameterSource::PublicKey,
+                left: crate::error::ParameterSource::SecretKey,
+                right: crate::error::ParameterSource::PublicKey,
             });
         }
         if public_key.par != ct.par {
             return Err(Error::ParameterMismatch {
-                left: crate::ParameterSource::PublicKey,
-                right: crate::ParameterSource::Ciphertext,
+                left: crate::error::ParameterSource::PublicKey,
+                right: crate::error::ParameterSource::Ciphertext,
             });
         }
         ct.validate_for(&ct.par)?;
         if ct.len() != 2 {
-            return Err(crate::CiphertextError::InvalidPolynomialCount {
-                operation: crate::CiphertextOperation::MultipartyKeySwitch,
+            return Err(crate::error::CiphertextError::InvalidPolynomialCount {
+                operation: crate::error::CiphertextOperation::MultipartyKeySwitch,
                 actual: ct.len(),
                 expected: 2,
             }
@@ -104,7 +104,9 @@ impl Aggregate<PublicKeySwitchShare> for Ciphertext {
         T: IntoIterator<Item = PublicKeySwitchShare>,
     {
         let mut shares = iter.into_iter();
-        let share = shares.next().ok_or(crate::MultipartyError::NoShares)?;
+        let share = shares
+            .next()
+            .ok_or(crate::error::MultipartyError::NoShares)?;
         let mut h0 = share.h0_share;
         let mut h1 = share.h1_share;
         for sh in shares {
@@ -202,7 +204,7 @@ mod tests {
         assert!(matches!(
             PublicKeySwitchShare::new(&sk, &pk, &(ct.multiply(&ct).unwrap()), &mut rng),
             Err(crate::Error::Ciphertext(
-                crate::CiphertextError::InvalidPolynomialCount { actual: 3, .. }
+                crate::error::CiphertextError::InvalidPolynomialCount { actual: 3, .. }
             ))
         ));
         assert!(

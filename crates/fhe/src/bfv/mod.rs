@@ -33,7 +33,9 @@ pub(crate) use packed_plaintext::PackedPlaintextView;
 /// Workspaces are independent mutable values and can be used in caller-owned
 /// thread pools. This module does not start threads or retain global scratch.
 pub mod evaluation {
-    pub use super::keys::{EvaluationKey, EvaluationKeyBuilder, RelinearizationKey};
+    pub use super::keys::{
+        EvaluationKey, EvaluationKeyBuilder, RelinearizationKey, RelinearizationKeyBuilder,
+    };
     pub use super::ops::{
         CiphertextProductAccumulator, DotProductScalarWorkspace, MultiplicationPlan,
         MultiplicationPlanBuilder, MultiplicationScaling, PreparedMultiplicand, dot_product_scalar,

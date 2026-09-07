@@ -103,7 +103,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             .key_level(0)
             .enable_expansion(level)
             .build(&mut rng)?;
-        let rk = bfv::evaluation::RelinearizationKey::new_leveled(&sk, 1, 1, &mut rng)?;
+        let rk = bfv::evaluation::RelinearizationKey::builder(&sk)
+            .ciphertext_level(1)
+            .key_level(1)
+            .build(&mut rng)?;
         let ek_expansion_serialized = ek_expansion.to_bytes();
         let rk_serialized = rk.to_bytes();
         (sk, ek_expansion_serialized, rk_serialized)
