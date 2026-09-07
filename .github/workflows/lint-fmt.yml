@@ -1,54 +1,84 @@
+name: Linter and Formatter
 
 on:
   pull_request:
-    branches:
-      - main
-    paths-ignore:
-      - 'README.md'
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-name: Linter and Formatter
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
 
 jobs:
   fmt:
     name: Rustfmt
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rs/toolchain@v1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          # rustfmt.toml uses unstable options, as documented in AGENTS.md.
+          toolchain: nightly
           components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - name: Check formatting
+        run: cargo +nightly fmt --all -- --check
 
   clippy:
     name: Clippy (${{ matrix.features }})
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_TERM_COLOR: always
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         features: [default, all]
     steps:
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
-      - uses: actions-rs/toolchain@v1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          profile: minimal
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
           toolchain: stable
-          override: true
           components: clippy
-      - uses: actions/checkout@v7
-      - uses: actions-rs/cargo@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          command: clippy
-          args: --workspace --all-targets ${{ matrix.features == 'all' && '--all-features' || '' }} -- -D warnings
+          key: ${{ matrix.features }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends protobuf-compiler
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked ${{ matrix.features == 'all' && '--all-features' || '' }} -- -D warnings
+
+  workflows:
+    name: GitHub Actions lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install CI tools
+        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        with:
+          tool: actionlint
+      - name: Validate GitHub Actions workflows
+        run: actionlint -color

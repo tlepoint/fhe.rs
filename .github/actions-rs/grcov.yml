@@ -1,5 +1,0 @@
-output-type: cobertura
-output-path: ./cobertura.xml
-ignore:
-  - "crates/fhe/src/bfv/proto/*"
-  - "crates/fhe-math/src/proto/*"
