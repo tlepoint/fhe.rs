@@ -208,12 +208,12 @@ impl Multiplicator {
         self.validate_operand(lhs)?;
         self.validate_operand(rhs)?;
         let left = Scratch([
-            lhs[0].scale(&self.extender_lhs)?,
-            lhs[1].scale(&self.extender_lhs)?,
+            lhs.c[0].scale(&self.extender_lhs)?,
+            lhs.c[1].scale(&self.extender_lhs)?,
         ]);
         let right = Scratch([
-            rhs[0].scale(&self.extender_rhs)?,
-            rhs[1].scale(&self.extender_rhs)?,
+            rhs.c[0].scale(&self.extender_rhs)?,
+            rhs.c[1].scale(&self.extender_rhs)?,
         ]);
         self.finish_product(tensor::product(&left.0, &right.0))
     }
@@ -228,8 +228,8 @@ impl Multiplicator {
             return self.multiply(ct, ct);
         }
         let input = Scratch([
-            ct[0].scale(&self.extender_lhs)?,
-            ct[1].scale(&self.extender_lhs)?,
+            ct.c[0].scale(&self.extender_lhs)?,
+            ct.c[1].scale(&self.extender_lhs)?,
         ]);
         self.finish_product(tensor::square(&input.0))
     }
@@ -248,8 +248,8 @@ impl Multiplicator {
     /// number of primes in the extended multiplication basis.
     pub fn prepare_lhs(&self, ct: &Ciphertext) -> Result<PreparedMultiplicand<'_>> {
         self.validate_operand(ct)?;
-        let mut c0 = ct[0].scale(&self.extender_lhs)?;
-        let mut c1 = ct[1].scale(&self.extender_lhs)?;
+        let mut c0 = ct.c[0].scale(&self.extender_lhs)?;
+        let mut c1 = ct.c[1].scale(&self.extender_lhs)?;
         if !ct.iter().all(Poly::allows_variable_time_computations) {
             c0.disallow_variable_time_computations();
             c1.disallow_variable_time_computations();
@@ -327,8 +327,8 @@ impl PreparedMultiplicand<'_> {
         let strategy = self.multiplicator;
         strategy.validate_operand(rhs)?;
         let mut right = Scratch([
-            rhs[0].scale(&strategy.extender_rhs)?,
-            rhs[1].scale(&strategy.extender_rhs)?,
+            rhs.c[0].scale(&strategy.extender_rhs)?,
+            rhs.c[1].scale(&strategy.extender_rhs)?,
         ]);
         if !rhs.iter().all(Poly::allows_variable_time_computations) {
             for p in right.0.iter_mut() {
@@ -404,7 +404,7 @@ mod tests {
                     }
                     let mut snapshot_source = ct.clone();
                     let prepared = strategy.prepare_lhs(&snapshot_source)?;
-                    snapshot_source[0].zeroize();
+                    snapshot_source.c[0].zeroize();
                     for _ in 0..2 {
                         let result = prepared.multiply(&other)?;
                         assert_eq!(result, expected);
@@ -456,8 +456,8 @@ mod tests {
                         ));
                     }
                 }
-                let right = Ciphertext::new(parts.split_off(2), &par)?;
-                let left = Ciphertext::new(parts, &par)?;
+                let right = Ciphertext::from_components(parts.split_off(2), &par)?;
+                let left = Ciphertext::from_components(parts, &par)?;
                 let prepared = strategy.prepare_lhs(&left)?;
                 let result = prepared.multiply(&right)?;
                 assert_eq!(result, left.try_mul(&right)?);
@@ -492,7 +492,7 @@ mod tests {
         wrong_context.c[1] = Poly::zero(par.context_at_level(1)?);
         let mut one_part = ct.clone();
         one_part.c.truncate(1);
-        let empty = Ciphertext::zero(&par);
+        let empty = Ciphertext::invalid_empty(&par);
         for invalid in [
             &wrong_params,
             &wrong_level,
@@ -569,14 +569,26 @@ mod tests {
 
             let mut multiplicator = Multiplicator::default(&rk)?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
         }
@@ -604,14 +616,26 @@ mod tests {
 
                 let mut multiplicator = Multiplicator::default(&rk).unwrap();
                 let ct3 = multiplicator.multiply(&ct1, &ct2).unwrap();
-                println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+                println!(
+                    "Noise: {}",
+                    sk.measure_noise_vartime(
+                        &ct3,
+                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    )?
+                );
                 let pt = sk.try_decrypt(&ct3)?;
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
                 multiplicator.enable_mod_switching()?;
                 let ct3 = multiplicator.multiply(&ct1, &ct2)?;
                 assert_eq!(ct3.level, level + 1);
-                println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+                println!(
+                    "Noise: {}",
+                    sk.measure_noise_vartime(
+                        &ct3,
+                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    )?
+                );
                 let pt = sk.try_decrypt(&ct3)?;
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
             }
@@ -641,14 +665,26 @@ mod tests {
             // Remove the relinearization key.
             multiplicator.rk = None;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
             multiplicator.enable_mod_switching()?;
             let ct3 = multiplicator.multiply(&ct1, &ct2)?;
             assert_eq!(ct3.level, 1);
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
         }
@@ -700,7 +736,13 @@ mod tests {
                 Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
                 expected
             );
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
@@ -715,7 +757,13 @@ mod tests {
                 Vec::<u64>::try_decode(&sk.try_decrypt(&squared)?, Encoding::simd())?,
                 expected
             );
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct3)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
         }

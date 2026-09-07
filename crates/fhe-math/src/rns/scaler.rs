@@ -16,7 +16,12 @@ use num_traits::{One, ToPrimitive, Zero};
 use std::{cmp::min, sync::Arc};
 
 /// Scaling factor when performing a RNS scaling.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rns::ScalingFactor::default();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScalingFactor {
     numerator: BigUint,
     denominator: BigUint,
@@ -52,7 +57,12 @@ impl ScalingFactor {
 /// Fractional corrections use fixed-point approximations. For large contexts,
 /// results extremely close to centering or rounding boundaries can differ from
 /// exact rational arithmetic.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rns::RnsScaler::default();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RnsScaler {
     from: Arc<RnsContext>,
     to: Arc<RnsContext>,

@@ -130,7 +130,7 @@ mod tests {
                 }
             });
             let inputs = [
-                Poly::<PowerBasis>::try_convert_from(edges, &source, false)?,
+                Poly::<PowerBasis>::try_convert_from(edges, &source)?,
                 Poly::<PowerBasis>::random(&source, &mut rng),
             ];
             // Match at the start, middle, or workspace row; include no overlap
@@ -144,18 +144,26 @@ mod tests {
                 vec![moduli[1], moduli[3]],
             ] {
                 let target = Context::new_arc(&target_moduli, degree)?;
-                let one = Poly::<PowerBasis>::try_convert_from(&[1u64][..], &target, true)?
-                    .into_ntt_shoup();
+                let one = Poly::<PowerBasis>::try_convert_from_public(
+                    &[1u64][..],
+                    &target,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?
+                .into_ntt_shoup();
                 for input in &inputs {
                     for public in [false, true] {
                         let mut transformed = input.clone().into_ntt();
                         transformed.allow_variable_time_computations = public;
                         for index in 0..source.moduli.len() {
                             let source_row = input.coefficients.row(index);
-                            let expected = Poly::<PowerBasis>::try_convert_from(
+                            let expected = Poly::<PowerBasis>::try_convert_from_with_timing(
                                 source_row.as_slice().unwrap(),
                                 &target,
-                                public,
+                                (public).then(|| {
+                                    fhe_traits::VariableTime::new(
+                                        fhe_traits::PublicData::assert_public(),
+                                    )
+                                }),
                             )?
                             .into_ntt();
                             let mut actual =

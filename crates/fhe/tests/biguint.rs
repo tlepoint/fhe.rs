@@ -112,7 +112,7 @@ fn test_biguint_multiplication_without_relin() -> Result<(), Box<dyn Error>> {
 
     let ct_res = &ct1 * &ct2;
 
-    assert_eq!(ct_res.len(), 3); // Degree increases
+    assert_eq!(ct_res.components().len(), 3); // Degree increases
 
     let decrypted_pt = sk.try_decrypt(&ct_res)?;
     let decrypted_values: Vec<BigUint> =
@@ -159,7 +159,7 @@ fn test_biguint_multiplication_with_relin() -> Result<(), Box<dyn Error>> {
     let mut ct_res = &ct1 * &ct2;
     rk.relinearizes(&mut ct_res)?;
 
-    assert_eq!(ct_res.len(), 2); // Degree reduced
+    assert_eq!(ct_res.components().len(), 2); // Degree reduced
 
     let decrypted_pt = sk.try_decrypt(&ct_res)?;
     let decrypted_values: Vec<BigUint> =

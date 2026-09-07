@@ -67,7 +67,7 @@ impl PublicKeySwitchShare {
         let ctx = par.context_at_level(ct.level)?;
 
         let mut s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         s.disallow_variable_time_computations();
 
@@ -76,14 +76,14 @@ impl PublicKeySwitchShare {
         let e0 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
         let e1 = Zeroizing::new(Poly::<Ntt>::small(ctx, par.variance, rng)?);
 
-        let mut h0 = pk_ct[0].clone();
+        let mut h0 = pk_ct.c[0].clone();
         h0.disallow_variable_time_computations();
         h0 *= u.as_ref();
-        *s.as_mut() *= &ct[1];
+        *s.as_mut() *= &ct.c[1];
         h0 += s.as_ref();
         h0 += e0.as_ref();
 
-        let mut h1 = pk_ct[1].clone();
+        let mut h1 = pk_ct.c[1].clone();
         h1.disallow_variable_time_computations();
         h1 *= u.as_ref();
         h1 += e1.as_ref();
@@ -94,7 +94,7 @@ impl PublicKeySwitchShare {
 
         Ok(Self {
             par,
-            c0: ct[0].clone(),
+            c0: ct.c[0].clone(),
             h0_share: h0,
             h1_share: h1,
         })
@@ -117,7 +117,7 @@ impl Aggregate<PublicKeySwitchShare> for Ciphertext {
 
         let c0 = &share.c0 + &h0;
 
-        Ciphertext::new(vec![c0, h1], &share.par)
+        Ciphertext::from_components(vec![c0, h1], &share.par)
     }
 }
 
@@ -187,7 +187,7 @@ mod tests {
                         .unwrap();
 
                     let pt2 = sk_out.try_decrypt(&ct2).unwrap();
-                    assert_eq!(pt1, pt2);
+                    assert_eq!(pt1.poly_ntt, pt2.poly_ntt);
                 }
             }
         }
@@ -209,8 +209,13 @@ mod tests {
             ))
         ));
         assert!(
-            PublicKeySwitchShare::new(&sk, &pk, &crate::bfv::Ciphertext::zero(&params), &mut rng)
-                .is_err()
+            PublicKeySwitchShare::new(
+                &sk,
+                &pk,
+                &crate::bfv::Ciphertext::invalid_empty(&params),
+                &mut rng
+            )
+            .is_err()
         );
     }
 }

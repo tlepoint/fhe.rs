@@ -10,11 +10,30 @@ use fhe_traits::{
 use prost::Message;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// A ciphertext encrypting a plaintext.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Polynomial components are immutable through the public API.
+/// ```compile_fail
+/// use fhe::bfv::Ciphertext;
+/// use fhe_math::rq::{Poly, Ntt};
+/// fn replace(ct: &mut Ciphertext, polynomial: Poly<Ntt>) {
+///     ct.components()[0] = polynomial;
+/// }
+/// ```
+/// The ciphertext is not a slice or a mutable smart pointer to its components.
+/// ```compile_fail
+/// use fhe::bfv::Ciphertext;
+/// use fhe_math::rq::{Poly, Ntt};
+/// fn replace(ct: &mut Ciphertext, polynomial: Poly<Ntt>) {
+///     ct[0] = polynomial;
+/// }
+/// ```
+///
+/// Equality compares parameters, level and polynomial components. It ignores
+/// the compression seed and does not test equality of encrypted messages.
+#[derive(Debug, Clone, Eq)]
 pub struct Ciphertext {
     /// The parameters of the underlying BFV encryption scheme.
     pub(crate) par: Arc<BfvParameters>,
@@ -29,28 +48,19 @@ pub struct Ciphertext {
     pub(crate) level: usize,
 }
 
-impl Deref for Ciphertext {
-    type Target = [Poly<Ntt>];
-
-    fn deref(&self) -> &Self::Target {
-        &self.c
-    }
-}
-
-impl DerefMut for Ciphertext {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // Any component may be changed through the returned slice.
-        self.seed = None;
-        &mut self.c
+impl PartialEq for Ciphertext {
+    fn eq(&self, other: &Self) -> bool {
+        self.par == other.par && self.level == other.level && self.c == other.c
     }
 }
 
 impl Ciphertext {
     /// Create a ciphertext from a vector of polynomials.
     /// A ciphertext must contain at least two polynomials, and all polynomials
-    /// must be in Ntt representation and with the same context.
+    /// must have canonical Ntt residues and the same context. The context must
+    /// belong to the supplied parameters; the level is inferred from it.
     #[expect(clippy::expect_used, reason = "bounds are validated before use")]
-    pub fn new(c: Vec<Poly<Ntt>>, par: &Arc<BfvParameters>) -> Result<Self> {
+    pub fn from_components(c: Vec<Poly<Ntt>>, par: &Arc<BfvParameters>) -> Result<Self> {
         if c.len() < 2 {
             return Err(crate::CiphertextError::TooFewPolynomials {
                 actual: c.len(),
@@ -67,8 +77,11 @@ impl Ciphertext {
 
         // Check that all polynomials have the expected context.
         for ci in c.iter() {
+            if !ci.is_canonical() {
+                return Err(crate::CiphertextError::NonCanonicalPolynomial.into());
+            }
             if ci.ctx() != ctx {
-                return Err(crate::CiphertextError::PolynomialContextMismatch { level: 0 }.into());
+                return Err(crate::CiphertextError::PolynomialContextMismatch { level }.into());
             }
         }
 
@@ -112,6 +125,9 @@ impl Ciphertext {
 
     #[inline]
     fn validate_context(&self, expected_level: usize, expected_ctx: &Arc<Context>) -> Result<()> {
+        if self.c.iter().any(|poly| !poly.is_canonical()) {
+            return Err(crate::CiphertextError::NonCanonicalPolynomial.into());
+        }
         if self.c.len() < 2 {
             return Err(crate::CiphertextError::TooFewPolynomials {
                 actual: self.c.len(),
@@ -141,6 +157,7 @@ impl Ciphertext {
 
     /// Truncate the underlying vector of polynomials.
     pub(crate) fn truncate(&mut self, len: usize) {
+        self.seed = None;
         self.c.truncate(len)
     }
 
@@ -175,9 +192,7 @@ impl Ciphertext {
                 max_level: self.max_switchable_level(),
             });
         }
-        if !self.c.is_empty() {
-            self.validate_for(&self.par)?;
-        }
+        self.validate_for(&self.par)?;
         if self.level != target_level {
             let target = self.par.context_at_level(target_level)?;
             self.seed = None;
@@ -222,13 +237,69 @@ impl DeserializeParametrized for Ciphertext {
 }
 
 impl Ciphertext {
-    /// Generate the zero ciphertext.
+    /// Construct a public, deterministic zero at a validated level.
+    ///
+    /// This has two polynomial components and can be evaluated, decrypted and
+    /// serialized like any other ciphertext. It does not hide its value;
+    /// encrypt a zero plaintext with a key and RNG to obtain a randomized zero.
+    pub fn trivial_zero(par: &Arc<BfvParameters>, level: usize) -> Result<Self> {
+        let ctx = par.context_at_level(level)?;
+        let mut zero = Poly::<Ntt>::zero(ctx);
+        zero.allow_variable_time_computations(fhe_traits::VariableTime::new(
+            fhe_traits::PublicData::assert_public(),
+        ));
+        Self::from_components(vec![zero; 2], par)
+    }
+
+    /// Borrow the ciphertext's parameters.
     #[must_use]
-    pub fn zero(par: &Arc<BfvParameters>) -> Self {
+    pub fn parameters(&self) -> &Arc<BfvParameters> {
+        &self.par
+    }
+
+    /// Return the modulus-chain level (zero is the full chain).
+    #[must_use]
+    pub const fn level(&self) -> usize {
+        self.level
+    }
+
+    /// Return the number of polynomial components.
+    #[must_use]
+    pub fn component_count(&self) -> usize {
+        self.c.len()
+    }
+
+    /// Borrow the polynomial components for advanced arithmetic or inspection.
+    /// Mutation requires rebuilding through [`Self::from_components`].
+    #[must_use]
+    pub fn components(&self) -> &[Poly<Ntt>] {
+        &self.c
+    }
+
+    /// Consume this ciphertext, discarding its compression seed.
+    /// Reconstruct modified components with [`Self::from_components`].
+    #[must_use]
+    pub fn into_components(self) -> Vec<Poly<Ntt>> {
+        self.c
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.c.len()
+    }
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, Poly<Ntt>> {
+        self.c.iter()
+    }
+    pub(crate) fn iter_mut(&mut self) -> std::slice::IterMut<'_, Poly<Ntt>> {
+        self.seed = None;
+        self.c.iter_mut()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn invalid_empty(par: &Arc<BfvParameters>) -> Self {
         Self {
             par: par.clone(),
             seed: None,
-            c: Default::default(),
+            c: vec![],
             level: 0,
         }
     }
@@ -242,8 +313,8 @@ impl From<&Ciphertext> for CiphertextProto {
         // Split the ciphertext polynomials into all-but-last and last
         match ct.c.split_last() {
             None => {
-                // Empty ciphertext - this should not happen as new() requires
-                // at least 2 polys but we handle it gracefully
+                // Only malformed crate-internal test fixtures can be empty;
+                // public construction requires at least two components.
             }
             Some((last, rest)) => {
                 // Serialize all but the last polynomial
@@ -393,24 +464,24 @@ mod tests {
             let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
             let mut ct3 = &ct * &ct;
 
-            let c0 = &ct3[0];
-            let c1 = &ct3[1];
-            let c2 = &ct3[2];
+            let c0 = &ct3.c[0];
+            let c1 = &ct3.c[1];
+            let c2 = &ct3.c[2];
 
             assert_eq!(
                 ct3,
-                Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
+                Ciphertext::from_components(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
             );
             assert_eq!(ct3.level, 0);
 
             ct3.switch_to_level(ct3.max_switchable_level())?;
 
-            let c0 = ct3.first().unwrap();
-            let c1 = ct3.get(1).unwrap();
-            let c2 = ct3.get(2).unwrap();
+            let c0 = ct3.c.first().unwrap();
+            let c1 = ct3.c.get(1).unwrap();
+            let c2 = ct3.c.get(2).unwrap();
             assert_eq!(
                 ct3,
-                Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
+                Ciphertext::from_components(vec![c0.clone(), c1.clone(), c2.clone()], &params)?
             );
             assert_eq!(ct3.level, params.max_level());
         }
@@ -440,7 +511,7 @@ mod tests {
                             p
                         })
                         .collect();
-                    let original = Ciphertext::new(polynomials, &par)?;
+                    let original = Ciphertext::from_components(polynomials, &par)?;
                     for target in level..=par.max_level() {
                         let mut expected = original.clone();
                         while expected.level < target {
@@ -473,16 +544,16 @@ mod tests {
         }
         // A malformed later part must not leave the earlier part switched.
         let ctx = par.context_at_level(0)?;
-        let mut malformed = Ciphertext::new(vec![Poly::zero(ctx); 2], &par)?;
+        let mut malformed = Ciphertext::from_components(vec![Poly::zero(ctx); 2], &par)?;
         malformed.c[1] = Poly::zero(par.context_at_level(1)?);
         let saved = malformed.clone();
         assert!(malformed.switch_down().is_err());
         assert_eq!(malformed, saved);
         assert!(malformed.switch_to_level(2).is_err());
         assert_eq!(malformed, saved);
-        let mut zero = Ciphertext::zero(&par);
+        let mut zero = Ciphertext::trivial_zero(&par, 0)?;
         zero.switch_to_level(par.max_level())?;
-        assert!(zero.is_empty());
+        assert_eq!(zero.component_count(), 2);
         assert_eq!(zero.level, par.max_level());
         Ok(())
     }
@@ -580,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn mutable_parts_invalidate_seed() -> Result<(), Box<dyn StdError>> {
+    fn reconstructed_parts_discard_seed() -> Result<(), Box<dyn StdError>> {
         let params = BfvParameters::default_arc(2, 16);
         let mut rng = rng();
         let sk = SecretKey::random(&params, &mut rng);
@@ -588,8 +659,9 @@ mod tests {
         let original: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
         assert!(original.seed.is_some());
         for index in [0, 1] {
-            let mut ct = original.clone();
-            ct[index] = -&ct[index];
+            let mut parts = original.clone().into_components();
+            parts[index] = -&parts[index];
+            let ct = Ciphertext::from_components(parts, &params)?;
             assert!(ct.seed.is_none());
             let restored = Ciphertext::from_bytes(&ct.to_bytes(), &params)?;
             assert_eq!(ct, restored);

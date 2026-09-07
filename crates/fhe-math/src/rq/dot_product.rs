@@ -262,7 +262,7 @@ mod tests {
             .iter()
             .flat_map(|q| vec![**q - 1; ctx.degree])
             .collect();
-        let worst = Poly::<Ntt>::try_convert_from(values, &ctx, false).unwrap();
+        let worst = Poly::<Ntt>::try_convert_from(values, &ctx).unwrap();
         let mut workspace = DotProductWorkspace::new(&ctx);
         let mut out = Poly::zero(&ctx);
         let output_pointer = out.coefficients.as_ptr();

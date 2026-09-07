@@ -97,7 +97,7 @@ impl PlaintextVec {
         let poly = if let Some(variable_time) = variable_time {
             Poly::<PowerBasis>::try_convert_from_public(&coefficients, ctx, variable_time)?
         } else {
-            Poly::<PowerBasis>::try_convert_from(&coefficients, ctx, false)?
+            Poly::<PowerBasis>::try_convert_from(&coefficients, ctx)?
         };
         Ok(poly.into_ntt())
     }
@@ -112,10 +112,7 @@ impl PlaintextVec {
             EncodingEnum::Poly => {
                 let mut coefficients = vec![BigUint::zero(); par.degree()];
                 coefficients[..value.len()].clone_from_slice(value);
-                Ok(
-                    Poly::<PowerBasis>::try_convert_from(coefficients.as_slice(), ctx, false)?
-                        .into_ntt(),
-                )
+                Ok(Poly::<PowerBasis>::try_convert_from(coefficients.as_slice(), ctx)?.into_ntt())
             }
             EncodingEnum::Simd => {
                 let values = value

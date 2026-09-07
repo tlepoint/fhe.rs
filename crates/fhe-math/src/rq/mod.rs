@@ -87,16 +87,30 @@ impl ScaleRepresentation for PowerBasis {}
 impl ScaleRepresentation for Ntt {}
 
 /// An exponent for a substitution.
+///
+/// The exponent and its cached permutation cannot be changed independently.
+/// ```compile_fail
+/// use fhe_math::rq::SubstitutionExponent;
+/// fn invalidate(exponent: &mut SubstitutionExponent) {
+///     exponent.exponent = 2;
+/// }
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct SubstitutionExponent {
     /// The value of the exponent.
-    pub exponent: usize,
+    exponent: usize,
 
     ctx: Arc<Context>,
     power_bitrev: Vec<usize>,
 }
 
 impl SubstitutionExponent {
+    /// Return the validated exponent modulo twice the polynomial degree.
+    #[must_use]
+    pub const fn exponent(&self) -> usize {
+        self.exponent
+    }
+
     /// Creates a substitution element from an exponent.
     /// Returns an error if the exponent is even modulo 2 * degree.
     pub fn new(ctx: &Arc<Context>, exponent: usize) -> Result<Self> {
@@ -125,7 +139,7 @@ impl SubstitutionExponent {
 }
 
 /// Struct that holds a polynomial for a specific context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Poly<R: RepresentationTag> {
     ctx: Arc<Context>,
     has_lazy_coefficients: bool,
@@ -133,6 +147,15 @@ pub struct Poly<R: RepresentationTag> {
     coefficients: Array2<u64>,
     coefficients_shoup: Option<Array2<u64>>,
     _repr: PhantomData<R>,
+}
+
+impl<R: RepresentationTag> std::fmt::Debug for Poly<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Poly")
+            .field("context", &self.ctx)
+            .field("representation", &R::REPRESENTATION)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R: RepresentationTag> PartialEq for Poly<R> {
@@ -171,6 +194,13 @@ impl<R: RepresentationTag> AsMut<Poly<R>> for Poly<R> {
 }
 
 impl<R: RepresentationTag> Poly<R> {
+    /// Whether the residues are reduced to the canonical range for each
+    /// modulus.
+    #[must_use]
+    pub const fn is_canonical(&self) -> bool {
+        !self.has_lazy_coefficients
+    }
+
     /// Convert explicitly public values into a polynomial using variable-time
     /// reduction when available.
     ///
@@ -179,12 +209,12 @@ impl<R: RepresentationTag> Poly<R> {
     pub fn try_convert_from_public<T>(
         value: T,
         ctx: &Arc<Context>,
-        _variable_time: fhe_traits::VariableTime,
+        variable_time: fhe_traits::VariableTime,
     ) -> Result<Self>
     where
         Self: traits::TryConvertFrom<T>,
     {
-        Self::try_convert_from(value, ctx, true)
+        Self::try_convert_from_with_timing(value, ctx, Some(variable_time))
     }
 
     /// Creates a polynomial holding the constant 0.
@@ -304,7 +334,7 @@ impl<R: RepresentationTag> Poly<R> {
                 maximum: 32,
             }
         })?);
-        let p = Poly::<PowerBasis>::try_convert_from(coeffs.as_ref() as &[i64], ctx, false)?;
+        let p = Poly::<PowerBasis>::try_convert_from(coeffs.as_ref() as &[i64], ctx)?;
         if R::REPRESENTATION == Representation::PowerBasis {
             Ok(Poly::from_parts(p))
         } else if R::REPRESENTATION == Representation::Ntt {

@@ -19,7 +19,7 @@ mod rgsw_ciphertext;
 
 pub mod traits;
 pub use ciphertext::Ciphertext;
-pub use context::{CipherPlainContext, ContextLevel};
+pub use context::ContextLevel;
 pub use encoding::Encoding;
 #[cfg(feature = "experimental-mbfv")]
 pub(crate) use keys::KeySwitchingKey;

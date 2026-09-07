@@ -30,18 +30,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut product = &ct1 * &ct2_rgsw;
     let expected = &ct1 * &ct2;
 
-    println!("Noise in product: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in product: {}",
+        sk.measure_noise_vartime(
+            &product,
+            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
     println!("Size of product: {} bytes", product.to_bytes().len());
-    println!("Noise in expected: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in expected: {}",
+        sk.measure_noise_vartime(
+            &product,
+            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
 
     product.switch_to_level(product.max_switchable_level())?;
-    println!("Noise in product: {}", unsafe {
-        sk.measure_noise(&product)?
-    });
+    println!(
+        "Noise in product: {}",
+        sk.measure_noise_vartime(
+            &product,
+            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+        )?
+    );
     println!("Size of product: {} bytes", product.to_bytes().len());
 
     let pt_prod = sk.try_decrypt(&product)?;

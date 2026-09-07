@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Computing the tally: this can be done by anyone (party, aggregator, separate
     // computing entity).
     let tally = timeit!("Vote tallying", {
-        let mut sum = Ciphertext::zero(&params);
+        let mut sum = Ciphertext::trivial_zero(&params, 0)?;
         for ct in &votes_encrypted {
             sum += ct;
         }

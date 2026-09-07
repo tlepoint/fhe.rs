@@ -65,30 +65,22 @@ impl SecretKeySwitchShare {
 
         let par = sk_input_share.par.clone();
         let s_in = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(
-                sk_input_share.coeffs.as_ref(),
-                ct[0].ctx(),
-                false,
-            )?
-            .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_input_share.coeffs.as_ref(), ct.c[0].ctx())?
+                .into_ntt(),
         );
         let s_out = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(
-                sk_output_share.coeffs.as_ref(),
-                ct[0].ctx(),
-                false,
-            )?
-            .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_output_share.coeffs.as_ref(), ct.c[0].ctx())?
+                .into_ntt(),
         );
 
         // Sample error
         // TODO this should be exponential in ciphertext noise!
-        let e = Zeroizing::new(Poly::<Ntt>::small(ct[0].ctx(), par.variance, rng)?);
+        let e = Zeroizing::new(Poly::<Ntt>::small(ct.c[0].ctx(), par.variance, rng)?);
 
         // Create h_i share
         let mut h_share = s_in.as_ref() - s_out.as_ref();
         h_share.disallow_variable_time_computations();
-        h_share *= &ct[1];
+        h_share *= &ct.c[1];
         h_share += e.as_ref();
 
         Ok(Self { par, ct, h_share })
@@ -107,10 +99,10 @@ impl Aggregate<SecretKeySwitchShare> for Ciphertext {
             h += &sh.h_share;
         }
 
-        let c0 = &share.ct[0] + &h;
-        let c1 = share.ct[1].clone();
+        let c0 = &share.ct.c[0] + &h;
+        let c1 = share.ct.c[1].clone();
 
-        Ciphertext::new(vec![c0, c1], &share.par)
+        Ciphertext::from_components(vec![c0, c1], &share.par)
     }
 }
 
@@ -151,7 +143,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
         let ct = Ciphertext::from_shares(sks_shares)?;
 
         // Note: during SKS, c[1]*sk has already been added to c[0].
-        let mut c = Zeroizing::new(ct[0].clone());
+        let mut c = Zeroizing::new(ct.c[0].clone());
         c.disallow_variable_time_computations();
         let ctx = c.ctx().clone();
         let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
@@ -172,8 +164,7 @@ impl Aggregate<DecryptionShare> for Plaintext {
 
         ct.par.plaintext.reduce_vec(&mut w);
 
-        let poly =
-            Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt();
+        let poly = Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt();
 
         let pt = Plaintext {
             par: ct.par.clone(),
@@ -249,7 +240,7 @@ mod tests {
                         .map(|p| DecryptionShare::new(&p.sk_share, &ct, &mut rng));
                     let pt2 = Plaintext::from_shares(decryption_shares).unwrap();
 
-                    assert_eq!(pt1, pt2);
+                    assert_eq!(pt1.poly_ntt, pt2.poly_ntt);
                 }
             }
         }
@@ -312,13 +303,13 @@ mod tests {
                     let ct2 = Arc::new(ct2);
 
                     // The second set of parties then does a collective decryption
-                    let pt2 = out_parties
+                    let pt2: Plaintext = out_parties
                         .iter()
                         .map(|p| DecryptionShare::new(&p.sk_share, &ct2, &mut rng))
                         .aggregate()
                         .unwrap();
 
-                    assert_eq!(pt1, pt2);
+                    assert_eq!(pt1.poly_ntt, pt2.poly_ntt);
                 }
             }
         }

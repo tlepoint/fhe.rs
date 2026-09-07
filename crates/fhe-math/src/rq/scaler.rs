@@ -14,7 +14,12 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Context extender.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rq::scaler::Scaler::default();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scaler {
     from: Arc<Context>,
     to: Arc<Context>,

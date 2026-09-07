@@ -209,9 +209,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 elements_size,
             );
 
-        println!("Noise in response: {:?}", unsafe {
-            sk.measure_noise(&response)
-        });
+        println!(
+            "Noise in response: {:?}",
+            sk.measure_noise_vartime(
+                &response,
+                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+            )
+        );
 
         plaintext[offset * elements_size..(offset + 1) * elements_size].to_vec()
     });

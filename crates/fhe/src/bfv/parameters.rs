@@ -6,7 +6,7 @@ use crate::{Error, ParametersError, Result, SerializationError};
 use fhe_math::{
     ntt::NttOperator,
     rns::{RnsContext, ScalingFactor},
-    rq::{Context, Poly, PowerBasis, scaler::Scaler, traits::TryConvertFrom},
+    rq::{Context, Poly, PowerBasis, scaler::Scaler},
     zq::{Modulus, primes::generate_prime},
 };
 use fhe_traits::{Deserialize, FheParameters, Serialize};
@@ -121,8 +121,6 @@ impl Debug for BfvParameters {
 }
 
 impl FheParameters for BfvParameters {}
-
-unsafe impl Send for BfvParameters {}
 
 impl BfvParameters {
     /// Returns the underlying polynomial degree
@@ -622,10 +620,10 @@ impl BfvParametersBuilder {
 
             // Use RnsContext to lift the delta values and create the scaling polynomial
             let rns = RnsContext::new(level_moduli)?;
-            let delta = Poly::<PowerBasis>::try_convert_from(
+            let delta = Poly::<PowerBasis>::try_convert_from_public(
                 &[rns.lift((&delta_rests).into())],
                 &cipher_ctx,
-                true,
+                fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
             )?
             .into_ntt_shoup();
 
@@ -789,7 +787,7 @@ impl Deserialize for BfvParameters {
 }
 
 /// Multiplication parameters
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MultiplicationParameters {
     pub(crate) extender: Scaler,
     pub(crate) down_scaler: Scaler,

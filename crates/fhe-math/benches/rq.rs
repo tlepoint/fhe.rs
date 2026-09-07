@@ -321,7 +321,7 @@ pub fn rq_convert_benchmark(c: &mut Criterion) {
             group.bench_function(
                 BenchmarkId::new("try_convert_from_slice", format!("{}/{}", degree, nmoduli)),
                 |b| {
-                    b.iter(|| Poly::<PowerBasis>::try_convert_from(slice, &ctx, false).unwrap());
+                    b.iter(|| Poly::<PowerBasis>::try_convert_from(slice, &ctx).unwrap());
                 },
             );
         }

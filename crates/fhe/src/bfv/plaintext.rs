@@ -21,7 +21,11 @@ enum PlaintextCoefficients {
 }
 
 /// A plaintext object, that encodes a vector according to a specific encoding.
-#[derive(Debug, Clone, Eq)]
+///
+/// Equality includes the complete encoding metadata. An unknown encoding
+/// after decryption is distinct from a known encoding; compare decoded values
+/// when checking an encryption/decryption round trip.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Plaintext {
     /// The parameters of the underlying BFV encryption scheme.
     pub(crate) par: Arc<BfvParameters>,
@@ -181,13 +185,13 @@ impl Plaintext {
                 };
                 let q_mod_t = ctx_lvl.cipher_plain_context.q_mod_t.to_u64().unwrap();
                 modulus.scalar_mul_vec(&mut values, q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx, false).unwrap()
+                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx).unwrap()
             }
             PlaintextCoefficients::Large(mut values) => {
                 self.par
                     .plaintext
                     .scalar_mul_vec(&mut values, &ctx_lvl.cipher_plain_context.q_mod_t);
-                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx, false).unwrap()
+                Poly::<PowerBasis>::try_convert_from(values.as_slice(), ctx).unwrap()
             }
         };
 
@@ -214,37 +218,24 @@ impl Plaintext {
     }
 }
 
-unsafe impl Send for Plaintext {}
-
-impl PartialEq for Plaintext {
-    fn eq(&self, other: &Self) -> bool {
-        let Self {
-            par,
-            encoding,
-            poly_ntt,
-        } = self;
-        let Self {
-            par: other_par,
-            encoding: other_encoding,
-            poly_ntt: other_poly_ntt,
-        } = other;
-
-        let mut eq = par == other_par;
-        eq &= poly_ntt == other_poly_ntt;
-        if encoding.is_some() && other_encoding.is_some() {
-            eq &= encoding == other_encoding;
-        }
-        eq
+impl std::fmt::Debug for Plaintext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Plaintext")
+            .field("degree", &self.par.degree())
+            .field("level", &self.level())
+            .field("encoding", &self.encoding)
+            .finish_non_exhaustive()
     }
 }
 
 // Conversions.
 impl TryConvertFrom<&Plaintext> for Poly<PowerBasis> {
-    fn try_convert_from(
+    fn try_convert_from_with_timing(
         pt: &Plaintext,
         ctx: &Arc<Context>,
-        variable_time: bool,
+        permission: Option<VariableTime>,
     ) -> fhe_math::Result<Self> {
+        let variable_time = permission.is_some();
         if ctx
             != pt
                 .par
@@ -609,12 +600,11 @@ mod tests {
         let mut same_plaintext = Plaintext::try_encode(&a_vec, Encoding::poly(), &params)?;
         assert_eq!(plaintext, same_plaintext);
 
-        // Equality also holds when there is no encoding specified. In this test, we use
-        // the fact that we can set it to None directly, but such a partial plaintext
-        // will be created during decryption since we do not specify the encoding at the
-        // time.
+        // Missing encoding metadata is a distinct state, not a wildcard.
+        // Decryption also creates plaintexts without encoding metadata.
         same_plaintext.encoding = None;
-        assert_eq!(plaintext, same_plaintext);
+        assert_ne!(plaintext, same_plaintext);
+        assert_eq!(plaintext.poly_ntt, same_plaintext.poly_ntt);
 
         Ok(())
     }

@@ -99,10 +99,7 @@ impl KeySwitchingKey {
                 fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
             ))
         } else {
-            Ok(
-                Poly::<PowerBasis>::try_convert_from(coefficients, &self.ctx_ksk, false)?
-                    .into_ntt(),
-            )
+            Ok(Poly::<PowerBasis>::try_convert_from(coefficients, &self.ctx_ksk)?.into_ntt())
         }
     }
 
@@ -199,8 +196,7 @@ impl KeySwitchingKey {
         let size = c1.len();
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx(), false)?
-                .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx())?.into_ntt(),
         );
 
         let rns = RnsContext::new(&sk.par.moduli[..size])?;
@@ -245,8 +241,7 @@ impl KeySwitchingKey {
             return Err(crate::EvaluationKeyError::EmptyKeySwitchingComponents.into());
         }
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx(), false)?
-                .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), c1[0].ctx())?.into_ntt(),
         );
 
         let c0 = c1
@@ -605,7 +600,7 @@ mod tests {
                 let ctx = params.context_at_level(0)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 0, 0, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
+                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 
@@ -786,7 +781,7 @@ mod tests {
                 let ctx = params.context_at_level(5)?;
                 let p = Poly::<PowerBasis>::small(ctx, 10, &mut rng)?;
                 let ksk = KeySwitchingKey::new(&sk, &p, 5, 5, &mut rng)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
+                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
 

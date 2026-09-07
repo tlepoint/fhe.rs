@@ -69,8 +69,8 @@ fn test_context_consistency() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(params.level_of_context(ctx)?, level);
 
         // Verify cipher-plain context points to correct ciphertext context
-        assert_eq!(&level_ctx.poly_context, ctx);
-        assert!(std::sync::Arc::ptr_eq(&level_ctx.poly_context, ctx));
+        assert_eq!(level_ctx.poly_context(), ctx);
+        assert!(std::sync::Arc::ptr_eq(level_ctx.poly_context(), ctx));
 
         // Verify modulus chain decreases
         let expected_moduli_count = params.moduli().len() - level;

@@ -262,7 +262,14 @@ impl PackedPlaintext {
         Plaintext {
             par: self.par.clone(),
             encoding: self.encoding.clone(),
-            poly_ntt: Poly::<Ntt>::try_convert_from(coefficients, ctx, self.public).unwrap(),
+            poly_ntt: Poly::<Ntt>::try_convert_from_with_timing(
+                coefficients,
+                ctx,
+                (self.public).then(|| {
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
+                }),
+            )
+            .unwrap(),
         }
     }
 

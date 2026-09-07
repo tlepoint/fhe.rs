@@ -24,7 +24,7 @@ fn weighted_sum_plain(
     params: &Arc<BfvParameters>,
     sk: &SecretKey,
 ) -> Result<u64, Box<dyn Error>> {
-    let mut acc = Ciphertext::zero(params);
+    let mut acc = Ciphertext::trivial_zero(params, 0)?;
     for (ct, w) in cts.iter().zip(weights.iter()) {
         let pt_w = Plaintext::try_encode(&[*w], Encoding::poly(), params)?;
         acc += &(ct * &pt_w);
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(pk.try_encrypt(&pt, &mut rng)?)
         })
         .collect::<Result<_, Box<dyn Error>>>()?;
-    let mut acc = Ciphertext::zero(&params);
+    let mut acc = Ciphertext::trivial_zero(&params, 0)?;
     for (a, b) in ct_v1.iter().zip(ct_v2.iter()) {
         let mut prod = a * b;
         rk.relinearizes(&mut prod)?;

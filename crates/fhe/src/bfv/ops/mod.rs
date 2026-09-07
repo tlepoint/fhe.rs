@@ -23,13 +23,6 @@ impl Add<&Ciphertext> for &Ciphertext {
     fn add(self, rhs: &Ciphertext) -> Ciphertext {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
 
-        if self.is_empty() {
-            return rhs.clone();
-        }
-        if rhs.is_empty() {
-            return self.clone();
-        }
-
         assert_eq!(self.level, rhs.level);
         assert_eq!(self.len(), rhs.len());
 
@@ -60,16 +53,12 @@ impl AddAssign<&Ciphertext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Ciphertext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
 
-        if self.is_empty() {
-            *self = rhs.clone()
-        } else if !rhs.is_empty() {
-            assert_eq!(self.level, rhs.level);
-            assert_eq!(self.len(), rhs.len());
-            self.iter_mut()
-                .zip(rhs.iter())
-                .for_each(|(c1i, c2i)| *c1i += c2i);
-            self.seed = None
-        }
+        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.len(), rhs.len());
+        self.iter_mut()
+            .zip(rhs.iter())
+            .for_each(|(c1i, c2i)| *c1i += c2i);
+        self.seed = None
     }
 }
 
@@ -94,11 +83,10 @@ impl Add<&Ciphertext> for &Plaintext {
 impl AddAssign<&Plaintext> for Ciphertext {
     fn add_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
-        assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level());
 
         let poly = rhs.to_poly();
-        self[0] += &poly;
+        self.c[0] += &poly;
         self.seed = None
     }
 }
@@ -117,13 +105,6 @@ impl Sub<&Ciphertext> for &Ciphertext {
 
     fn sub(self, rhs: &Ciphertext) -> Ciphertext {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
-
-        if self.is_empty() {
-            return -rhs.clone();
-        }
-        if rhs.is_empty() {
-            return self.clone();
-        }
 
         assert_eq!(self.level, rhs.level);
         assert_eq!(self.len(), rhs.len());
@@ -155,16 +136,12 @@ impl SubAssign<&Ciphertext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Ciphertext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
 
-        if self.is_empty() {
-            *self = -rhs
-        } else if !rhs.is_empty() {
-            assert_eq!(self.level, rhs.level);
-            assert_eq!(self.len(), rhs.len());
-            self.iter_mut()
-                .zip(rhs.iter())
-                .for_each(|(c1i, c2i)| *c1i -= c2i);
-            self.seed = None
-        }
+        assert_eq!(self.level, rhs.level);
+        assert_eq!(self.len(), rhs.len());
+        self.iter_mut()
+            .zip(rhs.iter())
+            .for_each(|(c1i, c2i)| *c1i -= c2i);
+        self.seed = None
     }
 }
 
@@ -189,7 +166,6 @@ impl Sub<&Ciphertext> for &Plaintext {
 impl SubAssign<&Plaintext> for Ciphertext {
     fn sub_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
-        assert!(!self.is_empty());
         assert_eq!(self.level, rhs.level());
 
         let poly = rhs.to_poly();
@@ -234,10 +210,8 @@ impl Neg for Ciphertext {
 impl MulAssign<&Plaintext> for Ciphertext {
     fn mul_assign(&mut self, rhs: &Plaintext) {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
-        if !self.is_empty() {
-            assert_eq!(self.level, rhs.level());
-            self.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
-        }
+        assert_eq!(self.level, rhs.level());
+        self.iter_mut().for_each(|ci| *ci *= &rhs.poly_ntt);
         self.seed = None
     }
 }
@@ -266,13 +240,6 @@ impl Mul<&Ciphertext> for &Ciphertext {
 
     fn mul(self, rhs: &Ciphertext) -> Ciphertext {
         assert!(Arc::ptr_eq(&self.par, &rhs.par));
-        if self.is_empty() {
-            return self.clone();
-        }
-        if rhs.is_empty() {
-            return rhs.clone();
-        }
-
         self.try_mul(rhs).unwrap()
     }
 }
@@ -280,8 +247,7 @@ impl Mul<&Ciphertext> for &Ciphertext {
 impl Ciphertext {
     /// Multiply without relinearization, returning validation errors instead
     /// of panicking. Both ciphertexts must use the same parameter instance and
-    /// level and contain at least two polynomial parts. Empty zero sentinels
-    /// are only supported by the multiplication operator.
+    /// level and contain at least two polynomial parts.
     ///
     /// The two-part case uses three pointwise products (Karatsuba). Multiplying
     /// an object by itself uses [`Self::square`] without comparing
@@ -309,15 +275,15 @@ impl Ciphertext {
             .iter()
             .map(|p| p.scale(&mp.down_scaler))
             .collect::<fhe_math::Result<_>>()?;
-        Ciphertext::new(c, &self.par)
+        Ciphertext::from_components(c, &self.par)
     }
 
     /// Square without relinearization. Each input part is extended once and
     /// each off-diagonal product is computed once, then doubled before BFV
     /// rounding. An input with `k` parts produces `2*k - 1` parts.
     ///
-    /// Returns an error for an invalid ciphertext, including an empty zero
-    /// sentinel. Use [`Multiplicator::square`] to also relinearize or switch
+    /// Returns an error for an invalid ciphertext. Use
+    /// [`Multiplicator::square`] to also relinearize or switch
     /// down according to a configured strategy.
     pub fn square(&self) -> Result<Ciphertext> {
         self.validate_for(&self.par)?;
@@ -333,7 +299,7 @@ impl Ciphertext {
             .iter()
             .map(|p| p.scale(&mp.down_scaler))
             .collect::<fhe_math::Result<_>>()?;
-        Ciphertext::new(c, &self.par)
+        Ciphertext::from_components(c, &self.par)
     }
 }
 
@@ -354,7 +320,7 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
-            let zero = Ciphertext::zero(&params);
+            let zero = Ciphertext::trivial_zero(&params, 0)?;
             let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
                 let a = q.random_vec(params.degree(), &mut rng);
@@ -448,7 +414,7 @@ mod tests {
             BfvParameters::default_arc(1, 16),
             BfvParameters::default_arc(6, 16),
         ] {
-            let zero = Ciphertext::zero(&params);
+            let zero = Ciphertext::trivial_zero(&params, 0)?;
             let q = fhe_math::zq::Modulus::new(params.plaintext()).unwrap();
             for _ in 0..50 {
                 let a = q.random_vec(params.degree(), &mut rng);
@@ -663,7 +629,7 @@ mod tests {
                 );
 
                 let mut mixed = ct2.clone();
-                mixed[0].disallow_variable_time_computations();
+                mixed.c[0].disallow_variable_time_computations();
                 let mixed_product = &ct1 * &mixed;
                 assert!(
                     mixed_product
@@ -671,13 +637,25 @@ mod tests {
                         .all(|poly| !poly.allows_variable_time_computations())
                 );
 
-                println!("Noise: {}", unsafe { sk.measure_noise(&ct3)? });
+                println!(
+                    "Noise: {}",
+                    sk.measure_noise_vartime(
+                        &ct3,
+                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    )?
+                );
                 let pt = sk.try_decrypt(&ct3)?;
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
 
                 let e = expected.clone();
                 q.mul_vec(&mut expected, &e);
-                println!("Noise: {}", unsafe { sk.measure_noise(&ct4)? });
+                println!(
+                    "Noise: {}",
+                    sk.measure_noise_vartime(
+                        &ct4,
+                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    )?
+                );
                 let pt = sk.try_decrypt(&ct4)?;
                 assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
             }
@@ -703,7 +681,13 @@ mod tests {
             let ct1: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
             let ct2 = &ct1 * &ct1;
 
-            println!("Noise: {}", unsafe { sk.measure_noise(&ct2)? });
+            println!(
+                "Noise: {}",
+                sk.measure_noise_vartime(
+                    &ct2,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )?
+            );
             let pt = sk.try_decrypt(&ct2)?;
             assert_eq!(Vec::<u64>::try_decode(&pt, Encoding::simd())?, expected);
         }
@@ -715,17 +699,21 @@ mod tests {
         let params = BfvParameters::default_arc(2, 16);
         let mut rng = rng();
         let sk = SecretKey::random(&params, &mut rng);
-        let zero = Ciphertext::zero(&params);
-        assert!((&zero * &zero).is_empty());
         for level in 0..=params.max_level() {
-            let pt = Plaintext::try_encode(&[3u64], Encoding::poly_at_level(level), &params)?;
+            let zero = Ciphertext::trivial_zero(&params, level)?;
+            let encoding = Encoding::poly_at_level(level);
+            let pt = Plaintext::try_encode(&[3u64], encoding.clone(), &params)?;
             let ct: Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
-            for operand in [ct.clone(), &ct * &ct] {
+            for operand in [zero.clone(), ct.clone(), &ct * &ct] {
                 let left = &zero * &operand;
                 let right = &operand * &zero;
-                assert!(left.is_empty());
                 assert_eq!(left, right);
-                assert_eq!(&right + &operand, operand);
+                assert_eq!(left.component_count(), operand.component_count() + 1);
+                assert_eq!(left.level(), level);
+                assert_eq!(
+                    Vec::<u64>::try_decode(&sk.try_decrypt(&left)?, encoding.clone())?,
+                    vec![0; params.degree()],
+                );
             }
         }
         Ok(())

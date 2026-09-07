@@ -18,10 +18,18 @@ use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Secret key for the BFV encryption scheme.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct SecretKey {
     pub(crate) par: Arc<BfvParameters>,
     pub(crate) coeffs: Box<[i64]>,
+}
+
+impl std::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretKey")
+            .field("degree", &self.par.degree())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Zeroize for SecretKey {
@@ -54,27 +62,37 @@ impl SecretKey {
 
     /// Measure the noise in a [`Ciphertext`].
     ///
-    /// # Safety
+    /// ```compile_fail
+    /// use fhe::bfv::{SecretKey, Ciphertext};
+    /// fn diagnostic(sk: &SecretKey, ct: &Ciphertext) {
+    ///     sk.measure_noise_vartime(ct);
+    /// }
+    /// ```
     ///
-    /// This operations may run in a variable time depending on the value of the
-    /// noise.
-    pub unsafe fn measure_noise(&self, ct: &Ciphertext) -> Result<usize> {
+    /// Both the result and the running time reveal secret-dependent noise.
+    /// Use only in a trusted diagnostic setting, never as an oracle for
+    /// untrusted callers. The acknowledgment concerns information leakage,
+    /// not Rust memory safety.
+    pub fn measure_noise_vartime(
+        &self,
+        ct: &Ciphertext,
+        _diagnostics: fhe_traits::SecretDependentDiagnostics,
+    ) -> Result<usize> {
         let plaintext = Zeroizing::new(self.try_decrypt(ct)?);
         let m = Zeroizing::new(plaintext.to_poly());
 
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
-                .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct.c[0].ctx())?.into_ntt(),
         );
         let mut si = s.clone();
 
         // Let's disable variable time computations
-        let mut c = Zeroizing::new(ct[0].clone());
+        let mut c = Zeroizing::new(ct.c[0].clone());
         c.disallow_variable_time_computations();
 
         for i in 1..ct.len() {
-            let mut cis = Zeroizing::new(ct[i].clone());
+            let mut cis = Zeroizing::new(ct.c[i].clone());
             cis.disallow_variable_time_computations();
             *cis.as_mut() *= si.as_ref();
             *c.as_mut() += &cis;
@@ -85,7 +103,7 @@ impl SecretKey {
         let c_inner = std::mem::replace(c.as_mut(), Poly::<Ntt>::zero(&ctx));
         let c = Zeroizing::new(c_inner.into_power_basis());
 
-        let ciphertext_modulus = ct[0].ctx().modulus();
+        let ciphertext_modulus = ct.c[0].ctx().modulus();
         let mut noise = 0usize;
         for coeff in Vec::<BigUint>::from(c.as_ref()) {
             noise = std::cmp::max(
@@ -109,7 +127,7 @@ impl SecretKey {
 
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), p.ctx(), false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), p.ctx())?.into_ntt(),
         );
 
         let mut a = Poly::<Ntt>::random_from_seed(p.ctx(), seed);
@@ -199,18 +217,17 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
         ct.validate_for(&self.par)?;
         // Let's create a secret key with the ciphertext context
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct[0].ctx(), false)?
-                .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ct.c[0].ctx())?.into_ntt(),
         );
         let mut si = s.clone();
 
-        let mut c = Zeroizing::new(ct[0].clone());
+        let mut c = Zeroizing::new(ct.c[0].clone());
         c.disallow_variable_time_computations();
 
         // Compute the phase c0 + c1*s + c2*s^2 + ... where the secret power
         // s^k is computed on-the-fly
         for i in 1..ct.len() {
-            let mut cis = Zeroizing::new(ct[i].clone());
+            let mut cis = Zeroizing::new(ct.c[i].clone());
             cis.disallow_variable_time_computations();
             *cis.as_mut() *= si.as_ref();
             *c.as_mut() += &cis;
@@ -233,7 +250,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 let q = Modulus::new(self.par.moduli[0]).map_err(Error::MathError)?;
                 q.reduce_vec(&mut w);
                 plaintext_modulus.reduce_vec(&mut w);
-                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt()
+                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt()
             }
             Some(_) | None => {
                 // A single residue cannot recover values modulo t when t is
@@ -248,7 +265,7 @@ impl FheDecrypter<Plaintext, Ciphertext> for SecretKey {
                 w.iter_mut().for_each(|wi| *wi %= q_poly);
 
                 self.par.plaintext.reduce_vec(&mut w);
-                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct[0].ctx(), false)?.into_ntt()
+                Poly::<PowerBasis>::try_convert_from(w.as_slice(), ct.c[0].ctx())?.into_ntt()
             }
         };
 
@@ -344,8 +361,14 @@ mod tests {
                     let ct = sk.try_encrypt(&pt, &mut rng)?;
                     let pt2 = sk.try_decrypt(&ct)?;
 
-                    println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-                    assert_eq!(pt2, pt);
+                    println!(
+                        "Noise: {}",
+                        sk.measure_noise_vartime(
+                            &ct,
+                            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                        )?
+                    );
+                    assert_eq!(pt2.poly_ntt, pt.poly_ntt);
                 }
             }
         }
@@ -364,7 +387,7 @@ mod tests {
 
         assert!(encrypted.is_err());
         assert!(matches!(
-            sk.try_decrypt(&crate::bfv::Ciphertext::zero(&params)),
+            sk.try_decrypt(&crate::bfv::Ciphertext::invalid_empty(&params)),
             Err(crate::Error::Ciphertext(_))
         ));
         Ok(())
@@ -383,9 +406,12 @@ mod tests {
             &params,
         )?;
         let ct = sk.try_encrypt(&pt, &mut rng)?;
-        let noise = unsafe { sk.measure_noise(&ct)? };
+        let noise = sk.measure_noise_vartime(
+            &ct,
+            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage(),
+        )?;
 
-        let modulus_bits = ct[0].ctx().modulus().bits() as usize;
+        let modulus_bits = ct.c[0].ctx().modulus().bits() as usize;
         assert!(noise <= modulus_bits);
 
         Ok(())

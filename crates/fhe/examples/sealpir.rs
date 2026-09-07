@@ -188,12 +188,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .div_ceil(plaintext_modulus.ilog2() as usize),
                 );
                 pt_values.append(&mut transcode_bidirectional(
-                    c.first().unwrap().coefficients().as_slice().unwrap(),
+                    c.components()
+                        .first()
+                        .unwrap()
+                        .coefficients()
+                        .as_slice()
+                        .unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
                     plaintext_modulus.ilog2() as usize,
                 ));
                 pt_values.append(&mut transcode_bidirectional(
-                    c.get(1).unwrap().coefficients().as_slice().unwrap(),
+                    c.components()
+                        .get(1)
+                        .unwrap()
+                        .coefficients()
+                        .as_slice()
+                        .unwrap(),
                     64 - params.moduli()[0].leading_zeros() as usize,
                     plaintext_modulus.ilog2() as usize,
                 ));
@@ -259,7 +269,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         poly1.truncate(params.degree());
 
         let ctx = params.context_at_level(2)?;
-        let ct = bfv::Ciphertext::new(
+        let ct = bfv::Ciphertext::from_components(
             vec![
                 Poly::<Ntt>::try_convert_from_public(
                     poly0,
@@ -285,9 +295,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 elements_size,
             );
 
-        println!("Noise in response (ct): {:?}", unsafe {
-            sk.measure_noise(&ct)
-        });
+        println!(
+            "Noise in response (ct): {:?}",
+            sk.measure_noise_vartime(
+                &ct,
+                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+            )
+        );
 
         plaintext[offset * elements_size..(offset + 1) * elements_size].to_vec()
     });

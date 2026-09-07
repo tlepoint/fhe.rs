@@ -54,8 +54,7 @@ impl RelinearizationKey {
         }
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx_ciphertext, false)?
-                .into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx_ciphertext)?.into_ntt(),
         );
         let s2 = Zeroizing::new((s.as_ref() * s.as_ref()).into_power_basis());
         let switcher_up = Switcher::new(ctx_ciphertext, ctx_relin_key)?;
@@ -82,20 +81,20 @@ impl RelinearizationKey {
                 max_level: self.ksk.ciphertext_level,
             })
         } else {
-            let c2 = ct[2].clone().into_power_basis();
+            let c2 = ct.c[2].clone().into_power_basis();
             let (mut c0, mut c1) = self.relinearizes_poly(&c2)?;
 
-            if c0.ctx() != ct[0].ctx() {
+            if c0.ctx() != ct.c[0].ctx() {
                 let mut c0_pb = c0.into_power_basis();
                 let mut c1_pb = c1.into_power_basis();
-                c0_pb.switch_down_to(ct[0].ctx())?;
-                c1_pb.switch_down_to(ct[1].ctx())?;
+                c0_pb.switch_down_to(ct.c[0].ctx())?;
+                c1_pb.switch_down_to(ct.c[1].ctx())?;
                 c0 = c0_pb.into_ntt();
                 c1 = c1_pb.into_ntt();
             }
 
-            ct[0] += &c0;
-            ct[1] += &c1;
+            ct.c[0] += &c0;
+            ct.c[1] += &c1;
             ct.truncate(2);
             Ok(())
         }
@@ -168,6 +167,34 @@ mod tests {
     use std::error::Error;
 
     #[test]
+    fn relinearization_discards_a_serialized_last_component_seed() -> Result<(), Box<dyn Error>> {
+        use fhe_traits::{DeserializeParametrized, Serialize};
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        let rk = RelinearizationKey::new(&sk, &mut rng)?;
+        let ctx = params.context_at_level(0)?;
+        let seed = [23; 32];
+        let mut ct = Ciphertext::from_components(
+            vec![
+                Poly::zero(ctx),
+                Poly::zero(ctx),
+                Poly::random_from_seed(ctx, seed),
+            ],
+            &params,
+        )?;
+        ct.seed = Some(seed);
+        let mut restored = Ciphertext::from_bytes(&ct.to_bytes(), &params)?;
+        assert!(restored.seed.is_some());
+        rk.relinearizes(&mut restored)?;
+        assert!(restored.seed.is_none());
+        let round_trip = Ciphertext::from_bytes(&restored.to_bytes(), &params)?;
+        assert_eq!(restored, round_trip);
+        assert_eq!(restored.to_bytes(), round_trip.to_bytes());
+        Ok(())
+    }
+
+    #[test]
     fn relinearization() -> Result<(), Box<dyn Error>> {
         let mut rng = rng();
         for params in [BfvParameters::default_arc(6, 16)] {
@@ -176,7 +203,7 @@ mod tests {
                 let rk = RelinearizationKey::new(&sk, &mut rng)?;
 
                 let ctx = params.context_at_level(0)?;
-                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
+                let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
                     .map_err(crate::Error::MathError)?
                     .into_ntt();
                 let s2 = &s * &s;
@@ -188,7 +215,8 @@ mod tests {
                 let mut c0 = Poly::<PowerBasis>::small(ctx, 16, &mut rng)?.into_ntt();
                 c0 -= &(&c1 * &s);
                 c0 -= &(&c2 * &s2);
-                let mut ct = Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
+                let mut ct =
+                    Ciphertext::from_components(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
 
                 // Relinearize the extended ciphertext!
                 rk.relinearizes(&mut ct)?;
@@ -203,10 +231,19 @@ mod tests {
                 c1r_pb.switch_down_to(c1.ctx())?;
                 let c0r = c0r_pb.into_ntt();
                 let c1r = c1r_pb.into_ntt();
-                assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);
+                assert_eq!(
+                    ct,
+                    Ciphertext::from_components(vec![&c0 + &c0r, &c1 + &c1r], &params)?
+                );
 
                 // Print the noise and decrypt
-                println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+                println!(
+                    "Noise: {}",
+                    sk.measure_noise_vartime(
+                        &ct,
+                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                    )?
+                );
                 let pt = sk.try_decrypt(&ct)?;
                 let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
                 assert_eq!(w, &[0u64; 16]);
@@ -231,10 +268,9 @@ mod tests {
                         )?;
 
                         let ctx = params.context_at_level(ciphertext_level)?;
-                        let s =
-                            Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx, false)
-                                .map_err(crate::Error::MathError)?
-                                .into_ntt();
+                        let s = Poly::<PowerBasis>::try_convert_from(sk.coeffs.as_ref(), ctx)
+                            .map_err(crate::Error::MathError)?
+                            .into_ntt();
                         let s2 = &s * &s;
                         // Let's generate manually an "extended" ciphertext (c0 = e - c1 * s - c2 *
                         // s^2, c1, c2) encrypting 0.
@@ -243,8 +279,10 @@ mod tests {
                         let mut c0 = Poly::<PowerBasis>::small(ctx, 16, &mut rng)?.into_ntt();
                         c0 -= &(&c1 * &s);
                         c0 -= &(&c2 * &s2);
-                        let mut ct =
-                            Ciphertext::new(vec![c0.clone(), c1.clone(), c2.clone()], &params)?;
+                        let mut ct = Ciphertext::from_components(
+                            vec![c0.clone(), c1.clone(), c2.clone()],
+                            &params,
+                        )?;
 
                         // Relinearize the extended ciphertext!
                         rk.relinearizes(&mut ct)?;
@@ -259,10 +297,19 @@ mod tests {
                         c1r_pb.switch_down_to(c1.ctx())?;
                         let c0r = c0r_pb.into_ntt();
                         let c1r = c1r_pb.into_ntt();
-                        assert_eq!(ct, Ciphertext::new(vec![&c0 + &c0r, &c1 + &c1r], &params)?);
+                        assert_eq!(
+                            ct,
+                            Ciphertext::from_components(vec![&c0 + &c0r, &c1 + &c1r], &params)?
+                        );
 
                         // Print the noise and decrypt
-                        println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
+                        println!(
+                            "Noise: {}",
+                            sk.measure_noise_vartime(
+                                &ct,
+                                fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                            )?
+                        );
                         let pt = sk.try_decrypt(&ct)?;
                         let w = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
                         assert_eq!(w, &[0u64; 16]);

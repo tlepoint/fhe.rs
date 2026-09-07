@@ -132,7 +132,7 @@ impl CiphertextProductAccumulator {
             .iter()
             .map(|p| p.scale(&mp.down_scaler))
             .collect::<fhe_math::Result<Vec<_>>>()?;
-        Ciphertext::new(c, &self.par)
+        Ciphertext::from_components(c, &self.par)
     }
 }
 
@@ -191,10 +191,10 @@ mod tests {
                                         .iter()
                                         .map(|x| ((x + &q) % &q).to_biguint().unwrap())
                                         .collect();
-                                    Poly::<Ntt>::try_convert_from(residues.as_slice(), ctx, false)
+                                    Poly::<Ntt>::try_convert_from(residues.as_slice(), ctx)
                                 })
                                 .collect::<fhe_math::Result<Vec<_>>>()?;
-                            Ciphertext::new(c, &par)
+                            Ciphertext::from_components(c, &par)
                         })
                         .collect::<Result<Vec<_>>>()?;
                     accumulator.add_product(&ciphertexts[0], &ciphertexts[1])?;
@@ -248,7 +248,7 @@ mod tests {
             for count in [1, 2, 17, 81] {
                 let mut accumulator = CiphertextProductAccumulator::new(&par, level)?;
                 let mut expected = vec![0u64; par.degree()];
-                let mut separate = Ciphertext::zero(&par);
+                let mut separate: Option<Ciphertext> = None;
                 for pair in 0..count {
                     let values: Vec<_> = (0..2)
                         .map(|side| {
@@ -265,11 +265,17 @@ mod tests {
                         })
                         .collect::<Result<Vec<Ciphertext>>>()?;
                     accumulator.add_product(&ct[0], &ct[1])?;
-                    separate += &(&ct[0] * &ct[1]);
+                    let product = &ct[0] * &ct[1];
+                    if let Some(sum) = separate.as_mut() {
+                        *sum += &product;
+                    } else {
+                        separate = Some(product);
+                    }
                     for (i, expected) in expected.iter_mut().enumerate() {
                         *expected = (*expected + values[0][i] * values[1][i]) % par.plaintext();
                     }
                 }
+                let separate = separate.unwrap();
                 let mut result = accumulator.finish()?;
                 if count == 1 {
                     assert_eq!(result, separate);
@@ -296,7 +302,7 @@ mod tests {
         let other_par = BfvParameters::default_arc(3, 16);
         let mut rng = ChaCha8Rng::seed_from_u64(31);
         let ctx = par.context_at_level(0)?;
-        let ct = Ciphertext::new(vec![Poly::random(ctx, &mut rng); 2], &par)?;
+        let ct = Ciphertext::from_components(vec![Poly::random(ctx, &mut rng); 2], &par)?;
         assert!(CiphertextProductAccumulator::new(&par, 2).is_err());
         assert_eq!(
             CiphertextProductAccumulator::new(&par, 0)?.finish(),
@@ -305,16 +311,17 @@ mod tests {
         let mut accumulator = CiphertextProductAccumulator::new(&par, 0)?;
         accumulator.add_product(&ct, &ct)?;
         let saved = accumulator.c.clone();
-        let wrong_level = Ciphertext::new(vec![Poly::zero(par.context_at_level(1)?); 2], &par)?;
-        let wrong_par = Ciphertext::new(
+        let wrong_level =
+            Ciphertext::from_components(vec![Poly::zero(par.context_at_level(1)?); 2], &par)?;
+        let wrong_par = Ciphertext::from_components(
             vec![Poly::zero(other_par.context_at_level(0)?); 2],
             &other_par,
         )?;
-        let three_parts = Ciphertext::new(vec![Poly::zero(ctx); 3], &par)?;
+        let three_parts = Ciphertext::from_components(vec![Poly::zero(ctx); 3], &par)?;
         let mut wrong_context = ct.clone();
         wrong_context.c[1] = Poly::zero(par.context_at_level(1)?);
         for invalid in [
-            Ciphertext::zero(&par),
+            Ciphertext::invalid_empty(&par),
             wrong_level,
             wrong_par,
             three_parts,
@@ -362,7 +369,7 @@ mod tests {
         p.allow_variable_time_computations(fhe_traits::VariableTime::new(
             fhe_traits::PublicData::assert_public(),
         ));
-        let public = Ciphertext::new(vec![p; 2], &par)?;
+        let public = Ciphertext::from_components(vec![p; 2], &par)?;
         for secret_pair in 0..=2 {
             for secret_part in 0..4 {
                 let mut accumulator = CiphertextProductAccumulator::new(&par, 0)?;

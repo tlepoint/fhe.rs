@@ -105,7 +105,7 @@ impl FheEncrypter<Plaintext, RGSWCiphertext> for SecretKey {
 
         let m = Zeroizing::new(pt.poly_ntt.clone().into_power_basis());
         let mut m_s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(self.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         *m_s.as_mut() *= pt.poly_ntt.as_ref();
         let ctx = m_s.ctx().clone();
@@ -133,8 +133,8 @@ impl Mul<&RGSWCiphertext> for &Ciphertext {
         );
         assert_eq!(self.len(), 2, "Ciphertext must have two parts");
 
-        let ct0 = self[0].clone().into_power_basis();
-        let ct1 = self[1].clone().into_power_basis();
+        let ct0 = self.c[0].clone().into_power_basis();
+        let ct1 = self.c[1].clone().into_power_basis();
 
         let mut c0 = Poly::<Ntt>::zero(&rhs.ksk0.ctx_ksk);
         let mut c1 = Poly::<Ntt>::zero(&rhs.ksk0.ctx_ksk);
@@ -201,8 +201,20 @@ mod tests {
             let ct3 = &ct1 * &ct2_rgsw;
             let ct4 = &ct2_rgsw * &ct1;
 
-            println!("Noise 1: {:?}", unsafe { sk.measure_noise(&ct3) });
-            println!("Noise 2: {:?}", unsafe { sk.measure_noise(&ct4) });
+            println!(
+                "Noise 1: {:?}",
+                sk.measure_noise_vartime(
+                    &ct3,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )
+            );
+            println!(
+                "Noise 2: {:?}",
+                sk.measure_noise_vartime(
+                    &ct4,
+                    fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                )
+            );
             assert_eq!(expected, sk.try_decrypt(&ct3)?);
             assert_eq!(expected, sk.try_decrypt(&ct4)?);
         }

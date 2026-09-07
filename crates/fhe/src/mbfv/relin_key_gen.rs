@@ -148,7 +148,7 @@ impl RelinKeyShare<R1> {
         let ctx = par.context_at_level(0)?;
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         let rns = RnsContext::new(&sk_share.par.moduli[..crp.len()])?;
         let h0 = crp
@@ -179,7 +179,7 @@ impl RelinKeyShare<R1> {
         let par = sk_share.par.clone();
         let ctx = par.context_at_level(0)?;
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
 
         let h1 = crp
@@ -249,7 +249,7 @@ impl RelinKeyShare<R2> {
         let ctx = par.context_at_level(0)?;
 
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
         let h0 = r1_h0
             .iter()
@@ -276,7 +276,7 @@ impl RelinKeyShare<R2> {
         let par = sk_share.par.clone();
         let ctx = par.context_at_level(0)?;
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
 
         let u_s = Zeroizing::new(u.as_ref() - s.as_ref());

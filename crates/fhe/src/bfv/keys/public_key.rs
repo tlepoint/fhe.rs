@@ -77,10 +77,10 @@ impl FheEncrypter<Plaintext, Ciphertext> for PublicKey {
         let e2 = Zeroizing::new(Poly::<Ntt>::small(ctx, self.par.variance, rng)?);
 
         let m = Zeroizing::new(pt.to_poly());
-        let mut c0 = u.as_ref() * &ct[0];
+        let mut c0 = u.as_ref() * &ct.c[0];
         c0 += &e1;
         c0 += &m;
-        let mut c1 = u.as_ref() * &ct[1];
+        let mut c1 = u.as_ref() * &ct.c[1];
         c1 += &e2;
 
         // It is now safe to enable variable time computations.
@@ -165,8 +165,8 @@ mod tests {
         let pk = PublicKey::new(&sk, &mut rng);
         assert_eq!(pk.par, params);
         assert_eq!(
-            sk.try_decrypt(&pk.c)?,
-            Plaintext::zero(Encoding::poly(), &params)?
+            sk.try_decrypt(&pk.c)?.poly_ntt,
+            Plaintext::zero(Encoding::poly(), &params)?.poly_ntt
         );
         Ok(())
     }
@@ -193,8 +193,14 @@ mod tests {
                     let ct = pk.try_encrypt(&pt, &mut rng)?;
                     let pt2 = sk.try_decrypt(&ct)?;
 
-                    println!("Noise: {}", unsafe { sk.measure_noise(&ct)? });
-                    assert_eq!(pt2, pt);
+                    println!(
+                        "Noise: {}",
+                        sk.measure_noise_vartime(
+                            &ct,
+                            fhe_traits::SecretDependentDiagnostics::acknowledge_leakage()
+                        )?
+                    );
+                    assert_eq!(pt2.poly_ntt, pt.poly_ntt);
                 }
             }
         }

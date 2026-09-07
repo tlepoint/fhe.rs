@@ -90,6 +90,9 @@ pub enum ParameterSource {
 #[expect(missing_docs, reason = "error variants are documented inline")]
 #[non_exhaustive]
 pub enum CiphertextError {
+    #[error("Ciphertext components must have canonical polynomial coefficients")]
+    NonCanonicalPolynomial,
+
     #[error("Expected at least {minimum} polynomials, found {actual}")]
     TooFewPolynomials { actual: usize, minimum: usize },
 

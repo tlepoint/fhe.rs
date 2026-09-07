@@ -70,7 +70,7 @@ fn core_bfv(c: &mut Criterion) {
         );
         for (label, target) in [("one", 1), ("last", par.max_level())] {
             let round_trips = || {
-                let mut parts = black_box(&ct).to_vec();
+                let mut parts = black_box(&ct).components().to_vec();
                 for _ in 0..target {
                     for p in &mut parts {
                         let mut pb = p.clone().into_power_basis();
@@ -78,7 +78,7 @@ fn core_bfv(c: &mut Criterion) {
                         *p = pb.into_ntt();
                     }
                 }
-                Ciphertext::new(parts, &par).unwrap()
+                Ciphertext::from_components(parts, &par).unwrap()
             };
             let retained_ntt = || {
                 let mut result = black_box(&ct).clone();
@@ -96,7 +96,7 @@ fn core_bfv(c: &mut Criterion) {
             );
         }
         let separate_sum = || {
-            let mut sum = Ciphertext::zero(&par);
+            let mut sum = Ciphertext::trivial_zero(&par, 0).unwrap();
             for _ in 0..8 {
                 sum += &(black_box(&ct) * black_box(&other));
             }

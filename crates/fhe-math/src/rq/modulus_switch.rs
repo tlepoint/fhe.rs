@@ -130,11 +130,7 @@ mod tests {
             let coefficients: Vec<_> = (start..start + ctx.degree as u64)
                 .map(|x| BigUint::from(x % (97 * 193)))
                 .collect();
-            check_chain(Poly::try_convert_from(
-                coefficients.as_slice(),
-                &ctx,
-                false,
-            )?)?;
+            check_chain(Poly::try_convert_from(coefficients.as_slice(), &ctx)?)?;
         }
         Ok(())
     }
@@ -181,11 +177,7 @@ mod tests {
                         q - last + last / 2 + 1u32,
                     ];
                     let coefficients: Vec<_> = edges.iter().cycle().take(degree).cloned().collect();
-                    check_chain(Poly::try_convert_from(
-                        coefficients.as_slice(),
-                        &ctx,
-                        false,
-                    )?)?;
+                    check_chain(Poly::try_convert_from(coefficients.as_slice(), &ctx)?)?;
                     for _ in 0..3 {
                         check_chain(Poly::random(&ctx, &mut rng))?;
                     }

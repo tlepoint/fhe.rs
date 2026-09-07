@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// This struct bridges the gap between ciphertext and plaintext contexts,
 /// providing pre-computed values needed for efficient plaintext operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CipherPlainContext {
+pub(crate) struct CipherPlainContext {
     /// Scaling polynomial for the plaintext
     pub(crate) delta: Poly<NttShoup>,
 

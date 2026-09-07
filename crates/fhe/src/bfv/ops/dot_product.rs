@@ -172,7 +172,7 @@ impl DotProductScalarWorkspace {
                 .map(|i| {
                     workspace
                         .dot_product(
-                            ct.clone().map(|cti| unsafe { cti.get_unchecked(i) }),
+                            ct.clone().map(|cti| unsafe { cti.c.get_unchecked(i) }),
                             pt.clone().map(|pti| &pti.poly_ntt),
                         )
                         .map_err(Error::MathError)
@@ -215,10 +215,12 @@ impl DotProductScalarWorkspace {
             // Reduce
             let mut c = Vec::with_capacity(ct_first.len());
             for acci in acc.0.outer_iter() {
-                c.push(Poly::<Ntt>::try_convert_from(
+                c.push(Poly::<Ntt>::try_convert_from_with_timing(
                     acci,
                     ctx,
-                    allow_variable_time_computations,
+                    (allow_variable_time_computations).then(|| {
+                        fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
+                    }),
                 )?)
             }
 
@@ -270,8 +272,8 @@ mod tests {
                         std::iter::repeat_n(ciphertext, length),
                         std::iter::repeat_n(&pt, length),
                     )?;
-                    let mut expected = Ciphertext::zero(&params);
-                    for _ in 0..length {
+                    let mut expected = ciphertext * &pt;
+                    for _ in 1..length {
                         expected += &(ciphertext * &pt);
                     }
                     assert_eq!(actual, expected);
@@ -341,7 +343,7 @@ mod tests {
             let ciphertexts = vec![ct.clone(); length];
             let plaintexts = vec![pt.clone(); length];
             let actual = dot_product_scalar(ciphertexts.iter(), plaintexts.iter())?;
-            let mut expected = Ciphertext::zero(&params);
+            let mut expected = Ciphertext::trivial_zero(&params, 0)?;
             for (ciphertext, plaintext) in ciphertexts.iter().zip(plaintexts.iter()) {
                 expected += &(ciphertext * plaintext);
             }
@@ -387,7 +389,7 @@ mod tests {
                         .all(|poly| !poly.allows_variable_time_computations())
                 );
 
-                let mut expected = Ciphertext::zero(&params);
+                let mut expected = Ciphertext::trivial_zero(&params, 0)?;
                 izip!(&ct, &pt).for_each(|(cti, pti)| expected += &(cti * pti));
                 assert_eq!(r, expected);
 
@@ -425,7 +427,10 @@ mod tests {
             ))
         ));
         assert!(matches!(
-            dot_product_scalar([&Ciphertext::zero(&params)].into_iter(), [&pt].into_iter()),
+            dot_product_scalar(
+                [&Ciphertext::invalid_empty(&params)].into_iter(),
+                [&pt].into_iter()
+            ),
             Err(crate::Error::Ciphertext(_))
         ));
         Ok(())

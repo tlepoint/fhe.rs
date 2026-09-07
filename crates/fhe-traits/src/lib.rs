@@ -35,6 +35,22 @@ impl VariableTime {
     }
 }
 
+/// Acknowledgment that a diagnostic may reveal secret-dependent information.
+///
+/// This is separate from public-data classification: both the returned result
+/// and the running time of a diagnostic can disclose information about secrets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SecretDependentDiagnostics(());
+
+impl SecretDependentDiagnostics {
+    /// Accept secret-dependent output and timing leakage in a diagnostic
+    /// setting. Do not expose such diagnostics to untrusted callers.
+    #[must_use]
+    pub const fn acknowledge_leakage() -> Self {
+        Self(())
+    }
+}
+
 /// The homomorphic encryption parameters.
 pub trait FheParameters {}
 

@@ -22,7 +22,7 @@ where
 
     fn from_bytes(bytes: &[u8], ctx: &Arc<Context>) -> Result<Self, Self::Error> {
         let rq: Rq = Message::decode(bytes).map_err(|_| PolynomialSerializationError::Decode)?;
-        Poly::try_convert_from(&rq, ctx, false)
+        Poly::try_convert_from(&rq, ctx)
     }
 }
 
@@ -165,7 +165,7 @@ mod tests {
         let ctx = Arc::new(Context::new(Q, 16)?);
         let p = Poly::<Ntt>::random(&ctx, &mut rng);
         let proto = Rq::from(&p);
-        let err = Poly::<PowerBasis>::try_convert_from(&proto, &ctx, false).unwrap_err();
+        let err = Poly::<PowerBasis>::try_convert_from(&proto, &ctx).unwrap_err();
         assert_eq!(
             err,
             Error::PolynomialSerialization(PolynomialSerializationError::RepresentationMismatch {

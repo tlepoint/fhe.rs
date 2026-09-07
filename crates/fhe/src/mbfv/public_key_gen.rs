@@ -39,7 +39,7 @@ impl PublicKeyShare {
 
         // Convert secret key to usable polynomial
         let s = Zeroizing::new(
-            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx, false)?.into_ntt(),
+            Poly::<PowerBasis>::try_convert_from(sk_share.coeffs.as_ref(), ctx)?.into_ntt(),
         );
 
         // Sample error
@@ -70,7 +70,7 @@ impl Aggregate<PublicKeyShare> for PublicKey {
         }
 
         Ok(PublicKey {
-            c: Ciphertext::new(vec![p0, share.crp.poly], &share.par)?,
+            c: Ciphertext::from_components(vec![p0, share.crp.poly], &share.par)?,
             par: share.par,
         })
     }

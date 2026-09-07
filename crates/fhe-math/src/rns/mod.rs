@@ -20,7 +20,12 @@ mod scaler;
 pub use scaler::{RnsScaler, ScalingFactor};
 
 /// Context for a Residue Number System.
-#[derive(Default, Clone, PartialEq, Eq)]
+///
+/// Construct this value explicitly; there is no uninitialized default.
+/// ```compile_fail
+/// let invalid = fhe_math::rns::RnsContext::default();
+/// ```
+#[derive(Clone, PartialEq, Eq)]
 pub struct RnsContext {
     moduli_u64: Vec<u64>,
     moduli: Vec<Modulus>,

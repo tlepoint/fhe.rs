@@ -10,7 +10,6 @@ use prost::Message;
 use rand::{CryptoRng, Rng as RngCore};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Evaluation key for the BFV encryption scheme.
 ///
@@ -62,7 +61,7 @@ impl EvaluationKey {
             .into())
         } else {
             let mut out = ct.clone();
-            let mut tmp = Ciphertext::zero(&ct.par);
+            let mut tmp = Ciphertext::trivial_zero(&ct.par, ct.level)?;
 
             let mut i = 1;
             while i < ct.par.degree() / 2 {
@@ -124,7 +123,7 @@ impl EvaluationKey {
                             element: row_rotation_element,
                         },
                     })?;
-            let mut out = Ciphertext::zero(&ct.par);
+            let mut out = Ciphertext::trivial_zero(&ct.par, ct.level)?;
             gk.relinearize_into(ct, &mut out)?;
             Ok(out)
         }
@@ -163,7 +162,7 @@ impl EvaluationKey {
                 .ok_or(crate::EvaluationKeyError::Missing {
                     component: crate::EvaluationKeyComponent::GaloisKey { element: *exponent },
                 })?;
-            let mut out = Ciphertext::zero(&ct.par);
+            let mut out = Ciphertext::trivial_zero(&ct.par, ct.level)?;
             gk.relinearize_into(ct, &mut out)?;
             Ok(out)
         }
@@ -210,9 +209,9 @@ impl EvaluationKey {
         if level == 0 {
             Ok(vec![ct.clone()])
         } else if self.supports_expansion(level) {
-            let mut out = vec![Ciphertext::zero(&ct.par); 1 << level];
-            out[0] = ct.clone();
-            let mut sub = Ciphertext::zero(&ct.par);
+            let mut out = Vec::with_capacity(size);
+            out.push(ct.clone());
+            let mut sub = Ciphertext::trivial_zero(&ct.par, ct.level)?;
 
             // We use the Oblivious expansion algorithm of
             // https://eprint.iacr.org/2019/1483.pdf
@@ -230,24 +229,16 @@ impl EvaluationKey {
                     .ok_or(crate::EvaluationKeyError::Missing {
                         component: crate::EvaluationKeyComponent::GaloisKey { element },
                     })?;
-                let step = 1 << l;
-                let (low, high) = out.split_at_mut(step);
-                let expand_node = |input: &mut Ciphertext,
-                                   target: Option<&mut Ciphertext>,
-                                   sub: &mut Ciphertext|
-                 -> Result<()> {
-                    gk.relinearize_into(input, sub)?;
-                    if let Some(target) = target {
-                        target.clone_from(input);
-                        *target -= &*sub;
-                        target[0] *= monomial;
-                        target[1] *= monomial;
+                let step = out.len();
+                for i in 0..step {
+                    gk.relinearize_into(&out[i], &mut sub)?;
+                    if step + i < size {
+                        let mut target = &out[i] - &sub;
+                        target.c[0] *= monomial;
+                        target.c[1] *= monomial;
+                        out.push(target);
                     }
-                    *input += &*sub;
-                    Ok(())
-                };
-                for (i, (input, target)) in low.iter_mut().zip(high).enumerate() {
-                    expand_node(input, (step + i < size).then_some(target), &mut sub)?;
+                    out[i] += &sub;
                 }
             }
             out.truncate(size);
@@ -314,10 +305,20 @@ impl DeserializeParametrized for EvaluationKey {
     }
 }
 
-/// Builder for a leveled evaluation key from the secret key.
+/// Builder for a leveled evaluation key borrowing the secret key.
+/// The builder retains no owned copy of the secret coefficients.
+///
+/// ```compile_fail
+/// use fhe::bfv::{EvaluationKeyBuilder, SecretKey};
+/// fn build(sk: SecretKey) {
+///     let mut builder = EvaluationKeyBuilder::new(&sk).unwrap();
+///     drop(sk);
+///     builder.build(&mut rand::rng());
+/// }
+/// ```
 #[derive(Debug)]
-pub struct EvaluationKeyBuilder {
-    sk: SecretKey,
+pub struct EvaluationKeyBuilder<'a> {
+    sk: &'a SecretKey,
     ciphertext_level: usize,
     evaluation_key_level: usize,
     inner_sum: bool,
@@ -327,19 +328,11 @@ pub struct EvaluationKeyBuilder {
     rot_to_gk_exponent: HashMap<usize, usize>,
 }
 
-impl Zeroize for EvaluationKeyBuilder {
-    fn zeroize(&mut self) {
-        self.sk.zeroize()
-    }
-}
-
-impl ZeroizeOnDrop for EvaluationKeyBuilder {}
-
-impl EvaluationKeyBuilder {
+impl<'a> EvaluationKeyBuilder<'a> {
     /// Creates a new builder from the [`SecretKey`].
-    pub fn new(sk: &SecretKey) -> Result<Self> {
+    pub fn new(sk: &'a SecretKey) -> Result<Self> {
         Ok(Self {
-            sk: sk.clone(),
+            sk,
             ciphertext_level: 0,
             evaluation_key_level: 0,
             inner_sum: false,
@@ -356,7 +349,7 @@ impl EvaluationKeyBuilder {
     /// than the ciphertext level, or if the ciphertext level is larger than the
     /// maximum level supported by these parameters.
     pub fn new_leveled(
-        sk: &SecretKey,
+        sk: &'a SecretKey,
         ciphertext_level: usize,
         evaluation_key_level: usize,
     ) -> Result<Self> {
@@ -376,7 +369,7 @@ impl EvaluationKeyBuilder {
         }
 
         Ok(Self {
-            sk: sk.clone(),
+            sk,
             ciphertext_level,
             evaluation_key_level,
             inner_sum: false,
@@ -483,7 +476,7 @@ impl EvaluationKeyBuilder {
             ek.gk.insert(
                 index,
                 GaloisKey::new(
-                    &self.sk,
+                    self.sk,
                     index,
                     self.ciphertext_level,
                     self.evaluation_key_level,
@@ -527,7 +520,7 @@ impl TryConvertFrom<&EvaluationKeyProto> for EvaluationKey {
                     max_level: value.evaluation_key_level as usize,
                 });
             }
-            gk.insert(key.element.exponent, key);
+            gk.insert(key.element.exponent(), key);
         }
 
         let ciphertext_ctx = par.context_at_level(value.ciphertext_level as usize)?;
@@ -565,6 +558,44 @@ mod tests {
     use itertools::izip;
     use rand::rng;
     use std::{cmp::min, error::Error};
+
+    #[test]
+    fn partial_expansion_matches_full_prefix_bytes_and_permissions() -> Result<(), Box<dyn Error>> {
+        let params = BfvParameters::default_arc(2, 16);
+        let mut rng = rng();
+        let sk = SecretKey::random(&params, &mut rng);
+        for level in 0..=params.max_level() {
+            let key = EvaluationKeyBuilder::new_leveled(&sk, level, 0)?
+                .enable_expansion(4)?
+                .build(&mut rng)?;
+            let pt =
+                Plaintext::try_encode(&[1_u64, 2, 3], Encoding::poly_at_level(level), &params)?;
+            let ct: crate::bfv::Ciphertext = sk.try_encrypt(&pt, &mut rng)?;
+            for restricted in [false, true] {
+                let mut input = ct.clone();
+                if restricted {
+                    for part in input.iter_mut() {
+                        part.disallow_variable_time_computations();
+                    }
+                }
+                for size in 1..=params.degree() {
+                    let full = key.expands(&input, size.next_power_of_two())?;
+                    let partial = key.expands(&input, size)?;
+                    assert_eq!(partial.len(), size);
+                    for (actual, expected) in partial.iter().zip(&full) {
+                        assert_eq!(actual.to_bytes(), expected.to_bytes());
+                        assert_eq!(actual.level(), level);
+                        assert!(
+                            actual
+                                .iter()
+                                .all(|p| p.allows_variable_time_computations() != restricted)
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn builder() -> Result<(), Box<dyn Error>> {
@@ -847,7 +878,14 @@ mod tests {
                                         Encoding::poly_at_level(ciphertext_level)
                                     )?
                                 );
-                                println!("Noise: {:?}", unsafe { sk.measure_noise(ct2i) })
+                                println!(
+                                    "Noise: {:?}",
+                                    sk.measure_noise_vartime(
+                                        ct2i,
+                                        fhe_traits::SecretDependentDiagnostics::acknowledge_leakage(
+                                        )
+                                    )
+                                )
                             }
                         }
                     }

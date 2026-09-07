@@ -194,7 +194,15 @@ impl DotProductScalarWorkspace {
         let c = acc
             .0
             .outer_iter()
-            .map(|a| Poly::<Ntt>::try_convert_from(a, ctx, public))
+            .map(|a| {
+                Poly::<Ntt>::try_convert_from_with_timing(
+                    a,
+                    ctx,
+                    (public).then(|| {
+                        fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public())
+                    }),
+                )
+            })
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(Ciphertext {
             par: first.par.clone(),
@@ -257,7 +265,11 @@ mod tests {
                     .iter()
                     .flat_map(|q| vec![q - 1; par.degree()])
                     .collect();
-                let worst = Poly::<Ntt>::try_convert_from(values, ctx, true)?;
+                let worst = Poly::<Ntt>::try_convert_from_public(
+                    values,
+                    ctx,
+                    fhe_traits::VariableTime::new(fhe_traits::PublicData::assert_public()),
+                )?;
                 let mut pt = Plaintext {
                     par: par.clone(),
                     encoding: Some(Encoding::poly_at_level(level)),
@@ -293,8 +305,8 @@ mod tests {
                                 std::iter::repeat_n(&ct, length),
                                 std::iter::repeat_n(&packed, length),
                             )?;
-                            let mut expected = Ciphertext::zero(&par);
-                            for _ in 0..length {
+                            let mut expected = &ct * &pt;
+                            for _ in 1..length {
                                 expected += &(&ct * &pt);
                             }
                             assert_eq!(actual, expected);
@@ -368,7 +380,7 @@ mod tests {
                 .dot_product_scalar_packed(std::iter::once(&ct), std::iter::repeat_n(&packed, 2))
                 .is_err()
         );
-        assert!(compute(&mut workspace, &Ciphertext::zero(&par), &packed).is_err());
+        assert!(compute(&mut workspace, &Ciphertext::invalid_empty(&par), &packed).is_err());
         let lower = Plaintext::try_encode(&[3u64][..], Encoding::poly_at_level(1), &par)?;
         assert!(compute(&mut workspace, &ct, &PackedPlaintext::from(&lower)).is_err());
         let foreign = BfvParametersBuilder::new()
