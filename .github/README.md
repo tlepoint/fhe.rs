@@ -57,8 +57,8 @@ cargo +1.91.1 check --workspace --all-targets --locked --all-features
 cargo audit --file Cargo.lock
 ```
 
-These workflows validate the library; they do not publish crates or deploy a
-website.
+The validation workflows do not publish crates. `publish.yml` provides the
+manual release process described below; no workflow deploys a website.
 
 ## Coverage setup
 
@@ -94,3 +94,70 @@ cargo +stable llvm-cov report --lcov --output-path target/coverage/lcov.info --i
 
 See the [cargo-llvm-cov documentation](https://github.com/taiki-e/cargo-llvm-cov)
 and [Codecov OIDC setup](https://github.com/codecov/codecov-action#using-oidc).
+
+
+## Publishing to crates.io
+
+`publish.yml` is manually dispatched from **main** and defaults to a dry run.
+It accepts an existing stable tag `vMAJOR.MINOR.PATCH`, whose version must match
+`crates/fhe/Cargo.toml`. The tag must resolve to a commit reachable from `main`.
+Both jobs check out the validated commit SHA, so moving the tag during a run
+cannot change the code being published. The tagged commit must include the
+publishing workflow and scripts; merge this setup before creating a release tag.
+Prerelease tags are intentionally not supported.
+
+### One-time account setup
+
+1. Create a GitHub environment named `crates-io`. Restrict its deployment branches
+   to `main` (the workflow is dispatched from main, then checks out the release
+   commit). Configure required reviewers if you want an approval before upload.
+2. In the crates.io settings for **each** of `fhe-util`, `fhe-math`, and `fhe`, add
+   a GitHub Trusted Publisher with owner `tlepoint`, repository `fhe.rs`, workflow
+   filename `publish.yml`, and environment `crates-io`. Existing crate ownership
+   is required to configure this.
+3. No `CARGO_REGISTRY_TOKEN` repository secret is needed. Only the publishing job
+   receives `id-token: write`; the official Rust authentication action exchanges
+   GitHub OIDC credentials for a temporary token immediately before publishing.
+
+See [Trusted Publishing](https://crates.io/docs/trusted-publishing) and the
+[official authentication action](https://github.com/rust-lang/crates-io-auth-action).
+
+### Each release
+
+1. Prepare and merge a release PR. Bump versions only for crates being released,
+   update exact internal dependency versions to match the workspace manifests,
+   refresh `Cargo.lock`, and update release notes. A utility version bump requires
+   updating and releasing its dependents. `fhe-util` may retain a different
+   version from `fhe-math` and `fhe`.
+2. Create and push a tag matching the new `fhe` version on the reviewed main
+   commit, for example `v0.3.0`. Tags alone do not trigger publication.
+3. In Actions, select **Publish crates → Run workflow**, use branch **main**,
+   enter the tag, and leave **dry_run** checked. Review the package plan and
+   verification results.
+4. Run again with the same tag and **dry_run** unchecked to publish. Any configured
+   environment approval occurs after validation. A successful dry run does not
+   upload anything or require crates.io credentials.
+
+Validation tests the tagged commit with default and all features, checks rustfmt
+and Clippy, tests the release script, and runs `cargo publish --dry-run --locked`
+for all pending packages together. Modern stable Cargo can verify unpublished
+workspace dependencies in that single invocation. The publishing job repeats
+package verification before authentication, then publishes `fhe-util`, `fhe-math`,
+and `fhe` sequentially with normal Cargo build verification enabled.
+
+The script queries the crates.io sparse index for exact manifest versions. It
+skips versions already published, rejects yanked versions, and fails on registry
+errors. Rerun the same tag after a partial failure; successful uploads cannot be
+rolled back, and Cargo may report a timeout after an upload has succeeded. Check
+the registry before retrying. Skipping an existing version checks version
+availability, not byte-for-byte equality with the local source; unchanged
+versions must represent the already released code. If every version exists, the
+run is a no-op. Release runs are serialized and never cancel an active upload.
+
+Run the release-tool regression tests locally with:
+
+```sh
+python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+```
+
+Python 3.11 or newer is required (`tomllib`); the Ubuntu runner provides it.

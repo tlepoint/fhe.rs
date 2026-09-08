@@ -87,5 +87,7 @@ jobs:
           mkdir -p actionlint-bin
           tar -xzf actionlint.tar.gz -C actionlint-bin actionlint
           echo "$PWD/actionlint-bin" >> "$GITHUB_PATH"
+      - name: Test release tooling
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Validate GitHub Actions workflows
         run: actionlint -color

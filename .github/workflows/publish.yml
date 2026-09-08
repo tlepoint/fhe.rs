@@ -1,0 +1,115 @@
+name: Publish crates
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable release tag matching fhe (for example v0.3.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Verify packages without publishing to crates.io'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crates-io-publish
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.tag.outputs.commit }}
+    steps:
+      - name: Require dispatch from main
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: test "$DISPATCH_REF" = refs/heads/main
+      - name: Check out release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag and main ancestry
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 .github/scripts/publish.py validate-tag
+      - name: Check out immutable release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.commit }}
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - name: Install nightly formatter
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: nightly-2026-08-15
+          components: rustfmt
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends protobuf-compiler
+      - name: Test release tooling
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Check formatting
+        run: cargo +nightly-2026-08-15 fmt --all -- --check
+      - name: Test default and all features
+        run: |
+          cargo +stable test --workspace --locked
+          cargo +stable test --workspace --locked --all-features
+      - name: Check Clippy
+        run: |
+          cargo +stable clippy --workspace --all-targets --locked -- -D warnings
+          cargo +stable clippy --workspace --all-targets --locked --all-features -- -D warnings
+      - name: Verify publishable packages without uploading
+        run: python3 .github/scripts/publish.py dry-run
+
+  publish:
+    name: Publish to crates.io
+    needs: validate
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out validated release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          persist-credentials: false
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends protobuf-compiler
+      - name: Verify and build packages before requesting credentials
+        run: python3 .github/scripts/publish.py dry-run
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: Publish new versions in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: python3 .github/scripts/publish.py publish
