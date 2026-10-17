@@ -16,9 +16,9 @@ unused_imports = "warn"
 unused_must_use = "deny"
 
 [workspace.dependencies]
-clap = { version = "^4.6.6", features = ["derive"] }
+clap = { version = "^4.6.7", features = ["derive"] }
 tfhe-ntt = "^0.7.1"
-console = "^0.16.4"
+console = "^0.16.6"
 criterion = "^0.8.2"
 doc-comment = "^0.3.4"
 env_logger = "^0.11.11"
@@ -30,15 +30,15 @@ ndarray = "^0.17.2"
 num-bigint = "^0.5.1"
 num-bigint-dig = "^0.9.1"
 num-traits = "^0.2.19"
-proptest = "^1.11.0"
+proptest = "^1.12.0"
 prost = "^0.14.4"
 prost-build = "^0.14.4"
 pulp = "^0.22.3"
-rand = "^0.10.2"
+rand = "^0.10.3"
 rand_chacha = "^0.10.0"
-sha2 = "^0.11.0"
-thiserror = "^2.0.20"
-zeroize = "^1.9.0"
+sha2 = "^0.11.1"
+thiserror = "^2.0.21"
+zeroize = "^1.9.1"
 zeroize_derive = "^1.5.0"
 
 [workspace.lints.clippy]
@@ -51,4 +51,4 @@ wildcard_enum_match_arm = "deny"
 # with the defensive programming pattern of explicitly listing all struct fields
 # in destructuring to ensure compiler catches when new fields are added.
 fn_params_excessive_bools = "deny"
-must_use_candidate = "warn"
+must_use_candidate = "deny"
