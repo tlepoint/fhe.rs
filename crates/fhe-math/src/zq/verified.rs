@@ -6,6 +6,10 @@
 
 use vstd::prelude::*;
 
+#[path = "verified/modulus.rs"]
+mod modulus;
+pub(crate) use modulus::{ModulusParameters, new_modulus};
+
 #[path = "verified/add.rs"]
 mod addition;
 pub(crate) use addition::{add_mod, add_mod_vt, add_vec, add_vec_vt};

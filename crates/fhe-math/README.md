@@ -53,6 +53,12 @@ cargo test -p fhe-math
 
 ## Formal verification
 
+`verified/modulus.rs` checks the modulus range and constructs the arithmetic
+metadata used by `Modulus::new`: the exact Barrett reciprocal limbs,
+leading-zero count, and optimization flag. The reciprocal uses verified
+`u128` arithmetic. Error mapping, field storage, and the external distribution
+and CPU-dispatch setup remain outside the standalone proof.
+
 Verus proves conditional selection, then one-subtraction reduction, then
 modular addition using those helpers, including the variable-time `reduce1_vt`
 and `add_vt` paths. It also proves all four scalar `lazy_reduce*` kernels and

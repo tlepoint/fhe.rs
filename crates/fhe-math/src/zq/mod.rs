@@ -15,8 +15,6 @@ use std::ops::Deref;
 
 use crate::error::{Error, Result};
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
-use num_bigint::BigUint;
-use num_traits::cast::ToPrimitive;
 use pulp::Arch;
 use rand::{CryptoRng, Rng as RngCore, RngExt, distr::Uniform};
 #[cfg(test)]
@@ -91,20 +89,22 @@ impl Deref for Modulus {
 impl Modulus {
     /// Create a modulus from an integer of at most 62 bits.
     pub fn new(p: u64) -> Result<Self> {
-        if p < 2 || (p >> 62) != 0 {
-            Err(Error::InvalidModulus(p))
-        } else {
-            let barrett = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap(); // 2^128 / p
-            Ok(Self {
-                p,
-                barrett_hi: (barrett >> 64) as u64,
-                barrett_lo: barrett as u64,
-                leading_zeros: p.leading_zeros(),
-                supports_opt: primes::supports_opt(p),
-                distribution: Uniform::new(0, p).unwrap(),
-                arch: Arch::new(),
-            })
-        }
+        let verified::ModulusParameters {
+            p,
+            barrett_hi,
+            barrett_lo,
+            leading_zeros,
+            supports_opt,
+        } = verified::new_modulus(p).ok_or(Error::InvalidModulus(p))?;
+        Ok(Self {
+            p,
+            barrett_hi,
+            barrett_lo,
+            leading_zeros,
+            supports_opt,
+            distribution: Uniform::new(0, p).unwrap(),
+            arch: Arch::new(),
+        })
     }
 
     /// Performs the modular addition of a and b in constant time.
@@ -892,6 +892,51 @@ mod tests {
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
     use rand::{RngExt, SeedableRng, distr::Uniform};
     use rand_chacha::ChaCha8Rng;
+
+    fn check_constructor_metadata(p: u64) {
+        use num_bigint::BigUint;
+        use num_traits::ToPrimitive;
+
+        let modulus = Modulus::new(p).unwrap();
+        let expected_reciprocal = ((BigUint::from(1u64) << 128usize) / p).to_u128().unwrap();
+        let actual_reciprocal = ((modulus.barrett_hi as u128) << 64) | modulus.barrett_lo as u128;
+        assert_eq!(modulus.p, p);
+        assert_eq!(actual_reciprocal, expected_reciprocal, "p={p}");
+        assert_eq!(modulus.leading_zeros, p.leading_zeros(), "p={p}");
+
+        // Evaluate the original NFL inequality independently of supports_opt.
+        let t = BigUint::from(1u64) << p.leading_zeros() as usize;
+        let cube = &t * &t * &t;
+        let expected_opt = ((&cube + 1u64) << 64usize) < &cube * (&t + 1u64) * p;
+        assert_eq!(modulus.supports_opt, expected_opt, "p={p}");
+    }
+
+    #[test]
+    fn constructor_exhausts_small_moduli() {
+        for p in 2..=u16::MAX as u64 {
+            check_constructor_metadata(p);
+        }
+    }
+
+    #[test]
+    fn constructor_checks_boundaries_and_optimization_thresholds() {
+        // Includes every supported power of two (where the reciprocal needs
+        // its +1 correction), adjacent values, and optimization thresholds.
+        for p in reduction_boundary_moduli() {
+            check_constructor_metadata(p);
+        }
+        for p in [
+            0,
+            1,
+            1 << 62,
+            (1 << 62) + 1,
+            (1 << 63) - 1,
+            1 << 63,
+            u64::MAX,
+        ] {
+            assert_eq!(Modulus::new(p), Err(crate::Error::InvalidModulus(p)));
+        }
+    }
 
     #[test]
     fn conditional_selection_handles_word_patterns_and_remains_const() {
@@ -1965,19 +2010,13 @@ mod tests {
     proptest! {
         #[test]
         fn constructor(p: u64) {
-            // 63 and 64-bit integers do not work.
-            prop_assert!(Modulus::new(p | (1u64 << 62)).is_err());
-            prop_assert!(Modulus::new(p | (1u64 << 63)).is_err());
-
-            // p = 0 & 1 do not work.
-            prop_assert!(Modulus::new(0u64).is_err());
-            prop_assert!(Modulus::new(1u64).is_err());
-
-            // Otherwise, all moduli should work.
-            prop_assume!(p >> 2 >= 2);
-            let q = Modulus::new(p >> 2);
-            prop_assert!(q.is_ok());
-            prop_assert_eq!(*q.unwrap(), p >> 2);
+            if (2..1 << 62).contains(&p) {
+                check_constructor_metadata(p);
+            } else {
+                prop_assert_eq!(Modulus::new(p), Err(crate::Error::InvalidModulus(p)));
+            }
+            // Also exercise a valid 62-bit input on every iteration.
+            check_constructor_metadata((p >> 2).max(2));
         }
 
         #[test]

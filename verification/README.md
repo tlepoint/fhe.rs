@@ -11,6 +11,10 @@ same functions in ordinary builds. Verus checks the executable
 implementations and their contracts; the proof is not a separate copy of the
 algorithms. Normal Cargo builds erase the proof code through `vstd`.
 
+[`verified/modulus.rs`](../crates/fhe-math/src/zq/verified/modulus.rs) proves the
+range check and arithmetic initialization used by `Modulus::new`, establishing
+the metadata predicates required by the reduction kernels.
+
 The included [`verified/lazy_reduce.rs`](../crates/fhe-math/src/zq/verified/lazy_reduce.rs)
 also proves every `lazy_reduce*` kernel, including the vector loop, and the
 `primes::supports_opt` eligibility check. The `Modulus` methods delegate to
@@ -70,8 +74,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `144 verified, 0 errors` on macOS or an AVX2 target, and
-`143 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `149 verified, 0 errors` on macOS or an AVX2 target, and
+`148 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -124,6 +128,34 @@ The verifier's compiler is separate from the library's Rust 1.91.1 MSRV.
    establish the canonical modular sum. The existing `unsafe` timing boundary
    and `const fn` signatures are retained for both variable-time functions.
 
+### Modulus construction
+
+`new_modulus(p)` has no preconditions. It returns `Some(parameters)` exactly
+when `2 <= p < 2^62`, with the original `p` and a proved
+`ModulusParameters::valid()` predicate. That predicate establishes
+`valid_barrett(p, hi, lo)`, the exact leading-zero count and its bounds, and
+`supports_opt == valid_opt(p, leading_zeros)`. Thus both the ordinary and
+optimized reduction metadata are established by the shared constructor code.
+
+The reciprocal helper computes `q = u128::MAX / p` and
+`r = u128::MAX % p`, then returns `q + (r == p - 1)`. Incrementing the dividend
+from `2^128 - 1` to `2^128` increments its quotient exactly when the remainder
+was `p - 1`; this handles powers of two as well as other supported moduli.
+The proof checks division and subtraction safety, shows the addition cannot
+overflow, and establishes the exact result `floor(2^128 / p)` and both
+Barrett inequalities. The existing limb-splitting lemma then proves the
+stored high and low words reconstruct this reciprocal. The leading-zero
+lemma and verified `supports_opt` contract establish the remaining fields.
+
+The public `Modulus::new` delegates to this initializer, maps `None` to the
+existing `InvalidModulus(p)` error, and copies the returned arithmetic fields
+into `Modulus`. It no longer uses `BigUint` to construct the reciprocal.
+**Remaining boundary:** the wrapper's error mapping and field copying, the
+external `Uniform::new(0, p)` and `Arch::new()` calls, and preservation/use of
+these fields by other code are not checked by the standalone proof. This is
+a proof of the constructor's shared arithmetic implementation, not yet a
+type invariant carried through every public `Modulus` method.
+
 ### Lazy reduction
 
 All lazy reducers establish `0 <= result < 2*p` and
@@ -134,9 +166,10 @@ original multiplication/shift algorithms.
 
 Let `B = 2^64` and `mu = hi*B + lo`. The `valid_barrett` contract requires
 `2 <= p < 2^62` and `mu*p <= B^2 < (mu+1)*p`, equivalently
-`mu = floor(2^128/p)`. These are the reciprocal limbs constructed by
-`Modulus::new`; the bounds are assumptions on the kernel parameters, not
-additional runtime calculations.
+`mu = floor(2^128/p)`. The shared `new_modulus` initializer proves these
+bounds for the reciprocal limbs used by `Modulus::new`. They remain
+preconditions on standalone reduction kernels, without additional runtime
+checks in those kernels.
 
 | Kernel | Additional assumptions | Proof |
 | --- | --- | --- |
@@ -383,7 +416,9 @@ in the proof.
 kernel. Verus does not verify that function, its `num-bigint-dig` dependency,
 or the wrapper's satisfaction of the flag-equivalence precondition. The
 inverse guarantee is conditional on that detector correctly recognizing
-mathematical primes, alongside the existing Barrett-construction boundary.
+mathematical primes, alongside satisfaction of the arithmetic metadata
+preconditions. The shared constructor now establishes those metadata values;
+their storage and use by the wrappers remain outside the proof.
 No unchecked primality axiom or Fermat theorem is added to the proof source.
 
 ### Random vectors
@@ -427,14 +462,15 @@ All arithmetic in contracts is interpreted over mathematical integers. The
 proofs cover the full stated input domains, including even and composite
 moduli, and preserve `const fn` use.
 
-The arithmetic proofs assume valid inputs. `Modulus::new` checks
-the modulus; the scalar and vector wrappers retain their documented debug
-assertions. The optimized lazy wrappers now also assert `supports_opt` in
-debug builds, and the 128-bit variant retains its `a < p^2` assertion.
-Verus does not verify `Modulus::new`, the wrappers, or their callers, and does
-not insert runtime checks. Correct reciprocal limbs and storage/use of the
-proved optimization metadata remain the boundary between the constructor and
-these kernel contracts. Although other operations reuse the verified kernels,
+The arithmetic proofs assume valid inputs. The shared `new_modulus`
+initializer checks the modulus and proves the arithmetic metadata predicates;
+the scalar and vector wrappers retain their documented debug assertions.
+The optimized lazy wrappers also assert `supports_opt` in debug builds, and
+the 128-bit variant retains its `a < p^2` assertion. Verus does not verify the
+remaining `Modulus::new` wrapper, the operation wrappers, or their callers,
+and does not insert runtime checks. Storage and use of the proved metadata
+remain the boundary between initialization and these kernel contracts.
+Although other operations reuse the verified kernels,
 their contracts have not been proved. These proofs do not establish
 constant-time machine code, NTT/RNS
 correctness, or FHE security.
@@ -444,6 +480,17 @@ The inversion kernel additionally depends on the external primality result
 matching its mathematical predicate.
 
 ## Tests and CI
+
+Constructor tests exhaust all valid 16-bit moduli and cover every supported
+power of two, adjacent values, optimization thresholds, and the maximum
+62-bit modulus. They compare the stored reciprocal against the original
+`BigUint` division and the optimization flag against the original NFL
+inequality. Property tests check exact acceptance/error behavior over the
+full `u64` domain and compare metadata for random valid moduli:
+
+```sh
+cargo test -p fhe-math zq::tests::constructor
+```
 
 Ordinary Rust tests exercise both selection outcomes on boundary and
 alternating-bit words, exhaust reduction for moduli 1 through 64 and addition
