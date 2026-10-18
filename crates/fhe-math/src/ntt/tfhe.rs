@@ -47,15 +47,15 @@ impl NttOperator {
     /// size.
     #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
-        if !super::supports_ntt(p.p, size) {
+        if !super::supports_ntt(p.as_u64(), size) {
             return None;
         }
-        let backend = match Plan::try_new(size, p.p) {
+        let backend = match Plan::try_new(size, p.as_u64()) {
             Some(plan) => Backend::Tfhe(plan),
             None => Backend::Native(native::NttOperator::new(p, size)?),
         };
         Some(Self {
-            modulus: p.p,
+            modulus: p.as_u64(),
             size,
             backend,
         })

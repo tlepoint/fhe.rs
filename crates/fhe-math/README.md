@@ -56,8 +56,12 @@ cargo test -p fhe-math
 `verified/modulus.rs` checks the modulus range and constructs the arithmetic
 metadata used by `Modulus::new`: the exact Barrett reciprocal limbs,
 leading-zero count, and optimization flag. The reciprocal uses verified
-`u128` arithmetic. Error mapping, field storage, and the external distribution
-and CPU-dispatch setup remain outside the kernel proofs.
+`u128` arithmetic. `zq/modulus.rs` proves the constructor's error mapping and
+field storage, carries a persistent type invariant, and verifies cloning,
+equality, dereferencing, and all production public wrappers. Private fields
+prevent unchecked mutation. The internal runtime backend retains explicit
+trusted contracts for distribution setup, sampling, CPU dispatch, and primality;
+its implementation and those dependencies are not formally verified.
 
 Verus proves conditional selection, then one-subtraction reduction, then
 modular addition using those helpers, including the variable-time `reduce1_vt`
@@ -89,7 +93,8 @@ from mathematical primality; the external primality check remains a boundary.
 `verified/random.rs` proves the `random_vec` and `random_into` loops preserve
 length, canonical bounds, and sample order, with exactly one sampler call per
 output entry. These proofs depend on an explicit sampler contract: the
-`rand::Uniform` adapter, uniformity, and RNG security remain outside the proof.
+backend sampling implementation, uniformity, and RNG security remain outside
+the proof; the adapter that records sample history is verified.
 The ordinary Rust implementation shares these verified functions.
 
 `verified/serialize.rs` proves the modulus encoding width, checked byte lengths,
@@ -97,8 +102,8 @@ serialization/deserialization composition, and round trips. It imports the
 verified packing contracts from `fhe-util` through Cargo Verus. The byte-length
 calculation divides before multiplying and checks overflow in release builds
 too. These proofs cover the shared `Modulus` serialization implementation;
-polynomial/protobuf serialization and persistent `Modulus` validity remain
-outside the proof.
+the wrappers use the checked object invariant. Polynomial/protobuf serialization
+remains outside the proof.
 
 Both crates enable Cargo Verus metadata, so proof dependencies use ordinary
 crate imports and their specifications ship with the source packages:

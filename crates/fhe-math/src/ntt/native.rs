@@ -37,7 +37,7 @@ impl NttOperator {
     #[must_use]
     #[cfg(not(feature = "tfhe-ntt"))]
     pub const fn modulus(&self) -> u64 {
-        self.p.p
+        self.p.as_u64()
     }
 
     /// Create an NTT operator given a modulus for a specific size.
@@ -47,7 +47,7 @@ impl NttOperator {
     /// size.
     #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
-        if !super::supports_ntt(p.p, size) {
+        if !super::supports_ntt(p.as_u64(), size) {
             None
         } else {
             let size_inv = p.inv(size as u64)?;
@@ -74,7 +74,7 @@ impl NttOperator {
 
             Some(Self {
                 p: p.clone(),
-                p_twice: p.p * 2,
+                p_twice: p.as_u64() * 2,
                 size,
                 omegas: omegas.into_boxed_slice(),
                 omegas_shoup: omegas_shoup.into_boxed_slice(),
@@ -257,10 +257,10 @@ impl NttOperator {
     ///
     /// Aborts if a >= 4 * p.
     const fn reduce3(&self, a: u64) -> u64 {
-        debug_assert!(a < 4 * self.p.p);
+        debug_assert!(a < 4 * self.p.as_u64());
 
-        let r = crate::zq::verified::reduce3(a, self.p.p, self.p_twice);
-        debug_assert!(r < self.p.p && r == a % self.p.p);
+        let r = crate::zq::verified::reduce3(a, self.p.as_u64(), self.p_twice);
+        debug_assert!(r < self.p.as_u64() && r == a % self.p.as_u64());
         r
     }
 
@@ -268,18 +268,18 @@ impl NttOperator {
     ///
     /// Aborts if a >= 4 * p.
     const unsafe fn reduce3_vt(&self, a: u64) -> u64 {
-        debug_assert!(a < 4 * self.p.p);
+        debug_assert!(a < 4 * self.p.as_u64());
 
-        let r = unsafe { crate::zq::verified::reduce3_vt(a, self.p.p, self.p_twice) };
-        debug_assert!(r < self.p.p && r == a % self.p.p);
+        let r = unsafe { crate::zq::verified::reduce3_vt(a, self.p.as_u64(), self.p_twice) };
+        debug_assert!(r < self.p.as_u64() && r == a % self.p.as_u64());
         r
     }
 
     /// NTT Butterfly.
     fn butterfly(&self, x: &mut u64, y: &mut u64, w: u64, w_shoup: u64) {
-        debug_assert!(*x < 4 * self.p.p);
-        debug_assert!(*y < 4 * self.p.p);
-        debug_assert!(w < self.p.p);
+        debug_assert!(*x < 4 * self.p.as_u64());
+        debug_assert!(*y < 4 * self.p.as_u64());
+        debug_assert!(w < self.p.as_u64());
         debug_assert_eq!(self.p.shoup(w), w_shoup);
 
         *x = Modulus::reduce1(*x, self.p_twice);
@@ -287,15 +287,15 @@ impl NttOperator {
         *y = *x + self.p_twice - t;
         *x += t;
 
-        debug_assert!(*x < 4 * self.p.p);
-        debug_assert!(*y < 4 * self.p.p);
+        debug_assert!(*x < 4 * self.p.as_u64());
+        debug_assert!(*y < 4 * self.p.as_u64());
     }
 
     /// NTT Butterfly in variable time.
     unsafe fn butterfly_vt(&self, x: &mut u64, y: &mut u64, w: u64, w_shoup: u64) {
-        debug_assert!(*x < 4 * self.p.p);
-        debug_assert!(*y < 4 * self.p.p);
-        debug_assert!(w < self.p.p);
+        debug_assert!(*x < 4 * self.p.as_u64());
+        debug_assert!(*y < 4 * self.p.as_u64());
+        debug_assert!(w < self.p.as_u64());
         debug_assert_eq!(self.p.shoup(w), w_shoup);
 
         *x = unsafe { Modulus::reduce1_vt(*x, self.p_twice) };
@@ -303,15 +303,15 @@ impl NttOperator {
         *y = *x + self.p_twice - t;
         *x += t;
 
-        debug_assert!(*x < 4 * self.p.p);
-        debug_assert!(*y < 4 * self.p.p);
+        debug_assert!(*x < 4 * self.p.as_u64());
+        debug_assert!(*y < 4 * self.p.as_u64());
     }
 
     /// Inverse NTT butterfly.
     fn inv_butterfly(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
         debug_assert!(*x < self.p_twice);
         debug_assert!(*y < self.p_twice);
-        debug_assert!(z < self.p.p);
+        debug_assert!(z < self.p.as_u64());
         debug_assert_eq!(self.p.shoup(z), z_shoup);
 
         let t = *x;
@@ -326,7 +326,7 @@ impl NttOperator {
     unsafe fn inv_butterfly_vt(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
         debug_assert!(*x < self.p_twice);
         debug_assert!(*y < self.p_twice);
-        debug_assert!(z < self.p.p);
+        debug_assert!(z < self.p.as_u64());
         debug_assert_eq!(self.p.shoup(z), z_shoup);
 
         let t = *x;
@@ -341,13 +341,13 @@ impl NttOperator {
     ///
     /// Aborts if p is not prime or n is not a power of 2 that is >= 8.
     fn primitive_root(n: usize, p: &Modulus) -> u64 {
-        debug_assert!(super::supports_ntt(p.p, n));
+        debug_assert!(super::supports_ntt(p.as_u64(), n));
 
-        let lambda = (p.p - 1) / (2 * n as u64);
+        let lambda = (p.as_u64() - 1) / (2 * n as u64);
 
         let mut rng: ChaCha8Rng = SeedableRng::seed_from_u64(0);
         for _ in 0..100 {
-            let mut root = rng.random_range(0..p.p);
+            let mut root = rng.random_range(0..p.as_u64());
             root = p.pow(root, lambda);
             if Self::is_primitive_root(root, 2 * n, p) {
                 return root;
@@ -362,8 +362,8 @@ impl NttOperator {
     ///
     /// Aborts if a >= p in debug mode.
     fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
-        debug_assert!(a < p.p);
-        debug_assert!(super::supports_ntt(p.p, n >> 1)); // TODO: This is not exactly the right condition here.
+        debug_assert!(a < p.as_u64());
+        debug_assert!(super::supports_ntt(p.as_u64(), n >> 1)); // TODO: This is not exactly the right condition here.
 
         // A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
         // for all prime p dividing n.

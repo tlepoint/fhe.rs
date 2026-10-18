@@ -105,7 +105,7 @@ and patch its `fhe-util` dependency to the extracted package, then run the same
 verification command there. This does not require files from the original checkout.
 
 The expected project results are `65 verified, 0 errors` for `fhe-util` and
-`167 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`166`
+`239 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`238`
 elsewhere). Counts include proof lemmas, local assertions, and loops, not
 just API functions. The first run also checks the pinned `vstd` dependency.
 On x86 Linux, check both reducer implementations:
@@ -124,10 +124,11 @@ The workspace enables `vstd`'s `std` feature so Cargo builds include its
 `Vec` and allocation specifications, as the standalone release does.
 
 Cargo integration verifies the code inside `verus!`, not the whole library.
-The existing `UniformSampler` adapter remains external: its ghost methods
-make the trait implementation available to Cargo's ghost-enabled Rust check,
-without claiming to verify `rand` or the adapter's sampling contract. The
-kernel proof still depends on the previously documented sampling boundary.
+The `Modulus` implementation and its public wrappers are included. The external
+`Runtime` implementation in `zq/backend.rs` supplies explicit contracts for
+CPU dispatch, uniform sampling, cloning runtime state, and primality detection.
+`--no-cheating` checks the generic implementation; it does not verify that
+external implementation's compliance with its trait contracts.
 
 The current Cargo pin is `vstd = 0.0.0-2026-10-11-0230`, while the verifier
 release is from October 4. Both work together in the Cargo verification run.
@@ -185,11 +186,47 @@ lemma and verified `supports_opt` contract establish the remaining fields.
 The public `Modulus::new` delegates to this initializer, maps `None` to the
 existing `InvalidModulus(p)` error, and copies the returned arithmetic fields
 into `Modulus`. It no longer uses `BigUint` to construct the reciprocal.
-**Remaining boundary:** the wrapper's error mapping and field copying, the
-external `Uniform::new(0, p)` and `Arch::new()` calls, and preservation/use of
-these fields by other code are not checked by the kernel proofs. This is
-a proof of the constructor's shared arithmetic implementation, not yet a
-type invariant carried through every public `Modulus` method.
+The wrapper's error mapping and every field copy are now verified too.
+
+### Persistent Modulus invariant and public wrappers
+
+[`zq/modulus.rs`](../crates/fhe-math/src/zq/modulus.rs) attaches a Verus
+`type_invariant` to the actual stored object. It combines the Barrett reciprocal
+predicate, exact leading-zero count, optimization eligibility, and equality
+between the modulus and its sampling distribution's bound. All fields are
+private. The NTT reads the modulus through a verified const accessor, and
+`Deref` only exposes an immutable reference.
+
+`Modulus::new` returns `Ok` exactly for supported moduli, preserving the input
+value and optimization predicate. It returns exactly `InvalidModulus(p)`
+otherwise. Construction establishes the invariant; `Clone` preserves the
+complete logical state. `PartialEq` compares modulus values and `Deref`
+returns that value with its range guarantee.
+
+All production scalar and vector wrappers, including random generation and
+serialization, now have checked contracts. Each arithmetic wrapper opens the
+object invariant and proves its kernel's metadata preconditions. Callers still
+must supply valid operands, Shoup words, compatible vector lengths, and the
+stated bounds for optimized operations. Existing debug checks are proved safe
+under those preconditions. The serialization-length wrapper requires aligned,
+representable lengths; its documented panic cases are covered by runtime tests.
+
+The concrete public type remains `zq::Modulus`, now an alias for an internal
+`Modulus<Runtime>` implementation. Its generic `Backend` parameter allows Verus
+to check the real wrapper bodies against explicit dependency contracts. There
+is no dynamic dispatch or alternative arithmetic implementation. The production
+backend retains `pulp::Arch` dispatch, `rand::Uniform`, and `fhe_util::is_prime`.
+The trusted contract requires dispatch to satisfy its callback's postcondition,
+samples to lie below the distribution bound, cloning to preserve backend state,
+and the primality result to match mathematical primality. These are external
+dependency assumptions, not new proofs of those dependencies.
+
+Mutable dispatch callbacks take and return the slice borrow so Verus can connect
+the callback's result to the caller's final slice. Arithmetic and vector loops
+remain in checked code. [`zq/clients.rs`](../crates/fhe-math/src/zq/clients.rs)
+checks composition through the concrete public alias: construction, cloning,
+equality, dereferencing, scalar and vector operations, and optimization selection.
+These clients supply no Barrett metadata assumptions.
 
 ### Lazy reduction
 
@@ -447,14 +484,12 @@ builds. The runtime algorithm remains the existing primality gate followed by
 Fermat exponentiation; the Euclidean recursion and sequence products run only
 in the proof.
 
-**Primality boundary:** the wrapper passes `fhe_util::is_prime(p)` to the
-kernel. Verus does not verify that function, its `num-bigint-dig` dependency,
-or the wrapper's satisfaction of the flag-equivalence precondition. The
-inverse guarantee is conditional on that detector correctly recognizing
-mathematical primes, alongside satisfaction of the arithmetic metadata
-preconditions. The shared constructor now establishes those metadata values;
-their storage and use by the wrappers remain outside the proof.
-No unchecked primality axiom or Fermat theorem is added to the proof source.
+**Primality boundary:** the verified wrapper obtains its flag from the
+backend's primality contract and passes it to the kernel. The arithmetic
+metadata comes from the checked object invariant. The inverse guarantee remains
+conditional on `fhe_util::is_prime` and its `num-bigint-dig` dependency correctly
+recognizing mathematical primes. Their implementation is not proved here.
+Fermat's theorem itself is proved without an unchecked axiom.
 
 ### Random vectors
 
@@ -474,13 +509,12 @@ Thus the proofs rule out omitted, extra, reordered, or substituted samples,
 in addition to checking indexing, arithmetic, and loop progress. The history
 erases completely in Rust builds; it allocates no runtime storage.
 
-**Trusted sampling boundary:** `UniformSampler` in `zq/mod.rs` implements the
-trait outside the verified sampling module. It holds the constructor's
-`Uniform::new(0, p)` and the caller's RNG, and calls `rng.sample(distribution)`
-once per trait call. Its compliance with the range and history contract is
-assumed by the generic proofs, not verified by `--no-cheating`. The wrappers
-and distribution construction are also outside the proof. No `assume`,
-`admit`, or unchecked external body is added to the verified source.
+**Trusted sampling boundary:** `Runtime` in `zq/backend.rs` stores the
+constructor's `Uniform::new(0, p)` and calls `rng.sample(distribution)` once per
+backend draw. Its range and distribution-construction contracts are assumed.
+The `Sampler` bridge is verified: it appends each actual returned value to its
+ghost history. The public wrappers now prove that this adapter uses the object's
+modulus and that their outputs have the promised length and canonical bounds.
 
 The proofs establish functional properties conditional on this boundary;
 they do not establish statistical uniformity, independence, cryptographic
@@ -497,22 +531,18 @@ All arithmetic in contracts is interpreted over mathematical integers. The
 proofs cover the full stated input domains, including even and composite
 moduli, and preserve `const fn` use.
 
-The arithmetic proofs assume valid inputs. The shared `new_modulus`
-initializer checks the modulus and proves the arithmetic metadata predicates;
-the scalar and vector wrappers retain their documented debug assertions.
-The optimized lazy wrappers also assert `supports_opt` in debug builds, and
-the 128-bit variant retains its `a < p^2` assertion. Verus does not verify the
-remaining `Modulus::new` wrapper, the operation wrappers, or their callers,
-and does not insert runtime checks. Storage and use of the proved metadata
-remain the boundary between initialization and these kernel contracts.
-Although other operations reuse the verified kernels,
-their contracts have not been proved. These proofs do not establish
-constant-time machine code, NTT/RNS
-correctness, or FHE security.
-The sampling kernels additionally depend on the unverified sampler adapter
-and its contract described above.
-The inversion kernel additionally depends on the external primality result
-matching its mathematical predicate.
+The arithmetic proofs assume valid operands. The checked constructor and
+persistent invariant now establish the arithmetic metadata used by every
+production wrapper. The wrappers retain their documented debug assertions;
+Verus does not insert runtime validation or verify all callers elsewhere in
+the library. It also does not establish constant-time machine code, NTT/RNS
+correctness, or FHE security. Test-only scalar convenience wrappers are outside
+the normal library proof, while their shared scalar kernels are verified.
+
+Runtime dependency contracts remain the explicit boundary: CPU dispatch must
+execute the callback according to its contract, uniform sampling must honor
+its range and configured modulus, and primality detection must match its
+mathematical predicate. Statistical uniformity and RNG security are not proved.
 
 ### Checked bit packing and unpacking
 
@@ -597,13 +627,21 @@ and could wrap in release builds. The public `const fn` retains its alignment
 assertion and explicitly panics on an unrepresentable byte count. The proof
 also establishes agreement between this byte count and the packing output.
 
-As with the other `Modulus` methods, the thin wrappers' field access and the
-object's persistent validity remain outside the proof. The wrapper's panic
-mapping is tested in debug and release builds. These proofs do not yet cover
-polynomial/protobuf serialization, RNS row concatenation, representation
+The serialization wrappers now obtain their modulus bounds from the persistent
+object invariant, and their field access and delegation are verified. The
+length wrapper's panic mapping is tested in debug and release builds. These
+proofs do not yet cover polynomial/protobuf serialization, RNS row concatenation, representation
 conversion, or decode resource limits.
 
 ## Tests and CI
+
+The public-wrapper regression clients are checked by the same Cargo Verus
+command. Runtime tests also compare cloned metadata, equality and dereferencing,
+dispatched reduction, and identical seeded RNG streams across boundary moduli.
+Disposable mutation checks confirmed rejection of an incorrect constructor
+reciprocal limb, a flipped clone optimization flag, a duplicated scalar operand,
+and substitution of subtraction for addition inside a vector callback.
+
 
 Modulus serialization tests cover every supported width, power-of-two
 boundaries, canonical and fitting noncanonical words, arbitrary byte streams,

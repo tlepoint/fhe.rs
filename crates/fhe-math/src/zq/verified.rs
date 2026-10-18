@@ -12,14 +12,14 @@ use vstd::prelude::*;
 use fhe_util::packing;
 
 #[path = "verified/serialize.rs"]
-mod serialization;
+pub(super) mod serialization;
 pub(crate) use serialization::{
     deserialize_vec, serialization_length, serialize_into, serialize_vec,
 };
 
 #[path = "verified/modulus.rs"]
 mod modulus;
-pub(crate) use modulus::{ModulusParameters, new_modulus};
+pub(crate) use modulus::new_modulus;
 
 #[path = "verified/add.rs"]
 mod addition;
@@ -38,7 +38,7 @@ pub(crate) use negation::neg_mod_vt;
 pub(crate) use negation::{neg_mod, neg_vec, neg_vec_vt};
 
 #[path = "verified/mul.rs"]
-mod multiplication;
+pub(super) mod multiplication;
 pub(crate) use multiplication::{
     lazy_mul_shoup, mul_mod, mul_opt, mul_shoup, mul_shoup_vec, mul_shoup_vec_vt, mul_vec,
     mul_vec_vt, scalar_mul_vec, scalar_mul_vec_vt, shoup, shoup_into, shoup_vec,
@@ -55,7 +55,7 @@ mod exponentiation;
 pub(crate) use exponentiation::pow_mod;
 
 #[path = "verified/inv.rs"]
-mod inversion;
+pub(super) mod inversion;
 pub(crate) use inversion::inv_mod;
 
 #[path = "verified/random.rs"]
@@ -73,7 +73,7 @@ pub(crate) use reduction::{
 pub(crate) use reduction::{reduce_i64, reduce_i64_vt};
 
 #[path = "verified/lazy_reduce.rs"]
-mod lazy_reduce;
+pub(super) mod lazy_reduce;
 pub use lazy_reduce::supports_opt;
 pub(crate) use lazy_reduce::{
     lazy_reduce, lazy_reduce_opt, lazy_reduce_opt_u128, lazy_reduce_u128, lazy_reduce_vec,
