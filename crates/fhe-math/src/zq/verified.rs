@@ -39,6 +39,10 @@ pub(crate) use centering::{center, center_vec};
 mod exponentiation;
 pub(crate) use exponentiation::pow_mod;
 
+#[path = "verified/inv.rs"]
+mod inversion;
+pub(crate) use inversion::inv_mod;
+
 #[path = "verified/random.rs"]
 mod sampling;
 pub(crate) use sampling::{ResidueSampler, random_into, random_vec};

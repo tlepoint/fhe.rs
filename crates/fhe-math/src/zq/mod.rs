@@ -589,17 +589,18 @@ impl Modulus {
 
     /// Modular inversion in variable time.
     ///
-    /// Returns None if p is not prime or a = 0.
-    /// Aborts if a >= p in debug mode.
+    /// Returns the canonical multiplicative inverse of a, or None if p is not
+    /// prime or a = 0. Composite moduli are rejected even when a is invertible.
+    /// Aborts if p is prime and a >= p in debug mode.
     #[must_use]
     pub fn inv(&self, a: u64) -> std::option::Option<u64> {
-        if !is_prime(self.p) || a == 0 {
-            None
-        } else {
-            let r = self.pow(a, self.p - 2);
+        let p_is_prime = is_prime(self.p);
+        debug_assert!(!p_is_prime || a < self.p);
+        let result = verified::inv_mod(a, self.p, self.barrett_hi, self.barrett_lo, p_is_prime);
+        if let Some(r) = result {
             debug_assert_eq!(self.mul(a, r), 1);
-            Some(r)
         }
+        result
     }
 
     /// Modular reduction of a u128 in constant time.
@@ -889,7 +890,7 @@ mod tests {
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
-    use rand::{Rng as RngCore, RngExt, SeedableRng, distr::Uniform};
+    use rand::{RngExt, SeedableRng, distr::Uniform};
     use rand_chacha::ChaCha8Rng;
 
     #[test]
@@ -2334,6 +2335,20 @@ mod tests {
                 prop_assert!(std::panic::catch_unwind(|| p.pow(0, *p << 1)).is_err());
             }
         }
+
+        #[test]
+        fn inv_matches_extended_euclid(
+            p in proptest::sample::select(INVERSION_PRIMES), a: u64,
+        ) {
+            let modulus = Modulus::new(p).unwrap();
+            let a = a % p;
+            let actual = modulus.inv(a);
+            prop_assert_eq!(actual, fhe_util::inverse(a, p));
+            if let Some(r) = actual {
+                prop_assert!(0 < r && r < p);
+                prop_assert_eq!((a as u128 * r as u128) % p as u128, 1);
+            }
+        }
     }
 
     #[test]
@@ -2408,35 +2423,88 @@ mod tests {
         }
     }
 
-    // TODO: Make a proptest.
+    const INVERSION_PRIMES: &[u64] = &[
+        2,
+        3,
+        17,
+        1987,
+        65537,
+        1_000_000_007,
+        2_147_483_647,
+        2_305_843_009_213_693_951,
+        4_611_686_018_326_724_609,
+    ];
+
     #[test]
-    fn inv() {
-        let ntests = 100;
-        let mut rng = rand::rng();
-
-        for p in [2u64, 3, 17, 1987, 4611686018326724609] {
-            let q = Modulus::new(p).unwrap();
-
-            assert!(q.inv(0).is_none());
-            assert_eq!(q.inv(1).unwrap(), 1);
-            assert_eq!(q.inv(p - 1).unwrap(), p - 1);
-
-            #[cfg(debug_assertions)]
-            {
-                assert!(std::panic::catch_unwind(|| q.inv(p)).is_err());
-                assert!(std::panic::catch_unwind(|| q.inv(p << 1)).is_err());
-            }
-
-            for _ in 0..ntests {
-                let a = rng.next_u64() % p;
-                let b = q.inv(a);
-
-                if a == 0 {
-                    assert!(b.is_none())
+    fn inv_exhausts_small_moduli() {
+        for p in 2..=256 {
+            let modulus = Modulus::new(p).unwrap();
+            // Independent trial division and exhaustive inverse search.
+            let prime = (2..p).all(|divisor| p % divisor != 0);
+            for a in 0..p {
+                let expected = if prime {
+                    (1..p).find(|&r| a * r % p == 1)
                 } else {
-                    assert!(b.is_some());
-                    assert_eq!(q.mul(a, b.unwrap()), 1)
+                    None
+                };
+                assert_eq!(modulus.inv(a), expected, "p={p}, a={a}");
+            }
+        }
+    }
+
+    #[test]
+    fn inv_matches_extended_euclid_at_boundaries() {
+        for &p in INVERSION_PRIMES {
+            assert!(fhe_util::is_prime(p));
+            let modulus = Modulus::new(p).unwrap();
+            let mut operands = vec![0, 1, p / 2, p - 2, p - 1];
+            for bit in 1..62 {
+                for a in [(1u64 << bit) - 1, 1u64 << bit, (1u64 << bit) + 1] {
+                    if a < p {
+                        operands.push(a);
+                    }
                 }
+            }
+            for a in operands {
+                let actual = modulus.inv(a);
+                assert_eq!(actual, fhe_util::inverse(a, p), "p={p}, a={a}");
+                if let Some(r) = actual {
+                    assert!(0 < r && r < p);
+                    assert_eq!((a as u128 * r as u128) % p as u128, 1);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inv_rejects_composites_including_invertible_operands() {
+        for p in [
+            4,
+            6,
+            9,
+            15,
+            561,
+            1105,
+            1729,
+            1 << 61,
+            (1 << 62) - 2,
+            (1 << 62) - 1,
+        ] {
+            let modulus = Modulus::new(p).unwrap();
+            assert_eq!(fhe_util::inverse(1, p), Some(1));
+            for a in [0, 1, 2, p / 2, p - 1, p, p + 1, u64::MAX] {
+                assert_eq!(modulus.inv(a), None, "p={p}, a={a}");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn inv_rejects_noncanonical_operands_for_primes() {
+        for &p in INVERSION_PRIMES {
+            let modulus = Modulus::new(p).unwrap();
+            for a in [p, p + 1, 2 * p, u64::MAX] {
+                assert!(std::panic::catch_unwind(|| modulus.inv(a)).is_err());
             }
         }
     }

@@ -77,6 +77,9 @@ midpoint behavior for both odd and even moduli.
 `verified/pow.rs` proves variable-time exponentiation yields `a^n mod p` below
 the modulus for canonical bases and the existing `n < p` exponent bound,
 including `0^0 = 1`.
+`verified/inv.rs` proves inversion by the same Fermat exponentiation, including
+the inverse identity and exact `None` cases. Fermat's little theorem is proved
+from mathematical primality; the external primality check remains a boundary.
 `verified/random.rs` proves the `random_vec` and `random_into` loops preserve
 length, canonical bounds, and sample order, with exactly one sampler call per
 output entry. These proofs depend on an explicit sampler contract: the

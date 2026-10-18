@@ -41,6 +41,11 @@ behavior for odd and even moduli.
 exponentiation by composing multiplication contracts while tracking the
 processed binary prefix of the exponent.
 
+[`verified/inv.rs`](../crates/fhe-math/src/zq/verified/inv.rs) proves inversion
+using that exponentiation. It includes a proof of Fermat's little theorem
+from mathematical primality; the external primality detector remains outside
+the verified module.
+
 [`verified/random.rs`](../crates/fhe-math/src/zq/verified/random.rs) proves the
 `random_vec` and `random_into` loops against an abstract sampler contract,
 including canonical bounds, length, and exact correspondence to the sequence
@@ -65,8 +70,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `122 verified, 0 errors` on macOS or an AVX2 target, and
-`121 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `144 verified, 0 errors` on macOS or an AVX2 target, and
+`143 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -338,8 +343,48 @@ Verus also checks that the signed loop index stays between `-1` and `60`,
 every executed shift is valid, the accumulator stays canonical, and the loop
 terminates. When the index reaches `-1`, the processed prefix is the whole
 exponent. The public wrapper retains its debug assertions and variable-time
-behavior. `inv` calls this verified exponentiation, but its inverse guarantee
-and primality check remain outside the proof.
+behavior. `inv` composes this exponentiation with the number-theoretic proof
+described below.
+
+### Inversion
+
+`inv_mod(a, p, hi, lo, p_is_prime)` requires `valid_barrett`, a primality flag
+equal to the mathematical predicate `prime(p)`, and `a < p` when the flag is
+true. It returns `None` exactly when the flag is false or `a = 0`. Every
+`Some(r)` satisfies `0 < r < p`, `(a*r) mod p = 1`, and
+`r = a^(p-2) mod p`. This includes `p = 2` and the zero exponent. Composite
+moduli still return `None` even for invertible operands. As before, invalid
+operands are rejected in debug builds for prime moduli, while composite
+moduli return `None` without inspecting the operand's canonicality.
+
+The predicate `prime(p)` means `p > 1` and no integer `d` with `1 < d < p`
+divides `p`. It does not assume Fermat's theorem or the existence of inverses.
+The proof builds those facts in stages:
+
+1. A ghost Euclidean recursion constructs a positive common divisor and
+   Bezout coefficients. For `0 < a < p` and prime `p`, that divisor must be
+   one, giving a modular inverse witness and cancellation of nonzero factors.
+2. Recursive sequence lemmas prove that removing a factor, permuting distinct
+   factors, and scaling all factors have the expected effects on their
+   product modulo `p`. A product of nonzero residues remains nonzero.
+3. Multiplication by `a` maps `1, ..., p-1` to distinct nonzero residues.
+   Equal finite cardinalities make this a permutation. Equality of the
+   products gives `a^(p-1) * product = product` modulo `p`; cancellation proves
+   Fermat's little theorem.
+4. The existing `pow_mod` contract and the power-addition identity give
+   `a * a^(p-2) = 1` modulo `p`, establishing the executable kernel's result.
+
+All these lemmas are checked with `--no-cheating` and erase in ordinary Rust
+builds. The runtime algorithm remains the existing primality gate followed by
+Fermat exponentiation; the Euclidean recursion and sequence products run only
+in the proof.
+
+**Primality boundary:** the wrapper passes `fhe_util::is_prime(p)` to the
+kernel. Verus does not verify that function, its `num-bigint-dig` dependency,
+or the wrapper's satisfaction of the flag-equivalence precondition. The
+inverse guarantee is conditional on that detector correctly recognizing
+mathematical primes, alongside the existing Barrett-construction boundary.
+No unchecked primality axiom or Fermat theorem is added to the proof source.
 
 ### Random vectors
 
@@ -395,6 +440,8 @@ constant-time machine code, NTT/RNS
 correctness, or FHE security.
 The sampling kernels additionally depend on the unverified sampler adapter
 and its contract described above.
+The inversion kernel additionally depends on the external primality result
+matching its mathematical predicate.
 
 ## Tests and CI
 
@@ -483,6 +530,19 @@ of both invalid bases and invalid exponents:
 
 ```sh
 cargo test -p fhe-math pow
+```
+
+Inversion tests exhaust all canonical operands for moduli 2 through 256,
+using trial division and exhaustive inverse search as independent oracles.
+Boundary and property tests compare with `fhe_util::inverse`, which uses
+`num-bigint-dig`'s extended Euclidean inversion rather than Fermat
+exponentiation. They include `p = 2`, zero, one, `p-1`, power-of-two operand
+boundaries, and large 62-bit primes. Composite tests include Carmichael
+numbers, invertible operands such as one, and noncanonical inputs; separate
+debug tests check rejection of invalid operands for primes:
+
+```sh
+cargo test -p fhe-math zq::tests::inv
 ```
 
 Sampling tests compare both APIs with the original `Uniform` iterator using
