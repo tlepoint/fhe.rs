@@ -9,7 +9,7 @@
 )]
 
 pub mod primes;
-mod verified;
+pub(crate) mod verified;
 
 use std::ops::Deref;
 
@@ -441,7 +441,7 @@ impl Modulus {
     /// Reduce a vector in place in constant time.
     pub fn reduce_vec(&self, a: &mut [u64]) {
         self.arch
-            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.reduce(*ai)))
+            .dispatch(|| verified::reduce_vec(a, self.p, self.barrett_hi, self.barrett_lo))
     }
 
     /// Center a value modulo p as i64 in constant time.
@@ -473,15 +473,18 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
     pub unsafe fn reduce_vec_vt(&self, a: &mut [u64]) {
-        self.arch.dispatch(|| {
-            a.iter_mut()
-                .for_each(|ai| *ai = unsafe { self.reduce_vt(*ai) })
+        self.arch.dispatch(|| unsafe {
+            verified::reduce_vec_vt(a, self.p, self.barrett_hi, self.barrett_lo)
         })
     }
 
     /// Modular reduction of a i64 in constant time.
+    // Production vector loops call the verified scalar kernel directly.
+    #[cfg(test)]
     const fn reduce_i64(&self, a: i64) -> u64 {
-        self.reduce_u128((((self.p as i128) << 64) + (a as i128)) as u128)
+        let r = verified::reduce_i64(a, self.p, self.barrett_hi, self.barrett_lo);
+        debug_assert!(r < self.p && r as i128 == (a as i128).rem_euclid(self.p as i128));
+        r
     }
 
     /// Modular reduction of a i64 in variable time.
@@ -489,28 +492,31 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
+    #[cfg(test)]
     const unsafe fn reduce_i64_vt(&self, a: i64) -> u64 {
-        unsafe { self.reduce_u128_vt((((self.p as i128) << 64) + (a as i128)) as u128) }
+        let r = unsafe { verified::reduce_i64_vt(a, self.p, self.barrett_hi, self.barrett_lo) };
+        debug_assert!(r < self.p && r as i128 == (a as i128).rem_euclid(self.p as i128));
+        r
     }
 
-    /// Reduce a vector in place in constant time.
+    /// Return a new vector of canonical residues of signed inputs in constant
+    /// time.
     #[must_use]
     pub fn reduce_vec_i64(&self, a: &[i64]) -> Vec<u64> {
         self.arch
-            .dispatch(|| a.iter().map(|ai| self.reduce_i64(*ai)).collect_vec())
+            .dispatch(|| verified::reduce_vec_i64(a, self.p, self.barrett_hi, self.barrett_lo))
     }
 
-    /// Reduce a vector in place in variable time.
+    /// Return a new vector of canonical residues of signed inputs in variable
+    /// time.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being reduced.
     #[must_use]
     pub unsafe fn reduce_vec_i64_vt(&self, a: &[i64]) -> Vec<u64> {
-        self.arch.dispatch(|| {
-            a.iter()
-                .map(|ai| unsafe { self.reduce_i64_vt(*ai) })
-                .collect()
+        self.arch.dispatch(|| unsafe {
+            verified::reduce_vec_i64_vt(a, self.p, self.barrett_hi, self.barrett_lo)
         })
     }
 
@@ -518,7 +524,7 @@ impl Modulus {
     #[must_use]
     pub fn reduce_vec_new(&self, a: &[u64]) -> Vec<u64> {
         self.arch
-            .dispatch(|| a.iter().map(|ai| self.reduce(*ai)).collect())
+            .dispatch(|| verified::reduce_vec_new(a, self.p, self.barrett_hi, self.barrett_lo))
     }
 
     /// Reduce a vector in variable time.
@@ -528,8 +534,9 @@ impl Modulus {
     /// about the values being reduced.
     #[must_use]
     pub unsafe fn reduce_vec_new_vt(&self, a: &[u64]) -> Vec<u64> {
-        self.arch
-            .dispatch(|| a.iter().map(|bi| unsafe { self.reduce_vt(*bi) }).collect())
+        self.arch.dispatch(|| unsafe {
+            verified::reduce_vec_new_vt(a, self.p, self.barrett_hi, self.barrett_lo)
+        })
     }
 
     /// Modular negation of a vector in place in constant time.
@@ -596,7 +603,9 @@ impl Modulus {
     /// Modular reduction of a u128 in constant time.
     #[must_use]
     pub const fn reduce_u128(&self, a: u128) -> u64 {
-        Self::reduce1(self.lazy_reduce_u128(a), self.p)
+        let r = verified::reduce_u128(a, self.p, self.barrett_hi, self.barrett_lo);
+        debug_assert!(r < self.p && r as u128 == a % self.p as u128);
+        r
     }
 
     /// Modular reduction of a u128 in variable time.
@@ -606,13 +615,17 @@ impl Modulus {
     /// about the value being reduced.
     #[must_use]
     pub const unsafe fn reduce_u128_vt(&self, a: u128) -> u64 {
-        unsafe { Self::reduce1_vt(self.lazy_reduce_u128(a), self.p) }
+        let r = unsafe { verified::reduce_u128_vt(a, self.p, self.barrett_hi, self.barrett_lo) };
+        debug_assert!(r < self.p && r as u128 == a % self.p as u128);
+        r
     }
 
     /// Modular reduction of a u64 in constant time.
     #[must_use]
     pub const fn reduce(&self, a: u64) -> u64 {
-        Self::reduce1(self.lazy_reduce(a), self.p)
+        let r = verified::reduce(a, self.p, self.barrett_hi, self.barrett_lo);
+        debug_assert!(r < self.p && r == a % self.p);
+        r
     }
 
     /// Modular reduction of a u64 in variable time.
@@ -622,40 +635,74 @@ impl Modulus {
     /// about the value being reduced.
     #[must_use]
     pub const unsafe fn reduce_vt(&self, a: u64) -> u64 {
-        unsafe { Self::reduce1_vt(self.lazy_reduce(a), self.p) }
+        let r = unsafe { verified::reduce_vt(a, self.p, self.barrett_hi, self.barrett_lo) };
+        debug_assert!(r < self.p && r == a % self.p);
+        r
     }
 
     /// Optimized modular reduction of a u128 in constant time.
+    /// Requires an eligible modulus and `a < p^2`; checked in debug mode.
     #[must_use]
     pub const fn reduce_opt_u128(&self, a: u128) -> u64 {
         debug_assert!(self.supports_opt);
-        Self::reduce1(self.lazy_reduce_opt_u128(a), self.p)
+        debug_assert!(a < (self.p as u128) * (self.p as u128));
+        let r = verified::reduce_opt_u128(
+            a,
+            self.p,
+            self.barrett_hi,
+            self.barrett_lo,
+            self.leading_zeros,
+        );
+        debug_assert!(r < self.p && r as u128 == a % self.p as u128);
+        r
     }
 
-    /// Optimized modular reduction of a u128 in constant time.
+    /// Optimized modular reduction of a u128 in variable time.
+    /// Requires an eligible modulus and `a < p^2`; checked in debug mode.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     pub(crate) const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
         debug_assert!(self.supports_opt);
-        unsafe { Self::reduce1_vt(self.lazy_reduce_opt_u128(a), self.p) }
+        debug_assert!(a < (self.p as u128) * (self.p as u128));
+        let r = unsafe {
+            verified::reduce_opt_u128_vt(
+                a,
+                self.p,
+                self.barrett_hi,
+                self.barrett_lo,
+                self.leading_zeros,
+            )
+        };
+        debug_assert!(r < self.p && r as u128 == a % self.p as u128);
+        r
     }
 
     /// Optimized modular reduction of a u64 in constant time.
+    /// Requires a modulus supporting optimized reduction; checked in debug
+    /// mode.
     #[must_use]
     pub const fn reduce_opt(&self, a: u64) -> u64 {
-        Self::reduce1(self.lazy_reduce_opt(a), self.p)
+        debug_assert!(self.supports_opt);
+        let r = verified::reduce_opt(a, self.p, self.leading_zeros);
+        debug_assert!(r < self.p && r == a % self.p);
+        r
     }
 
     /// Optimized modular reduction of a u64 in variable time.
+    /// Requires a modulus supporting optimized reduction; checked in debug
+    /// mode.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
     #[must_use]
     pub const unsafe fn reduce_opt_vt(&self, a: u64) -> u64 {
-        unsafe { Self::reduce1_vt(self.lazy_reduce_opt(a), self.p) }
+        debug_assert!(self.supports_opt);
+        let r = unsafe { verified::reduce_opt_vt(a, self.p, self.leading_zeros) };
+        debug_assert!(r < self.p && r == a % self.p);
+        r
     }
 
     /// Return x mod p in constant time.
@@ -739,6 +786,8 @@ impl Modulus {
     /// Lazy optimized modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
     /// Requires a modulus supporting optimized reduction.
+    // Production canonical/vector kernels compose with this helper in Verus.
+    #[cfg(test)]
     const fn lazy_reduce_opt(&self, a: u64) -> u64 {
         debug_assert!(self.supports_opt);
         let r = verified::lazy_reduce_opt(a, self.p, self.leading_zeros);
@@ -934,7 +983,7 @@ mod tests {
 
     // Include powers of two, maximal moduli of each width, and both sides of
     // the strict NFL inequality used to select the optimized implementation.
-    fn lazy_reduction_boundary_moduli() -> Vec<u64> {
+    fn reduction_boundary_moduli() -> Vec<u64> {
         use num_bigint::BigUint;
         use num_traits::ToPrimitive;
 
@@ -962,7 +1011,7 @@ mod tests {
     fn lazy_reducers_cover_boundaries_and_optimization_thresholds() {
         let mut optimized_count = 0;
         let mut general_count = 0;
-        for p in lazy_reduction_boundary_moduli() {
+        for p in reduction_boundary_moduli() {
             let modulus = Modulus::new(p).unwrap();
             let square = (p as u128) * (p as u128);
             let words = [0, 1, p - 1, p, 2 * p - 1, 2 * p, u64::MAX];
@@ -1065,6 +1114,178 @@ mod tests {
         let modulus = Modulus::new((1 << 62) - 1).unwrap();
         let square = (*modulus as u128) * (*modulus as u128);
         assert!(std::panic::catch_unwind(|| modulus.lazy_reduce_opt_u128(square)).is_err());
+    }
+
+    #[test]
+    fn canonical_reducers_cover_boundaries() {
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let words = [
+                0,
+                1,
+                p - 1,
+                p,
+                p + 1,
+                2 * p - 1,
+                2 * p,
+                4 * p - 1,
+                1 << 63,
+                u64::MAX - 1,
+                u64::MAX,
+            ];
+            for a in words {
+                assert_eq!(modulus.reduce(a), a % p);
+                assert_eq!(unsafe { modulus.reduce_vt(a) }, a % p);
+                if modulus.supports_opt {
+                    assert_eq!(modulus.reduce_opt(a), a % p);
+                    assert_eq!(unsafe { modulus.reduce_opt_vt(a) }, a % p);
+                }
+            }
+
+            let wide_p = p as u128;
+            let square = wide_p * wide_p;
+            for a in [
+                0,
+                1,
+                wide_p - 1,
+                wide_p,
+                wide_p + 1,
+                square - 1,
+                square,
+                square + 1,
+                (1u128 << 64) - 1,
+                1 << 64,
+                1 << 127,
+                u128::MAX,
+            ] {
+                let expected = (a % wide_p) as u64;
+                assert_eq!(modulus.reduce_u128(a), expected);
+                assert_eq!(unsafe { modulus.reduce_u128_vt(a) }, expected);
+                if modulus.supports_opt && a < square {
+                    assert_eq!(modulus.reduce_opt_u128(a), expected);
+                    assert_eq!(unsafe { modulus.reduce_opt_u128_vt(a) }, expected);
+                }
+            }
+
+            let signed_p = p as i64;
+            let signed = [
+                i64::MIN,
+                i64::MIN + 1,
+                -signed_p - 1,
+                -signed_p,
+                -signed_p + 1,
+                -1,
+                0,
+                1,
+                signed_p - 1,
+                signed_p,
+                signed_p + 1,
+                i64::MAX - 1,
+                i64::MAX,
+            ];
+            for a in signed {
+                let expected = (a as i128).rem_euclid(p as i128) as u64;
+                assert_eq!(modulus.reduce_i64(a), expected);
+                assert_eq!(unsafe { modulus.reduce_i64_vt(a) }, expected);
+            }
+
+            for len in [0, 1, 2, 7, 8, 9, 31, 32, 33, 63, 64, 65, 129] {
+                let input: Vec<_> = words.into_iter().cycle().take(len).collect();
+                let expected: Vec<_> = input.iter().map(|a| a % p).collect();
+                // Slice sentinels also check that only the requested region changes.
+                let mut buffer = vec![u64::MAX; len + 2];
+                buffer[1..=len].copy_from_slice(&input);
+                modulus.reduce_vec(&mut buffer[1..=len]);
+                assert_eq!(&buffer[1..=len], expected);
+                assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                buffer[1..=len].copy_from_slice(&input);
+                unsafe {
+                    modulus.reduce_vec_vt(&mut buffer[1..=len]);
+                }
+                assert_eq!(&buffer[1..=len], expected);
+                assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                assert_eq!(modulus.reduce_vec_new(&input), expected);
+                assert_eq!(unsafe { modulus.reduce_vec_new_vt(&input) }, expected);
+
+                let input: Vec<_> = signed.into_iter().cycle().take(len).collect();
+                let expected: Vec<_> = input
+                    .iter()
+                    .map(|a| (*a as i128).rem_euclid(p as i128) as u64)
+                    .collect();
+                assert_eq!(modulus.reduce_vec_i64(&input), expected);
+                assert_eq!(unsafe { modulus.reduce_vec_i64_vt(&input) }, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_reducers_exhaust_small_inputs() {
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..4 * p {
+                let expected = a % p;
+                assert_eq!(modulus.reduce(a), expected);
+                assert_eq!(unsafe { modulus.reduce_vt(a) }, expected);
+                assert_eq!(modulus.reduce_u128(a as u128), expected);
+                assert_eq!(unsafe { modulus.reduce_u128_vt(a as u128) }, expected);
+            }
+            for a in -(4 * p as i64)..=4 * p as i64 {
+                let expected = (a as i128).rem_euclid(p as i128) as u64;
+                assert_eq!(modulus.reduce_i64(a), expected);
+                assert_eq!(unsafe { modulus.reduce_i64_vt(a) }, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_scalar_kernels_remain_const() {
+        use super::verified;
+        const P: u64 = (1 << 62) - 1;
+        const MU: u128 = u128::MAX / P as u128;
+        const HI: u64 = (MU >> 64) as u64;
+        const LO: u64 = MU as u64;
+        const A: u128 = P as u128 * P as u128 - 1;
+        const RESULTS: [u64; 12] = [
+            verified::reduce(u64::MAX, P, HI, LO),
+            unsafe { verified::reduce_vt(u64::MAX, P, HI, LO) },
+            verified::reduce_u128(u128::MAX, P, HI, LO),
+            unsafe { verified::reduce_u128_vt(u128::MAX, P, HI, LO) },
+            verified::reduce_opt(u64::MAX, P, P.leading_zeros()),
+            unsafe { verified::reduce_opt_vt(u64::MAX, P, P.leading_zeros()) },
+            verified::reduce_opt_u128(A, P, HI, LO, P.leading_zeros()),
+            unsafe { verified::reduce_opt_u128_vt(A, P, HI, LO, P.leading_zeros()) },
+            verified::reduce_i64(i64::MIN, P, HI, LO),
+            unsafe { verified::reduce_i64_vt(i64::MIN, P, HI, LO) },
+            verified::reduce3(4 * P - 1, P, 2 * P),
+            unsafe { verified::reduce3_vt(4 * P - 1, P, 2 * P) },
+        ];
+        let expected = [
+            u64::MAX % P,
+            (u128::MAX % P as u128) as u64,
+            u64::MAX % P,
+            (A % P as u128) as u64,
+            (i64::MIN as i128).rem_euclid(P as i128) as u64,
+            P - 1,
+        ];
+        for (&pair, expected) in RESULTS.as_chunks::<2>().0.iter().zip(expected) {
+            assert_eq!(pair, [expected, expected]);
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn canonical_optimized_reducers_reject_invalid_inputs() {
+        let unsupported = Modulus::new(17).unwrap();
+        assert!(std::panic::catch_unwind(|| unsupported.reduce_opt(0)).is_err());
+        assert!(std::panic::catch_unwind(|| unsafe { unsupported.reduce_opt_vt(0) }).is_err());
+        assert!(std::panic::catch_unwind(|| unsupported.reduce_opt_u128(0)).is_err());
+        assert!(std::panic::catch_unwind(|| unsafe { unsupported.reduce_opt_u128_vt(0) }).is_err());
+        let modulus = Modulus::new((1 << 62) - 1).unwrap();
+        let square = (*modulus as u128) * (*modulus as u128);
+        assert!(std::panic::catch_unwind(|| modulus.reduce_opt_u128(square)).is_err());
+        assert!(
+            std::panic::catch_unwind(|| unsafe { modulus.reduce_opt_u128_vt(square) }).is_err()
+        );
     }
 
     // Utility functions for the proptests.
@@ -1233,7 +1454,7 @@ mod tests {
 
         #[test]
         fn reduce_i64(p in valid_moduli(), a: i64) {
-            let b = if a < 0 { p.neg(p.reduce(-a as u64)) } else { p.reduce(a as u64) };
+            let b = (a as i128).rem_euclid(*p as i128) as u64;
             prop_assert_eq!(p.reduce_i64(a), b);
             unsafe { prop_assert_eq!(p.reduce_i64_vt(a), b) }
         }
@@ -1317,11 +1538,11 @@ mod tests {
         fn reduce_vec(p in valid_moduli(), a: Vec<u64>) {
             let mut b = a.clone();
             p.reduce_vec(&mut b);
-            prop_assert_eq!(b.clone(), a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+            prop_assert_eq!(b.clone(), a.iter().map(|ai| *ai % *p).collect_vec());
 
             b.clone_from(&a);
             unsafe { p.reduce_vec_vt(&mut b) }
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+            prop_assert_eq!(b, a.iter().map(|ai| *ai % *p).collect_vec());
         }
 
         #[test]
@@ -1335,16 +1556,16 @@ mod tests {
         #[test]
         fn reduce_vec_new(p in valid_moduli(), a: Vec<u64>) {
             let b = p.reduce_vec_new(&a);
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce(*ai)).collect_vec());
+            prop_assert_eq!(b, a.iter().map(|ai| *ai % *p).collect_vec());
             prop_assert_eq!(p.reduce_vec_new(&a), unsafe { p.reduce_vec_new_vt(&a) });
         }
 
         #[test]
         fn reduce_vec_i64(p in valid_moduli(), a: Vec<i64>) {
             let b = p.reduce_vec_i64(&a);
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
+            prop_assert_eq!(b, a.iter().map(|ai| (*ai as i128).rem_euclid(*p as i128) as u64).collect_vec());
             let b = unsafe { p.reduce_vec_i64_vt(&a) };
-            prop_assert_eq!(b, a.iter().map(|ai| p.reduce_i64(*ai)).collect_vec());
+            prop_assert_eq!(b, a.iter().map(|ai| (*ai as i128).rem_euclid(*p as i128) as u64).collect_vec());
         }
 
         #[test]

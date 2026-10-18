@@ -16,6 +16,11 @@ also proves every `lazy_reduce*` kernel, including the vector loop, and the
 `primes::supports_opt` eligibility check. The `Modulus` methods delegate to
 these verified implementations.
 
+[`verified/reduce.rs`](../crates/fhe-math/src/zq/verified/reduce.rs) completes
+the `reduce*` family: canonical unsigned and signed reductions, optimized
+reductions, all six vector variants, and the native NTT's `reduce3` helpers.
+Both ordinary and variable-time paths use these shared implementations.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -35,9 +40,9 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `31 verified, 0 errors` on macOS or an AVX2 target, and
-`30 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
-and the vector loop. On x86 Linux, check both target-dependent implementations with:
+The expected result is `57 verified, 0 errors` on macOS or an AVX2 target, and
+`56 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
 verus --crate-type lib --edition=2024 --no-cheating -C target-feature=-avx2 crates/fhe-math/src/zq/verified.rs
@@ -48,7 +53,7 @@ verus --crate-type lib --edition=2024 --no-cheating -C target-feature=+avx2 crat
 external bodies in our proof source. Verus, its bundled standard-library
 specifications, Z3, Rust, and the compiler remain trusted infrastructure.
 
-This checks the arithmetic module and its submodule directly, without asking
+This checks the arithmetic module and its submodules directly, without asking
 Verus to analyze the crate's unrelated dependencies or algorithms. It needs neither Cargo dependency
 compilation nor `protoc`. It is not a `cargo verus verify -p fhe-math` integration
 or a verification of the whole crate. The pinned `vstd` dependency is used by
@@ -146,6 +151,38 @@ top bit set still return `false`; eligible 63-bit inputs remain supported even
 though `Modulus` itself only accepts moduli below `2^62`. The condition does
 not require primality.
 
+### Canonical reduction
+
+Every canonical reducer proves `0 <= result < p` and
+`result = input mod p`, with modulo interpreted over mathematical integers.
+For signed inputs this is the nonnegative Euclidean remainder, matching
+Rust's `rem_euclid`, including at `i64::MIN`.
+
+| Kernels (including each `_vt` variant) | Assumptions | Composition |
+| --- | --- | --- |
+| `reduce`, `reduce_u128` | `valid_barrett`; any input of the indicated width | The corresponding lazy reducer produces a value below `2*p`; `reduce1` or `reduce1_vt` makes it canonical. |
+| `reduce_opt` | `valid_opt`; any `u64` input | Optimized lazy reduction followed by one subtraction. |
+| `reduce_opt_u128` | `valid_barrett`, `valid_opt`, and `a < p^2` | Optimized 128-bit lazy reduction followed by one subtraction. |
+| `reduce_i64` | `valid_barrett`; any `i64` input | Add `p*2^64`, then apply `reduce_u128`. |
+| `reduce3` | `0 < p < 2^62`, `p_twice = 2*p`, and `a < 4*p` | Reduce first modulo `2*p`, then modulo `p`. |
+| `reduce_vec`, `reduce_vec_new`, `reduce_vec_i64` | `valid_barrett`; unrestricted entries | Apply the appropriate canonical scalar contract to every element. |
+
+The signed helper proves that the original signed shift and addition
+`((p as i128) << 64) + (a as i128)` fit in `i128`, remain nonnegative, and
+preserve the residue on conversion to `u128`. It never negates the input.
+The NTT helpers use the identity `(a mod (2*p)) mod p = a mod p`; the full
+NTT and construction of its `p_twice` field remain outside the proof.
+
+All six canonical vector loops are checked, including bounds, termination,
+length, element order, and canonical residues. In-place loops preserve the
+unprocessed suffix; allocating loops reserve the input length and establish
+the contract for each pushed value. The read-only inputs remain borrowed
+immutably. The `Modulus` wrappers retain architecture dispatch around the
+verified loops. Scalar kernels remain `const fn`; variable-time APIs retain
+their `unsafe` timing boundary. The private signed scalar and optimized lazy
+`Modulus` wrappers are now test conveniences: production vector/canonical
+kernels compose those scalar helpers directly inside the verified module.
+
 ### Proof boundary
 
 All arithmetic in contracts is interpreted over mathematical integers. The
@@ -160,8 +197,8 @@ Verus does not verify `Modulus::new`, the wrappers, or their callers, and does
 not insert runtime checks. Correct reciprocal limbs and storage/use of the
 proved optimization metadata remain the boundary between the constructor and
 these kernel contracts. Although other operations reuse the verified kernels,
-their contracts have not been
-proved. These proofs do not establish constant-time machine code, NTT/RNS
+their contracts have not been proved. These proofs do not establish
+constant-time machine code, NTT/RNS
 correctness, or FHE security.
 
 ## Tests and CI
@@ -185,6 +222,16 @@ optimization threshold at each modulus width. They exercise all four scalar
 kernels in const expressions, both vector implementations (including empty
 slices), and invalid optimized inputs in debug builds. Randomized tests use
 Rust's `%` as an independent congruence oracle for all four scalar kernels.
+
+Canonical reduction tests cover every scalar and vector variant, including
+`u128::MAX`, `i64::MIN`, negative multiples of the modulus, and both sides of
+the optimization threshold. They exhaust small unsigned and signed inputs,
+check all twelve new scalar kernels in const expressions, and compare vector
+results to `%` or `i128::rem_euclid` independently. Empty, singleton, and
+lengths around loop boundaries are included; sentinels check in-place slice
+boundaries. Optimized wrappers reject unsupported moduli and `a >= p^2` in
+debug builds. Native NTT tests cover `reduce3` and `reduce3_vt` at all four
+modulus boundaries and reject `a = 4*p` in debug builds.
 
 Eligibility tests evaluate the original NFL inequality with `BigUint` as an
 independent oracle. They exhaust all 16-bit inputs, cover every power-of-two
@@ -211,3 +258,6 @@ optimized quotient shift, or leaving vector entries unreduced must fail
 verification as well.
 Changing the strict comparison in `supports_opt` to `>=` must fail at
 `p = 3*2^61`, where the original NFL inequality is an equality.
+Canonical reduction checks also reject omitting the final subtraction,
+subtracting the signed input instead of adding it in `lift_i64`, or pushing
+zero instead of the computed residue in an allocating vector loop.

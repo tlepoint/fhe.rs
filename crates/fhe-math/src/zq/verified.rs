@@ -6,6 +6,16 @@
 
 use vstd::prelude::*;
 
+#[path = "verified/reduce.rs"]
+mod reduction;
+pub(crate) use reduction::{
+    reduce, reduce_opt, reduce_opt_u128, reduce_opt_u128_vt, reduce_opt_vt, reduce_u128,
+    reduce_u128_vt, reduce_vec, reduce_vec_i64, reduce_vec_i64_vt, reduce_vec_new,
+    reduce_vec_new_vt, reduce_vec_vt, reduce_vt, reduce3, reduce3_vt,
+};
+#[cfg(test)]
+pub(crate) use reduction::{reduce_i64, reduce_i64_vt};
+
 #[path = "verified/lazy_reduce.rs"]
 mod lazy_reduce;
 pub use lazy_reduce::supports_opt;

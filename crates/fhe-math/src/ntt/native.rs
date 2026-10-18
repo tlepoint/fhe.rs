@@ -259,8 +259,9 @@ impl NttOperator {
     const fn reduce3(&self, a: u64) -> u64 {
         debug_assert!(a < 4 * self.p.p);
 
-        let y = Modulus::reduce1(a, self.p_twice);
-        Modulus::reduce1(y, self.p.p)
+        let r = crate::zq::verified::reduce3(a, self.p.p, self.p_twice);
+        debug_assert!(r < self.p.p && r == a % self.p.p);
+        r
     }
 
     /// Reduce a modulo p in variable time.
@@ -269,8 +270,9 @@ impl NttOperator {
     const unsafe fn reduce3_vt(&self, a: u64) -> u64 {
         debug_assert!(a < 4 * self.p.p);
 
-        let y = unsafe { Modulus::reduce1_vt(a, self.p_twice) };
-        unsafe { Modulus::reduce1_vt(y, self.p.p) }
+        let r = unsafe { crate::zq::verified::reduce3_vt(a, self.p.p, self.p_twice) };
+        debug_assert!(r < self.p.p && r == a % self.p.p);
+        r
     }
 
     /// NTT Butterfly.
@@ -372,6 +374,39 @@ impl NttOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reduce3_covers_small_inputs_and_boundaries() {
+        for p in [17, 97, 65537, 2013265921, 4611686018326724609] {
+            let op = NttOperator::new(&Modulus::new(p).unwrap(), 8).unwrap();
+            let mut inputs = vec![
+                0,
+                1,
+                p - 1,
+                p,
+                p + 1,
+                2 * p - 1,
+                2 * p,
+                2 * p + 1,
+                3 * p - 1,
+                3 * p,
+                3 * p + 1,
+                4 * p - 1,
+            ];
+            if p < 100 {
+                inputs.extend(0..4 * p);
+            }
+            for a in inputs {
+                assert_eq!(op.reduce3(a), a % p);
+                assert_eq!(unsafe { op.reduce3_vt(a) }, a % p);
+            }
+            #[cfg(debug_assertions)]
+            {
+                assert!(std::panic::catch_unwind(|| op.reduce3(4 * p)).is_err());
+                assert!(std::panic::catch_unwind(|| unsafe { op.reduce3_vt(4 * p) }).is_err());
+            }
+        }
+    }
 
     // Test the native implementation even when the TFHE backend is enabled.
     #[test]

@@ -60,6 +60,9 @@ the in-place `lazy_reduce_vec` loop: each result is below twice the modulus
 and congruent to its input. The public `primes::supports_opt` check is proved
 equivalent to the optimization condition for every `u64`, including the
 precondition required by the optimized reducers for valid moduli.
+All canonical `reduce*` kernels are also proved, including signed inputs,
+optimized and variable-time variants, all vector loops, and the NTT's
+`reduce3` helpers: results are the canonical residues below the modulus.
 The ordinary Rust implementation shares these verified functions.
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations
