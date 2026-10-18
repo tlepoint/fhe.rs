@@ -20,6 +20,7 @@ use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
 use rand::{CryptoRng, Rng as RngCore, RngExt, distr::Uniform};
+#[cfg(test)]
 use verified::const_time_cond_select;
 
 /// Structure encapsulating an integer modulus up to 62 bits.
@@ -450,25 +451,22 @@ impl Modulus {
 
     /// Center a value modulo p as i64 in constant time.
     ///
-    /// The output is in the interval `[-p/2, p/2)`.
+    /// The output is congruent to a modulo p and satisfies `-p <= 2*result <
+    /// p`. For even p, the midpoint p/2 maps to -p/2.
     /// Aborts if `a >= p` in debug mode.
     #[must_use]
     pub const fn center(&self, a: u64) -> i64 {
         debug_assert!(a < self.p);
-
-        let threshold = (self.p + 1) >> 1;
-        let cond = a >= threshold;
-        let on_true = (a as i64).wrapping_sub(self.p as i64) as u64;
-        let on_false = a;
-
-        const_time_cond_select(on_true, on_false, cond) as i64
+        verified::center(a, self.p)
     }
 
-    /// Center a vector in constant time.
+    /// Return centered representatives in input order, in constant time.
+    /// Each output satisfies the range and congruence guarantees of
+    /// [`Self::center`]. Aborts if any input is >= p in debug mode.
     #[must_use]
     pub fn center_vec(&self, a: &[u64]) -> Vec<i64> {
-        self.arch
-            .dispatch(|| a.iter().map(|ai| self.center(*ai)).collect_vec())
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        self.arch.dispatch(|| verified::center_vec(a, self.p))
     }
 
     /// Reduce a vector in place in variable time.
@@ -565,27 +563,14 @@ impl Modulus {
 
     /// Modular exponentiation in variable time.
     ///
+    /// Returns the canonical residue of a^n modulo p. Exponent zero returns 1,
+    /// including when a is zero.
     /// Aborts if a >= p or n >= p in debug mode.
     #[must_use]
     pub fn pow(&self, a: u64, n: u64) -> u64 {
         debug_assert!(a < self.p && n < self.p);
 
-        if n == 0 {
-            1
-        } else if n == 1 {
-            a
-        } else {
-            let mut r = a;
-            let mut i = (62 - n.leading_zeros()) as isize;
-            while i >= 0 {
-                r = self.mul(r, r);
-                if (n >> i) & 1 == 1 {
-                    r = self.mul(r, a);
-                }
-                i -= 1;
-            }
-            r
-        }
+        verified::pow_mod(a, n, self.p, self.barrett_hi, self.barrett_lo)
     }
 
     /// Modular inversion in variable time.
@@ -2187,26 +2172,23 @@ mod tests {
 
         #[test]
         fn center(p in valid_moduli(), a: u64) {
-            let a = p.reduce(a);
+            let a = a % *p;
             let b = p.center(a);
-            if a >= (*p + 1) >> 1 {
-                prop_assert_eq!(b, (a as i64) - (*p as i64));
-            } else {
-                prop_assert_eq!(b, a as i64);
-            }
-            prop_assert_eq!(p.reduce_i64(b), a);
+            let half = (*p / 2) as i128;
+            prop_assert_eq!(b as i128, (a as i128 + half).rem_euclid(*p as i128) - half);
+            prop_assert!(-(*p as i128) <= 2 * b as i128 && 2 * (b as i128) < *p as i128);
+            prop_assert_eq!((b as i128).rem_euclid(*p as i128), a as i128);
         }
 
         #[test]
-        fn center_vec(p in valid_moduli(), a: Vec<u64>) {
-             let mut a = a.clone();
-             p.reduce_vec(&mut a);
-             let b = p.center_vec(&a);
-             prop_assert_eq!(b.len(), a.len());
-             for (ai, bi) in izip!(a.iter(), b.iter()) {
-                 prop_assert_eq!(p.center(*ai), *bi);
-             }
-      }
+        fn center_vec(p in valid_moduli(), mut a: Vec<u64>) {
+            a.iter_mut().for_each(|value| *value %= *p);
+            let half = (*p / 2) as i128;
+            let expected: Vec<_> = a.iter()
+                .map(|&value| ((value as i128 + half).rem_euclid(*p as i128) - half) as i64)
+                .collect();
+            prop_assert_eq!(p.center_vec(&a), expected);
+        }
 
         #[test]
         fn mul_opt(p in valid_moduli_opt(), mut a: u64, mut b: u64) {
@@ -2227,21 +2209,20 @@ mod tests {
 
         #[test]
         fn pow(p in valid_moduli(), mut a: u64, mut b: u64) {
-            a = p.reduce(a);
-            b = p.reduce(b);
+            use num_bigint::BigUint;
+            a %= *p;
+            b %= *p;
 
             prop_assert_eq!(p.pow(a, 0), 1);
             prop_assert_eq!(p.pow(a, 1), a);
             if *p > 2 {
-                prop_assert_eq!(p.pow(a, 2), p.mul(a, a));
+                prop_assert_eq!(p.pow(a, 2) as u128, (a as u128 * a as u128) % *p as u128);
             }
 
-            let b_small = b % 1000;
-            let mut r = 1;
-            for _ in 0..b_small {
-                r = p.mul(r, a);
-            }
-            prop_assert_eq!(p.pow(a, b_small), r);
+            let result = p.pow(a, b);
+            prop_assert!(result < *p);
+            prop_assert_eq!(BigUint::from(result),
+                BigUint::from(a).modpow(&BigUint::from(b), &BigUint::from(*p)));
 
             #[cfg(debug_assertions)]
             {
@@ -2249,6 +2230,78 @@ mod tests {
                 prop_assert!(std::panic::catch_unwind(|| p.pow(*p << 1, 1)).is_err());
                 prop_assert!(std::panic::catch_unwind(|| p.pow(0, *p)).is_err());
                 prop_assert!(std::panic::catch_unwind(|| p.pow(0, *p << 1)).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn pow_exhausts_small_moduli() {
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..p {
+                let mut expected = 1;
+                for n in 0..p {
+                    assert_eq!(modulus.pow(a, n), expected, "p={p}, a={a}, n={n}");
+                    expected = ((expected as u128 * a as u128) % p as u128) as u64;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pow_matches_bigint_at_bit_boundaries() {
+        use num_bigint::BigUint;
+
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let mut exponents = vec![
+                0,
+                1,
+                2,
+                p / 2 - 1,
+                p / 2,
+                p - 2,
+                p - 1,
+                0x1555_5555_5555_5555 % p,
+                0x2aaa_aaaa_aaaa_aaaa % p,
+            ];
+            // At the widest modulus, cover each possible leading-bit position
+            // and the transition on either side of every power of two.
+            if p == (1 << 62) - 1 {
+                for bit in 0..62 {
+                    let power = 1u64 << bit;
+                    exponents.extend([power - 1, power, power + 1]);
+                }
+            }
+            exponents.retain(|&n| n < p);
+            exponents.sort_unstable();
+            exponents.dedup();
+            let big_p = BigUint::from(p);
+            for a in [0, 1, 2 % p, p / 2, p - 1] {
+                let big_a = BigUint::from(a);
+                for &n in &exponents {
+                    let result = modulus.pow(a, n);
+                    assert!(result < p);
+                    assert_eq!(
+                        BigUint::from(result),
+                        big_a.modpow(&BigUint::from(n), &big_p),
+                        "p={p}, a={a}, n={n}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn pow_rejects_invalid_base_and_exponent() {
+        for p in [2, 3, 16, 17, (1 << 62) - 1] {
+            let modulus = Modulus::new(p).unwrap();
+            for invalid in [p, p + 1, u64::MAX] {
+                for valid in [0, 1, p - 1] {
+                    assert!(std::panic::catch_unwind(|| modulus.pow(invalid, valid)).is_err());
+                    assert!(std::panic::catch_unwind(|| modulus.pow(valid, invalid)).is_err());
+                }
             }
         }
     }
@@ -2288,15 +2341,93 @@ mod tests {
 
     #[test]
     fn centered_boundary_is_correct_for_odd_and_even_moduli() {
-        for p in [2u64, 3, 17, 1024, 1153] {
+        for p in (2u64..=64).chain([1024, 1153]) {
             let modulus = Modulus::new(p).unwrap();
+            let half = (p / 2) as i128;
+            let input: Vec<_> = (0..p).collect();
+            let expected: Vec<_> = input
+                .iter()
+                .map(|&value| ((value as i128 + half).rem_euclid(p as i128) - half) as i64)
+                .collect();
+            assert_eq!(modulus.center_vec(&input), expected);
             for value in 0..p {
                 let centered = modulus.center(value);
                 assert!(2 * centered >= -(p as i64));
                 assert!(2 * centered < p as i64);
-                assert_eq!(modulus.reduce_i64(centered), value);
+                assert_eq!((centered as i128).rem_euclid(p as i128), value as i128);
+                assert_eq!(centered, expected[value as usize]);
             }
         }
         assert_eq!(Modulus::new(1153).unwrap().center(576), 576);
+    }
+
+    #[test]
+    fn center_boundaries_vectors_and_const_kernel() {
+        use super::verified;
+        const P: u64 = (1 << 62) - 1;
+        const RESULTS: [i64; 6] = [
+            verified::center(0, P),
+            verified::center(P / 2, P),
+            verified::center(P / 2 + 1, P),
+            verified::center(P - 1, P),
+            verified::center((P - 1) / 2, P - 1),
+            verified::center(1, 2),
+        ];
+        assert_eq!(
+            RESULTS,
+            [
+                0,
+                (P / 2) as i64,
+                -((P / 2) as i64),
+                -1,
+                -(((P - 1) / 2) as i64),
+                -1
+            ]
+        );
+
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let half = (p / 2) as i128;
+            let threshold = p.div_ceil(2);
+            let values: Vec<_> = [0, 1, threshold - 1, threshold, threshold + 1, p - 1]
+                .into_iter()
+                .filter(|&a| a < p)
+                .collect();
+            for &a in &values {
+                let expected = (a as i128 + half).rem_euclid(p as i128) - half;
+                let centered = modulus.center(a) as i128;
+                assert_eq!(centered, expected);
+                assert!(-(p as i128) <= 2 * centered && 2 * centered < p as i128);
+                assert_eq!(centered.rem_euclid(p as i128), a as i128);
+            }
+            for len in [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 65, 129] {
+                let input: Vec<_> = values.iter().copied().cycle().take(len).collect();
+                let expected: Vec<_> = input
+                    .iter()
+                    .map(|&a| ((a as i128 + half).rem_euclid(p as i128) - half) as i64)
+                    .collect();
+                let mut buffer = vec![u64::MAX; len + 2];
+                buffer[1..=len].copy_from_slice(&input);
+                assert_eq!(modulus.center_vec(&buffer[1..=len]), expected);
+                assert_eq!(&buffer[1..=len], input);
+                assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn center_rejects_noncanonical_inputs() {
+        for p in [2, 17, (1 << 62) - 1] {
+            let modulus = Modulus::new(p).unwrap();
+            for invalid in [p, p + 1, u64::MAX] {
+                assert!(std::panic::catch_unwind(|| modulus.center(invalid)).is_err());
+                for index in [0, 7, 16] {
+                    let mut input = [0; 17];
+                    input[index] = invalid;
+                    assert!(std::panic::catch_unwind(|| modulus.center_vec(&input)).is_err());
+                }
+            }
+        }
     }
 }

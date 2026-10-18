@@ -71,6 +71,12 @@ vector loops. Each operation's scalar and vector kernels live together in
 including variable-time variants, all multiplication vector loops, and Shoup
 precomputation. Shoup proofs cover any `u64` first operand; lazy products are
 below twice the modulus, and canonical products equal `(a*b) mod p`.
+`verified/center.rs` proves scalar and vector centering: each result is
+congruent to its input and satisfies `-p <= 2*result < p`, including the
+midpoint behavior for both odd and even moduli.
+`verified/pow.rs` proves variable-time exponentiation yields `a^n mod p` below
+the modulus for canonical bases and the existing `n < p` exponent bound,
+including `0^0 = 1`.
 The ordinary Rust implementation shares these verified functions.
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations

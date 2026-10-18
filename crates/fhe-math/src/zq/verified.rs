@@ -31,6 +31,14 @@ pub(crate) use multiplication::{
 #[cfg(test)]
 pub(crate) use multiplication::{mul_mod_vt, mul_opt_vt, mul_shoup_vt};
 
+#[path = "verified/center.rs"]
+mod centering;
+pub(crate) use centering::{center, center_vec};
+
+#[path = "verified/pow.rs"]
+mod exponentiation;
+pub(crate) use exponentiation::pow_mod;
+
 #[path = "verified/reduce.rs"]
 mod reduction;
 pub(crate) use reduction::{

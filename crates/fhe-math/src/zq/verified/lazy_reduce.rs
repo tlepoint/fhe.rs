@@ -38,7 +38,7 @@ pub open spec fn valid_opt(p: u64, s: u32) -> bool {
 
 /// Connect the standard-library leading-zero specification to integer bounds.
 #[verifier::nonlinear]
-proof fn leading_zero_bounds(p: u64)
+pub(super) proof fn leading_zero_bounds(p: u64)
     ensures
         0 <= u64_leading_zeros(p) <= 64,
         p == 0 <==> u64_leading_zeros(p) == 64,

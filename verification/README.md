@@ -31,6 +31,14 @@ and variable-time variants. All six vector operations are verified.
 optimized, and Shoup multiplication, including their variable-time variants,
 all six multiplication vector loops, and both Shoup precomputation loops.
 
+[`verified/center.rs`](../crates/fhe-math/src/zq/verified/center.rs) proves scalar
+and vector centering, including the signed range, congruence, and midpoint
+behavior for odd and even moduli.
+
+[`verified/pow.rs`](../crates/fhe-math/src/zq/verified/pow.rs) proves modular
+exponentiation by composing multiplication contracts while tracking the
+processed binary prefix of the exponent.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -50,8 +58,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `104 verified, 0 errors` on macOS or an AVX2 target, and
-`103 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `118 verified, 0 errors` on macOS or an AVX2 target, and
+`117 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -273,8 +281,56 @@ dispatch and their debug input checks. The private variable-time scalar
 wrappers and optimized variable-time reduction wrapper are test conveniences;
 production vector kernels compose the verified functions directly. The
 vector Shoup and scalar-multiplication documentation now states their existing
-full-width left-operand support. Multiplication callers, including polynomial
-operations, exponentiation, and NTT butterflies, remain outside the proof.
+full-width left-operand support. Exponentiation composes these contracts as
+described below. Other multiplication callers, including polynomial operations
+and NTT butterflies, remain outside the proof.
+
+### Centering
+
+`center(a, p)` requires `2 <= p < 2^62` and `a < p`. It proves the exact
+integer result: `a` when `2*a < p`, and `a-p` otherwise. The result satisfies
+`-p <= 2*result < p` and `result mod p = a`, with Euclidean modulo. This is
+the mathematical interval `[-p/2, p/2)`, or equivalently the integer interval
+`[-floor(p/2), ceil(p/2))`. For even moduli, the midpoint maps to `-p/2`;
+for odd moduli, `floor(p/2)` stays positive.
+
+The executable scalar body retains `(p+1) >> 1`, signed wrapping subtraction,
+and the verified conditional selector. Verus proves the threshold equals
+`ceil(p/2)`, that the signed subtraction fits, and that casting a signed word
+to `u64` and back preserves it. The unsigned representation of a negative
+difference is intentional; the final cast recovers that signed value.
+
+`center_vec` requires canonical input entries and proves the scalar contract
+for every output, together with output length and element order. It borrows
+the input immutably and reserves output space for the input length.
+An explicit index loop replaces the iterator so its bounds, termination, and
+processed prefix are verified. The public wrapper retains architecture
+dispatch and debug canonical-input checks; scalar centering remains `const fn`.
+Neither operation needs Barrett metadata, primality, or optimization eligibility.
+
+### Exponentiation
+
+`pow_mod(a, n, p, hi, lo)` requires `valid_barrett(p, hi, lo)`, `a < p`, and
+`n < p`, retaining the public `Modulus::pow` input bounds. It proves
+`result < p` and `result = a^n mod p`, where exponentiation is the standard
+mathematical integer power from `vstd::arithmetic::power`. Exponent zero
+returns one, including `0^0`; no primality assumption is needed.
+
+The executable algorithm retains the two small-exponent cases and the
+left-to-right square-and-multiply loop. The leading-zero lemma identifies
+the highest set bit and proves the initial exponent prefix is one. At the
+start of each iteration, the accumulator equals
+`a^(n >> (i+1)) mod p`. Squaring doubles this processed exponent, and the
+conditional multiplication adds the next bit. A bitvector lemma connects
+that update to `n >> i`; a power-addition lemma and modular multiplication
+identities connect it to the previously verified `mul_mod` contract.
+
+Verus also checks that the signed loop index stays between `-1` and `60`,
+every executed shift is valid, the accumulator stays canonical, and the loop
+terminates. When the index reaches `-1`, the processed prefix is the whole
+exponent. The public wrapper retains its debug assertions and variable-time
+behavior. `inv` calls this verified exponentiation, but its inverse guarantee
+and primality check remain outside the proof.
 
 ### Proof boundary
 
@@ -358,6 +414,29 @@ unrestricted first operands and use the same independent oracles:
 
 ```sh
 cargo test -p fhe-math multiplication
+```
+
+Centering tests exhaust all canonical operands for small odd and even moduli
+and exercise both sides of the midpoint at every supported bit width, through
+`2^62 - 1`. An independent `i128::rem_euclid` oracle checks the result and its
+congruence. Tests also cover const evaluation, empty and singleton vectors,
+longer vectors, guarded input subslices, and debug rejection of noncanonical
+entries. Randomized scalar and vector tests use the same independent oracle:
+
+```sh
+cargo test -p fhe-math center
+```
+
+Exponentiation tests exhaust canonical bases and permitted exponents for
+moduli 2 through 64 using independent `u128` repeated multiplication. Boundary
+tests and randomized tests compare against `BigUint::modpow`, including
+full-width exponents, zero and one, all leading-bit positions, values adjacent
+to powers of two, alternating bits, and the largest permitted exponent.
+They cover odd, even, prime, and composite moduli and check debug rejection
+of both invalid bases and invalid exponents:
+
+```sh
+cargo test -p fhe-math pow
 ```
 
 Eligibility tests evaluate the original NFL inequality with `BigUint` as an
