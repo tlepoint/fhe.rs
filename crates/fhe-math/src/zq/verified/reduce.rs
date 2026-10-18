@@ -1,16 +1,92 @@
-//! Canonical reductions composed from the verified lazy and one-subtraction
-//! kernels.
+//! One-subtraction kernels and canonical reductions composed from verified
+//! lazy reductions.
 
 #[cfg(verus_keep_ghost)]
 use super::lazy_reduce::{base, valid_barrett, valid_opt};
 use super::{
-    lazy_reduce, lazy_reduce_opt, lazy_reduce_opt_u128, lazy_reduce_u128, reduce1, reduce1_vt,
+    const_time_cond_select, lazy_reduce, lazy_reduce_opt, lazy_reduce_opt_u128, lazy_reduce_u128,
 };
 #[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::{lemma_mod_mod, lemma_mod_multiples_vanish};
 use vstd::prelude::*;
 
 verus! {
+
+/// Reduce a value below `2*p` to its canonical residue.
+///
+/// The wider modulus bound includes the NTT's calls with twice a 62-bit modulus.
+#[inline]
+pub(crate) const fn reduce1(x: u64, p: u64) -> (result: u64)
+    requires
+        0 < p < 0x8000_0000_0000_0000u64,
+        x < 2 * p,
+    ensures
+        result < p,
+        result as int == (x as int) % (p as int),
+{
+    let result = const_time_cond_select(x, x.wrapping_sub(p), x < p);
+
+    proof {
+        // The selection contract supplies the two cases; one subtraction suffices.
+        assert((x as int) % (p as int) == if x < p {
+            x as int
+        } else {
+            x as int - p as int
+        }) by (nonlinear_arith)
+            requires
+                0 < p,
+                x < 2 * p,
+        ;
+    }
+
+    result
+}
+
+/// Reduce a value below `2*p` using the target's variable-time implementation.
+///
+/// # Safety
+/// Timing may reveal information about `x`.
+#[cfg(any(target_os = "macos", target_feature = "avx2"))]
+#[inline]
+pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> (result: u64)
+    requires
+        0 < p < 0x8000_0000_0000_0000u64,
+        x < 2 * p,
+    ensures
+        result < p,
+        result as int == (x as int) % (p as int),
+{
+    proof {
+        assert((x as int) % (p as int) == if x >= p {
+            x as int - p as int
+        } else {
+            x as int
+        }) by (nonlinear_arith)
+            requires
+                0 < p,
+                x < 2 * p,
+        ;
+    }
+
+    if x >= p { x - p } else { x }
+}
+
+/// Use the verified selector-based reduction on targets without the branch path.
+///
+/// # Safety
+/// Callers must permit variable timing, as on the other targets.
+#[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
+#[inline]
+pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> (result: u64)
+    requires
+        0 < p < 0x8000_0000_0000_0000u64,
+        x < 2 * p,
+    ensures
+        result < p,
+        result as int == (x as int) % (p as int),
+{
+    reduce1(x, p)
+}
 
 /// Canonical u64 reduction.
 #[inline]

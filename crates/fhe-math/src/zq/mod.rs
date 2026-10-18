@@ -15,7 +15,6 @@ use std::ops::Deref;
 
 use crate::error::{Error, Result};
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
-use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
@@ -33,6 +32,21 @@ pub struct Modulus {
     pub(crate) supports_opt: bool,
     distribution: Uniform<u64>,
     arch: Arch,
+}
+
+// Trusted sampling boundary: Modulus::new constructs Uniform(0, p), and each
+// call returns one sample from that same distribution. The verified loops use
+// the ResidueSampler contract; rand and this adapter are outside the proof.
+struct UniformSampler<'a, R> {
+    distribution: Uniform<u64>,
+    rng: &'a mut R,
+}
+
+impl<R: RngCore + CryptoRng> verified::ResidueSampler for UniformSampler<'_, R> {
+    #[inline]
+    fn sample(&mut self) -> u64 {
+        self.rng.sample(self.distribution)
+    }
 }
 
 // We need to declare Eq manually because of the `Uniform` member.
@@ -810,15 +824,26 @@ impl Modulus {
         }
     }
 
-    /// Returns a random vector.
+    /// Returns `size` uniformly sampled residues in `[0, p)`.
     pub fn random_vec<R: RngCore + CryptoRng>(&self, size: usize, rng: &mut R) -> Vec<u64> {
-        rng.sample_iter(self.distribution).take(size).collect_vec()
+        verified::random_vec(
+            size,
+            &mut UniformSampler {
+                distribution: self.distribution,
+                rng,
+            },
+        )
     }
 
+    /// Fills `out` with uniformly sampled residues in `[0, p)`.
     pub(crate) fn random_into<R: RngCore + CryptoRng>(&self, out: &mut [u64], rng: &mut R) {
-        for (output, sample) in out.iter_mut().zip(rng.sample_iter(self.distribution)) {
-            *output = sample;
-        }
+        verified::random_into(
+            out,
+            &mut UniformSampler {
+                distribution: self.distribution,
+                rng,
+            },
+        );
     }
 
     pub(crate) fn serialize_into(&self, a: &[u64], out: &mut Vec<u8>) {
@@ -864,7 +889,8 @@ mod tests {
     use itertools::{Itertools, izip};
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
-    use rand::{Rng as RngCore, rng};
+    use rand::{Rng as RngCore, RngExt, SeedableRng, distr::Uniform};
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn conditional_selection_handles_word_patterns_and_remains_const() {
@@ -906,8 +932,8 @@ mod tests {
 
     #[test]
     fn reduce1_handles_wide_moduli_and_remains_const() {
-        const REDUCED: u64 = Modulus::reduce1(u64::MAX - 2, (1 << 63) - 1);
-        const REDUCED_VT: u64 = unsafe { Modulus::reduce1_vt(u64::MAX - 2, (1 << 63) - 1) };
+        const REDUCED: u64 = super::verified::reduce1(u64::MAX - 2, (1 << 63) - 1);
+        const REDUCED_VT: u64 = unsafe { super::verified::reduce1_vt(u64::MAX - 2, (1 << 63) - 1) };
         assert_eq!(REDUCED, (1 << 63) - 2);
         assert_eq!(REDUCED_VT, (1 << 63) - 2);
 
@@ -1850,6 +1876,72 @@ mod tests {
         assert!(std::panic::catch_unwind(|| unsafe { unsupported.mul_opt_vt(0, 0) }).is_err());
     }
 
+    #[test]
+    fn random_sampling_preserves_uniform_stream_and_slice_boundaries() {
+        let mut saw_rejection = false;
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            for size in [0, 1, 2, 15, 16, 17, 63, 64, 65, 257] {
+                for seed in [0, 0x5a17] {
+                    let mut reference_rng = ChaCha8Rng::seed_from_u64(seed);
+                    // Start partway through a block, including an odd word position.
+                    reference_rng.set_word_pos(13);
+                    let mut vector_rng = reference_rng.clone();
+                    let mut slice_rng = reference_rng.clone();
+                    // Preserve the original iterator implementation as the oracle.
+                    let expected: Vec<u64> = (&mut reference_rng)
+                        .sample_iter(Uniform::new(0, p).unwrap())
+                        .take(size)
+                        .collect();
+                    let actual = modulus.random_vec(size, &mut vector_rng);
+                    assert_eq!(actual.len(), size);
+                    assert!(actual.iter().all(|&value| value < p));
+                    assert_eq!(actual, expected, "p={p}, size={size}, seed={seed}");
+
+                    let mut guarded = vec![u64::MAX; size + 4];
+                    modulus.random_into(&mut guarded[2..size + 2], &mut slice_rng);
+                    assert_eq!(&guarded[2..size + 2], expected);
+                    assert_eq!(&guarded[..2], &[u64::MAX; 2]);
+                    assert_eq!(&guarded[size + 2..], &[u64::MAX; 2]);
+                    assert_eq!(vector_rng.get_word_pos(), reference_rng.get_word_pos());
+                    assert_eq!(slice_rng.get_word_pos(), reference_rng.get_word_pos());
+                    if size == 0 {
+                        assert_eq!(reference_rng.get_word_pos(), 13);
+                    }
+                    // A u64 draw consumes two ChaCha words; extra words show
+                    // that these compatibility cases also exercise rejection.
+                    saw_rejection |= reference_rng.get_word_pos() > 13 + 2 * size as u128;
+                }
+            }
+        }
+        assert!(saw_rejection);
+    }
+
+    #[test]
+    fn random_sampling_chunks_match_one_call() {
+        let chunks = [0, 1, 0, 15, 16, 17, 255, 0, 256, 0];
+        let size = chunks.iter().sum();
+        for p in [2, 3, 16, 1153, (1 << 61) + 1, (1 << 62) - 1] {
+            let modulus = Modulus::new(p).unwrap();
+            let mut whole_rng = ChaCha8Rng::seed_from_u64(42);
+            let mut chunk_rng = whole_rng.clone();
+            let expected = modulus.random_vec(size, &mut whole_rng);
+            let mut actual = vec![u64::MAX; size];
+            let mut offset = 0;
+            for (i, size) in chunks.into_iter().enumerate() {
+                let chunk = &mut actual[offset..offset + size];
+                if i % 2 == 0 {
+                    chunk.copy_from_slice(&modulus.random_vec(size, &mut chunk_rng));
+                } else {
+                    modulus.random_into(chunk, &mut chunk_rng);
+                }
+                offset += size;
+            }
+            assert_eq!(actual, expected, "p={p}");
+            assert_eq!(chunk_rng.get_word_pos(), whole_rng.get_word_pos());
+        }
+    }
+
     // Utility functions for the proptests.
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
@@ -2148,18 +2240,28 @@ mod tests {
         }
 
         #[test]
-        fn random_vec(p in valid_moduli(), size in 1..1000usize) {
-            let mut rng = rng();
+        fn random_vec(p in valid_moduli(), size in 0..1000usize, seed: u64) {
+            let mut actual_rng = ChaCha8Rng::seed_from_u64(seed);
+            let mut reference_rng = actual_rng.clone();
+            let expected: Vec<u64> = (&mut reference_rng)
+                .sample_iter(Uniform::new(0, *p).unwrap()).take(size).collect();
+            let actual = p.random_vec(size, &mut actual_rng);
+            prop_assert_eq!(actual.len(), size);
+            prop_assert!(actual.iter().all(|&value| value < *p));
+            prop_assert_eq!(actual, expected);
+            prop_assert_eq!(actual_rng.get_word_pos(), reference_rng.get_word_pos());
+        }
 
-            let v = p.random_vec(size, &mut rng);
-            prop_assert_eq!(v.len(), size);
-
-            let w = p.random_vec(size, &mut rng);
-            prop_assert_eq!(w.len(), size);
-
-            if (*p).leading_zeros() <= 30 {
-                prop_assert_ne!(v, w); // This will hold with probability at least 2^(-30)
-            }
+        #[test]
+        fn random_into(p in valid_moduli(), mut out: Vec<u64>, seed: u64) {
+            let mut actual_rng = ChaCha8Rng::seed_from_u64(seed);
+            let mut reference_rng = actual_rng.clone();
+            let expected: Vec<u64> = (&mut reference_rng)
+                .sample_iter(Uniform::new(0, *p).unwrap()).take(out.len()).collect();
+            p.random_into(&mut out, &mut actual_rng);
+            prop_assert!(out.iter().all(|&value| value < *p));
+            prop_assert_eq!(out, expected);
+            prop_assert_eq!(actual_rng.get_word_pos(), reference_rng.get_word_pos());
         }
 
         #[test]

@@ -19,6 +19,8 @@ these verified implementations.
 [`verified/reduce.rs`](../crates/fhe-math/src/zq/verified/reduce.rs) completes
 the `reduce*` family: canonical unsigned and signed reductions, optimized
 reductions, all six vector variants, and the native NTT's `reduce3` helpers.
+It also contains `reduce1` and both target-specific `reduce1_vt` implementations,
+re-exported by `verified.rs` for the other arithmetic kernels and callers.
 Both ordinary and variable-time paths use these shared implementations.
 
 [`verified/add.rs`](../crates/fhe-math/src/zq/verified/add.rs),
@@ -39,6 +41,11 @@ behavior for odd and even moduli.
 exponentiation by composing multiplication contracts while tracking the
 processed binary prefix of the exponent.
 
+[`verified/random.rs`](../crates/fhe-math/src/zq/verified/random.rs) proves the
+`random_vec` and `random_into` loops against an abstract sampler contract,
+including canonical bounds, length, and exact correspondence to the sequence
+of samples drawn. The adapter to `rand::Uniform` is a trusted boundary.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -58,8 +65,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `118 verified, 0 errors` on macOS or an AVX2 target, and
-`117 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `122 verified, 0 errors` on macOS or an AVX2 target, and
+`121 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -70,6 +77,8 @@ verus --crate-type lib --edition=2024 --no-cheating -C target-feature=+avx2 crat
 `--no-cheating` rejects assumptions, admits, and unchecked
 external bodies in our proof source. Verus, its bundled standard-library
 specifications, Z3, Rust, and the compiler remain trusted infrastructure.
+For sampling, this command checks generic loops against the `ResidueSampler`
+trait contract; it does not check the external `UniformSampler` implementation.
 
 This checks the arithmetic module and its submodules directly, without asking
 Verus to analyze the crate's unrelated dependencies or algorithms. It needs neither Cargo dependency
@@ -332,6 +341,41 @@ exponent. The public wrapper retains its debug assertions and variable-time
 behavior. `inv` calls this verified exponentiation, but its inverse guarantee
 and primality check remain outside the proof.
 
+### Random vectors
+
+`random_vec` and `random_into` share their production loops with Verus and
+require a sampler for a modulus `2 <= p < 2^62`. `random_vec` returns exactly
+`size` entries; `random_into` preserves its slice's length and overwrites every
+entry, without requiring the original entries to be canonical. Both prove
+that every output is below `p` and that the output sequence is exactly the
+sequence drawn during the call, in order. Empty outputs require no draws.
+
+The `ResidueSampler` trait describes a fixed modulus and a ghost history of
+returned samples. Each `sample` call must preserve the modulus, return a value
+below it, and append that value to the history. The vector loop tracks
+`history = initial_history + output`; the in-place loop tracks the same
+identity for the initialized prefix and preserves the unprocessed suffix.
+Thus the proofs rule out omitted, extra, reordered, or substituted samples,
+in addition to checking indexing, arithmetic, and loop progress. The history
+erases completely in Rust builds; it allocates no runtime storage.
+
+**Trusted sampling boundary:** `UniformSampler` in `zq/mod.rs` implements the
+trait outside the standalone verified module. It holds the constructor's
+`Uniform::new(0, p)` and the caller's RNG, and calls `rng.sample(distribution)`
+once per trait call. Its compliance with the range and history contract is
+assumed by the generic proofs, not verified by `--no-cheating`. The wrappers
+and distribution construction are also outside the proof. No `assume`,
+`admit`, or unchecked external body is added to the verified source.
+
+The proofs establish functional properties conditional on this boundary;
+they do not establish statistical uniformity, independence, cryptographic
+unpredictability, or termination of `rand`'s rejection sampler. Loop termination
+assumes each sample call returns, and allocation failure is outside the
+contracts, as with the other allocating kernels. The `CryptoRng` bound and
+`rand`'s existing sampling algorithm are retained. Seeded compatibility tests
+check identical values and RNG consumption against the previous iterator
+implementation, including rejection and empty outputs.
+
 ### Proof boundary
 
 All arithmetic in contracts is interpreted over mathematical integers. The
@@ -349,6 +393,8 @@ these kernel contracts. Although other operations reuse the verified kernels,
 their contracts have not been proved. These proofs do not establish
 constant-time machine code, NTT/RNS
 correctness, or FHE security.
+The sampling kernels additionally depend on the unverified sampler adapter
+and its contract described above.
 
 ## Tests and CI
 
@@ -437,6 +483,19 @@ of both invalid bases and invalid exponents:
 
 ```sh
 cargo test -p fhe-math pow
+```
+
+Sampling tests compare both APIs with the original `Uniform` iterator using
+seeded ChaCha generators. They cover zero and singleton lengths, block
+boundaries, guarded subslices, small moduli, power-of-two boundaries, and the
+largest modulus. Exact generator positions check RNG consumption, including
+cases that exercise rejection. Mixed sequences of allocating and in-place
+calls must match one uninterrupted call. Property tests vary moduli, seeds,
+lengths, and the slice's initial contents; no test relies on two random
+vectors happening to differ:
+
+```sh
+cargo test -p fhe-math zq::tests::random
 ```
 
 Eligibility tests evaluate the original NFL inequality with `BigUint` as an

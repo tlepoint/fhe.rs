@@ -77,6 +77,10 @@ midpoint behavior for both odd and even moduli.
 `verified/pow.rs` proves variable-time exponentiation yields `a^n mod p` below
 the modulus for canonical bases and the existing `n < p` exponent bound,
 including `0^0 = 1`.
+`verified/random.rs` proves the `random_vec` and `random_into` loops preserve
+length, canonical bounds, and sample order, with exactly one sampler call per
+output entry. These proofs depend on an explicit sampler contract: the
+`rand::Uniform` adapter, uniformity, and RNG security remain outside the proof.
 The ordinary Rust implementation shares these verified functions.
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations
