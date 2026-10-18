@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Arithmetic proofs
+    name: Arithmetic and packing proofs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -44,3 +44,5 @@ jobs:
           verus --crate-type lib --edition=2024 --no-cheating -C target-feature=-avx2 crates/fhe-math/src/zq/verified.rs
       - name: Verify variable-time branch implementation (AVX2)
         run: verus --crate-type lib --edition=2024 --no-cheating -C target-feature=+avx2 crates/fhe-math/src/zq/verified.rs
+      - name: Verify checked packing and unpacking
+        run: verus --crate-type lib --edition=2024 --no-cheating crates/fhe-util/src/packing.rs

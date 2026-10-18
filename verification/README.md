@@ -1,4 +1,4 @@
-# Verifying `fhe-math` with Verus
+# Verifying arithmetic and packing with Verus
 
 The verified kernels in
 [`crates/fhe-math/src/zq/verified.rs`](../crates/fhe-math/src/zq/verified.rs)
@@ -55,6 +55,12 @@ the verified module.
 including canonical bounds, length, and exact correspondence to the sequence
 of samples drawn. The adapter to `rand::Uniform` is a trusted boundary.
 
+[`fhe-util/src/packing.rs`](../crates/fhe-util/src/packing.rs) verifies all five
+public bit-transcoding functions, their validation, and their shared buffer
+loop. Its [proof helpers](../crates/fhe-util/src/packing/proofs.rs) also prove
+exact packing/decoding round trips. These are the implementations re-exported
+by `fhe-util`, including the checked public boundaries.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -72,11 +78,14 @@ directly. From the repository root, run:
 ```sh
 verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
+verus --crate-type lib --edition=2024 --no-cheating crates/fhe-util/src/packing.rs
 ```
 
 The expected result is `149 verified, 0 errors` on macOS or an AVX2 target, and
 `148 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
-and vector loops. On x86 Linux, check both target-dependent implementations with:
+and vector loops. The packing module independently reports `65 verified, 0 errors`.
+These counts include proof lemmas and local assertions, not just API functions.
+On x86 Linux, check both target-dependent arithmetic implementations with:
 
 ```sh
 verus --crate-type lib --edition=2024 --no-cheating -C target-feature=-avx2 crates/fhe-math/src/zq/verified.rs
@@ -89,7 +98,7 @@ specifications, Z3, Rust, and the compiler remain trusted infrastructure.
 For sampling, this command checks generic loops against the `ResidueSampler`
 trait contract; it does not check the external `UniformSampler` implementation.
 
-This checks the arithmetic module and its submodules directly, without asking
+This checks the arithmetic and packing modules and their submodules directly, without asking
 Verus to analyze the crate's unrelated dependencies or algorithms. It needs neither Cargo dependency
 compilation nor `protoc`. It is not a `cargo verus verify -p fhe-math` integration
 or a verification of the whole crate. The pinned `vstd` dependency is used by
@@ -479,7 +488,70 @@ and its contract described above.
 The inversion kernel additionally depends on the external primality result
 matching its mathematical predicate.
 
+### Checked bit packing and unpacking
+
+`fhe-util` re-exports `transcode_to_bytes`, `transcode_to_bytes_into`,
+`transcode_from_bytes`, `transcode_from_bytes_exact`, and
+`transcode_bidirectional` from the verified packing module. Their contracts
+have no caller preconditions: they specify successful output and the exact
+error for invalid input, including validation order. The `TranscodeError`
+type and its variants are unchanged.
+
+The specification defines an LSB-first stream by bit `k` of input word
+`k / input_width`, at position `k % input_width`, and extends that stream
+with zeros past its end. Each output word contains exactly its corresponding
+slice of this stream, with zero upper bits. The output length is
+`ceil(input_length * input_width / output_width)`. This specifies individual
+bits independently of the buffer algorithm, including widths 1 and 64,
+empty inputs, partial bytes, and partial output words.
+
+One generic loop replaces the three copies of the `u128` buffer algorithm.
+Its `u8` and `u64` storage adapters are verified in the same module. Before
+loading a word, fewer than `output_width` bits remain in the buffer; loading
+at most 64 more bits leaves at most 127 bits, so the buffer cannot truncate
+data. The invariant relates emitted words and every buffered bit to the
+input stream. Bounds, shifts, arithmetic, and both loops' termination are
+checked. A verified ceiling-division helper computes quotient plus a nonzero
+remainder flag without adding to the potentially maximal input bit length.
+
+Validation still scans every input word with an aggregate OR, rejecting any
+word that exceeds its declared width. Invalid widths and unrepresentable bit
+lengths retain their earlier precedence. Append checks the total output
+length before reserving or writing, proves that errors preserve the output
+sequence, and proves successful calls preserve the old prefix and begin at
+a byte boundary. The executable code does not touch allocation on an error;
+pointer/capacity preservation is covered by Rust tests, since the standard
+Verus vector model exposes contents rather than allocation identity.
+
+Stream decoding consumes every byte bit as data and zero-extends the final
+word. Exact decoding additionally checks the byte count and rejects nonzero
+padding before truncating to the declared word count. Its contract retains
+the existing overflow error if the rounded byte bit length cannot fit in
+`usize`. `packing_is_decodable` proves the size and padding checks accept
+packed data when that rounded length is representable; `packing_round_trip`
+proves that successful exact decoding then returns the original sequence.
+Word transcoding similarly preserves the zero-extended stream but does not
+retain the original bit count.
+
+There is no trusted packing adapter or unchecked project proof body. As with
+the arithmetic kernels, Verus, Z3, the compiler, and standard-library specs
+remain trusted. Allocation failure, allocation-capacity limits, and constant-time
+machine-code behavior are outside these contracts. The `Modulus` serialization wrappers and their
+modulus-derived widths are not included in this standalone proof; packing
+does not validate residues against a modulus.
+
 ## Tests and CI
+
+Packing tests compare all 4,096 width pairs against an independent bit-at-a-time
+oracle, including empty inputs, word boundaries, full-width words, and partial
+outputs. Property tests vary words, lengths, and widths. Additional tests cover
+exact decoding, every padding-bit position, append boundaries, error precedence,
+unchanged output allocations on validation errors, and ceiling lengths through
+`usize::MAX`:
+
+```sh
+cargo test -p fhe-util
+```
 
 Constructor tests exhaust all valid 16-bit moduli and cover every supported
 power of two, adjacent values, optimization thresholds, and the maximum
@@ -617,6 +689,7 @@ cargo test -p fhe-math zq::primes::tests::supports_opt
 The [Verus workflow](../.github/workflows/verus.yml) installs the pinned
 checksum-checked Linux release and runs the proof on pull requests and pushes,
 with AVX2 disabled and enabled to cover both `reduce1_vt` implementations.
+It also verifies the packing module with `--no-cheating`.
 The ordinary test, formatting, Clippy, and MSRV jobs continue to check Rust
 builds independently. When changing the kernel, rerun both the proof and these
 tests. To sanity-check the contracts, removing the mask's negation must fail
