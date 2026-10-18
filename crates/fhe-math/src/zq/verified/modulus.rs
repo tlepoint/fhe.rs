@@ -1,6 +1,7 @@
 //! Validate a modulus and construct the arithmetic metadata used by the
 //! kernels.
 
+use super::MODULUS_LIMIT;
 #[cfg(verus_keep_ghost)]
 use super::lazy_reduce::{base, leading_zero_bounds, split_u128, valid_barrett, valid_opt};
 use super::supports_opt;
@@ -50,7 +51,7 @@ proof fn reciprocal_bounds(p: int, q: int, r: int)
 
 /// Compute floor(2^128 / p) without representing 2^128 in a machine integer.
 fn barrett_reciprocal(p: u64) -> (mu: u128)
-    requires 2 <= p < 0x4000_0000_0000_0000u64,
+    requires 2 <= p < MODULUS_LIMIT,
     ensures
         mu as int == (base() * base()) / p as int,
         mu * p <= base() * base() < (mu + 1) * p,
@@ -81,10 +82,10 @@ fn barrett_reciprocal(p: u64) -> (mu: u128)
 /// Accept exactly the supported moduli and construct valid reduction metadata.
 pub(crate) fn new_modulus(p: u64) -> (result: Option<ModulusParameters>)
     ensures
-        result.is_some() <==> 2 <= p < 0x4000_0000_0000_0000u64,
+        result.is_some() <==> 2 <= p < MODULUS_LIMIT,
         result matches Some(parameters) ==> parameters.p == p && parameters.valid(),
 {
-    if !(2..0x4000_0000_0000_0000u64).contains(&p) {
+    if !(2..MODULUS_LIMIT).contains(&p) {
         None
     } else {
         let mu = barrett_reciprocal(p);

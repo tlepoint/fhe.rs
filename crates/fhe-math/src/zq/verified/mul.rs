@@ -1,6 +1,8 @@
 //! Modular multiplication, Shoup precomputation, and in-place vector kernels.
 
 #[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
+#[cfg(verus_keep_ghost)]
 use super::lazy_reduce::{base, split_u128, valid_barrett, valid_opt};
 use super::{
     reduce_opt_u128, reduce_opt_u128_vt, reduce_u128, reduce_u128_vt, reduce1, reduce1_vt,
@@ -59,7 +61,7 @@ pub(crate) const unsafe fn mul_opt_vt(a: u64, b: u64, p: u64, hi: u64, lo: u64, 
 
 /// The precomputed word is floor(b * 2^64 / p).
 pub open spec fn valid_shoup(b: u64, p: u64, b_shoup: u64) -> bool {
-    &&& 2 <= p < 0x4000_0000_0000_0000u64
+    &&& 2 <= p < MODULUS_LIMIT
     &&& b < p
     &&& b_shoup * p <= b * base() < (b_shoup + 1) * p
 }
@@ -75,7 +77,7 @@ proof fn shoup_shift(a: u64)
 #[inline]
 #[verifier::nonlinear]
 pub(crate) const fn shoup(a: u64, p: u64) -> (r: u64)
-    requires 2 <= p < 0x4000_0000_0000_0000u64, a < p,
+    requires 2 <= p < MODULUS_LIMIT, a < p,
     ensures valid_shoup(a, p, r), r as int == a * base() / (p as int),
 {
     proof {
@@ -233,7 +235,7 @@ pub(crate) unsafe fn mul_vec_vt<const OPTIMIZED: bool>(
 #[inline]
 pub(crate) fn mul_shoup_vec(a: &mut [u64], b: &[u64], b_shoup: &[u64], p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         old(a)@.len() == b@.len(),
         b@.len() == b_shoup@.len(),
         forall|j: int| 0 <= j < b@.len() ==> valid_shoup(b@[j], p, #[trigger] b_shoup@[j]),
@@ -246,7 +248,7 @@ pub(crate) fn mul_shoup_vec(a: &mut [u64], b: &[u64], b_shoup: &[u64], p: u64)
     let mut i = 0;
     while i < a.len() && i < b.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             a@.len() == b@.len(),
             0 <= i <= a.len(),
@@ -270,7 +272,7 @@ pub(crate) fn mul_shoup_vec(a: &mut [u64], b: &[u64], b_shoup: &[u64], p: u64)
 #[inline]
 pub(crate) unsafe fn mul_shoup_vec_vt(a: &mut [u64], b: &[u64], b_shoup: &[u64], p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         old(a)@.len() == b@.len(),
         b@.len() == b_shoup@.len(),
         forall|j: int| 0 <= j < b@.len() ==> valid_shoup(b@[j], p, #[trigger] b_shoup@[j]),
@@ -283,7 +285,7 @@ pub(crate) unsafe fn mul_shoup_vec_vt(a: &mut [u64], b: &[u64], b_shoup: &[u64],
     let mut i = 0;
     while i < a.len() && i < b.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             a@.len() == b@.len(),
             0 <= i <= a.len(),
@@ -304,7 +306,7 @@ pub(crate) unsafe fn mul_shoup_vec_vt(a: &mut [u64], b: &[u64], b_shoup: &[u64],
 #[inline]
 pub(crate) fn scalar_mul_vec(a: &mut [u64], b: u64, p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         b < p,
     ensures
         final(a)@.len() == old(a)@.len(),
@@ -316,7 +318,7 @@ pub(crate) fn scalar_mul_vec(a: &mut [u64], b: u64, p: u64)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             valid_shoup(b, p, b_shoup),
             0 <= i <= a.len(),
@@ -338,7 +340,7 @@ pub(crate) fn scalar_mul_vec(a: &mut [u64], b: u64, p: u64)
 #[inline]
 pub(crate) unsafe fn scalar_mul_vec_vt(a: &mut [u64], b: u64, p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         b < p,
     ensures
         final(a)@.len() == old(a)@.len(),
@@ -350,7 +352,7 @@ pub(crate) unsafe fn scalar_mul_vec_vt(a: &mut [u64], b: u64, p: u64)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             valid_shoup(b, p, b_shoup),
             0 <= i <= a.len(),
@@ -369,7 +371,7 @@ pub(crate) unsafe fn scalar_mul_vec_vt(a: &mut [u64], b: u64, p: u64)
 #[inline]
 pub(crate) fn shoup_vec(a: &[u64], p: u64) -> (r: Vec<u64>)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         forall|j: int| 0 <= j < a@.len() ==> #[trigger] a@[j] < p,
     ensures
         r@.len() == a@.len(),
@@ -381,7 +383,7 @@ pub(crate) fn shoup_vec(a: &[u64], p: u64) -> (r: Vec<u64>)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             forall|j: int| 0 <= j < a@.len() ==> #[trigger] a@[j] < p,
             0 <= i <= a.len(),
             r@.len() == i,
@@ -400,7 +402,7 @@ pub(crate) fn shoup_vec(a: &[u64], p: u64) -> (r: Vec<u64>)
 #[inline]
 pub(crate) fn shoup_into(a: &[u64], out: &mut [u64], p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         a@.len() == old(out)@.len(),
         forall|j: int| 0 <= j < a@.len() ==> #[trigger] a@[j] < p,
     ensures
@@ -412,7 +414,7 @@ pub(crate) fn shoup_into(a: &[u64], out: &mut [u64], p: u64)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             forall|j: int| 0 <= j < a@.len() ==> #[trigger] a@[j] < p,
             a@.len() == out@.len(),
             out@.len() == old(out)@.len(),

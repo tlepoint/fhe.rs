@@ -1,6 +1,8 @@
 //! Modular exponentiation by left-to-right square-and-multiply.
 
 #[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
+#[cfg(verus_keep_ghost)]
 use super::lazy_reduce::{leading_zero_bounds, valid_barrett};
 use super::mul_mod;
 #[cfg(verus_keep_ghost)]
@@ -20,7 +22,7 @@ verus! {
 /// The highest set bit is the initial one-bit exponent prefix.
 #[verifier::nonlinear]
 proof fn highest_bit(n: u64)
-    requires 2 <= n < 0x4000_0000_0000_0000u64,
+    requires 2 <= n < MODULUS_LIMIT,
     ensures
         2 <= u64_leading_zeros(n) <= 62,
         n >> ((63 - u64_leading_zeros(n)) as u64) == 1,

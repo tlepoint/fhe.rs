@@ -14,7 +14,7 @@ pub(crate) mod verified;
 use std::ops::Deref;
 
 use crate::error::{Error, Result};
-use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
+use fhe_util::is_prime;
 use pulp::Arch;
 use rand::{CryptoRng, Rng as RngCore, RngExt, distr::Uniform};
 #[cfg(test)]
@@ -40,10 +40,19 @@ struct UniformSampler<'a, R> {
     rng: &'a mut R,
 }
 
-impl<R: RngCore + CryptoRng> verified::ResidueSampler for UniformSampler<'_, R> {
-    #[inline]
-    fn sample(&mut self) -> u64 {
-        self.rng.sample(self.distribution)
+// This adapter remains the existing trusted sampling boundary. Give Cargo's
+// ghost-enabled Rust build the trait's ghost methods without claiming to
+// verify rand or this implementation.
+vstd::prelude::verus! {
+    #[verifier::external]
+    impl<R: RngCore + CryptoRng> verified::ResidueSampler for UniformSampler<'_, R> {
+        uninterp spec fn modulus(&self) -> u64;
+        uninterp spec fn history(&self) -> vstd::seq::Seq<u64>;
+
+        #[inline]
+        fn sample(&mut self) -> u64 {
+            self.rng.sample(self.distribution)
+        }
     }
 }
 
@@ -848,18 +857,21 @@ impl Modulus {
     }
 
     pub(crate) fn serialize_into(&self, a: &[u64], out: &mut Vec<u8>) {
-        let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-        transcode_to_bytes_into(a, p_nbits, out).unwrap();
+        verified::serialize_into(a, self.p, out);
     }
 
     /// Length of the serialization of a vector of size `size`.
     ///
-    /// Panics if the size is not a multiple of 8.
+    /// Panics if the size is not a multiple of 8 or the byte count overflows
+    /// `usize`.
     #[must_use]
+    #[expect(
+        clippy::expect_used,
+        reason = "the documented API panics for invalid lengths"
+    )]
     pub const fn serialization_length(&self, size: usize) -> usize {
         assert!(size.is_multiple_of(8));
-        let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-        p_nbits * size / 8
+        verified::serialization_length(self.p, size).expect("serialization length overflows usize")
     }
 
     /// Pack words at this modulus' bit width, rejecting truncation and padding
@@ -869,8 +881,7 @@ impl Modulus {
         &self,
         a: &[u64],
     ) -> std::result::Result<Vec<u8>, fhe_util::TranscodeError> {
-        let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-        transcode_to_bytes(a, p_nbits)
+        verified::serialize_vec(a, self.p)
     }
 
     /// Decode every bit at this modulus' width, zero-extending a final partial
@@ -879,8 +890,7 @@ impl Modulus {
         &self,
         b: &[u8],
     ) -> std::result::Result<Vec<u64>, fhe_util::TranscodeError> {
-        let p_nbits = 64 - (self.p - 1).leading_zeros() as usize;
-        transcode_from_bytes(b, p_nbits)
+        verified::deserialize_vec(b, self.p)
     }
 }
 
@@ -892,6 +902,170 @@ mod tests {
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
     use rand::{RngExt, SeedableRng, distr::Uniform};
     use rand_chacha::ChaCha8Rng;
+
+    // Independent width oracle: find the smallest capacity containing [0, p).
+    fn reference_serialization_width(p: u64) -> usize {
+        let mut capacity = 1u128;
+        let mut width = 0;
+        while capacity < p as u128 {
+            capacity *= 2;
+            width += 1;
+        }
+        width
+    }
+
+    fn reference_serialization(words: &[u64], width: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut byte = 0;
+        let mut offset = 0;
+        for word in words {
+            for bit in 0..width {
+                byte |= (((word >> bit) & 1) as u8) << offset;
+                offset += 1;
+                if offset == 8 {
+                    bytes.push(byte);
+                    byte = 0;
+                    offset = 0;
+                }
+            }
+        }
+        if offset != 0 {
+            bytes.push(byte);
+        }
+        bytes
+    }
+
+    fn reference_deserialization(bytes: &[u8], width: usize) -> Vec<u64> {
+        let mut words = Vec::new();
+        let mut word = 0;
+        let mut offset = 0;
+        for byte in bytes {
+            for bit in 0..8 {
+                word |= (((byte >> bit) & 1) as u64) << offset;
+                offset += 1;
+                if offset == width {
+                    words.push(word);
+                    word = 0;
+                    offset = 0;
+                }
+            }
+        }
+        if offset != 0 {
+            words.push(word);
+        }
+        words
+    }
+
+    #[test]
+    fn serialization_covers_modulus_widths_and_partial_bytes() {
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let width = reference_serialization_width(p);
+            assert_eq!(modulus.serialization_length(8), width);
+            for len in 0usize..=17 {
+                let words: Vec<_> = (0..len)
+                    .map(|i| match i % 3 {
+                        0 => 0,
+                        1 => 1,
+                        _ => p - 1,
+                    })
+                    .collect();
+                let bytes = modulus.serialize_vec(&words).unwrap();
+                assert_eq!(
+                    bytes,
+                    reference_serialization(&words, width),
+                    "p={p}, len={len}"
+                );
+                assert_eq!(bytes.len(), (len * width).div_ceil(8));
+                let decoded = modulus.deserialize_vec(&bytes).unwrap();
+                assert_eq!(decoded, reference_deserialization(&bytes, width));
+                assert_eq!(&decoded[..len], words);
+                assert!(decoded[len..].iter().all(|x| *x == 0));
+                if len.is_multiple_of(8) {
+                    assert_eq!(bytes.len(), modulus.serialization_length(len));
+                    assert_eq!(decoded, words);
+                }
+                let mut appended = vec![0xa5, 0x5a];
+                modulus.serialize_into(&words, &mut appended);
+                assert_eq!(&appended[..2], [0xa5, 0x5a]);
+                assert_eq!(&appended[2..], bytes);
+            }
+            for bytes in [&[][..], &[0xff][..], &[0xff, 0x80, 0, 0x55][..]] {
+                assert_eq!(
+                    modulus.deserialize_vec(bytes).unwrap(),
+                    reference_deserialization(bytes, width)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn serialization_preserves_width_checks_and_stream_semantics() {
+        use fhe_util::TranscodeError;
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let modulus = Modulus::new(5).unwrap();
+        // Fitting words remain accepted even when they are not canonical residues.
+        assert_eq!(modulus.serialize_vec(&[5, 7]).unwrap(), [61]);
+        assert_eq!(modulus.deserialize_vec(&[61]).unwrap(), [5, 7, 0]);
+        assert_eq!(modulus.deserialize_vec(&[0xff]).unwrap(), [7, 7, 3]);
+        assert_eq!(
+            modulus.serialize_vec(&[8]),
+            Err(TranscodeError::ValueTooWide)
+        );
+        assert_eq!(
+            modulus.serialize_vec(&[u64::MAX]),
+            Err(TranscodeError::ValueTooWide)
+        );
+
+        let mut bytes = vec![0xa5];
+        modulus.serialize_into(&[1], &mut bytes);
+        modulus.serialize_into(&[2], &mut bytes);
+        assert_eq!(bytes, [0xa5, 1, 2]);
+        let pointer = bytes.as_ptr();
+        let capacity = bytes.capacity();
+        assert!(
+            catch_unwind(AssertUnwindSafe(
+                || modulus.serialize_into(&[0, 8], &mut bytes)
+            ))
+            .is_err()
+        );
+        assert_eq!(bytes, [0xa5, 1, 2]);
+        assert_eq!(bytes.as_ptr(), pointer);
+        assert_eq!(bytes.capacity(), capacity);
+    }
+
+    #[test]
+    fn serialization_length_checks_machine_boundaries_and_remains_const() {
+        const LARGE: Option<usize> = super::verified::serialization_length(3, usize::MAX - 7);
+        const INVALID: Option<usize> = super::verified::serialization_length(3, 7);
+        assert_eq!(LARGE, Some((usize::MAX - 7) / 4));
+        assert_eq!(INVALID, None);
+
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let width = reference_serialization_width(p);
+            let max_size = (usize::MAX / width).min(usize::MAX / 8) * 8;
+            for size in [0, 8, 16, max_size] {
+                let expected = size as u128 * width as u128 / 8;
+                assert_eq!(modulus.serialization_length(size) as u128, expected);
+            }
+            if max_size <= usize::MAX - 8 {
+                let invalid = max_size + 8;
+                assert_eq!(super::verified::serialization_length(p, invalid), None);
+                // This check is required in release builds too.
+                assert!(
+                    std::panic::catch_unwind(|| modulus.serialization_length(invalid)).is_err()
+                );
+            }
+            for invalid in [1, 7, 9, usize::MAX] {
+                assert_eq!(super::verified::serialization_length(p, invalid), None);
+                assert!(
+                    std::panic::catch_unwind(|| modulus.serialization_length(invalid)).is_err()
+                );
+            }
+        }
+    }
 
     fn check_constructor_metadata(p: u64) {
         use num_bigint::BigUint;
@@ -920,6 +1094,9 @@ mod tests {
 
     #[test]
     fn constructor_checks_boundaries_and_optimization_thresholds() {
+        // Keep an independent numeric check of the shared, exclusive limit.
+        assert_eq!(super::verified::MODULUS_LIMIT, 1u64 << 62);
+        check_constructor_metadata(super::verified::MODULUS_LIMIT - 1);
         // Includes every supported power of two (where the reciprocal needs
         // its +1 correction), adjacent values, and optimization thresholds.
         for p in reduction_boundary_moduli() {
@@ -928,8 +1105,8 @@ mod tests {
         for p in [
             0,
             1,
-            1 << 62,
-            (1 << 62) + 1,
+            super::verified::MODULUS_LIMIT,
+            super::verified::MODULUS_LIMIT + 1,
             (1 << 63) - 1,
             1 << 63,
             u64::MAX,

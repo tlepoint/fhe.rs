@@ -1,6 +1,8 @@
 //! Barrett reduction kernels, eligibility checks, and their arithmetic lemmas.
 
 #[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
+#[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::*;
 #[cfg(verus_keep_ghost)]
 use vstd::arithmetic::power2::*;
@@ -15,7 +17,7 @@ verus! {
 pub open spec fn base() -> int { 0x1_0000_0000_0000_0000 }
 
 pub open spec fn valid_barrett(p: u64, hi: u64, lo: u64) -> bool {
-    &&& 2 <= p < 0x4000_0000_0000_0000u64
+    &&& 2 <= p < MODULUS_LIMIT
     &&& (hi * base() + lo) * p <= base() * base()
     &&& base() * base() < (hi * base() + lo + 1) * p
 }
@@ -30,7 +32,7 @@ pub open spec fn optimization_condition(p: u64, s: u32) -> bool {
 /// required by the lazy-reduction kernels.
 pub open spec fn valid_opt(p: u64, s: u32) -> bool {
     let k = pow2((64 - s) as nat) as int;
-    &&& 2 <= p < 0x4000_0000_0000_0000u64
+    &&& 2 <= p < MODULUS_LIMIT
     &&& 2 <= s <= 62
     &&& k / 2 <= p < k
     &&& optimization_condition(p, s)
@@ -44,7 +46,7 @@ pub(super) proof fn leading_zero_bounds(p: u64)
         p == 0 <==> u64_leading_zeros(p) == 64,
         p > 0 ==> pow2((63 - u64_leading_zeros(p)) as nat) <= p
             < pow2((64 - u64_leading_zeros(p)) as nat),
-        2 <= p < 0x4000_0000_0000_0000u64 ==> 2 <= u64_leading_zeros(p) <= 62,
+        2 <= p < MODULUS_LIMIT ==> 2 <= u64_leading_zeros(p) <= 62,
     decreases p,
 {
     axiom_u64_leading_zeros(p);
@@ -101,7 +103,7 @@ proof fn correction_bounds(s: u32)
 pub fn supports_opt(p: u64) -> (result: bool)
     ensures
         result == optimization_condition(p, u64_leading_zeros(p) as u32),
-        2 <= p < 0x4000_0000_0000_0000u64 ==>
+        2 <= p < MODULUS_LIMIT ==>
             result == valid_opt(p, u64_leading_zeros(p) as u32),
 {
     let s = p.leading_zeros();
@@ -109,7 +111,7 @@ pub fn supports_opt(p: u64) -> (result: bool)
         leading_zero_bounds(p);
         lemma_pow2_pos(s as nat);
         lemma2_to64();
-        if 2 <= p < 0x4000_0000_0000_0000u64 {
+        if 2 <= p < MODULUS_LIMIT {
             lemma_pow2_unfold((64 - s) as nat);
         }
     }

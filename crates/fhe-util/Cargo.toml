@@ -8,6 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 version = "0.1.2"
 
+[package.metadata.verus]
+verify = true
+
 [lints]
 workspace = true
 

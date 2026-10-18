@@ -57,7 +57,7 @@ cargo test -p fhe-math
 metadata used by `Modulus::new`: the exact Barrett reciprocal limbs,
 leading-zero count, and optimization flag. The reciprocal uses verified
 `u128` arithmetic. Error mapping, field storage, and the external distribution
-and CPU-dispatch setup remain outside the standalone proof.
+and CPU-dispatch setup remain outside the kernel proofs.
 
 Verus proves conditional selection, then one-subtraction reduction, then
 modular addition using those helpers, including the variable-time `reduce1_vt`
@@ -91,6 +91,22 @@ length, canonical bounds, and sample order, with exactly one sampler call per
 output entry. These proofs depend on an explicit sampler contract: the
 `rand::Uniform` adapter, uniformity, and RNG security remain outside the proof.
 The ordinary Rust implementation shares these verified functions.
+
+`verified/serialize.rs` proves the modulus encoding width, checked byte lengths,
+serialization/deserialization composition, and round trips. It imports the
+verified packing contracts from `fhe-util` through Cargo Verus. The byte-length
+calculation divides before multiplying and checks overflow in release builds
+too. These proofs cover the shared `Modulus` serialization implementation;
+polynomial/protobuf serialization and persistent `Modulus` validity remain
+outside the proof.
+
+Both crates enable Cargo Verus metadata, so proof dependencies use ordinary
+crate imports and their specifications ship with the source packages:
+
+```sh
+cargo verus verify --fwd-verus-args-to roots -p fhe-util -p fhe-math --locked -- --no-cheating
+```
+
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations
 are outside the scope of these proofs.

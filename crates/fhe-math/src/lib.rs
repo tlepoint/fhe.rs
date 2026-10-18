@@ -3,6 +3,9 @@
 
 //! Mathematical utilities for the fhe.rs library.
 
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+
 /// Structured errors and classifications for this crate.
 pub mod error;
 mod proto;

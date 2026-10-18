@@ -1,10 +1,21 @@
 //! Arithmetic kernels checked by Verus and compiled into the ordinary Rust
 //! library.
 //!
-//! Verify this file directly; see `verification/README.md` at the repository
-//! root.
+//! Verify through Cargo, including fhe-util's contracts; see
+//! `verification/README.md` at the repository root.
+
+// Cargo Verus also checks an erased Rust view, where proof-only imports are unused.
+#![cfg_attr(verus_keep_ghost, allow(unused_imports))]
 
 use vstd::prelude::*;
+
+use fhe_util::packing;
+
+#[path = "verified/serialize.rs"]
+mod serialization;
+pub(crate) use serialization::{
+    deserialize_vec, serialization_length, serialize_into, serialize_vec,
+};
 
 #[path = "verified/modulus.rs"]
 mod modulus;
@@ -69,6 +80,11 @@ pub(crate) use lazy_reduce::{
 };
 
 verus! {
+
+/// Exclusive upper bound for supported moduli: `2 <= p < 2^62`.
+/// The two spare high bits provide headroom for lazy arithmetic.
+#[verifier::inline]
+pub const MODULUS_LIMIT: u64 = 0x4000_0000_0000_0000;
 
 /// Select `on_true` when `cond` is true and `on_false` otherwise.
 #[inline]

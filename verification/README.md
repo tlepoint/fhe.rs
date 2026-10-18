@@ -11,6 +11,10 @@ same functions in ordinary builds. Verus checks the executable
 implementations and their contracts; the proof is not a separate copy of the
 algorithms. Normal Cargo builds erase the proof code through `vstd`.
 
+The constructor and kernel contracts share `MODULUS_LIMIT = 1u64 << 62`,
+the exclusive upper bound for supported moduli. It leaves two high bits
+available for lazy arithmetic; changing it requires revisiting those proofs.
+
 [`verified/modulus.rs`](../crates/fhe-math/src/zq/verified/modulus.rs) proves the
 range check and arithmetic initialization used by `Modulus::new`, establishing
 the metadata predicates required by the reduction kernels.
@@ -61,6 +65,10 @@ loop. Its [proof helpers](../crates/fhe-util/src/packing/proofs.rs) also prove
 exact packing/decoding round trips. These are the implementations re-exported
 by `fhe-util`, including the checked public boundaries.
 
+[`verified/serialize.rs`](../crates/fhe-math/src/zq/verified/serialize.rs) composes
+those packing contracts across the crate boundary to prove modulus widths,
+serialized lengths, and encoding/decoding round trips.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -72,41 +80,59 @@ rustup toolchain install 1.98.1 --profile minimal
 
 Download and unpack the release archive for your platform, following the
 [Verus installation instructions](https://github.com/verus-lang/verus/blob/426d8b01e7ffb910a36c15e1f870ff985bb61eef/INSTALL.md).
-Add its directory to `PATH`, or invoke that directory's `verus` executable
-directly. From the repository root, run:
+Add its directory to `PATH` so both `verus` and `cargo-verus` are available.
+Install `protoc` as for ordinary `fhe-math` builds. From the repository root:
 
 ```sh
 verus --version
-verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
-verus --crate-type lib --edition=2024 --no-cheating crates/fhe-util/src/packing.rs
+cargo verus verify --fwd-verus-args-to roots -p fhe-util -p fhe-math --locked -- --no-cheating
 ```
 
-The expected result is `149 verified, 0 errors` on macOS or an AVX2 target, and
-`148 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
-and vector loops. The packing module independently reports `65 verified, 0 errors`.
-These counts include proof lemmas and local assertions, not just API functions.
-On x86 Linux, check both target-dependent arithmetic implementations with:
+Both crates opt in through `[package.metadata.verus] verify = true`.
+Cargo Verus checks `fhe-util`, exports its contracts as `.vir` metadata, and
+imports them when checking `fhe-math`. Serialization uses the ordinary
+`fhe_util::packing` dependency path in both proof and production builds.
+There is no source include outside either crate's package. Source releases
+include the annotations; downstream Verus builds regenerate their metadata
+with the selected toolchain. Ordinary Cargo builds erase the ghost code.
+See the [Cargo Verus guide](https://verus-lang.github.io/verus/guide/cargo_verus.html).
+
+Before publishing, release the updated `fhe-util` first and update the exact
+dependency version in `fhe-math`. Published consumers need the release containing
+the public packing module and its specifications. To check the source-package
+layout locally, extract both `cargo package` archives into a temporary workspace
+and patch its `fhe-util` dependency to the extracted package, then run the same
+verification command there. This does not require files from the original checkout.
+
+The expected project results are `65 verified, 0 errors` for `fhe-util` and
+`167 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`166`
+elsewhere). Counts include proof lemmas, local assertions, and loops, not
+just API functions. The first run also checks the pinned `vstd` dependency.
+On x86 Linux, check both reducer implementations:
 
 ```sh
-verus --crate-type lib --edition=2024 --no-cheating -C target-feature=-avx2 crates/fhe-math/src/zq/verified.rs
-verus --crate-type lib --edition=2024 --no-cheating -C target-feature=+avx2 crates/fhe-math/src/zq/verified.rs
+cargo verus verify --fwd-verus-args-to roots -p fhe-util -p fhe-math --locked -- --no-cheating -C target-feature=-avx2
+cargo verus verify --fwd-verus-args-to roots -p fhe-util -p fhe-math --locked -- --no-cheating -C target-feature=+avx2
 ```
 
-`--no-cheating` rejects assumptions, admits, and unchecked
-external bodies in our proof source. Verus, its bundled standard-library
-specifications, Z3, Rust, and the compiler remain trusted infrastructure.
-For sampling, this command checks generic loops against the `ResidueSampler`
-trait contract; it does not check the external `UniformSampler` implementation.
+Select **both** project crates as roots when forwarding `--no-cheating` to
+roots. It rejects assumptions, admits, and unchecked external bodies in the
+verified project code. Do not forward it to `vstd`: the standard-library
+specifications intentionally contain axioms and external specifications.
+Verus, those specifications, Z3, Rust, and the compiler remain trusted.
+The workspace enables `vstd`'s `std` feature so Cargo builds include its
+`Vec` and allocation specifications, as the standalone release does.
 
-This checks the arithmetic and packing modules and their submodules directly, without asking
-Verus to analyze the crate's unrelated dependencies or algorithms. It needs neither Cargo dependency
-compilation nor `protoc`. It is not a `cargo verus verify -p fhe-math` integration
-or a verification of the whole crate. The pinned `vstd` dependency is used by
-ordinary Rust builds; the standalone verifier uses its bundled `vstd` instead.
-The current Cargo pin is `0.0.0-2026-10-11-0230`, while the verifier release is
-from October 4. Rerun both verification and Cargo checks when updating either
-pin; the proof and macro-erased production builds must both work.
-The verifier's compiler is separate from the library's Rust 1.91.1 MSRV.
+Cargo integration verifies the code inside `verus!`, not the whole library.
+The existing `UniformSampler` adapter remains external: its ghost methods
+make the trait implementation available to Cargo's ghost-enabled Rust check,
+without claiming to verify `rand` or the adapter's sampling contract. The
+kernel proof still depends on the previously documented sampling boundary.
+
+The current Cargo pin is `vstd = 0.0.0-2026-10-11-0230`, while the verifier
+release is from October 4. Both work together in the Cargo verification run.
+Rerun verification and Cargo checks when changing either pin. The verifier's
+compiler is separate from the library's Rust 1.91.1 MSRV.
 
 ## Contracts and proof order
 
@@ -161,7 +187,7 @@ existing `InvalidModulus(p)` error, and copies the returned arithmetic fields
 into `Modulus`. It no longer uses `BigUint` to construct the reciprocal.
 **Remaining boundary:** the wrapper's error mapping and field copying, the
 external `Uniform::new(0, p)` and `Arch::new()` calls, and preservation/use of
-these fields by other code are not checked by the standalone proof. This is
+these fields by other code are not checked by the kernel proofs. This is
 a proof of the constructor's shared arithmetic implementation, not yet a
 type invariant carried through every public `Modulus` method.
 
@@ -449,7 +475,7 @@ in addition to checking indexing, arithmetic, and loop progress. The history
 erases completely in Rust builds; it allocates no runtime storage.
 
 **Trusted sampling boundary:** `UniformSampler` in `zq/mod.rs` implements the
-trait outside the standalone verified module. It holds the constructor's
+trait outside the verified sampling module. It holds the constructor's
 `Uniform::new(0, p)` and the caller's RNG, and calls `rng.sample(distribution)`
 once per trait call. Its compliance with the range and history contract is
 assumed by the generic proofs, not verified by `--no-cheating`. The wrappers
@@ -536,11 +562,60 @@ retain the original bit count.
 There is no trusted packing adapter or unchecked project proof body. As with
 the arithmetic kernels, Verus, Z3, the compiler, and standard-library specs
 remain trusted. Allocation failure, allocation-capacity limits, and constant-time
-machine-code behavior are outside these contracts. The `Modulus` serialization wrappers and their
-modulus-derived widths are not included in this standalone proof; packing
-does not validate residues against a modulus.
+machine-code behavior are outside these contracts. Packing does not validate
+residues against a modulus. The modulus-specific composition is described below.
+
+### Modulus serialization
+
+[`verified/serialize.rs`](../crates/fhe-math/src/zq/verified/serialize.rs)
+composes `fhe_util::packing` contracts across the crate boundary. Its shared
+functions implement `Modulus::serialize_vec`, `serialize_into`, and
+`deserialize_vec`, plus the checked computation used by `serialization_length`.
+They assume a valid modulus `2 <= p < 2^62`; they need no Barrett metadata,
+optimization flag, or primality assumption.
+
+The width is proved to be `ceil(log2(p))`, between 1 and 62, with
+`2^(width-1) < p <= 2^width`. Every canonical residue therefore fits, including
+at powers of two where the width is determined by `p-1`. Packing and stream
+decoding inherit the exact bit layout, lengths, padding, and errors from
+`fhe-util`. Fitting noncanonical words remain accepted, and decoding does not
+reduce or validate residues. The append kernel proves its existing unwrap
+safe for fitting words and representable input/output lengths, and preserves
+the existing byte prefix.
+
+The round-trip theorem proves decoding recovers the original prefix for
+arbitrary word counts. If the encoded bit count is a multiple of eight,
+there are no extra words and the full sequences are equal. A word count
+that is a multiple of eight always satisfies this alignment condition.
+This preserves stream decoding's treatment of byte padding as data.
+
+The checked length computation returns `Some(bytes)` exactly when the word
+count is a multiple of eight and `count * width / 8` fits in `usize`. It now
+computes `width.checked_mul(count / 8)`: the previous multiply-before-divide
+expression could overflow even when the final byte count was representable,
+and could wrap in release builds. The public `const fn` retains its alignment
+assertion and explicitly panics on an unrepresentable byte count. The proof
+also establishes agreement between this byte count and the packing output.
+
+As with the other `Modulus` methods, the thin wrappers' field access and the
+object's persistent validity remain outside the proof. The wrapper's panic
+mapping is tested in debug and release builds. These proofs do not yet cover
+polynomial/protobuf serialization, RNS row concatenation, representation
+conversion, or decode resource limits.
 
 ## Tests and CI
+
+Modulus serialization tests cover every supported width, power-of-two
+boundaries, canonical and fitting noncanonical words, arbitrary byte streams,
+partial bytes, append prefixes and error atomicity. Independent bit-at-a-time
+oracles check encoding and decoding. Length tests reach the largest
+representable byte counts without allocating buffers, exercise const evaluation,
+and require overflow rejection in both debug and release builds:
+
+```sh
+cargo test -p fhe-math zq::tests::serial
+cargo test --release -p fhe-math zq::tests::serial
+```
 
 Packing tests compare all 4,096 width pairs against an independent bit-at-a-time
 oracle, including empty inputs, word boundaries, full-width words, and partial
@@ -688,8 +763,8 @@ cargo test -p fhe-math zq::primes::tests::supports_opt
 
 The [Verus workflow](../.github/workflows/verus.yml) installs the pinned
 checksum-checked Linux release and runs the proof on pull requests and pushes,
-with AVX2 disabled and enabled to cover both `reduce1_vt` implementations.
-It also verifies the packing module with `--no-cheating`.
+through Cargo with both project crates selected as roots and `--no-cheating`.
+It disables and enables AVX2 to cover both `reduce1_vt` implementations.
 The ordinary test, formatting, Clippy, and MSRV jobs continue to check Rust
 builds independently. When changing the kernel, rerun both the proof and these
 tests. To sanity-check the contracts, removing the mask's negation must fail

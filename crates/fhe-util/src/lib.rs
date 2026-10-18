@@ -6,8 +6,11 @@
 #[cfg(test)]
 extern crate proptest;
 
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+
 mod decode_limits;
-mod packing;
+pub mod packing;
 pub use packing::{
     TranscodeError, transcode_bidirectional, transcode_from_bytes, transcode_from_bytes_exact,
     transcode_to_bytes, transcode_to_bytes_into,

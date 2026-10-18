@@ -2,6 +2,8 @@
 //! lazy reductions.
 
 #[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
+#[cfg(verus_keep_ghost)]
 use super::lazy_reduce::{base, valid_barrett, valid_opt};
 use super::{
     const_time_cond_select, lazy_reduce, lazy_reduce_opt, lazy_reduce_opt_u128, lazy_reduce_u128,
@@ -179,7 +181,7 @@ pub(crate) const unsafe fn reduce_opt_u128_vt(a: u128, p: u64, hi: u64, lo: u64,
 /// Lift a signed input by a positive multiple of p without losing any bits.
 #[inline]
 const fn lift_i64(a: i64, p: u64) -> (r: u128)
-    requires 2 <= p < 0x4000_0000_0000_0000u64,
+    requires 2 <= p < MODULUS_LIMIT,
     ensures
         r as int == p * base() + a,
         r as int % p as int == a as int % p as int,
@@ -187,7 +189,7 @@ const fn lift_i64(a: i64, p: u64) -> (r: u128)
     proof {
         assert((p as i128) << 64 == (p as i128) * 0x1_0000_0000_0000_0000i128)
             by (bit_vector)
-            requires p < 0x4000_0000_0000_0000u64;
+            requires p < MODULUS_LIMIT;
         lemma_mod_multiples_vanish(base(), a as int, p as int);
     }
     (((p as i128) << 64) + (a as i128)) as u128
@@ -218,7 +220,7 @@ pub(crate) const unsafe fn reduce_i64_vt(a: i64, p: u64, hi: u64, lo: u64) -> (r
 #[inline]
 pub(crate) const fn reduce3(a: u64, p: u64, p_twice: u64) -> (r: u64)
     requires
-        0 < p < 0x4000_0000_0000_0000u64,
+        0 < p < MODULUS_LIMIT,
         p_twice == 2 * p,
         a < 4 * p,
     ensures r < p, r as int == a as int % p as int,
@@ -235,7 +237,7 @@ pub(crate) const fn reduce3(a: u64, p: u64, p_twice: u64) -> (r: u64)
 #[inline]
 pub(crate) const unsafe fn reduce3_vt(a: u64, p: u64, p_twice: u64) -> (r: u64)
     requires
-        0 < p < 0x4000_0000_0000_0000u64,
+        0 < p < MODULUS_LIMIT,
         p_twice == 2 * p,
         a < 4 * p,
     ensures r < p, r as int == a as int % p as int,

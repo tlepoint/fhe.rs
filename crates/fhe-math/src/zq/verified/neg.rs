@@ -1,5 +1,7 @@
 //! Modular negation, including the in-place vector loops.
 
+#[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
 use super::{reduce1, reduce1_vt};
 #[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::lemma_mod_multiples_vanish;
@@ -11,7 +13,7 @@ verus! {
 #[inline]
 pub(crate) const fn neg_mod(a: u64, p: u64) -> (r: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         a < p,
     ensures
         r < p,
@@ -28,7 +30,7 @@ pub(crate) const fn neg_mod(a: u64, p: u64) -> (r: u64)
 #[inline]
 pub(crate) const unsafe fn neg_mod_vt(a: u64, p: u64) -> (r: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         a < p,
     ensures
         r < p,
@@ -42,7 +44,7 @@ pub(crate) const unsafe fn neg_mod_vt(a: u64, p: u64) -> (r: u64)
 #[inline]
 pub(crate) fn neg_vec(a: &mut [u64], p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         forall|j: int| 0 <= j < old(a)@.len() ==> #[trigger] old(a)@[j] < p,
     ensures
         final(a)@.len() == old(a)@.len(),
@@ -53,7 +55,7 @@ pub(crate) fn neg_vec(a: &mut [u64], p: u64)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             0 <= i <= a.len(),
             forall|j: int| 0 <= j < old(a)@.len() ==> #[trigger] old(a)@[j] < p,
@@ -75,7 +77,7 @@ pub(crate) fn neg_vec(a: &mut [u64], p: u64)
 #[inline]
 pub(crate) unsafe fn neg_vec_vt(a: &mut [u64], p: u64)
     requires
-        2 <= p < 0x4000_0000_0000_0000u64,
+        2 <= p < MODULUS_LIMIT,
         forall|j: int| 0 <= j < old(a)@.len() ==> #[trigger] old(a)@[j] < p,
     ensures
         final(a)@.len() == old(a)@.len(),
@@ -86,7 +88,7 @@ pub(crate) unsafe fn neg_vec_vt(a: &mut [u64], p: u64)
     let mut i = 0;
     while i < a.len()
         invariant
-            2 <= p < 0x4000_0000_0000_0000u64,
+            2 <= p < MODULUS_LIMIT,
             a@.len() == old(a)@.len(),
             0 <= i <= a.len(),
             forall|j: int| 0 <= j < old(a)@.len() ==> #[trigger] old(a)@[j] < p,

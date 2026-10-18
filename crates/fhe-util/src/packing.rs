@@ -1,5 +1,8 @@
 //! Shared bit-packing implementation, verified directly with Verus.
 
+// Verus generates enum accessors in the ghost Rust view without doc comments.
+#![cfg_attr(verus_keep_ghost, allow(missing_docs))]
+
 #[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::*;
 use vstd::prelude::*;
@@ -27,16 +30,21 @@ pub enum TranscodeError {
     NonZeroPadding,
 }
 
+/// Bit k of a machine word, with zero outside the word.
 pub open spec fn bit(x: u128, k: int) -> bool {
     0 <= k < 128 && (x >> (k as u32)) & 1 == 1
 }
 
 /// Storage words supported by the packing loop.
 pub trait Word: Sized {
+    /// The unsigned value represented by this storage word.
     spec fn value(self) -> u64;
+    /// The storage word's bit width.
     spec fn width() -> int;
+    /// Read the storage word without changing its value.
     fn read(&self) -> (r: u64)
         ensures r == self.value(), Self::width() == 8 || Self::width() == 64;
+    /// Store a value that fits the storage word's width.
     fn write(x: u64) -> (r: Self)
         requires fits(x, Self::width()),
         ensures r.value() == x;
@@ -66,10 +74,12 @@ impl Word for u8 {
     }
 }
 
+/// Whether a value fits a supported bit width without truncation.
 pub open spec fn fits(x: u64, width: int) -> bool {
     1 <= width <= 64 && x & !(u64::MAX >> ((64 - width) as u32)) == 0
 }
 
+/// A supported width and a sequence of words that all fit it.
 pub open spec fn valid_words<T: Word>(a: Seq<T>, width: int) -> bool {
     1 <= width <= 64 && forall|i: int| 0 <= i < a.len() ==> fits(#[trigger] a[i].value(), width)
 }
@@ -79,11 +89,13 @@ pub open spec fn stream<T: Word>(a: Seq<T>, width: int, k: int) -> bool {
     0 <= k < a.len() * width && bit(a[k / width].value() as u128, k % width)
 }
 
+/// One output word contains the specified slice of the zero-extended input stream.
 pub open spec fn word_at<T: Word>(a: Seq<T>, iw: int, offset: int, x: u64, ow: int) -> bool {
     forall|k: int| 0 <= k < 64 ==> #[trigger] bit(x as u128, k)
         == (k < ow && stream(a, iw, offset + k))
 }
 
+/// Exact output length and bit contents for a stream repartitioned into words.
 pub open spec fn packed<T: Word, U: Word>(a: Seq<T>, iw: int, b: Seq<U>, ow: int) -> bool {
     b.len() == (a.len() * iw + ow - 1) / (ow as int)
     && forall|j: int| 0 <= j < b.len() ==> word_at(a, iw, j * ow, #[trigger] b[j].value(), ow)
@@ -208,6 +220,7 @@ fn ceil_words(bits: usize, width: usize) -> (r: usize)
     q + if r > 0 { 1 } else { 0 }
 }
 
+/// Input validation error, in the public API's precedence order.
 pub open spec fn words_error(a: Seq<u64>, width: int) -> Option<TranscodeError> {
     if !(1 <= width <= 64) { Some(TranscodeError::InvalidWidth(width as usize)) }
     else if a.len() * width > usize::MAX { Some(TranscodeError::LengthOverflow) }
@@ -215,6 +228,7 @@ pub open spec fn words_error(a: Seq<u64>, width: int) -> Option<TranscodeError> 
     else { None }
 }
 
+/// Packing error, including overflow when appending to an existing prefix.
 pub open spec fn pack_error(a: Seq<u64>, width: int, start: int) -> Option<TranscodeError> {
     if words_error(a, width).is_some() { words_error(a, width) }
     else if start + (a.len() * width + 7) / 8 > usize::MAX { Some(TranscodeError::LengthOverflow) }
@@ -312,6 +326,7 @@ pub fn transcode_to_bytes_into(a: &[u64], nbits: usize, out: &mut Vec<u8>) -> (r
     Ok(())
 }
 
+/// Width or input bit-length error for stream decoding.
 pub open spec fn unpack_error(b: Seq<u8>, width: int) -> Option<TranscodeError> {
     if !(1 <= width <= 64) { Some(TranscodeError::InvalidWidth(width as usize)) }
     else if b.len() * 8 > usize::MAX { Some(TranscodeError::LengthOverflow) }
@@ -347,10 +362,12 @@ pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> (r: Result<Vec<u64>, Tran
     Ok(out)
 }
 
+/// Whether the unused high bits of the final byte are zero.
 pub open spec fn padding_zero(b: Seq<u8>, bits: int) -> bool {
     bits % 8 == 0 || (b.len() > 0 && b[b.len() - 1] >> ((bits % 8) as u32) == 0)
 }
 
+/// Exact decoding error, including length mismatch and nonzero padding.
 pub open spec fn exact_error(b: Seq<u8>, width: int, count: int) -> Option<TranscodeError> {
     if !(1 <= width <= 64) { Some(TranscodeError::InvalidWidth(width as usize)) }
     else if count * width > usize::MAX { Some(TranscodeError::LengthOverflow) }
@@ -359,6 +376,7 @@ pub open spec fn exact_error(b: Seq<u8>, width: int, count: int) -> Option<Trans
     else { unpack_error(b, width) }
 }
 
+/// Exactly count words decoded from the byte stream at the requested width.
 pub open spec fn decoded(b: Seq<u8>, width: int, count: int, a: Seq<u64>) -> bool {
     a.len() == count && forall|j: int| 0 <= j < count ==>
         word_at(b, 8, j * width, #[trigger] a[j], width)
@@ -409,6 +427,7 @@ pub fn transcode_from_bytes_exact(b: &[u8], nbits: usize, count: usize)
     Ok(words)
 }
 
+/// Word-transcoding error, checking input validity before the output width.
 pub open spec fn transcode_error(a: Seq<u64>, iw: int, ow: int) -> Option<TranscodeError> {
     if words_error(a, iw).is_some() { words_error(a, iw) }
     else if !(1 <= ow <= 64) { Some(TranscodeError::InvalidWidth(ow as usize)) }

@@ -5,6 +5,8 @@
 //! loops, not the distribution's uniformity or the RNG's cryptographic
 //! properties.
 
+#[cfg(verus_keep_ghost)]
+use super::MODULUS_LIMIT;
 use vstd::prelude::*;
 
 verus! {
@@ -29,7 +31,7 @@ pub(crate) trait ResidueSampler {
 #[inline]
 pub(crate) fn random_vec<S: ResidueSampler>(size: usize, sampler: &mut S) -> (r: Vec<u64>)
     requires
-        2 <= old(sampler).modulus() < 0x4000_0000_0000_0000u64,
+        2 <= old(sampler).modulus() < MODULUS_LIMIT,
     ensures
         r@.len() == size,
         final(sampler).modulus() == old(sampler).modulus(),
@@ -61,7 +63,7 @@ pub(crate) fn random_vec<S: ResidueSampler>(size: usize, sampler: &mut S) -> (r:
 #[inline]
 pub(crate) fn random_into<S: ResidueSampler>(out: &mut [u64], sampler: &mut S)
     requires
-        2 <= old(sampler).modulus() < 0x4000_0000_0000_0000u64,
+        2 <= old(sampler).modulus() < MODULUS_LIMIT,
     ensures
         final(out)@.len() == old(out)@.len(),
         final(sampler).modulus() == old(sampler).modulus(),
