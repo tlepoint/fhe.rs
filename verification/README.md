@@ -12,8 +12,9 @@ implementations and their contracts; the proof is not a separate copy of the
 algorithms. Normal Cargo builds erase the proof code through `vstd`.
 
 The included [`verified/lazy_reduce.rs`](../crates/fhe-math/src/zq/verified/lazy_reduce.rs)
-also proves every `lazy_reduce*` kernel, including the vector loop. The
-`Modulus` methods delegate to these verified implementations.
+also proves every `lazy_reduce*` kernel, including the vector loop, and the
+`primes::supports_opt` eligibility check. The `Modulus` methods delegate to
+these verified implementations.
 
 ## Run the proof
 
@@ -34,8 +35,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `28 verified, 0 errors` on macOS or an AVX2 target, and
-`27 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `31 verified, 0 errors` on macOS or an AVX2 target, and
+`30 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and the vector loop. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -108,8 +109,8 @@ additional runtime calculations.
 | `lazy_reduce_opt_u128` | `a < p^2`; both predicates | The optimized quotient omits a low product; the modulus condition bounds that approximation error. |
 | `lazy_reduce_vec` | `valid_barrett`; also `valid_opt` for its optimized branch | Loop invariants preserve unreduced elements and establish the scalar contract for every processed element; length is unchanged. |
 
-`valid_opt(p, s)` specifies the actual optimization condition: `s` is the
-leading-zero count, `t = 2^s`, and
+`valid_opt(p, s)` includes the modulus and bit-length bounds together with
+`optimization_condition(p, s)`: `s` is the leading-zero count, `t = 2^s`, and
 `(t^3 + 1)*B < t^3*(t+1)*p`. This is the integer inequality in
 `primes::supports_opt`; primality is not required. The proof derives
 `hi = t` and `p^2 + B*lo < B^2` from this condition and the reciprocal bounds.
@@ -124,6 +125,29 @@ needed for the full-width intermediate sum. The vector loop invokes the
 scalar contracts, with a const Boolean selecting the implementation so the
 existing dispatch remains outside the loop.
 
+### Optimization eligibility
+
+`primes::supports_opt(p)` has no preconditions. For every `u64`, Verus proves
+that its result is exactly `optimization_condition(p, p.leading_zeros())`.
+For `2 <= p < 2^62`, it also proves that the result is equivalent to
+`valid_opt(p, p.leading_zeros())`, connecting the public check to the optimized
+reducers' precondition. A recursive lemma proves the bit-length bounds from
+the standard-library specification of `leading_zeros`.
+
+The executable check uses bounded `u128` arithmetic instead of `BigUint`.
+For `s > 0`, dividing the original strict inequality by `t^3` gives
+`(t+1)*p > B + floor(B/t^3)`. The correction is `2^(64-3*s)` when `3*s < 64`
+and zero otherwise. Verus proves that this correction is the floor, that the
+comparison is equivalent, and that all shifts and arithmetic are safe. The
+public API path is retained by re-exporting the verified function directly.
+
+Zero now returns `false`, fixing the previous shift by 64. Inputs with the
+top bit set still return `false`; eligible 63-bit inputs remain supported even
+though `Modulus` itself only accepts moduli below `2^62`. The condition does
+not require primality.
+
+### Proof boundary
+
 All arithmetic in contracts is interpreted over mathematical integers. The
 proofs cover the full stated input domains, including even and composite
 moduli, and preserve `const fn` use.
@@ -132,11 +156,11 @@ The reduction and addition proofs assume valid inputs. `Modulus::new` checks
 the modulus; the addition and reduction wrappers retain their debug
 assertions. The optimized lazy wrappers now also assert `supports_opt` in
 debug builds, and the 128-bit variant retains its `a < p^2` assertion.
-Verus does not verify `Modulus::new`, the BigUint implementation of
-`primes::supports_opt`, the wrappers, or their callers, and does not insert
-runtime checks. Correct reciprocal limbs and optimization metadata remain
-the boundary between the constructor and these kernel contracts. Although
-other operations reuse the verified kernels, their contracts have not been
+Verus does not verify `Modulus::new`, the wrappers, or their callers, and does
+not insert runtime checks. Correct reciprocal limbs and storage/use of the
+proved optimization metadata remain the boundary between the constructor and
+these kernel contracts. Although other operations reuse the verified kernels,
+their contracts have not been
 proved. These proofs do not establish constant-time machine code, NTT/RNS
 correctness, or FHE security.
 
@@ -162,6 +186,15 @@ kernels in const expressions, both vector implementations (including empty
 slices), and invalid optimized inputs in debug builds. Randomized tests use
 Rust's `%` as an independent congruence oracle for all four scalar kernels.
 
+Eligibility tests evaluate the original NFL inequality with `BigUint` as an
+independent oracle. They exhaust all 16-bit inputs, cover every power-of-two
+boundary and optimization threshold, check the exact equality at `3*2^61`,
+and compare random inputs across the full `u64` domain:
+
+```sh
+cargo test -p fhe-math zq::primes::tests::supports_opt
+```
+
 The [Verus workflow](../.github/workflows/verus.yml) installs the pinned
 checksum-checked Linux release and runs the proof on pull requests and pushes,
 with AVX2 disabled and enabled to cover both `reduce1_vt` implementations.
@@ -176,3 +209,5 @@ must fail the branch reducer's proof at `x = p`; dropping `b` from
 For lazy reduction, removing the high-product contribution, corrupting either
 optimized quotient shift, or leaving vector entries unreduced must fail
 verification as well.
+Changing the strict comparison in `supports_opt` to `>=` must fail at
+`p = 3*2^61`, where the original NFL inequality is an equality.

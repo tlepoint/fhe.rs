@@ -57,8 +57,11 @@ Verus proves conditional selection, then one-subtraction reduction, then
 modular addition using those helpers, including the variable-time `reduce1_vt`
 and `add_vt` paths. It also proves all four scalar `lazy_reduce*` kernels and
 the in-place `lazy_reduce_vec` loop: each result is below twice the modulus
-and congruent to its input. The ordinary Rust implementation shares these
-verified kernels. See the [verification guide](../../verification/README.md)
+and congruent to its input. The public `primes::supports_opt` check is proved
+equivalent to the optimization condition for every `u64`, including the
+precondition required by the optimized reducers for valid moduli.
+The ordinary Rust implementation shares these verified functions.
+See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations
 are outside the scope of these proofs.
 

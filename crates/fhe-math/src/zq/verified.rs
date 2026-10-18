@@ -8,6 +8,7 @@ use vstd::prelude::*;
 
 #[path = "verified/lazy_reduce.rs"]
 mod lazy_reduce;
+pub use lazy_reduce::supports_opt;
 pub(crate) use lazy_reduce::{
     lazy_reduce, lazy_reduce_opt, lazy_reduce_opt_u128, lazy_reduce_u128, lazy_reduce_vec,
 };

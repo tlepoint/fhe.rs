@@ -1,4 +1,4 @@
-//! Barrett reduction kernels and their arithmetic lemmas.
+//! Barrett reduction kernels, eligibility checks, and their arithmetic lemmas.
 
 #[cfg(verus_keep_ghost)]
 use vstd::arithmetic::div_mod::*;
@@ -7,6 +7,8 @@ use vstd::arithmetic::power2::*;
 #[cfg(verus_keep_ghost)]
 use vstd::bits::*;
 use vstd::prelude::*;
+#[cfg(verus_keep_ghost)]
+use vstd::std_specs::bits::{axiom_u64_leading_zeros, u64_leading_zeros};
 
 verus! {
 
@@ -18,15 +20,122 @@ pub open spec fn valid_barrett(p: u64, hi: u64, lo: u64) -> bool {
     &&& base() * base() < (hi * base() + lo + 1) * p
 }
 
-/// `s` is the modulus' leading-zero count, and the final inequality is the
-/// condition tested by `primes::supports_opt` (with `t = 2^s`).
-pub open spec fn valid_opt(p: u64, s: u32) -> bool {
+/// The strict integer form of the NFL optimization condition.
+pub open spec fn optimization_condition(p: u64, s: u32) -> bool {
     let t = pow2(s as nat) as int;
+    (t * t * t + 1) * base() < t * t * t * (t + 1) * p
+}
+
+/// The optimization condition together with the modulus and bit-length bounds
+/// required by the lazy-reduction kernels.
+pub open spec fn valid_opt(p: u64, s: u32) -> bool {
     let k = pow2((64 - s) as nat) as int;
     &&& 2 <= p < 0x4000_0000_0000_0000u64
     &&& 2 <= s <= 62
     &&& k / 2 <= p < k
-    &&& (t * t * t + 1) * base() < t * t * t * (t + 1) * p
+    &&& optimization_condition(p, s)
+}
+
+/// Connect the standard-library leading-zero specification to integer bounds.
+#[verifier::nonlinear]
+proof fn leading_zero_bounds(p: u64)
+    ensures
+        0 <= u64_leading_zeros(p) <= 64,
+        p == 0 <==> u64_leading_zeros(p) == 64,
+        p > 0 ==> pow2((63 - u64_leading_zeros(p)) as nat) <= p
+            < pow2((64 - u64_leading_zeros(p)) as nat),
+        2 <= p < 0x4000_0000_0000_0000u64 ==> 2 <= u64_leading_zeros(p) <= 62,
+    decreases p,
+{
+    axiom_u64_leading_zeros(p);
+    lemma2_to64();
+    lemma2_to64_rest();
+    if p != 0 {
+        reveal(u64_leading_zeros);
+        if p > 1 {
+            leading_zero_bounds((p / 2) as u64);
+            let s = u64_leading_zeros(p);
+            lemma_pow2_unfold((63 - s) as nat);
+            lemma_pow2_unfold((64 - s) as nat);
+            assert(2 * (p / 2) <= p < 2 * (p / 2 + 1));
+        } else {
+            axiom_u64_leading_zeros(0);
+            assert(u64_leading_zeros(p) == 63);
+        }
+    }
+}
+
+spec fn correction(s: u32) -> int {
+    if 3 * s < 64 { pow2((64 - 3 * s) as nat) as int } else { 0 }
+}
+
+/// `correction(s)` is exactly floor(B / 2^(3*s)), without a large integer.
+#[verifier::nonlinear]
+proof fn correction_bounds(s: u32)
+    requires 1 <= s <= 63,
+    ensures
+        0 <= correction(s) < base(),
+        correction(s) * pow2(s as nat) * pow2(s as nat) * pow2(s as nat) <= base()
+            < (correction(s) + 1) * pow2(s as nat) * pow2(s as nat) * pow2(s as nat),
+{
+    lemma2_to64();
+    lemma_pow2_pos(s as nat);
+    lemma_pow2_adds(s as nat, s as nat);
+    lemma_pow2_adds((2 * s) as nat, s as nat);
+    if 3 * s < 64 {
+        lemma_pow2_adds((3 * s) as nat, (64 - 3 * s) as nat);
+        lemma_pow2_strictly_increases((64 - 3 * s) as nat, 64);
+    } else {
+        assert(64 < 3 * s);
+        lemma_pow2_strictly_increases(64, (3 * s) as nat);
+    }
+}
+
+/// Returns whether the modulus supports optimized multiplication and reduction.
+///
+/// Tests Equation (1) of <https://hal.archives-ouvertes.fr/hal-01242273/document>.
+/// Returns false for zero and for values with the top bit set. The condition
+/// does not require primality or restrict the input to `Modulus`' 62-bit range.
+#[must_use]
+#[verifier::nonlinear]
+pub fn supports_opt(p: u64) -> (result: bool)
+    ensures
+        result == optimization_condition(p, u64_leading_zeros(p) as u32),
+        2 <= p < 0x4000_0000_0000_0000u64 ==>
+            result == valid_opt(p, u64_leading_zeros(p) as u32),
+{
+    let s = p.leading_zeros();
+    proof {
+        leading_zero_bounds(p);
+        lemma_pow2_pos(s as nat);
+        lemma2_to64();
+        if 2 <= p < 0x4000_0000_0000_0000u64 {
+            lemma_pow2_unfold((64 - s) as nat);
+        }
+    }
+    if p == 0 || s == 0 {
+        return false;
+    }
+
+    proof {
+        lemma_pow2_strictly_increases(s as nat, 64);
+        shl_u128(1, s);
+        correction_bounds(s);
+    }
+    let scaled = ((1u128 << s) + 1) * (p as u128);
+    let threshold = if 3 * s >= 64 {
+        0u128
+    } else {
+        proof {
+            lemma_pow2_strictly_increases((64 - 3 * s) as nat, 64);
+            shl_u128(1, (64 - 3 * s) as u32);
+        }
+        1u128 << (64 - 3 * s)
+    };
+
+    // Divide the NFL inequality by 2^(3*s), retaining its strict comparison:
+    // (2^s + 1)*p > B + floor(B / 2^(3*s)).
+    scaled > 0x1_0000_0000_0000_0000u128 + threshold
 }
 
 #[verifier::nonlinear]

@@ -1,27 +1,9 @@
 //! Optimized primes generated as in the NFLlib library.
 
 use fhe_util::is_prime;
-use num_bigint::BigUint;
 
-/// Returns whether the modulus supports optimized multiplication and reduction.
-/// These optimized operations are possible when the modulus verifies
-/// Equation (1) of <https://hal.archives-ouvertes.fr/hal-01242273/document>.
-#[must_use]
-pub fn supports_opt(p: u64) -> bool {
-    if p.leading_zeros() < 1 {
-        return false;
-    }
-
-    // Let's multiply the inequality by (2^s0+1)*2^(3s0):
-    // we want to output true when
-    //    (2^(3s0)+1) * 2^64 < 2^(3s0) * (2^s0+1) * p
-    let mut middle = BigUint::from(1u64) << (3 * p.leading_zeros() as usize);
-    let left_side = (&middle + 1u64) << 64;
-    middle *= (1u64 << p.leading_zeros()) + 1;
-    middle *= p;
-
-    left_side < middle
-}
+#[doc(inline)]
+pub use super::verified::supports_opt;
 
 /// Generate a `num_bits`-bit prime, congruent to 1 mod `modulo`, strictly
 /// smaller than `upper_bound`. Note that `num_bits` must belong to (10..=62),
@@ -60,7 +42,76 @@ pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use super::generate_prime;
+    use num_bigint::BigUint;
+    use num_traits::ToPrimitive;
+    use proptest::prelude::*;
+
+    use super::{generate_prime, supports_opt};
+
+    // Evaluate the original NFL inequality with unbounded arithmetic, including
+    // zero and 64-bit inputs. This does not use the verified implementation's
+    // division-based simplification.
+    fn supports_opt_reference(p: u64) -> bool {
+        let t = BigUint::from(1u64) << p.leading_zeros() as usize;
+        let cube = &t * &t * &t;
+        ((&cube + 1u64) << 64) < cube * (t + 1u64) * p
+    }
+
+    #[test]
+    fn supports_opt_small_inputs() {
+        for p in 0..=u16::MAX as u64 {
+            assert_eq!(supports_opt(p), supports_opt_reference(p), "p={p}");
+        }
+    }
+
+    #[test]
+    fn supports_opt_boundaries() {
+        assert!(!supports_opt(0));
+        assert!(!supports_opt(1));
+        assert!(!supports_opt(1 << 63));
+        assert!(!supports_opt(u64::MAX));
+        assert!(supports_opt((1 << 62) - 1));
+        assert!(supports_opt((1 << 63) - 1));
+
+        for bit in 0..64 {
+            let power = 1u64 << bit;
+            for p in [power - 1, power, power + 1] {
+                assert_eq!(supports_opt(p), supports_opt_reference(p), "p={p}");
+            }
+        }
+
+        // The strict inequality is an equality at this 63-bit input (s = 1).
+        let equality = 3u64 << 61;
+        assert!(!supports_opt(equality - 1));
+        assert!(!supports_opt(equality));
+        assert!(supports_opt(equality + 1));
+
+        // Locate the first admissible integer independently for every possible
+        // nonzero leading-zero count, and test its neighbors within that width.
+        for bits in 1usize..=63 {
+            let t = BigUint::from(1u64) << (64 - bits);
+            let cube = &t * &t * &t;
+            let first = (((&cube + 1u64) << 64usize) / (&cube * (&t + 1u64)))
+                .to_u64()
+                .unwrap()
+                + 1;
+            let min = 1u64 << (bits - 1);
+            let max = (1u64 << bits) - 1;
+            for p in [first - 1, first, first + 1] {
+                if (min..=max).contains(&p) {
+                    assert_eq!(supports_opt(p), p >= first, "p={p}, bits={bits}");
+                    assert_eq!(supports_opt(p), supports_opt_reference(p), "p={p}");
+                }
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn supports_opt_matches_biguint(p in any::<u64>()) {
+            prop_assert_eq!(supports_opt(p), supports_opt_reference(p));
+        }
+    }
 
     // Verifies that the same moduli as in the NFLlib library are generated.
     // <https://github.com/quarkslab/NFLlib/blob/master/include/nfl/params.hpp>
