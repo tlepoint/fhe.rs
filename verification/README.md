@@ -21,6 +21,10 @@ the `reduce*` family: canonical unsigned and signed reductions, optimized
 reductions, all six vector variants, and the native NTT's `reduce3` helpers.
 Both ordinary and variable-time paths use these shared implementations.
 
+[`verified/sub_neg.rs`](../crates/fhe-math/src/zq/verified/sub_neg.rs) proves
+modular subtraction and negation, including their ordinary and variable-time
+scalar kernels and all four in-place vector operations.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -40,8 +44,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `57 verified, 0 errors` on macOS or an AVX2 target, and
-`56 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `71 verified, 0 errors` on macOS or an AVX2 target, and
+`70 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -183,14 +187,49 @@ their `unsafe` timing boundary. The private signed scalar and optimized lazy
 `Modulus` wrappers are now test conveniences: production vector/canonical
 kernels compose those scalar helpers directly inside the verified module.
 
+### Subtraction and negation
+
+These kernels require `2 <= p < 2^62` and canonical inputs below `p`; they
+do not require primality, Barrett reciprocals, or optimization metadata.
+`sub_mod` and `sub_mod_vt` prove `result < p` and
+`result = (a-b) mod p`. `neg_mod` and `neg_mod_vt` prove `result < p` and
+`result = (-a) mod p`. Both specifications use Euclidean modulo over
+mathematical integers, including when the difference is negative.
+
+The executable scalar formulas remain `reduce1(a+p-b, p)` and
+`reduce1(p-a, p)`, using `reduce1_vt` for the variable-time versions.
+Verus proves that their additions and subtractions fit, that the intermediate
+values are below `2*p`, and that adding `p` preserves the residue. The final
+reduction contract establishes canonicality, including `a-b = 0` and `-0`.
+
+`sub_vec` and `sub_vec_vt` additionally require equal lengths. Their loop
+invariants prove the corresponding subtraction contract for each updated
+entry while preserving the unprocessed suffix and total length. The same
+properties hold for `neg_vec` and `neg_vec_vt`. The variable-time subtraction
+kernel retains complete blocks of 16 followed by a tail; explicit index loops
+replace the original chunk iterators so every loop and slice access is checked.
+The `Modulus` wrappers retain architecture dispatch, scalar `const fn`
+signatures, and the variable-time APIs' `unsafe` timing boundary.
+
+Vector wrappers explicitly check canonical inputs in debug builds, along with
+the existing subtraction length check. This also makes variable-time
+subtraction reject noncanonical operands as documented: checking only the
+intermediate reduction bound could previously miss some invalid operands.
+There is no new public scalar subtraction API; `sub_mod_vt` is an internal
+helper for the existing vector operation. The private `Modulus::neg_vt`
+wrapper is retained for tests, while production vectors call the verified
+scalar kernel directly. Polynomial subtraction and negation delegate to
+these modular vector operations; their context and representation handling
+remain outside the formal proof.
+
 ### Proof boundary
 
 All arithmetic in contracts is interpreted over mathematical integers. The
 proofs cover the full stated input domains, including even and composite
 moduli, and preserve `const fn` use.
 
-The reduction and addition proofs assume valid inputs. `Modulus::new` checks
-the modulus; the addition and reduction wrappers retain their debug
+The arithmetic proofs assume valid inputs. `Modulus::new` checks
+the modulus; the scalar and vector wrappers retain their documented debug
 assertions. The optimized lazy wrappers now also assert `supports_opt` in
 debug builds, and the 128-bit variant retains its `a < p^2` assertion.
 Verus does not verify `Modulus::new`, the wrappers, or their callers, and does
@@ -233,6 +272,19 @@ boundaries. Optimized wrappers reject unsupported moduli and `a >= p^2` in
 debug builds. Native NTT tests cover `reduce3` and `reduce3_vt` at all four
 modulus boundaries and reject `a = 4*p` in debug builds.
 
+Subtraction and negation tests exhaust canonical operands for moduli 2 through
+64, cover the largest 62-bit modulus and even/composite moduli, and check all
+four scalar kernels in const expressions. Independent `i128::rem_euclid`
+oracles cover negative differences and zero negation. Vector tests cover
+empty inputs, exact blocks, tails around multiples of 16, and sentinel-guarded
+subslices. Debug tests reject noncanonical operands in either subtraction
+input, invalid negation inputs, and mismatched lengths. Existing randomized
+scalar and vector tests use the same independent signed-remainder oracle:
+
+```sh
+cargo test -p fhe-math subtraction_negation
+```
+
 Eligibility tests evaluate the original NFL inequality with `BigUint` as an
 independent oracle. They exhaust all 16-bit inputs, cover every power-of-two
 boundary and optimization threshold, check the exact equality at `3*2^61`,
@@ -261,3 +313,6 @@ Changing the strict comparison in `supports_opt` to `>=` must fail at
 Canonical reduction checks also reject omitting the final subtraction,
 subtracting the signed input instead of adding it in `lift_i64`, or pushing
 zero instead of the computed residue in an allocating vector loop.
+Subtraction and negation checks reject reversing the subtraction operands,
+omitting the reduction of `p - a` at `a = 0`, and corrupting either the
+16-element block update or the tail update in `sub_vec_vt`.

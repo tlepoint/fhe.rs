@@ -6,6 +6,12 @@
 
 use vstd::prelude::*;
 
+#[path = "verified/sub_neg.rs"]
+mod subtraction;
+pub(crate) use subtraction::{neg_mod, neg_vec, neg_vec_vt, sub_mod, sub_vec, sub_vec_vt};
+#[cfg(test)]
+pub(crate) use subtraction::{neg_mod_vt, sub_mod_vt};
+
 #[path = "verified/reduce.rs"]
 mod reduction;
 pub(crate) use reduction::{

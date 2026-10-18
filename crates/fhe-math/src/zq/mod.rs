@@ -117,7 +117,7 @@ impl Modulus {
     #[must_use]
     pub const fn sub(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
-        Self::reduce1(a + self.p - b, self.p)
+        verified::sub_mod(a, b, self.p)
     }
 
     /// Performs the modular multiplication of a and b in constant time.
@@ -169,7 +169,7 @@ impl Modulus {
     #[must_use]
     pub const fn neg(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
-        Self::reduce1(self.p - a, self.p)
+        verified::neg_mod(a, self.p)
     }
 
     /// Modular negation in variable time.
@@ -178,9 +178,11 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being negated.
+    // Production vector loops call the verified scalar kernel directly.
+    #[cfg(test)]
     const unsafe fn neg_vt(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
-        unsafe { Self::reduce1_vt(self.p - a, self.p) }
+        unsafe { verified::neg_mod_vt(a, self.p) }
     }
 
     /// Compute the Shoup representation of a.
@@ -280,9 +282,9 @@ impl Modulus {
     /// debug mode.
     pub fn sub_vec(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-        self.arch.dispatch(|| {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.sub(*ai, *bi))
-        })
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
+        self.arch.dispatch(|| verified::sub_vec(a, b, self.p))
     }
 
     /// Modular subtraction of vectors in place in variable time.
@@ -293,31 +295,11 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being subtracted.
     pub unsafe fn sub_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-        let n = a.len();
-        debug_assert_eq!(n, b.len());
-
-        let p = self.p;
-
-        self.arch.dispatch(|| {
-            // Process complete chunks of 16 elements using safe chunk APIs
-            let (a_chunks, a_remainder) = a.as_chunks_mut::<16>();
-            let (b_chunks, b_remainder) = b.as_chunks::<16>();
-
-            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks) {
-                for i in 0..16 {
-                    unsafe {
-                        a_chunk[i] = Self::reduce1_vt(p + a_chunk[i] - b_chunk[i], p);
-                    }
-                }
-            }
-
-            // Process any remaining elements
-            for (ai, bi) in a_remainder.iter_mut().zip(b_remainder) {
-                unsafe {
-                    *ai = Self::reduce1_vt(p + *ai - *bi, p);
-                }
-            }
-        })
+        debug_assert_eq!(a.len(), b.len());
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
+        self.arch
+            .dispatch(|| unsafe { verified::sub_vec_vt(a, b, self.p) })
     }
 
     /// Modular multiplication of vectors in place in constant time.
@@ -543,8 +525,8 @@ impl Modulus {
     ///
     /// Aborts if any of the values in the vector is >= p in debug mode.
     pub fn neg_vec(&self, a: &mut [u64]) {
-        self.arch
-            .dispatch(|| a.iter_mut().for_each(|ai| *ai = self.neg(*ai)))
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        self.arch.dispatch(|| verified::neg_vec(a, self.p))
     }
 
     /// Modular negation of a vector in place in variable time.
@@ -554,10 +536,9 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being negated.
     pub unsafe fn neg_vec_vt(&self, a: &mut [u64]) {
-        self.arch.dispatch(|| {
-            a.iter_mut()
-                .for_each(|ai| *ai = unsafe { self.neg_vt(*ai) })
-        })
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        self.arch
+            .dispatch(|| unsafe { verified::neg_vec_vt(a, self.p) })
     }
 
     /// Modular exponentiation in variable time.
@@ -1288,6 +1269,183 @@ mod tests {
         );
     }
 
+    #[test]
+    fn subtraction_negation_exhaust_small_moduli() {
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..p {
+                let expected = (-(a as i128)).rem_euclid(p as i128) as u64;
+                assert_eq!(modulus.neg(a), expected);
+                assert_eq!(unsafe { modulus.neg_vt(a) }, expected);
+                assert_eq!(modulus.neg(modulus.neg(a)), a);
+                for b in 0..p {
+                    let expected = (a as i128 - b as i128).rem_euclid(p as i128) as u64;
+                    assert_eq!(modulus.sub(a, b), expected);
+                    assert_eq!(unsafe { super::verified::sub_mod_vt(a, b, p) }, expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtraction_negation_boundaries_and_const_kernels() {
+        use super::verified;
+        const P: u64 = (1 << 62) - 1;
+        const RESULTS: [u64; 8] = [
+            verified::sub_mod(0, P - 1, P),
+            unsafe { verified::sub_mod_vt(0, P - 1, P) },
+            verified::sub_mod(P - 1, P - 1, P),
+            unsafe { verified::sub_mod_vt(P - 1, P - 1, P) },
+            verified::neg_mod(0, P),
+            unsafe { verified::neg_mod_vt(0, P) },
+            verified::neg_mod(P - 1, P),
+            unsafe { verified::neg_mod_vt(P - 1, P) },
+        ];
+        assert_eq!(RESULTS, [1, 1, 0, 0, 0, 0, 1, 1]);
+
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let values = [0, 1, p / 2, p - 2, p - 1];
+            for a in values {
+                let expected = (-(a as i128)).rem_euclid(p as i128) as u64;
+                assert_eq!(modulus.neg(a), expected);
+                assert_eq!(unsafe { modulus.neg_vt(a) }, expected);
+                for b in values {
+                    let expected = (a as i128 - b as i128).rem_euclid(p as i128) as u64;
+                    assert_eq!(modulus.sub(a, b), expected);
+                    assert_eq!(unsafe { verified::sub_mod_vt(a, b, p) }, expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtraction_negation_vectors_cover_blocks_tails_and_slices() {
+        for p in [
+            2,
+            3,
+            4,
+            17,
+            65536,
+            65537,
+            1 << 61,
+            (1 << 62) - 2,
+            (1 << 62) - 1,
+        ] {
+            let modulus = Modulus::new(p).unwrap();
+            let values = [0, 1, p - 1, p / 2, p - 2];
+            for len in [0, 1, 2, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64, 65, 129] {
+                let original: Vec<_> = values.into_iter().cycle().take(len).collect();
+                let rhs: Vec<_> = values.into_iter().rev().cycle().take(len).collect();
+                let differences: Vec<_> = original
+                    .iter()
+                    .zip(&rhs)
+                    .map(|(&a, &b)| (a as i128 - b as i128).rem_euclid(p as i128) as u64)
+                    .collect();
+                let negatives: Vec<_> = original
+                    .iter()
+                    .map(|&a| (-(a as i128)).rem_euclid(p as i128) as u64)
+                    .collect();
+
+                for variable_time in [false, true] {
+                    let mut buffer = vec![u64::MAX; len + 2];
+                    buffer[1..=len].copy_from_slice(&original);
+                    if variable_time {
+                        unsafe {
+                            modulus.sub_vec_vt(&mut buffer[1..=len], &rhs);
+                        }
+                    } else {
+                        modulus.sub_vec(&mut buffer[1..=len], &rhs);
+                    }
+                    assert_eq!(&buffer[1..=len], differences);
+                    assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+
+                    buffer[1..=len].copy_from_slice(&original);
+                    if variable_time {
+                        unsafe {
+                            modulus.neg_vec_vt(&mut buffer[1..=len]);
+                        }
+                    } else {
+                        modulus.neg_vec(&mut buffer[1..=len]);
+                    }
+                    assert_eq!(&buffer[1..=len], negatives);
+                    assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn subtraction_negation_reject_invalid_inputs() {
+        let modulus = Modulus::new(17).unwrap();
+        for invalid in [17, 18, u64::MAX] {
+            assert!(std::panic::catch_unwind(|| modulus.sub(invalid, 0)).is_err());
+            assert!(std::panic::catch_unwind(|| modulus.sub(0, invalid)).is_err());
+            assert!(std::panic::catch_unwind(|| modulus.neg(invalid)).is_err());
+            assert!(std::panic::catch_unwind(|| unsafe { modulus.neg_vt(invalid) }).is_err());
+            for index in [0, 15, 16] {
+                let mut invalid_values = [0; 17];
+                invalid_values[index] = invalid;
+                for variable_time in [false, true] {
+                    assert!(
+                        std::panic::catch_unwind(|| {
+                            let mut a = invalid_values;
+                            if variable_time {
+                                unsafe {
+                                    modulus.sub_vec_vt(&mut a, &[0; 17]);
+                                }
+                            } else {
+                                modulus.sub_vec(&mut a, &[0; 17]);
+                            }
+                        })
+                        .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| {
+                            let mut a = [0; 17];
+                            if variable_time {
+                                unsafe {
+                                    modulus.sub_vec_vt(&mut a, &invalid_values);
+                                }
+                            } else {
+                                modulus.sub_vec(&mut a, &invalid_values);
+                            }
+                        })
+                        .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| {
+                            let mut a = invalid_values;
+                            if variable_time {
+                                unsafe {
+                                    modulus.neg_vec_vt(&mut a);
+                                }
+                            } else {
+                                modulus.neg_vec(&mut a);
+                            }
+                        })
+                        .is_err()
+                    );
+                }
+            }
+        }
+        for (left, right) in [(0, 1), (1, 0), (16, 17), (17, 16)] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    modulus.sub_vec(&mut vec![0; left], &vec![0; right]);
+                })
+                .is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(|| unsafe {
+                    modulus.sub_vec_vt(&mut vec![0; left], &vec![0; right]);
+                })
+                .is_err()
+            );
+        }
+    }
+
     // Utility functions for the proptests.
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
@@ -1328,8 +1486,9 @@ mod tests {
         #[test]
         fn neg(p in valid_moduli(), mut a: u64) {
             a = p.reduce(a);
-            prop_assert_eq!(p.neg(a), (*p - a) % *p);
-            unsafe { prop_assert_eq!(p.neg_vt(a), (*p - a) % *p) }
+            let expected = (-(a as i128)).rem_euclid(*p as i128) as u64;
+            prop_assert_eq!(p.neg(a), expected);
+            unsafe { prop_assert_eq!(p.neg_vt(a), expected) }
 
             #[cfg(debug_assertions)]
             {
@@ -1364,7 +1523,9 @@ mod tests {
         fn sub(p in valid_moduli(), mut a: u64, mut b: u64) {
             a = p.reduce(a);
             b = p.reduce(b);
-            prop_assert_eq!(p.sub(a, b), (a + *p - b) % *p);
+            let expected = (a as i128 - b as i128).rem_euclid(*p as i128) as u64;
+            prop_assert_eq!(p.sub(a, b), expected);
+            prop_assert_eq!(unsafe { super::verified::sub_mod_vt(a, b, *p) }, expected);
 
             #[cfg(debug_assertions)]
             {
@@ -1489,10 +1650,10 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.sub_vec(&mut a, &b);
-            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| (*ci as i128 - *bi as i128).rem_euclid(*p as i128) as u64).collect_vec());
             a.clone_from(&c);
             unsafe { p.sub_vec_vt(&mut a, &b) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.sub(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| (*ci as i128 - *bi as i128).rem_euclid(*p as i128) as u64).collect_vec());
         }
 
         #[test]
@@ -1573,10 +1734,10 @@ mod tests {
             p.reduce_vec(&mut a);
             let mut b = a.clone();
             p.neg_vec(&mut b);
-            prop_assert_eq!(b.clone(), a.iter().map(|ai| p.neg(*ai)).collect_vec());
+            prop_assert_eq!(b.clone(), a.iter().map(|ai| (-(*ai as i128)).rem_euclid(*p as i128) as u64).collect_vec());
             b.clone_from(&a);
             unsafe { p.neg_vec_vt(&mut b); }
-            prop_assert_eq!(b, a.iter().map(|ai| p.neg(*ai)).collect_vec());
+            prop_assert_eq!(b, a.iter().map(|ai| (-(*ai as i128)).rem_euclid(*p as i128) as u64).collect_vec());
         }
 
         #[test]

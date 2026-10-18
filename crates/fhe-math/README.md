@@ -63,6 +63,8 @@ precondition required by the optimized reducers for valid moduli.
 All canonical `reduce*` kernels are also proved, including signed inputs,
 optimized and variable-time variants, all vector loops, and the NTT's
 `reduce3` helpers: results are the canonical residues below the modulus.
+Modular subtraction and negation have the same canonical-result guarantee,
+including their variable-time scalar paths and all four in-place vector loops.
 The ordinary Rust implementation shares these verified functions.
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations
