@@ -1,43 +1,168 @@
-//! Optimized primes generated as in the NFLlib library.
+//! Prime search and optimization eligibility for the modular arithmetic layer.
 
-use fhe_util::is_prime;
+#![cfg_attr(verus_keep_ghost, allow(unused_imports))]
+
+use super::backend::{Backend, Runtime};
+#[cfg(verus_keep_ghost)]
+use super::verified::inversion::prime;
+#[cfg(verus_keep_ghost)]
+use vstd::arithmetic::div_mod::{
+    lemma_fundamental_div_mod, lemma_fundamental_div_mod_converse_mod, lemma_mod_bound,
+    lemma_mod_sub_multiples_vanish, lemma_small_mod,
+};
+#[cfg(verus_keep_ghost)]
+use vstd::arithmetic::mul::{
+    lemma_mul_inequality, lemma_mul_is_commutative, lemma_mul_strict_inequality_converse,
+};
+#[cfg(verus_keep_ghost)]
+use vstd::arithmetic::power2::{lemma_pow2_strictly_increases, lemma2_to64, pow2};
+#[cfg(verus_keep_ghost)]
+use vstd::bits::lemma_u64_shl_is_mul;
+use vstd::prelude::*;
 
 #[doc(inline)]
 pub use super::verified::supports_opt;
 
-/// Generate a `num_bits`-bit prime, congruent to 1 mod `modulo`, strictly
-/// smaller than `upper_bound`. Note that `num_bits` must belong to (10..=62),
-/// and upper_bound must be <= 1 << num_bits.
+verus! {
+
+/// Supported search parameters; a small upper bound may describe an empty range.
+pub open spec fn valid_prime_search(num_bits: usize, modulo: u64, upper_bound: u64) -> bool {
+    &&& 10 <= num_bits <= 62
+    &&& 2 <= modulo
+    &&& upper_bound <= pow2(num_bits as nat)
+}
+
+/// A prime in the requested bit-width interval and residue class.
+pub open spec fn eligible_prime(p: u64, num_bits: usize, modulo: u64, upper_bound: u64) -> bool {
+    &&& valid_prime_search(num_bits, modulo, upper_bound)
+    &&& pow2((num_bits - 1) as nat) <= p < upper_bound
+    &&& p % modulo == 1
+    &&& prime(p as int)
+}
+
+/// Return the greatest eligible prime, or None exactly when none exists.
+pub open spec fn prime_search_result(
+    result: Option<u64>, num_bits: usize, modulo: u64, upper_bound: u64,
+) -> bool {
+    match result {
+        Some(p) => eligible_prime(p, num_bits, modulo, upper_bound)
+            && forall|q: u64| #[trigger] eligible_prime(q, num_bits, modulo, upper_bound) ==> q <= p,
+        None => forall|q: u64| !#[trigger] eligible_prime(q, num_bits, modulo, upper_bound),
+    }
+}
+
+/// Two distinct integers in the same residue class are at least one step apart.
+proof fn residue_spacing(a: int, b: int, modulo: int)
+    requires 1 < modulo, a < b, a % modulo == 1, b % modulo == 1,
+    ensures a + modulo <= b,
+{
+    lemma_fundamental_div_mod(a, modulo);
+    lemma_fundamental_div_mod(b, modulo);
+    let qa = a / modulo;
+    let qb = b / modulo;
+    lemma_mul_is_commutative(qa, modulo);
+    lemma_mul_is_commutative(qb, modulo);
+    lemma_mul_strict_inequality_converse(qa, qb, modulo);
+    lemma_mul_inequality(qa + 1, qb, modulo);
+    assert((qa + 1) * modulo == qa * modulo + modulo) by (nonlinear_arith);
+}
+
+/// Generate the greatest `num_bits`-bit prime congruent to 1 modulo `modulo`
+/// and strictly smaller than `upper_bound`.
+///
+/// Returns `None` if no such prime exists, or if `num_bits` is outside
+/// `10..=62`, `modulo < 2`, or `upper_bound > 2^num_bits`. Empty ranges,
+/// including `upper_bound == 0`, also return `None`.
 #[must_use]
-pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> Option<u64> {
-    if !(10..=62).contains(&num_bits) {
-        None
-    } else {
-        debug_assert!(
-            (1u64 << num_bits) >= upper_bound,
-            "upper_bound larger than number of bits"
+pub fn generate_prime(num_bits: usize, modulo: u64, upper_bound: u64) -> (result: Option<u64>)
+    ensures prime_search_result(result, num_bits, modulo, upper_bound),
+{
+    generate_prime_with_backend::<Runtime>(num_bits, modulo, upper_bound)
+}
+
+// Only primality detection uses the existing trusted runtime contract. The
+// public wrapper, validation, alignment, and entire search loop are verified.
+fn generate_prime_with_backend<B: Backend>(
+    num_bits: usize, modulo: u64, upper_bound: u64,
+) -> (result: Option<u64>)
+    ensures prime_search_result(result, num_bits, modulo, upper_bound),
+{
+    if !(10..=62).contains(&num_bits) || modulo < 2 {
+        return None;
+    }
+    proof {
+        lemma2_to64();
+        lemma_pow2_strictly_increases(num_bits as nat, 64);
+        lemma_pow2_strictly_increases((num_bits - 1) as nat, num_bits as nat);
+        lemma_pow2_strictly_increases(0, (num_bits - 1) as nat);
+        lemma_u64_shl_is_mul(1, num_bits as u64);
+        lemma_u64_shl_is_mul(1, (num_bits - 1) as u64);
+    }
+    let limit = 1u64 << num_bits;
+    let lower = 1u64 << (num_bits - 1);
+    if upper_bound > limit || upper_bound <= lower {
+        return None;
+    }
+
+    // Round down directly to residue 1 instead of scanning every intervening
+    // integer. The initial candidate can be below the requested bit width.
+    let start = upper_bound - 1;
+    let gap = (start - 1) % modulo;
+    proof {
+        lemma_mod_bound(start as int - 1, modulo as int);
+        lemma_fundamental_div_mod(start as int - 1, modulo as int);
+        assert(gap <= start - 1) by (nonlinear_arith)
+            requires start >= 1, modulo >= 2,
+                gap == (start - 1) % (modulo as int);
+    }
+    let mut candidate = start - gap;
+    proof {
+        lemma_mul_is_commutative((start as int - 1) / modulo as int, modulo as int);
+        lemma_fundamental_div_mod_converse_mod(
+            candidate as int, modulo as int, (start as int - 1) / modulo as int, 1,
         );
-
-        let leading_zeros = (64 - num_bits) as u32;
-
-        let mut tentative_prime = upper_bound - 1;
-        while tentative_prime % modulo != 1 && tentative_prime.leading_zeros() == leading_zeros {
-            tentative_prime -= 1
-        }
-
-        while tentative_prime.leading_zeros() == leading_zeros
-            && !is_prime(tentative_prime)
-            && tentative_prime >= modulo
-        {
-            tentative_prime -= modulo
-        }
-
-        if tentative_prime.leading_zeros() == leading_zeros && is_prime(tentative_prime) {
-            Some(tentative_prime)
-        } else {
-            None
+        assert forall|q: u64| #[trigger] eligible_prime(q, num_bits, modulo, upper_bound)
+            implies q <= candidate by {
+            if candidate < q {
+                residue_spacing(candidate as int, q as int, modulo as int);
+            }
         }
     }
+
+    while candidate >= lower
+        invariant
+            valid_prime_search(num_bits, modulo, upper_bound),
+            lower == pow2((num_bits - 1) as nat), 2 <= lower,
+            candidate < upper_bound,
+            candidate % modulo == 1,
+            forall|q: u64| #[trigger] eligible_prime(q, num_bits, modulo, upper_bound) ==> q <= candidate,
+        decreases candidate,
+    {
+        if B::is_prime(candidate) {
+            return Some(candidate);
+        }
+        let ghost previous = candidate;
+        proof {
+            if candidate < modulo {
+                lemma_small_mod(candidate as nat, modulo as nat);
+            }
+            lemma_mod_sub_multiples_vanish(candidate as int, modulo as int);
+        }
+        candidate -= modulo;
+        proof {
+            assert forall|q: u64| #[trigger] eligible_prime(q, num_bits, modulo, upper_bound)
+                implies q <= candidate by {
+                if candidate < q {
+                    if q < previous {
+                        residue_spacing(q as int, previous as int, modulo as int);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 }
 
 #[cfg(test)]
@@ -153,11 +278,84 @@ mod tests {
     }
 
     #[test]
-    fn upper_bound() {
-        #[cfg(debug_assertions)]
-        assert!(
-            std::panic::catch_unwind(|| generate_prime(62, 2 * 1048576, (1 << 62) + 1)).is_err()
-        );
+    fn invalid_searches_and_empty_intervals() {
+        for bits in [0, 1, 9, 63, 64, usize::MAX] {
+            assert_eq!(generate_prime(bits, 2, u64::MAX), None);
+        }
+        for bits in 10..=62 {
+            let limit = 1u64 << bits;
+            let lower = limit / 2;
+            for modulo in [0, 1] {
+                assert_eq!(generate_prime(bits, modulo, limit), None);
+            }
+            for bound in [0, 1, lower - 1, lower, limit + 1, u64::MAX] {
+                assert_eq!(generate_prime(bits, 2, bound), None);
+            }
+            for modulo in [limit, 1 << 63, u64::MAX] {
+                assert_eq!(generate_prime(bits, modulo, limit), None);
+            }
+        }
+    }
+
+    fn trial_prime(n: u64) -> bool {
+        if n < 2 {
+            return false;
+        }
+        let mut divisor = 2;
+        while divisor <= n / divisor {
+            if n.is_multiple_of(divisor) {
+                return false;
+            }
+            divisor += 1;
+        }
+        true
+    }
+
+    #[test]
+    fn prime_search_matches_exhaustive_trial_division() {
+        // Independent ascending oracle: as the exclusive bound increases,
+        // remember the latest eligible prime, including gaps with no solution.
+        for bits in [10, 11] {
+            let lower = 1u64 << (bits - 1);
+            let limit = 1u64 << bits;
+            let primes: Vec<_> = (lower..limit).filter(|p| trial_prime(*p)).collect();
+            for modulo in (0..=64).chain([127, 256, 511, 512, 513, 1024, u64::MAX]) {
+                let mut expected = None;
+                for bound in 0..=limit {
+                    if bound > lower {
+                        let candidate = bound - 1;
+                        if modulo >= 2 && candidate % modulo == 1 && primes.contains(&candidate) {
+                            expected = Some(candidate);
+                        }
+                    }
+                    assert_eq!(
+                        generate_prime(bits, modulo, bound),
+                        expected,
+                        "bits={bits}, modulo={modulo}, bound={bound}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prime_search_alignment_and_strict_bounds() {
+        assert_eq!(generate_prime(10, 2, 521), None);
+        assert_eq!(generate_prime(10, 2, 522), Some(521));
+        assert_eq!(generate_prime(10, 500, 1024), None);
+        assert_eq!(generate_prime(10, 510, 1024), Some(1021));
+        assert_eq!(generate_prime(10, 1020, 1024), Some(1021));
+        assert_eq!(generate_prime(10, 1021, 1024), None);
+
+        // One eligible candidate at a large distance from the upper bound.
+        // Arithmetic alignment avoids a linear scan across that distance.
+        let prime = 4611686018326724609;
+        assert_eq!(generate_prime(62, prime - 1, 1 << 62), Some(prime));
+        assert_eq!(generate_prime(62, prime - 1, prime), None);
+
+        // The only candidate in each interval is composite (divisible by 3).
+        assert_eq!(generate_prime(62, (1 << 62) - 2, 1 << 62), None);
+        assert_eq!(generate_prime(62, 1 << 61, 1 << 62), None);
     }
 
     #[test]

@@ -63,6 +63,12 @@ prevent unchecked mutation. The internal runtime backend retains explicit
 trusted contracts for distribution setup, sampling, CPU dispatch, and primality;
 its implementation and those dependencies are not formally verified.
 
+`zq/primes.rs` proves `generate_prime` returns the greatest eligible prime,
+with the requested bit width, strict upper bound, and congruence. It proves
+search termination and exact `None` cases under the same trusted primality
+contract. Invalid inputs return `None` consistently, and arithmetic alignment
+replaces the initial linear scan.
+
 Verus proves conditional selection, then one-subtraction reduction, then
 modular addition using those helpers, including the variable-time `reduce1_vt`
 and `add_vt` paths. It also proves all four scalar `lazy_reduce*` kernels and

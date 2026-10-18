@@ -69,6 +69,11 @@ by `fhe-util`, including the checked public boundaries.
 those packing contracts across the crate boundary to prove modulus widths,
 serialized lengths, and encoding/decoding round trips.
 
+[`zq/primes.rs`](../crates/fhe-math/src/zq/primes.rs) verifies the public
+`generate_prime` search, including input validation, candidate alignment,
+termination, maximality, and the exact absence of eligible primes on `None`.
+It reuses the existing runtime primality contract.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -105,7 +110,7 @@ and patch its `fhe-util` dependency to the extracted package, then run the same
 verification command there. This does not require files from the original checkout.
 
 The expected project results are `65 verified, 0 errors` for `fhe-util` and
-`239 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`238`
+`246 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`245`
 elsewhere). Counts include proof lemmas, local assertions, and loops, not
 just API functions. The first run also checks the pinned `vstd` dependency.
 On x86 Linux, check both reducer implementations:
@@ -227,6 +232,43 @@ remain in checked code. [`zq/clients.rs`](../crates/fhe-math/src/zq/clients.rs)
 checks composition through the concrete public alias: construction, cloning,
 equality, dereferencing, scalar and vector operations, and optimization selection.
 These clients supply no Barrett metadata assumptions.
+
+### Prime generation
+
+`generate_prime(num_bits, modulo, upper_bound)` has no caller preconditions.
+It returns the greatest prime `p` satisfying
+`2^(num_bits - 1) <= p < upper_bound` and `p % modulo == 1`. Supported searches
+have `10 <= num_bits <= 62`, `modulo >= 2`, and
+`upper_bound <= 2^num_bits`. `None` means no eligible prime exists for a
+supported search; unsupported parameters also return `None`. Zero and other
+empty upper bounds return `None` without subtraction or division errors.
+Oversized upper bounds now return `None` in both debug and release builds,
+replacing the former debug-only assertion.
+
+The public `valid_prime_search`, `eligible_prime`, and `prime_search_result`
+specifications describe the complete result. Successful results have the exact
+bit width, satisfy the strict upper bound and congruence, and are maximal.
+The result contract rules out a false `None` when any eligible prime exists.
+
+The initial candidate is `start - ((start - 1) % modulo)`, where
+`start = upper_bound - 1`. The proof checks every subtraction and shows this
+is the largest candidate below the upper bound in residue class one. This
+replaces the previous one-by-one alignment loop, avoiding a potentially large
+scan when `modulo` is large. Subsequent candidates still decrease by `modulo`,
+preserving the primes selected by valid existing callers.
+
+A proved residue-spacing lemma shows that distinct candidates in the same
+class differ by at least `modulo`. The search invariant states that every
+eligible prime is at most the current candidate. Each failed primality check
+and subtraction preserves that invariant; returning a prime proves maximality,
+and leaving the bit-width interval proves absence. The candidate strictly
+decreases, proving loop termination provided each primality check returns.
+
+Only primality detection uses the existing `Backend::is_prime` assumption.
+Both the public wrapper and generic search body are verified; no new trusted
+implementation or number-theoretic axiom is introduced. The concrete public
+API also has a proof client that feeds its result to `Modulus::new` and
+preserves the complete prime-search contract.
 
 ### Lazy reduction
 
@@ -634,6 +676,15 @@ proofs do not yet cover polynomial/protobuf serialization, RNS row concatenation
 conversion, or decode resource limits.
 
 ## Tests and CI
+
+Prime-search tests compare every upper bound for 10- and 11-bit searches
+against an independent trial-division oracle across small moduli and selected
+large steps. They also cover invalid parameters, empty ranges, strict bounds,
+large-step alignment and exhaustion, and the existing NFL prime sequence.
+Invalid-input and boundary cases run in release builds as well.
+Disposable mutation checks confirmed that Verus rejects an unjustified `None`,
+a wrong returned prime, and an incorrect candidate step.
+
 
 The public-wrapper regression clients are checked by the same Cargo Verus
 command. Runtime tests also compare cloned metadata, equality and dereferencing,

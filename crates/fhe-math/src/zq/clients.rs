@@ -5,7 +5,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)] // Cargo Verus also checks an erased Rust view.
 
+use super::primes::{generate_prime, prime_search_result};
 use super::{Modulus, verified::MODULUS_LIMIT};
+use vstd::arithmetic::power2::{lemma_pow2_strictly_increases, lemma2_to64, lemma2_to64_rest};
 use vstd::prelude::*;
 
 verus! {
@@ -43,6 +45,28 @@ fn optimized_client(p: u64, a: u64, b: u64) -> (r: u64)
         modulus.mul_opt(a, b)
     } else {
         modulus.mul(a, b)
+    }
+}
+
+fn prime_search_client(num_bits: usize, modulo: u64, upper_bound: u64) -> (r: Option<Modulus>)
+    ensures match r {
+        Some(m) => prime_search_result(Some(m.value()), num_bits, modulo, upper_bound),
+        None => prime_search_result(None, num_bits, modulo, upper_bound),
+    },
+{
+    match generate_prime(num_bits, modulo, upper_bound) {
+        None => None,
+        Some(p) => {
+            proof {
+                lemma2_to64();
+                lemma2_to64_rest();
+                lemma_pow2_strictly_increases(0, (num_bits - 1) as nat);
+                if num_bits < 62 {
+                    lemma_pow2_strictly_increases(num_bits as nat, 62);
+                }
+            }
+            Some(Modulus::new(p).unwrap())
+        },
     }
 }
 
