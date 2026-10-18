@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Scalar arithmetic proofs
+    name: Arithmetic proofs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -30,7 +30,7 @@ jobs:
           toolchain: '1.98.1'
       - name: Install Verus
         working-directory: ${{ runner.temp }}
-        # Keep the release and checksum aligned with vstd in Cargo.toml.
+        # Pin the standalone verifier; it uses its own bundled vstd for proofs.
         run: |
           curl --fail --silent --show-error --location --retry 3 \
             --output verus.zip \
@@ -38,7 +38,9 @@ jobs:
           echo '624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0  verus.zip' | sha256sum -c -
           unzip -q verus.zip
           echo "$PWD/verus-x86-linux" >> "$GITHUB_PATH"
-      - name: Verify selection, reduction, and addition
+      - name: Verify arithmetic and vector reduction (fallback)
         run: |
           verus --version
-          verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
+          verus --crate-type lib --edition=2024 --no-cheating -C target-feature=-avx2 crates/fhe-math/src/zq/verified.rs
+      - name: Verify variable-time branch implementation (AVX2)
+        run: verus --crate-type lib --edition=2024 --no-cheating -C target-feature=+avx2 crates/fhe-math/src/zq/verified.rs

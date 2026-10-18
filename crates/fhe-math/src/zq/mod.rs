@@ -109,7 +109,7 @@ impl Modulus {
     #[must_use]
     pub const unsafe fn add_vt(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
-        unsafe { Self::reduce1_vt(a + b, self.p) }
+        unsafe { verified::add_mod_vt(a, b, self.p) }
     }
 
     /// Performs the modular subtraction of a and b in constant time.
@@ -677,32 +677,22 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
-    #[cfg(any(target_os = "macos", target_feature = "avx2"))]
+    #[inline]
     pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
-        if x >= p { x - p } else { x }
-    }
+        let r = unsafe { verified::reduce1_vt(x, p) };
+        debug_assert!(r == x % p);
 
-    #[cfg(all(not(target_os = "macos"), not(target_feature = "avx2")))]
-    #[inline]
-    pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> u64 {
-        Self::reduce1(x, p)
+        r
     }
 
     /// Lazy modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
     #[must_use]
     pub const fn lazy_reduce_u128(&self, a: u128) -> u64 {
-        let a_lo = a as u64;
-        let a_hi = (a >> 64) as u64;
-        let p_lo_lo = ((a_lo as u128) * (self.barrett_lo as u128)) >> 64;
-        let p_hi_lo = (a_hi as u128) * (self.barrett_lo as u128);
-        let p_lo_hi = (a_lo as u128) * (self.barrett_hi as u128);
-
-        let q = ((p_lo_hi + p_hi_lo + p_lo_lo) >> 64) + (a_hi as u128) * (self.barrett_hi as u128);
-        let r = (a - q * (self.p as u128)) as u64;
+        let r = verified::lazy_reduce_u128(a, self.p, self.barrett_hi, self.barrett_lo);
 
         debug_assert!((r as u128) < 2 * (self.p as u128));
         debug_assert!(r % self.p == (a % (self.p as u128)) as u64);
@@ -714,11 +704,7 @@ impl Modulus {
     /// The output is in the interval [0, 2 * p).
     #[must_use]
     pub const fn lazy_reduce(&self, a: u64) -> u64 {
-        let p_lo_lo = ((a as u128) * (self.barrett_lo as u128)) >> 64;
-        let p_lo_hi = (a as u128) * (self.barrett_hi as u128);
-
-        let q = (p_lo_hi + p_lo_lo) >> 64;
-        let r = (a as u128 - q * (self.p as u128)) as u64;
+        let r = verified::lazy_reduce(a, self.p, self.barrett_hi, self.barrett_lo);
 
         debug_assert!((r as u128) < 2 * (self.p as u128));
         debug_assert!(r % self.p == a % self.p);
@@ -729,13 +715,20 @@ impl Modulus {
     /// Lazy optimized modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
     ///
-    /// Aborts if the input is >= p ^ 2 in debug mode.
+    /// Requires a modulus supporting optimized reduction and an input < p ^ 2.
+    /// Aborts if either condition is violated in debug mode.
     #[must_use]
     pub const fn lazy_reduce_opt_u128(&self, a: u128) -> u64 {
+        debug_assert!(self.supports_opt);
         debug_assert!(a < (self.p as u128) * (self.p as u128));
 
-        let q = (((self.barrett_lo as u128) * (a >> 64)) + (a << self.leading_zeros)) >> 64;
-        let r = (a - q * (self.p as u128)) as u64;
+        let r = verified::lazy_reduce_opt_u128(
+            a,
+            self.p,
+            self.barrett_hi,
+            self.barrett_lo,
+            self.leading_zeros,
+        );
 
         debug_assert!((r as u128) < 2 * (self.p as u128));
         debug_assert!(r % self.p == (a % (self.p as u128)) as u64);
@@ -745,9 +738,10 @@ impl Modulus {
 
     /// Lazy optimized modular reduction of a in constant time.
     /// The output is in the interval [0, 2 * p).
+    /// Requires a modulus supporting optimized reduction.
     const fn lazy_reduce_opt(&self, a: u64) -> u64 {
-        let q = a >> (64 - self.leading_zeros);
-        let r = ((a as u128) - (q as u128) * (self.p as u128)) as u64;
+        debug_assert!(self.supports_opt);
+        let r = verified::lazy_reduce_opt(a, self.p, self.leading_zeros);
 
         debug_assert!((r as u128) < 2 * (self.p as u128));
         debug_assert!(r % self.p == a % self.p);
@@ -759,9 +753,21 @@ impl Modulus {
     /// The output coefficients are in the interval [0, 2 * p).
     pub fn lazy_reduce_vec(&self, a: &mut [u64]) {
         if self.supports_opt {
-            a.iter_mut().for_each(|ai| *ai = self.lazy_reduce_opt(*ai))
+            verified::lazy_reduce_vec::<true>(
+                a,
+                self.p,
+                self.barrett_hi,
+                self.barrett_lo,
+                self.leading_zeros,
+            );
         } else {
-            a.iter_mut().for_each(|ai| *ai = self.lazy_reduce(*ai))
+            verified::lazy_reduce_vec::<false>(
+                a,
+                self.p,
+                self.barrett_hi,
+                self.barrett_lo,
+                self.leading_zeros,
+            );
         }
     }
 
@@ -851,9 +857,10 @@ mod tests {
     fn reduce1_exhausts_small_moduli() {
         for p in 1..=64 {
             for x in 0..2 * p {
-                let result = Modulus::reduce1(x, p);
-                assert!(result < p);
-                assert_eq!(result, x % p);
+                for result in [Modulus::reduce1(x, p), unsafe { Modulus::reduce1_vt(x, p) }] {
+                    assert!(result < p);
+                    assert_eq!(result, x % p);
+                }
             }
         }
     }
@@ -861,14 +868,17 @@ mod tests {
     #[test]
     fn reduce1_handles_wide_moduli_and_remains_const() {
         const REDUCED: u64 = Modulus::reduce1(u64::MAX - 2, (1 << 63) - 1);
+        const REDUCED_VT: u64 = unsafe { Modulus::reduce1_vt(u64::MAX - 2, (1 << 63) - 1) };
         assert_eq!(REDUCED, (1 << 63) - 2);
+        assert_eq!(REDUCED_VT, (1 << 63) - 2);
 
         // Include the wider helper domain used by the NTT with p = 2*q.
         for p in [1, 2, 3, (1 << 62) - 1, 1 << 62, (1 << 63) - 1] {
             for x in [0, p - 1, p, 2 * p - 1] {
-                let result = Modulus::reduce1(x, p);
-                assert!(result < p);
-                assert_eq!(result, x % p);
+                for result in [Modulus::reduce1(x, p), unsafe { Modulus::reduce1_vt(x, p) }] {
+                    assert!(result < p);
+                    assert_eq!(result, x % p);
+                }
             }
         }
     }
@@ -880,9 +890,10 @@ mod tests {
             let modulus = Modulus::new(p).unwrap();
             for a in 0..p {
                 for b in 0..p {
-                    let result = modulus.add(a, b);
-                    assert!(result < p);
-                    assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+                    for result in [modulus.add(a, b), unsafe { modulus.add_vt(a, b) }] {
+                        assert!(result < p);
+                        assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+                    }
                 }
             }
         }
@@ -891,7 +902,9 @@ mod tests {
     #[test]
     fn add_handles_boundaries_and_remains_const() {
         const SUM: u64 = super::verified::add_mod(4, 6, 7);
+        const SUM_VT: u64 = unsafe { super::verified::add_mod_vt(4, 6, 7) };
         assert_eq!(SUM, 3);
+        assert_eq!(SUM_VT, 3);
 
         for p in [
             2,
@@ -911,11 +924,147 @@ mod tests {
                 (p - 1, p - 1),
                 (p / 2, p - p / 2),
             ] {
-                let result = modulus.add(a, b);
-                assert!(result < p);
-                assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+                for result in [modulus.add(a, b), unsafe { modulus.add_vt(a, b) }] {
+                    assert!(result < p);
+                    assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+                }
             }
         }
+    }
+
+    // Include powers of two, maximal moduli of each width, and both sides of
+    // the strict NFL inequality used to select the optimized implementation.
+    fn lazy_reduction_boundary_moduli() -> Vec<u64> {
+        use num_bigint::BigUint;
+        use num_traits::ToPrimitive;
+
+        let mut moduli: Vec<u64> = (2..=64).collect();
+        for bits in 2usize..=62 {
+            let upper = 1u64 << bits;
+            moduli.extend([upper / 2, upper / 2 + 1, upper - 1]);
+            let t = BigUint::from(1u64) << (64 - bits);
+            let cube = &t * &t * &t;
+            let threshold = (((&cube + 1u64) << 64usize) / (&cube * (&t + 1u64)))
+                .to_u64()
+                .unwrap();
+            for p in [threshold, threshold + 1] {
+                if (2..upper).contains(&p) {
+                    moduli.push(p);
+                }
+            }
+        }
+        moduli.sort_unstable();
+        moduli.dedup();
+        moduli
+    }
+
+    #[test]
+    fn lazy_reducers_cover_boundaries_and_optimization_thresholds() {
+        let mut optimized_count = 0;
+        let mut general_count = 0;
+        for p in lazy_reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let square = (p as u128) * (p as u128);
+            let words = [0, 1, p - 1, p, 2 * p - 1, 2 * p, u64::MAX];
+            for a in words {
+                let r = modulus.lazy_reduce(a);
+                assert!(r < 2 * p, "p={p}, a={a}");
+                assert_eq!(r % p, a % p, "p={p}, a={a}");
+                if modulus.supports_opt {
+                    let r = modulus.lazy_reduce_opt(a);
+                    assert!(r < 2 * p, "p={p}, a={a}");
+                    assert_eq!(r % p, a % p, "p={p}, a={a}");
+                }
+            }
+            for a in [
+                0,
+                1,
+                p as u128 - 1,
+                p as u128,
+                2 * p as u128 - 1,
+                (1u128 << 64) - 1,
+                1u128 << 64,
+                (1u128 << 64) + 1,
+                square / 2,
+                square - p as u128,
+                square - 1,
+                square,
+                u128::MAX - p as u128,
+                u128::MAX,
+            ] {
+                let r = modulus.lazy_reduce_u128(a);
+                assert!(r < 2 * p, "p={p}, a={a}");
+                assert_eq!(r as u128 % p as u128, a % p as u128, "p={p}, a={a}");
+                if modulus.supports_opt && a < square {
+                    let r = modulus.lazy_reduce_opt_u128(a);
+                    assert!(r < 2 * p, "p={p}, a={a}");
+                    assert_eq!(r as u128 % p as u128, a % p as u128, "p={p}, a={a}");
+                }
+            }
+            for len in [0, 1, 3, 16, 17, 65] {
+                let original: Vec<_> = words.into_iter().cycle().take(len).collect();
+                let mut reduced = original.clone();
+                modulus.lazy_reduce_vec(&mut reduced);
+                assert_eq!(reduced.len(), original.len());
+                for (a, r) in original.into_iter().zip(reduced) {
+                    assert!(r < 2 * p, "p={p}, a={a}");
+                    assert_eq!(r % p, a % p, "p={p}, a={a}");
+                }
+            }
+            if modulus.supports_opt {
+                optimized_count += 1;
+            } else {
+                general_count += 1;
+            }
+        }
+        assert!(optimized_count > 0 && general_count > 0);
+    }
+
+    #[test]
+    fn lazy_reducers_exhaust_small_inputs() {
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..4 * p {
+                for r in [modulus.lazy_reduce(a), modulus.lazy_reduce_u128(a as u128)] {
+                    assert!(r < 2 * p);
+                    assert_eq!(r % p, a % p);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lazy_scalar_kernels_remain_const() {
+        const P: u64 = (1 << 62) - 1;
+        const MU: u128 = u128::MAX / P as u128;
+        const HI: u64 = (MU >> 64) as u64;
+        const LO: u64 = MU as u64;
+        const A: u128 = P as u128 * P as u128 - 1;
+        const GENERAL: u64 = super::verified::lazy_reduce(u64::MAX, P, HI, LO);
+        const WIDE: u64 = super::verified::lazy_reduce_u128(u128::MAX, P, HI, LO);
+        const OPT: u64 = super::verified::lazy_reduce_opt(u64::MAX, P, P.leading_zeros());
+        const OPT_WIDE: u64 =
+            super::verified::lazy_reduce_opt_u128(A, P, HI, LO, P.leading_zeros());
+        for (a, r) in [
+            (u64::MAX as u128, GENERAL),
+            (u128::MAX, WIDE),
+            (u64::MAX as u128, OPT),
+            (A, OPT_WIDE),
+        ] {
+            assert!(r < 2 * P);
+            assert_eq!(r as u128 % P as u128, a % P as u128);
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn lazy_optimized_reducers_reject_invalid_inputs() {
+        let unsupported = Modulus::new(17).unwrap();
+        assert!(std::panic::catch_unwind(|| unsupported.lazy_reduce_opt(0)).is_err());
+        assert!(std::panic::catch_unwind(|| unsupported.lazy_reduce_opt_u128(0)).is_err());
+        let modulus = Modulus::new((1 << 62) - 1).unwrap();
+        let square = (*modulus as u128) * (*modulus as u128);
+        assert!(std::panic::catch_unwind(|| modulus.lazy_reduce_opt_u128(square)).is_err());
     }
 
     // Utility functions for the proptests.
@@ -981,6 +1130,12 @@ mod tests {
                 prop_assert!(std::panic::catch_unwind(|| p.add(a, *p)).is_err());
                 prop_assert!(std::panic::catch_unwind(|| p.add(*p + 1, a)).is_err());
                 prop_assert!(std::panic::catch_unwind(|| p.add(a, *p + 1)).is_err());
+                unsafe {
+                    prop_assert!(std::panic::catch_unwind(|| p.add_vt(*p, a)).is_err());
+                    prop_assert!(std::panic::catch_unwind(|| p.add_vt(a, *p)).is_err());
+                    prop_assert!(std::panic::catch_unwind(|| p.add_vt(*p + 1, a)).is_err());
+                    prop_assert!(std::panic::catch_unwind(|| p.add_vt(a, *p + 1)).is_err());
+                }
             }
         }
 
@@ -1055,7 +1210,25 @@ mod tests {
         #[test]
         fn lazy_reduce(p in valid_moduli(), a: u64) {
             prop_assert!(p.lazy_reduce(a) < 2 * *p);
-            prop_assert_eq!(p.lazy_reduce(a) % *p, p.reduce(a));
+            prop_assert_eq!(p.lazy_reduce(a) % *p, a % *p);
+        }
+
+        #[test]
+        fn lazy_reduce_u128(p in valid_moduli(), a: u128) {
+            let r = p.lazy_reduce_u128(a);
+            prop_assert!(r < 2 * *p);
+            prop_assert_eq!(r as u128 % *p as u128, a % *p as u128);
+        }
+
+        #[test]
+        fn lazy_reduce_optimized(p in valid_moduli_opt(), a: u64, wide: u128) {
+            let r = p.lazy_reduce_opt(a);
+            prop_assert!(r < 2 * *p);
+            prop_assert_eq!(r % *p, a % *p);
+            let a = wide % ((*p as u128) * (*p as u128));
+            let r = p.lazy_reduce_opt_u128(a);
+            prop_assert!(r < 2 * *p);
+            prop_assert_eq!(r as u128 % *p as u128, a % *p as u128);
         }
 
         #[test]
