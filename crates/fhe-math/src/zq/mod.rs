@@ -9,6 +9,7 @@
 )]
 
 pub mod primes;
+mod verified;
 
 use std::ops::Deref;
 
@@ -19,13 +20,7 @@ use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
 use rand::{CryptoRng, Rng as RngCore, RngExt, distr::Uniform};
-
-/// cond ? on_true : on_false
-const fn const_time_cond_select(on_true: u64, on_false: u64, cond: bool) -> u64 {
-    let mask = -(cond as i64) as u64;
-    let diff = on_true ^ on_false;
-    (diff & mask) ^ on_false
-}
+use verified::const_time_cond_select;
 
 /// Structure encapsulating an integer modulus up to 62 bits.
 #[derive(Debug, Clone)]
@@ -102,7 +97,7 @@ impl Modulus {
     #[must_use]
     pub const fn add(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
-        Self::reduce1(a + b, self.p)
+        verified::add_mod(a, b, self.p)
     }
 
     /// Performs the modular addition of a and b in variable time.
@@ -669,7 +664,7 @@ impl Modulus {
         debug_assert!(p >> 63 == 0);
         debug_assert!(x < 2 * p);
 
-        let r = const_time_cond_select(x, x.wrapping_sub(p), x < p);
+        let r = verified::reduce1(x, p);
 
         debug_assert!(r == x % p);
 
@@ -825,6 +820,103 @@ mod tests {
     use proptest::collection::vec as prop_vec;
     use proptest::prelude::{BoxedStrategy, Just, Strategy, any};
     use rand::{Rng as RngCore, rng};
+
+    #[test]
+    fn conditional_selection_handles_word_patterns_and_remains_const() {
+        const SELECTED: u64 = super::const_time_cond_select(u64::MAX, 0, true);
+        assert_eq!(SELECTED, u64::MAX);
+
+        let words = [
+            0,
+            1,
+            (1 << 63) - 1,
+            1 << 63,
+            u64::MAX,
+            0x5555_5555_5555_5555,
+            0xaaaa_aaaa_aaaa_aaaa,
+        ];
+        for on_true in words {
+            for on_false in words {
+                for cond in [false, true] {
+                    assert_eq!(
+                        super::const_time_cond_select(on_true, on_false, cond),
+                        if cond { on_true } else { on_false },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reduce1_exhausts_small_moduli() {
+        for p in 1..=64 {
+            for x in 0..2 * p {
+                let result = Modulus::reduce1(x, p);
+                assert!(result < p);
+                assert_eq!(result, x % p);
+            }
+        }
+    }
+
+    #[test]
+    fn reduce1_handles_wide_moduli_and_remains_const() {
+        const REDUCED: u64 = Modulus::reduce1(u64::MAX - 2, (1 << 63) - 1);
+        assert_eq!(REDUCED, (1 << 63) - 2);
+
+        // Include the wider helper domain used by the NTT with p = 2*q.
+        for p in [1, 2, 3, (1 << 62) - 1, 1 << 62, (1 << 63) - 1] {
+            for x in [0, p - 1, p, 2 * p - 1] {
+                let result = Modulus::reduce1(x, p);
+                assert!(result < p);
+                assert_eq!(result, x % p);
+            }
+        }
+    }
+
+    #[test]
+    fn add_exhausts_small_moduli() {
+        // Include even and composite moduli: addition does not require a prime.
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..p {
+                for b in 0..p {
+                    let result = modulus.add(a, b);
+                    assert!(result < p);
+                    assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn add_handles_boundaries_and_remains_const() {
+        const SUM: u64 = super::verified::add_mod(4, 6, 7);
+        assert_eq!(SUM, 3);
+
+        for p in [
+            2,
+            3,
+            4,
+            (1 << 61) - 1,
+            1 << 61,
+            (1 << 62) - 2,
+            (1 << 62) - 1,
+        ] {
+            let modulus = Modulus::new(p).unwrap();
+            for (a, b) in [
+                (0, 0),
+                (0, p - 1),
+                (p - 1, 0),
+                (p - 1, 1),
+                (p - 1, p - 1),
+                (p / 2, p - p / 2),
+            ] {
+                let result = modulus.add(a, b);
+                assert!(result < p);
+                assert_eq!(result as u128, (a as u128 + b as u128) % p as u128);
+            }
+        }
+    }
 
     // Utility functions for the proptests.
 

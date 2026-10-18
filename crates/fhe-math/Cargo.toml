@@ -32,6 +32,7 @@ pulp.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 thiserror.workspace = true
+vstd.workspace = true
 zeroize.workspace = true
 sha2.workspace = true
 

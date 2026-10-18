@@ -51,6 +51,14 @@ retain their protobuf source. Detailed classifications are available through
 cargo test -p fhe-math
 ```
 
+## Formal verification
+
+Verus proves conditional selection, then one-subtraction reduction, then
+modular addition using those helpers. The ordinary Rust implementation shares
+these verified kernels. See the [verification guide](../../verification/README.md)
+for their exact contracts, pinned toolchain, and proof command. Other operations
+are outside the scope of these proofs.
+
 ## License
 
 This project is licensed under the [MIT license](https://opensource.org/licenses/MIT).

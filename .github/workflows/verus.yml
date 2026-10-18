@@ -1,0 +1,44 @@
+name: Verus
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Scalar arithmetic proofs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Verus Rust toolchain
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: '1.98.1'
+      - name: Install Verus
+        working-directory: ${{ runner.temp }}
+        # Keep the release and checksum aligned with vstd in Cargo.toml.
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            --output verus.zip \
+            https://github.com/verus-lang/verus/releases/download/release/0.2026.10.04.426d8b0/verus-0.2026.10.04.426d8b0-x86-linux.zip
+          echo '624018662868563a7bec0dd07be5e4dd0c3d61124b4b55105765884bf2d4d1a0  verus.zip' | sha256sum -c -
+          unzip -q verus.zip
+          echo "$PWD/verus-x86-linux" >> "$GITHUB_PATH"
+      - name: Verify selection, reduction, and addition
+        run: |
+          verus --version
+          verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
