@@ -27,6 +27,10 @@ Both ordinary and variable-time paths use these shared implementations.
 corresponding scalar kernels and in-place vector loops, including ordinary
 and variable-time variants. All six vector operations are verified.
 
+[`verified/mul.rs`](../crates/fhe-math/src/zq/verified/mul.rs) proves ordinary,
+optimized, and Shoup multiplication, including their variable-time variants,
+all six multiplication vector loops, and both Shoup precomputation loops.
+
 ## Run the proof
 
 Use the pinned [Verus 0.2026.10.04.426d8b0 release](https://github.com/verus-lang/verus/releases/tag/release/0.2026.10.04.426d8b0)
@@ -46,8 +50,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `77 verified, 0 errors` on macOS or an AVX2 target, and
-`76 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `104 verified, 0 errors` on macOS or an AVX2 target, and
+`103 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -228,6 +232,50 @@ scalar kernel directly. Polynomial addition, subtraction, and negation delegate
 to these modular vector operations; their context and representation handling
 remain outside the formal proof.
 
+### Multiplication and Shoup precomputation
+
+The ordinary and optimized scalar multiplication kernels require canonical
+operands `a, b < p` and `valid_barrett(p, hi, lo)`. The optimized variants also
+require `valid_opt(p, s)`. Verus proves that the `u128` product is exact and
+below `p^2`, then composes the corresponding canonical reduction contract to
+obtain `result < p` and `result = (a*b) mod p`. The variable-time versions
+use the reducers with variable-time final subtraction.
+
+Shoup multiplication has a wider first-operand domain: `a` may be any `u64`,
+including unreduced NTT intermediates. Its second operand is canonical. With
+`B = 2^64`, `valid_shoup(b, p, s)` requires `2 <= p < 2^62`, `b < p`, and
+`s*p <= b*B < (s+1)*p`. Thus `s = floor(b*B/p)`. The shared `shoup` function
+proves this predicate and the exact quotient, including that the left shift
+and division fit in `u128` and the quotient fits in `u64`.
+
+`lazy_mul_shoup` retains the original two products, high-word shift, and
+subtraction. The proof establishes that `q = floor(a*s/B)` never exceeds
+`floor(a*b/p)` and is at most one below it. Consequently, `a*b - q*p` is
+nonnegative, below `2*p`, and congruent to `a*b`. This also proves that the
+subtraction cannot underflow and the final cast loses no bits. `mul_shoup`
+and `mul_shoup_vt` compose that result with `reduce1` and `reduce1_vt` to
+obtain canonical residues. Shoup kernels need neither Barrett metadata nor
+the optimization condition.
+
+The vector kernels prove each entry's product, preserve length and element
+order, and retain the unprocessed suffix. `mul_vec` and `mul_vec_vt` require
+equal lengths and canonical inputs; a const parameter selects the ordinary
+or optimized scalar kernel, preserving dispatch outside the loop.
+`mul_shoup_vec` and its variable-time variant accept arbitrary entries in
+the left slice, with equal-length canonical right operands and valid Shoup
+words. `scalar_mul_vec` and its variable-time variant similarly accept any
+`u64` entries and precompute their canonical scalar's Shoup word once.
+`shoup_vec` and `shoup_into` prove exact precomputation and the `valid_shoup`
+predicate for every output entry; `shoup_into` also requires equal lengths.
+
+All scalar kernels remain `const fn`. The public methods retain architecture
+dispatch and their debug input checks. The private variable-time scalar
+wrappers and optimized variable-time reduction wrapper are test conveniences;
+production vector kernels compose the verified functions directly. The
+vector Shoup and scalar-multiplication documentation now states their existing
+full-width left-operand support. Multiplication callers, including polynomial
+operations, exponentiation, and NTT butterflies, remain outside the proof.
+
 ### Proof boundary
 
 All arithmetic in contracts is interpreted over mathematical integers. The
@@ -298,6 +346,20 @@ scalar and vector tests use the same independent signed-remainder oracle:
 cargo test -p fhe-math subtraction_negation
 ```
 
+Multiplication tests exhaust small moduli, cover full-width Shoup operands
+through `u64::MAX`, and check powers of two, even/composite moduli, and both
+sides of each optimization threshold. Independent `u128` division and
+remainder oracles validate Shoup words, lazy congruence, and canonical
+products. All eight scalar kernels are exercised in const expressions.
+Vector tests cover every variant, empty inputs, loop boundaries, and guarded
+subslices; debug tests reject invalid operands, mismatched lengths, unsupported
+optimized moduli, and incorrect Shoup words. Randomized Shoup tests retain
+unrestricted first operands and use the same independent oracles:
+
+```sh
+cargo test -p fhe-math multiplication
+```
+
 Eligibility tests evaluate the original NFL inequality with `BigUint` as an
 independent oracle. They exhaust all 16-bit inputs, cover every power-of-two
 boundary and optimization threshold, check the exact equality at `3*2^61`,
@@ -331,3 +393,5 @@ zero instead of the computed residue in an allocating vector loop.
 Subtraction and negation checks reject reversing the subtraction operands,
 omitting the reduction of `p - a` at `a = 0`, and corrupting either the
 16-element block update or the tail update in `sub_vec_vt`.
+Multiplication checks must reject dropping an operand, returning an incorrect
+Shoup word, corrupting the lazy Shoup quotient, or skipping a vector product.

@@ -67,6 +67,10 @@ Modular addition, subtraction, and negation have the same canonical-result
 guarantee, including their variable-time scalar paths and all six in-place
 vector loops. Each operation's scalar and vector kernels live together in
 `verified/add.rs`, `verified/sub.rs`, or `verified/neg.rs`.
+`verified/mul.rs` proves ordinary, optimized, and Shoup multiplication,
+including variable-time variants, all multiplication vector loops, and Shoup
+precomputation. Shoup proofs cover any `u64` first operand; lazy products are
+below twice the modulus, and canonical products equal `(a*b) mod p`.
 The ordinary Rust implementation shares these verified functions.
 See the [verification guide](../../verification/README.md)
 for their exact contracts, pinned toolchain, and proof command. Other operations

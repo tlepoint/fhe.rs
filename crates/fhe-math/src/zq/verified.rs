@@ -22,6 +22,15 @@ mod negation;
 pub(crate) use negation::neg_mod_vt;
 pub(crate) use negation::{neg_mod, neg_vec, neg_vec_vt};
 
+#[path = "verified/mul.rs"]
+mod multiplication;
+pub(crate) use multiplication::{
+    lazy_mul_shoup, mul_mod, mul_opt, mul_shoup, mul_shoup_vec, mul_shoup_vec_vt, mul_vec,
+    mul_vec_vt, scalar_mul_vec, scalar_mul_vec_vt, shoup, shoup_into, shoup_vec,
+};
+#[cfg(test)]
+pub(crate) use multiplication::{mul_mod_vt, mul_opt_vt, mul_shoup_vt};
+
 #[path = "verified/reduce.rs"]
 mod reduction;
 pub(crate) use reduction::{

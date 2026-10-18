@@ -15,7 +15,7 @@ use std::ops::Deref;
 
 use crate::error::{Error, Result};
 use fhe_util::{is_prime, transcode_from_bytes, transcode_to_bytes, transcode_to_bytes_into};
-use itertools::{Itertools, izip};
+use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::cast::ToPrimitive;
 use pulp::Arch;
@@ -125,18 +125,20 @@ impl Modulus {
     #[must_use]
     pub const fn mul(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
-        self.reduce_u128((a as u128) * (b as u128))
+        verified::mul_mod(a, b, self.p, self.barrett_hi, self.barrett_lo)
     }
 
-    /// Performs the modular multiplication of a and b in constant time.
+    /// Performs the modular multiplication of a and b in variable time.
     /// Aborts if a >= p or b >= p in debug mode.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being multiplied.
+    // Production vector loops call the verified scalar kernel directly.
+    #[cfg(test)]
     const unsafe fn mul_vt(&self, a: u64, b: u64) -> u64 {
         debug_assert!(a < self.p && b < self.p);
-        unsafe { Self::reduce1_vt(self.lazy_reduce_u128((a as u128) * (b as u128)), self.p) }
+        unsafe { verified::mul_mod_vt(a, b, self.p, self.barrett_hi, self.barrett_lo) }
     }
 
     /// Optimized modular multiplication of a and b in constant time.
@@ -147,7 +149,14 @@ impl Modulus {
         debug_assert!(self.supports_opt);
         debug_assert!(a < self.p && b < self.p);
 
-        self.reduce_opt_u128((a as u128) * (b as u128))
+        verified::mul_opt(
+            a,
+            b,
+            self.p,
+            self.barrett_hi,
+            self.barrett_lo,
+            self.leading_zeros,
+        )
     }
 
     /// Optimized modular multiplication of a and b in variable time.
@@ -156,11 +165,21 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being multiplied.
+    #[cfg(test)]
     const unsafe fn mul_opt_vt(&self, a: u64, b: u64) -> u64 {
         debug_assert!(self.supports_opt);
         debug_assert!(a < self.p && b < self.p);
 
-        unsafe { self.reduce_opt_u128_vt((a as u128) * (b as u128)) }
+        unsafe {
+            verified::mul_opt_vt(
+                a,
+                b,
+                self.p,
+                self.barrett_hi,
+                self.barrett_lo,
+                self.leading_zeros,
+            )
+        }
     }
 
     /// Modular negation in constant time.
@@ -191,30 +210,37 @@ impl Modulus {
     #[must_use]
     pub const fn shoup(&self, a: u64) -> u64 {
         debug_assert!(a < self.p);
-
-        (((a as u128) << 64) / (self.p as u128)) as u64
+        verified::shoup(a, self.p)
     }
 
     /// Shoup multiplication of a and b in constant time.
+    /// The first operand a may be any u64; b must be canonical.
     ///
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
     #[must_use]
     pub const fn mul_shoup(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
-        Self::reduce1(self.lazy_mul_shoup(a, b, b_shoup), self.p)
+        debug_assert!(b < self.p);
+        debug_assert!(b_shoup == self.shoup(b));
+        verified::mul_shoup(a, b, b_shoup, self.p)
     }
 
     /// Shoup multiplication of a and b in variable time.
+    /// The first operand a may be any u64; b must be canonical.
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being multiplied.
+    #[cfg(test)]
     const unsafe fn mul_shoup_vt(&self, a: u64, b: u64, b_shoup: u64) -> u64 {
-        unsafe { Self::reduce1_vt(self.lazy_mul_shoup(a, b, b_shoup), self.p) }
+        debug_assert!(b < self.p);
+        debug_assert!(b_shoup == self.shoup(b));
+        unsafe { verified::mul_shoup_vt(a, b, b_shoup, self.p) }
     }
 
     /// Lazy Shoup multiplication of a and b in constant time.
     /// The output is in the interval [0, 2 * p).
+    /// The first operand a may be any u64; b must be canonical.
     ///
     /// Aborts if b >= p or b_shoup != shoup(b) in debug mode.
     #[must_use]
@@ -222,9 +248,7 @@ impl Modulus {
         debug_assert!(b < self.p);
         debug_assert!(b_shoup == self.shoup(b));
 
-        let q = ((a as u128) * (b_shoup as u128)) >> 64;
-        let r = ((a as u128) * (b as u128) - q * (self.p as u128)) as u64;
-
+        let r = verified::lazy_mul_shoup(a, b, b_shoup, self.p);
         debug_assert!(r < 2 * self.p);
 
         r
@@ -288,41 +312,54 @@ impl Modulus {
     /// debug mode.
     pub fn mul_vec(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
         if self.supports_opt {
             self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul_opt(*ai, *bi))
+                verified::mul_vec::<true>(
+                    a,
+                    b,
+                    self.p,
+                    self.barrett_hi,
+                    self.barrett_lo,
+                    self.leading_zeros,
+                )
             })
         } else {
             self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.mul(*ai, *bi))
+                verified::mul_vec::<false>(
+                    a,
+                    b,
+                    self.p,
+                    self.barrett_hi,
+                    self.barrett_lo,
+                    self.leading_zeros,
+                )
             })
         }
     }
 
     /// Modular scalar multiplication of vectors in place in constant time.
+    /// Entries of a may be any u64; b must be canonical.
     ///
-    /// Aborts if any of the values in a is >= p in debug mode.
+    /// Aborts if b >= p in debug mode.
     pub fn scalar_mul_vec(&self, a: &mut [u64], b: u64) {
-        let b_shoup = self.shoup(b);
-        self.arch.dispatch(|| {
-            a.iter_mut()
-                .for_each(|ai| *ai = self.mul_shoup(*ai, b, b_shoup))
-        })
+        debug_assert!(b < self.p);
+        self.arch
+            .dispatch(|| verified::scalar_mul_vec(a, b, self.p))
     }
 
     /// Modular scalar multiplication of vectors in place in variable time.
-    /// Aborts if any of the values in a is >= p in debug mode.
+    /// Entries of a may be any u64; b must be canonical.
+    /// Aborts if b >= p in debug mode.
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the values being multiplied.
     pub unsafe fn scalar_mul_vec_vt(&self, a: &mut [u64], b: u64) {
-        let b_shoup = self.shoup(b);
-        self.arch.dispatch(|| {
-            a.iter_mut()
-                .for_each(|ai| *ai = unsafe { self.mul_shoup_vt(*ai, b, b_shoup) })
-        })
+        debug_assert!(b < self.p);
+        self.arch
+            .dispatch(|| unsafe { verified::scalar_mul_vec_vt(a, b, self.p) })
     }
 
     /// Modular multiplication of vectors in place in variable time.
@@ -331,19 +368,32 @@ impl Modulus {
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
-    /// about the values being subtracted.
+    /// about the values being multiplied.
     pub unsafe fn mul_vec_vt(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
         if self.supports_opt {
-            self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter())
-                    .for_each(|(ai, bi)| *ai = unsafe { self.mul_opt_vt(*ai, *bi) })
+            self.arch.dispatch(|| unsafe {
+                verified::mul_vec_vt::<true>(
+                    a,
+                    b,
+                    self.p,
+                    self.barrett_hi,
+                    self.barrett_lo,
+                    self.leading_zeros,
+                )
             })
         } else {
-            self.arch.dispatch(|| {
-                izip!(a.iter_mut(), b.iter())
-                    .for_each(|(ai, bi)| *ai = unsafe { self.mul_vt(*ai, *bi) })
+            self.arch.dispatch(|| unsafe {
+                verified::mul_vec_vt::<false>(
+                    a,
+                    b,
+                    self.p,
+                    self.barrett_hi,
+                    self.barrett_lo,
+                    self.leading_zeros,
+                )
             })
         }
     }
@@ -353,37 +403,33 @@ impl Modulus {
     /// Aborts if any of the values of the vector is >= p in debug mode.
     #[must_use]
     pub fn shoup_vec(&self, a: &[u64]) -> Vec<u64> {
-        self.arch
-            .dispatch(|| a.iter().map(|ai| self.shoup(*ai)).collect_vec())
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        self.arch.dispatch(|| verified::shoup_vec(a, self.p))
     }
 
     pub(crate) fn shoup_into(&self, a: &[u64], out: &mut [u64]) {
         assert_eq!(a.len(), out.len());
-        self.arch.dispatch(|| {
-            for (ai, output) in a.iter().zip(out.iter_mut()) {
-                *output = self.shoup(*ai);
-            }
-        });
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        self.arch.dispatch(|| verified::shoup_into(a, out, self.p));
     }
 
     /// Shoup modular multiplication of vectors in place in constant time.
+    /// Entries of a may be any u64; b must contain canonical residues.
     ///
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
+    /// Aborts in debug mode if lengths differ, an entry of b is >= p, or a
+    /// precomputed word differs from shoup(b).
     pub fn mul_shoup_vec(&self, a: &mut [u64], b: &[u64], b_shoup: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
         debug_assert_eq!(a.len(), b_shoup.len());
         debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
-
-        self.arch.dispatch(|| {
-            izip!(a.iter_mut(), b.iter(), b_shoup.iter())
-                .for_each(|(ai, bi, bi_shoup)| *ai = self.mul_shoup(*ai, *bi, *bi_shoup))
-        })
+        self.arch
+            .dispatch(|| verified::mul_shoup_vec(a, b, b_shoup, self.p))
     }
 
     /// Shoup modular multiplication of vectors in place in variable time.
-    /// Aborts if a and b differ in size, and if any of their values is >= p in
-    /// debug mode.
+    /// Entries of a may be any u64; b must contain canonical residues.
+    /// Aborts in debug mode if lengths differ, an entry of b is >= p, or a
+    /// precomputed word differs from shoup(b).
     ///
     /// # Safety
     /// This function is not constant time and its timing may reveal information
@@ -392,12 +438,8 @@ impl Modulus {
         debug_assert_eq!(a.len(), b.len());
         debug_assert_eq!(a.len(), b_shoup.len());
         debug_assert_eq!(&b_shoup, &self.shoup_vec(b));
-
-        self.arch.dispatch(|| {
-            izip!(a.iter_mut(), b.iter(), b_shoup.iter()).for_each(|(ai, bi, bi_shoup)| {
-                *ai = unsafe { self.mul_shoup_vt(*ai, *bi, *bi_shoup) }
-            })
-        })
+        self.arch
+            .dispatch(|| unsafe { verified::mul_shoup_vec_vt(a, b, b_shoup, self.p) })
     }
 
     /// Reduce a vector in place in constant time.
@@ -624,6 +666,8 @@ impl Modulus {
     /// # Safety
     /// This function is not constant time and its timing may reveal information
     /// about the value being reduced.
+    // Production multiplication calls the verified reducer directly.
+    #[cfg(test)]
     pub(crate) const unsafe fn reduce_opt_u128_vt(&self, a: u128) -> u64 {
         debug_assert!(self.supports_opt);
         debug_assert!(a < (self.p as u128) * (self.p as u128));
@@ -1522,6 +1566,305 @@ mod tests {
         }
     }
 
+    fn check_multiplication(modulus: &Modulus, a: u64, b: u64) {
+        let p = **modulus;
+        let expected = ((a as u128 * b as u128) % p as u128) as u64;
+        let b_shoup = (((b as u128) << 64) / p as u128) as u64;
+        assert_eq!(modulus.shoup(b), b_shoup);
+        assert_eq!(modulus.mul_shoup(a, b, b_shoup), expected);
+        assert_eq!(unsafe { modulus.mul_shoup_vt(a, b, b_shoup) }, expected);
+        let lazy = modulus.lazy_mul_shoup(a, b, b_shoup);
+        assert!(lazy < 2 * p);
+        assert_eq!(lazy % p, expected);
+        if a < p {
+            assert_eq!(modulus.mul(a, b), expected);
+            assert_eq!(unsafe { modulus.mul_vt(a, b) }, expected);
+            if modulus.supports_opt {
+                assert_eq!(modulus.mul_opt(a, b), expected);
+                assert_eq!(unsafe { modulus.mul_opt_vt(a, b) }, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn multiplication_exhausts_small_moduli() {
+        for p in 2..=64 {
+            let modulus = Modulus::new(p).unwrap();
+            for a in 0..2 * p {
+                for b in 0..p {
+                    check_multiplication(&modulus, a, b);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multiplication_boundaries_and_const_kernels() {
+        use super::verified;
+        const P: u64 = (1 << 62) - 1;
+        const MU: u128 = u128::MAX / P as u128;
+        const HI: u64 = (MU >> 64) as u64;
+        const LO: u64 = MU as u64;
+        const B: u64 = P - 1;
+        const B_SHOUP: u64 = verified::shoup(B, P);
+        const RESULTS: [u64; 6] = [
+            verified::mul_mod(B, B, P, HI, LO),
+            unsafe { verified::mul_mod_vt(B, B, P, HI, LO) },
+            verified::mul_opt(B, B, P, HI, LO, P.leading_zeros()),
+            unsafe { verified::mul_opt_vt(B, B, P, HI, LO, P.leading_zeros()) },
+            verified::mul_shoup(B, B, B_SHOUP, P),
+            unsafe { verified::mul_shoup_vt(B, B, B_SHOUP, P) },
+        ];
+        const LAZY: u64 = verified::lazy_mul_shoup(u64::MAX, B, B_SHOUP, P);
+        assert_eq!(RESULTS, [1; 6]);
+        assert_eq!(B_SHOUP as u128, ((B as u128) << 64) / P as u128);
+        let lazy = LAZY;
+        assert!(lazy < 2 * P);
+        assert_eq!(
+            LAZY as u128 % P as u128,
+            (u64::MAX as u128 * B as u128) % P as u128
+        );
+
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            for a in [0, 1, p / 2, p - 1, p, 2 * p - 1, 1 << 63, u64::MAX] {
+                for b in [0, 1, p / 2, p - 2, p - 1] {
+                    check_multiplication(&modulus, a, b);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multiplication_vectors_cover_boundaries_and_slices() {
+        for p in reduction_boundary_moduli() {
+            let modulus = Modulus::new(p).unwrap();
+            let words = [0, 1, p - 1, p, 2 * p - 1, 1 << 63, u64::MAX];
+            let rhs_words = [p - 1, p - 1, p - 1, 1, 0, p / 2, p - 2];
+            for len in [0, 1, 2, 7, 8, 9, 15, 16, 17, 31, 32, 33, 65, 129] {
+                let wide: Vec<_> = words.into_iter().cycle().take(len).collect();
+                let canonical: Vec<_> = wide.iter().map(|a| a % p).collect();
+                let rhs: Vec<_> = rhs_words.into_iter().cycle().take(len).collect();
+                let shoup: Vec<_> = rhs
+                    .iter()
+                    .map(|&b| (((b as u128) << 64) / p as u128) as u64)
+                    .collect();
+                assert_eq!(modulus.shoup_vec(&rhs), shoup);
+                let mut shoup_buffer = vec![u64::MAX; len + 2];
+                modulus.shoup_into(&rhs, &mut shoup_buffer[1..=len]);
+                assert_eq!(&shoup_buffer[1..=len], shoup);
+                assert_eq!(
+                    (shoup_buffer[0], shoup_buffer[len + 1]),
+                    (u64::MAX, u64::MAX)
+                );
+
+                for variable_time in [false, true] {
+                    for use_shoup in [false, true] {
+                        let original = if use_shoup { &wide } else { &canonical };
+                        let expected: Vec<_> = original
+                            .iter()
+                            .zip(&rhs)
+                            .map(|(&a, &b)| ((a as u128 * b as u128) % p as u128) as u64)
+                            .collect();
+                        let mut buffer = vec![u64::MAX; len + 2];
+                        buffer[1..=len].copy_from_slice(original);
+                        match (use_shoup, variable_time) {
+                            (false, false) => modulus.mul_vec(&mut buffer[1..=len], &rhs),
+                            (false, true) => unsafe {
+                                modulus.mul_vec_vt(&mut buffer[1..=len], &rhs)
+                            },
+                            (true, false) => {
+                                modulus.mul_shoup_vec(&mut buffer[1..=len], &rhs, &shoup)
+                            }
+                            (true, true) => unsafe {
+                                modulus.mul_shoup_vec_vt(&mut buffer[1..=len], &rhs, &shoup)
+                            },
+                        }
+                        assert_eq!(&buffer[1..=len], expected);
+                        assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                    }
+                    for b in [0, 1, p - 1] {
+                        let expected: Vec<_> = wide
+                            .iter()
+                            .map(|&a| ((a as u128 * b as u128) % p as u128) as u64)
+                            .collect();
+                        let mut buffer = vec![u64::MAX; len + 2];
+                        buffer[1..=len].copy_from_slice(&wide);
+                        if variable_time {
+                            unsafe {
+                                modulus.scalar_mul_vec_vt(&mut buffer[1..=len], b);
+                            }
+                        } else {
+                            modulus.scalar_mul_vec(&mut buffer[1..=len], b);
+                        }
+                        assert_eq!(&buffer[1..=len], expected);
+                        assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn multiplication_rejects_invalid_inputs() {
+        for p in [17, (1 << 62) - 1] {
+            let modulus = Modulus::new(p).unwrap();
+            for invalid in [p, p + 1, u64::MAX] {
+                assert!(
+                    std::panic::catch_unwind(|| unsafe { modulus.mul_vt(invalid, 0) }).is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe { modulus.mul_vt(0, invalid) }).is_err()
+                );
+                if modulus.supports_opt {
+                    assert!(
+                        std::panic::catch_unwind(|| unsafe { modulus.mul_opt_vt(invalid, 0) })
+                            .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| unsafe { modulus.mul_opt_vt(0, invalid) })
+                            .is_err()
+                    );
+                }
+                assert!(
+                    std::panic::catch_unwind(|| modulus.lazy_mul_shoup(0, invalid, 0)).is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe { modulus.mul_shoup_vt(0, invalid, 0) })
+                        .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| modulus.scalar_mul_vec(&mut [], invalid)).is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe {
+                        modulus.scalar_mul_vec_vt(&mut [], invalid)
+                    })
+                    .is_err()
+                );
+                for index in [0, 15, 16] {
+                    let mut bad = [0; 17];
+                    bad[index] = invalid;
+                    assert!(
+                        std::panic::catch_unwind(|| modulus.mul_vec(&mut { bad }, &[0; 17]))
+                            .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| modulus.mul_vec(&mut [0; 17], &bad)).is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| unsafe {
+                            modulus.mul_vec_vt(&mut { bad }, &[0; 17])
+                        })
+                        .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| unsafe {
+                            modulus.mul_vec_vt(&mut [0; 17], &bad)
+                        })
+                        .is_err()
+                    );
+                    assert!(std::panic::catch_unwind(|| modulus.shoup_vec(&bad)).is_err());
+                    assert!(
+                        std::panic::catch_unwind(|| modulus.shoup_into(&bad, &mut [0; 17]))
+                            .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| modulus.mul_shoup_vec(
+                            &mut [0; 17],
+                            &bad,
+                            &[0; 17]
+                        ))
+                        .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| unsafe {
+                            modulus.mul_shoup_vec_vt(&mut [0; 17], &bad, &[0; 17])
+                        })
+                        .is_err()
+                    );
+                }
+            }
+            let b = p - 1;
+            let wrong = modulus.shoup(b) ^ 1;
+            assert!(std::panic::catch_unwind(|| modulus.lazy_mul_shoup(0, b, wrong)).is_err());
+            assert!(std::panic::catch_unwind(|| modulus.mul_shoup(0, b, wrong)).is_err());
+            assert!(
+                std::panic::catch_unwind(|| unsafe { modulus.mul_shoup_vt(0, b, wrong) }).is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(|| modulus.mul_shoup_vec(&mut [0], &[b], &[wrong]))
+                    .is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(|| unsafe {
+                    modulus.mul_shoup_vec_vt(&mut [0], &[b], &[wrong])
+                })
+                .is_err()
+            );
+            for (left, right) in [(0, 1), (1, 0), (16, 17), (17, 16)] {
+                assert!(
+                    std::panic::catch_unwind(
+                        || modulus.mul_vec(&mut vec![0; left], &vec![0; right])
+                    )
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe {
+                        modulus.mul_vec_vt(&mut vec![0; left], &vec![0; right])
+                    })
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(
+                        || modulus.shoup_into(&vec![0; left], &mut vec![0; right])
+                    )
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| modulus.mul_shoup_vec(
+                        &mut vec![0; left],
+                        &vec![0; right],
+                        &vec![0; right]
+                    ))
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe {
+                        modulus.mul_shoup_vec_vt(
+                            &mut vec![0; left],
+                            &vec![0; right],
+                            &vec![0; right],
+                        )
+                    })
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| modulus.mul_shoup_vec(
+                        &mut vec![0; left],
+                        &vec![0; left],
+                        &vec![0; right]
+                    ))
+                    .is_err()
+                );
+                assert!(
+                    std::panic::catch_unwind(|| unsafe {
+                        modulus.mul_shoup_vec_vt(
+                            &mut vec![0; left],
+                            &vec![0; left],
+                            &vec![0; right],
+                        )
+                    })
+                    .is_err()
+                );
+            }
+        }
+        let unsupported = Modulus::new(17).unwrap();
+        assert!(std::panic::catch_unwind(|| unsupported.mul_opt(0, 0)).is_err());
+        assert!(std::panic::catch_unwind(|| unsafe { unsupported.mul_opt_vt(0, 0) }).is_err());
+    }
+
     // Utility functions for the proptests.
 
     fn valid_moduli() -> impl Strategy<Value = Modulus> {
@@ -1629,12 +1972,15 @@ mod tests {
         }
 
         #[test]
-        fn mul_shoup(p in valid_moduli(), mut a: u64, mut b: u64) {
-            a = p.reduce(a);
+        fn mul_shoup(p in valid_moduli(), a: u64, mut b: u64) {
             b = p.reduce(b);
 
-            // Compute shoup representation
+            // Compare the precomputation and lazy result to independent arithmetic.
             let b_shoup = p.shoup(b);
+            prop_assert_eq!(b_shoup as u128, ((b as u128) << 64) / *p as u128);
+            let lazy = p.lazy_mul_shoup(a, b, b_shoup);
+            prop_assert!(lazy < 2 * *p);
+            prop_assert_eq!(lazy as u128 % *p as u128, (a as u128 * b as u128) % *p as u128);
 
             #[cfg(debug_assertions)]
             {
@@ -1650,8 +1996,7 @@ mod tests {
             #[cfg(debug_assertions)]
             {
                 prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, *p, b_shoup)).is_err());
-                prop_assume!(a != b);
-                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, a, b_shoup)).is_err());
+                prop_assert!(std::panic::catch_unwind(|| p.mul_shoup(a, b, b_shoup ^ 1)).is_err());
             }
         }
 
@@ -1741,37 +2086,35 @@ mod tests {
             p.reduce_vec(&mut b);
             let c = a.clone();
             p.mul_vec(&mut a, &b);
-            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| ((*ci as u128 * *bi as u128) % *p as u128) as u64).collect_vec());
             a.clone_from(&c);
             unsafe { p.mul_vec_vt(&mut a, &b); }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| ((*ci as u128 * *bi as u128) % *p as u128) as u64).collect_vec());
         }
 
         #[test]
         fn scalar_mul_vec(p in valid_moduli(), mut a: Vec<u64>, mut b: u64) {
-            p.reduce_vec(&mut a);
             b = p.reduce(b);
             let c = a.clone();
 
             p.scalar_mul_vec(&mut a, b);
-            prop_assert_eq!(a.clone(), c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
+            prop_assert_eq!(a.clone(), c.iter().map(|ci| ((*ci as u128 * b as u128) % *p as u128) as u64).collect_vec());
 
             a.clone_from(&c);
             unsafe { p.scalar_mul_vec_vt(&mut a, b) }
-            prop_assert_eq!(a, c.iter().map(|ci| p.mul(*ci, b)).collect_vec());
+            prop_assert_eq!(a, c.iter().map(|ci| ((*ci as u128 * b as u128) % *p as u128) as u64).collect_vec());
         }
 
         #[test]
         fn mul_shoup_vec(p in valid_moduli(), (mut a, mut b) in vecs()) {
-            p.reduce_vec(&mut a);
             p.reduce_vec(&mut b);
             let b_shoup = p.shoup_vec(&b);
             let c = a.clone();
             p.mul_shoup_vec(&mut a, &b, &b_shoup);
-            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| ((*ci as u128 * *bi as u128) % *p as u128) as u64).collect_vec());
             a.clone_from(&c);
             unsafe { p.mul_shoup_vec_vt(&mut a, &b, &b_shoup) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.mul(*ci, *bi)).collect_vec());
+            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| ((*ci as u128 * *bi as u128) % *p as u128) as u64).collect_vec());
         }
 
         #[test]

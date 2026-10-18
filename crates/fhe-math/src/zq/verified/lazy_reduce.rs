@@ -278,7 +278,7 @@ proof fn barrett_remainder(a: int, p: int, mu: int, q: int, scale: int)
     lemma_mod_multiples_vanish(-q, a, p);
 }
 
-proof fn split_u128(x: u128)
+pub(super) proof fn split_u128(x: u128)
     ensures
         (x >> 64) as int == x as int / base(),
         (x as u64) as int == x as int % base(),
