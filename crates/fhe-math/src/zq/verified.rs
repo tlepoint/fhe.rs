@@ -6,11 +6,21 @@
 
 use vstd::prelude::*;
 
-#[path = "verified/sub_neg.rs"]
+#[path = "verified/add.rs"]
+mod addition;
+pub(crate) use addition::{add_mod, add_mod_vt, add_vec, add_vec_vt};
+
+#[path = "verified/sub.rs"]
 mod subtraction;
-pub(crate) use subtraction::{neg_mod, neg_vec, neg_vec_vt, sub_mod, sub_vec, sub_vec_vt};
 #[cfg(test)]
-pub(crate) use subtraction::{neg_mod_vt, sub_mod_vt};
+pub(crate) use subtraction::sub_mod_vt;
+pub(crate) use subtraction::{sub_mod, sub_vec, sub_vec_vt};
+
+#[path = "verified/neg.rs"]
+mod negation;
+#[cfg(test)]
+pub(crate) use negation::neg_mod_vt;
+pub(crate) use negation::{neg_mod, neg_vec, neg_vec_vt};
 
 #[path = "verified/reduce.rs"]
 mod reduction;
@@ -131,40 +141,6 @@ pub(crate) const unsafe fn reduce1_vt(x: u64, p: u64) -> (result: u64)
         result as int == (x as int) % (p as int),
 {
     reduce1(x, p)
-}
-
-/// Add canonical residues for a modulus accepted by `Modulus::new`.
-///
-/// The contract proves the result and arithmetic safety under these input bounds.
-/// It does not prove constant-time machine code or validate callers' inputs.
-#[inline]
-pub(crate) const fn add_mod(a: u64, b: u64, p: u64) -> (result: u64)
-    requires
-        2 <= p < 0x4000_0000_0000_0000u64,
-        a < p,
-        b < p,
-    ensures
-        result < p,
-        result as int == (a as int + b as int) % (p as int),
-{
-    reduce1(a + b, p)
-}
-
-/// Add canonical residues using the verified variable-time reducer.
-///
-/// # Safety
-/// Timing may reveal information about the operands.
-#[inline]
-pub(crate) const unsafe fn add_mod_vt(a: u64, b: u64, p: u64) -> (result: u64)
-    requires
-        2 <= p < 0x4000_0000_0000_0000u64,
-        a < p,
-        b < p,
-    ensures
-        result < p,
-        result as int == (a as int + b as int) % (p as int),
-{
-    unsafe { reduce1_vt(a + b, p) }
 }
 
 }

@@ -21,9 +21,11 @@ the `reduce*` family: canonical unsigned and signed reductions, optimized
 reductions, all six vector variants, and the native NTT's `reduce3` helpers.
 Both ordinary and variable-time paths use these shared implementations.
 
-[`verified/sub_neg.rs`](../crates/fhe-math/src/zq/verified/sub_neg.rs) proves
-modular subtraction and negation, including their ordinary and variable-time
-scalar kernels and all four in-place vector operations.
+[`verified/add.rs`](../crates/fhe-math/src/zq/verified/add.rs),
+[`verified/sub.rs`](../crates/fhe-math/src/zq/verified/sub.rs), and
+[`verified/neg.rs`](../crates/fhe-math/src/zq/verified/neg.rs) each contain the
+corresponding scalar kernels and in-place vector loops, including ordinary
+and variable-time variants. All six vector operations are verified.
 
 ## Run the proof
 
@@ -44,8 +46,8 @@ verus --version
 verus --crate-type lib --edition=2024 --no-cheating crates/fhe-math/src/zq/verified.rs
 ```
 
-The expected result is `71 verified, 0 errors` on macOS or an AVX2 target, and
-`70 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
+The expected result is `77 verified, 0 errors` on macOS or an AVX2 target, and
+`76 verified, 0 errors` elsewhere, including arithmetic lemmas, local assertions,
 and vector loops. On x86 Linux, check both target-dependent implementations with:
 
 ```sh
@@ -187,39 +189,43 @@ their `unsafe` timing boundary. The private signed scalar and optimized lazy
 `Modulus` wrappers are now test conveniences: production vector/canonical
 kernels compose those scalar helpers directly inside the verified module.
 
-### Subtraction and negation
+### Addition, subtraction, and negation
 
 These kernels require `2 <= p < 2^62` and canonical inputs below `p`; they
 do not require primality, Barrett reciprocals, or optimization metadata.
-`sub_mod` and `sub_mod_vt` prove `result < p` and
+`add_mod` and `add_mod_vt` prove `result < p` and
+`result = (a+b) mod p`. `sub_mod` and `sub_mod_vt` prove `result < p` and
 `result = (a-b) mod p`. `neg_mod` and `neg_mod_vt` prove `result < p` and
-`result = (-a) mod p`. Both specifications use Euclidean modulo over
+`result = (-a) mod p`. These specifications use Euclidean modulo over
 mathematical integers, including when the difference is negative.
 
-The executable scalar formulas remain `reduce1(a+p-b, p)` and
-`reduce1(p-a, p)`, using `reduce1_vt` for the variable-time versions.
-Verus proves that their additions and subtractions fit, that the intermediate
+The executable scalar formulas remain `reduce1(a+b, p)`,
+`reduce1(a+p-b, p)`, and `reduce1(p-a, p)`, using `reduce1_vt` for the
+variable-time versions. Verus proves that their additions and subtractions
+fit, that the intermediate
 values are below `2*p`, and that adding `p` preserves the residue. The final
 reduction contract establishes canonicality, including `a-b = 0` and `-0`.
 
-`sub_vec` and `sub_vec_vt` additionally require equal lengths. Their loop
-invariants prove the corresponding subtraction contract for each updated
-entry while preserving the unprocessed suffix and total length. The same
-properties hold for `neg_vec` and `neg_vec_vt`. The variable-time subtraction
-kernel retains complete blocks of 16 followed by a tail; explicit index loops
-replace the original chunk iterators so every loop and slice access is checked.
+`add_vec`, `add_vec_vt`, `sub_vec`, and `sub_vec_vt` additionally require equal
+lengths. Their loop invariants prove the corresponding scalar contract for
+each updated entry while preserving the unprocessed suffix and total length.
+The same properties hold for `neg_vec` and `neg_vec_vt`. The variable-time
+addition and subtraction kernels retain complete blocks of 16 followed by a
+tail; explicit index loops replace the original chunk iterators so every loop
+and slice access is checked.
 The `Modulus` wrappers retain architecture dispatch, scalar `const fn`
 signatures, and the variable-time APIs' `unsafe` timing boundary.
 
 Vector wrappers explicitly check canonical inputs in debug builds, along with
-the existing subtraction length check. This also makes variable-time
-subtraction reject noncanonical operands as documented: checking only the
-intermediate reduction bound could previously miss some invalid operands.
+the existing addition and subtraction length checks. This also makes
+variable-time addition and subtraction reject noncanonical operands as
+documented: checking only the intermediate reduction bound could previously
+miss some invalid operands.
 There is no new public scalar subtraction API; `sub_mod_vt` is an internal
 helper for the existing vector operation. The private `Modulus::neg_vt`
 wrapper is retained for tests, while production vectors call the verified
-scalar kernel directly. Polynomial subtraction and negation delegate to
-these modular vector operations; their context and representation handling
+scalar kernel directly. Polynomial addition, subtraction, and negation delegate
+to these modular vector operations; their context and representation handling
 remain outside the formal proof.
 
 ### Proof boundary
@@ -254,6 +260,13 @@ invalid operands by `add_vt` in debug builds:
 ```sh
 cargo test -p fhe-math zq::tests
 ```
+
+Vector addition tests use an independent `u128` remainder oracle, covering
+sums below, equal to, and above the modulus, including `2*p - 2`. They check
+empty inputs, exact blocks, tails around multiples of 16, and sentinel-guarded
+subslices, with moduli through `2^62 - 1`. Debug tests reject noncanonical
+operands in either input and mismatched lengths. The randomized vector test
+also uses the independent remainder oracle for both timing variants.
 
 Lazy-reduction tests add exhaustive small inputs, full-width inputs including
 `u128::MAX`, powers of two, even/composite moduli, and both sides of the strict
@@ -305,6 +318,8 @@ must fail the reduction proof; dropping `b` from `reduce1(a + b, p)` must fail
 the addition proof. For the variable-time path, changing `x >= p` to `x > p`
 must fail the branch reducer's proof at `x = p`; dropping `b` from
 `reduce1_vt(a + b, p)` must fail the variable-time addition proof.
+Dropping the right-hand operand from a vector addition update must fail its
+loop invariant, including both the block and tail paths of `add_vec_vt`.
 For lazy reduction, removing the high-product contribution, corrupting either
 optimized quotient shift, or leaving vector entries unreduced must fail
 verification as well.

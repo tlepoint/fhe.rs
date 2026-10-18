@@ -236,9 +236,9 @@ impl Modulus {
     /// debug mode.
     pub fn add_vec(&self, a: &mut [u64], b: &[u64]) {
         debug_assert_eq!(a.len(), b.len());
-        self.arch.dispatch(|| {
-            izip!(a.iter_mut(), b.iter()).for_each(|(ai, bi)| *ai = self.add(*ai, *bi))
-        })
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
+        self.arch.dispatch(|| verified::add_vec(a, b, self.p))
     }
 
     /// Modular addition of vectors in place in variable time.
@@ -249,31 +249,11 @@ impl Modulus {
     /// This function is not constant time and its timing may reveal information
     /// about the values being added.
     pub unsafe fn add_vec_vt(&self, a: &mut [u64], b: &[u64]) {
-        let n = a.len();
-        debug_assert_eq!(n, b.len());
-
-        let p = self.p;
-
-        self.arch.dispatch(|| {
-            // Process complete chunks of 16 elements using safe chunk APIs
-            let (a_chunks, a_remainder) = a.as_chunks_mut::<16>();
-            let (b_chunks, b_remainder) = b.as_chunks::<16>();
-
-            for (a_chunk, b_chunk) in a_chunks.iter_mut().zip(b_chunks) {
-                for i in 0..16 {
-                    unsafe {
-                        a_chunk[i] = Self::reduce1_vt(a_chunk[i] + b_chunk[i], p);
-                    }
-                }
-            }
-
-            // Process any remaining elements
-            for (ai, bi) in a_remainder.iter_mut().zip(b_remainder) {
-                unsafe {
-                    *ai = Self::reduce1_vt(*ai + *bi, p);
-                }
-            }
-        })
+        debug_assert_eq!(a.len(), b.len());
+        debug_assert!(a.iter().all(|ai| *ai < self.p));
+        debug_assert!(b.iter().all(|bi| *bi < self.p));
+        self.arch
+            .dispatch(|| unsafe { verified::add_vec_vt(a, b, self.p) })
     }
 
     /// Modular subtraction of vectors in place in constant time.
@@ -1270,6 +1250,102 @@ mod tests {
     }
 
     #[test]
+    fn addition_vectors_cover_blocks_tails_and_slices() {
+        for p in [
+            2,
+            3,
+            4,
+            17,
+            65536,
+            65537,
+            1 << 61,
+            (1 << 62) - 2,
+            (1 << 62) - 1,
+        ] {
+            let modulus = Modulus::new(p).unwrap();
+            // Include sums below, equal to, and above p, including 2*p - 2.
+            let left = [0, 0, 1, p - 1, p - 1, p / 2, p - 2, p - 1];
+            let right = [0, p - 1, p - 1, 0, p - 1, p - p / 2, 1, 1];
+            for len in [0, 1, 2, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64, 65, 129] {
+                let original: Vec<_> = left.into_iter().cycle().take(len).collect();
+                let rhs: Vec<_> = right.into_iter().cycle().take(len).collect();
+                let expected: Vec<_> = original
+                    .iter()
+                    .zip(&rhs)
+                    .map(|(&a, &b)| ((a as u128 + b as u128) % p as u128) as u64)
+                    .collect();
+                for variable_time in [false, true] {
+                    let mut buffer = vec![u64::MAX; len + 2];
+                    buffer[1..=len].copy_from_slice(&original);
+                    if variable_time {
+                        unsafe {
+                            modulus.add_vec_vt(&mut buffer[1..=len], &rhs);
+                        }
+                    } else {
+                        modulus.add_vec(&mut buffer[1..=len], &rhs);
+                    }
+                    assert_eq!(&buffer[1..=len], expected);
+                    assert_eq!((buffer[0], buffer[len + 1]), (u64::MAX, u64::MAX));
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn addition_vectors_reject_invalid_inputs() {
+        let modulus = Modulus::new(17).unwrap();
+        for invalid in [17, 18, u64::MAX] {
+            for index in [0, 15, 16] {
+                let mut invalid_values = [0; 17];
+                invalid_values[index] = invalid;
+                for variable_time in [false, true] {
+                    assert!(
+                        std::panic::catch_unwind(|| {
+                            let mut a = invalid_values;
+                            if variable_time {
+                                unsafe {
+                                    modulus.add_vec_vt(&mut a, &[0; 17]);
+                                }
+                            } else {
+                                modulus.add_vec(&mut a, &[0; 17]);
+                            }
+                        })
+                        .is_err()
+                    );
+                    assert!(
+                        std::panic::catch_unwind(|| {
+                            let mut a = [0; 17];
+                            if variable_time {
+                                unsafe {
+                                    modulus.add_vec_vt(&mut a, &invalid_values);
+                                }
+                            } else {
+                                modulus.add_vec(&mut a, &invalid_values);
+                            }
+                        })
+                        .is_err()
+                    );
+                }
+            }
+        }
+        for (left, right) in [(0, 1), (1, 0), (16, 17), (17, 16)] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    modulus.add_vec(&mut vec![0; left], &vec![0; right]);
+                })
+                .is_err()
+            );
+            assert!(
+                std::panic::catch_unwind(|| unsafe {
+                    modulus.add_vec_vt(&mut vec![0; left], &vec![0; right]);
+                })
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn subtraction_negation_exhaust_small_moduli() {
         for p in 2..=64 {
             let modulus = Modulus::new(p).unwrap();
@@ -1637,11 +1713,14 @@ mod tests {
             p.reduce_vec(&mut a);
             p.reduce_vec(&mut b);
             let c = a.clone();
+            let expected: Vec<_> = c.iter().zip(&b)
+                .map(|(&a, &b)| ((a as u128 + b as u128) % *p as u128) as u64)
+                .collect();
             p.add_vec(&mut a, &b);
-            prop_assert_eq!(a.clone(), izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
+            prop_assert_eq!(&a, &expected);
             a.clone_from(&c);
             unsafe { p.add_vec_vt(&mut a, &b) }
-            prop_assert_eq!(a, izip!(b.iter(), c.iter()).map(|(bi, ci)| p.add(*bi, *ci)).collect_vec());
+            prop_assert_eq!(a, expected);
         }
 
         #[test]
