@@ -46,6 +46,9 @@ pub(crate) use multiplication::{
 #[cfg(test)]
 pub(crate) use multiplication::{mul_mod_vt, mul_opt_vt, mul_shoup_vt};
 
+#[cfg(verus_keep_ghost)]
+pub(crate) use multiplication::{shoup_quotient, valid_shoup};
+
 #[path = "verified/center.rs"]
 mod centering;
 pub(crate) use centering::{center, center_vec};

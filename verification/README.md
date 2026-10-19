@@ -41,6 +41,11 @@ and variable-time variants. All six vector operations are verified.
 optimized, and Shoup multiplication, including their variable-time variants,
 all six multiplication vector loops, and both Shoup precomputation loops.
 
+[`ntt/native/butterflies.rs`](../crates/fhe-math/src/ntt/native/butterflies.rs)
+proves all four native NTT butterfly methods, composing one-subtraction
+reduction and lazy Shoup multiplication to establish modular results and
+the bounds on lazy outputs.
+
 [`verified/center.rs`](../crates/fhe-math/src/zq/verified/center.rs) proves scalar
 and vector centering, including the signed range, congruence, and midpoint
 behavior for odd and even moduli.
@@ -110,7 +115,7 @@ and patch its `fhe-util` dependency to the extracted package, then run the same
 verification command there. This does not require files from the original checkout.
 
 The expected project results are `65 verified, 0 errors` for `fhe-util` and
-`246 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`245`
+`253 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`252`
 elsewhere). Counts include proof lemmas, local assertions, and loops, not
 just API functions. The first run also checks the pinned `vstd` dependency.
 On x86 Linux, check both reducer implementations:
@@ -443,8 +448,39 @@ wrappers and optimized variable-time reduction wrapper are test conveniences;
 production vector kernels compose the verified functions directly. The
 vector Shoup and scalar-multiplication documentation now states their existing
 full-width left-operand support. Exponentiation composes these contracts as
-described below. Other multiplication callers, including polynomial operations
-and NTT butterflies, remain outside the proof.
+described below. The native NTT butterflies also compose them; other
+multiplication callers, including polynomial operations, remain outside the proof.
+
+### Native NTT butterflies
+
+The four production methods in `ntt/native/butterflies.rs` have these contracts,
+where `x` and `y` in the formulas denote the inputs:
+
+| Methods | Input bounds | Output residues modulo `p` | Output bounds |
+| --- | --- | --- | --- |
+| `butterfly`, `butterfly_vt` | `x, y < 4p` | `(x + wy, x - wy)` | Both `< 4p` |
+| `inv_butterfly`, `inv_butterfly_vt` | `x, y < 2p` | `(x + y, z(x - y))` | Both `< 2p` |
+
+All four require `p_twice = 2p` and a canonical twiddle with its exact Shoup
+word (`valid_shoup`). The verified `Modulus` accessor supplies `2 <= p < 2^62`.
+Neither primality nor roots of unity are needed for these local identities.
+The proofs also establish that executable additions and subtractions cannot
+overflow or underflow, and that the existing debug assertions hold.
+
+The forward proof uses `(x mod 2p) mod p = x mod p`, the lazy Shoup product's
+congruence, and the fact that adding `2p` preserves the difference modulo `p`.
+The inverse proof uses the same reduction identity for the sum and removes
+the `2p` shift before multiplying the difference by the inverse twiddle.
+Ordinary and variable-time methods share these algebra lemmas; Verus checks
+each executable method separately. The shared Shoup quotient lemma also
+justifies the runtime debug check against `Modulus::shoup`.
+
+`NttOperator`'s actual private fields are visible to Verus, and normal builds
+call these same methods. Its constructor, derived cloning, twiddle tables,
+and transform loops are not yet verified. In particular, callers must still
+establish the explicit `p_twice`, operand, and Shoup preconditions; there is
+no assumed NTT type invariant. These local proofs do not establish the
+correctness or constant-time machine code of a complete transform.
 
 ### Centering
 
@@ -764,6 +800,18 @@ lengths around loop boundaries are included; sentinels check in-place slice
 boundaries. Optimized wrappers reject unsupported moduli and `a >= p^2` in
 debug builds. Native NTT tests cover `reduce3` and `reduce3_vt` at all four
 modulus boundaries and reject `a = 4*p` in debug builds.
+
+Direct butterfly tests exhaust all lazy inputs and canonical twiddles for
+moduli 2 through 13. Boundary and seeded randomized cases cover even/composite
+moduli and the largest supported 62-bit values. An independent signed `i128`
+remainder oracle checks both output formulas, lazy bounds, and equality of
+ordinary and variable-time outputs. Debug tests reject out-of-range operands,
+noncanonical twiddles, and incorrect Shoup words for all four methods. Existing
+native NTT round-trip and reference ring-product tests exercise their callers.
+
+```sh
+cargo test -p fhe-math butterflies
+```
 
 Subtraction and negation tests exhaust canonical operands for moduli 2 through
 64, cover the largest 62-bit modulus and even/composite moduli, and check all

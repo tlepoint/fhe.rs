@@ -87,6 +87,14 @@ vector loops. Each operation's scalar and vector kernels live together in
 including variable-time variants, all multiplication vector loops, and Shoup
 precomputation. Shoup proofs cover any `u64` first operand; lazy products are
 below twice the modulus, and canonical products equal `(a*b) mod p`.
+`ntt/native/butterflies.rs` proves the four production butterfly methods by
+composing reduction and Shoup multiplication. Forward butterflies map inputs
+below `4p` to `(x + wy, x - wy)` modulo `p`, with both outputs below `4p`.
+Inverse butterflies map inputs below `2p` to `(x + y, z(x - y))` modulo `p`,
+with both outputs below `2p`. Both ordinary and variable-time paths are checked,
+including overflow/underflow safety. These contracts require `p_twice = 2p`
+and valid Shoup twiddles; NTT construction, tables, and transform loops remain
+outside the proof.
 `verified/center.rs` proves scalar and vector centering: each result is
 congruent to its input and satisfies `-p <= 2*result < p`, including the
 midpoint behavior for both odd and even moduli.

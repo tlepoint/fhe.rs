@@ -7,7 +7,7 @@
 use super::verified::{
     inversion::prime,
     lazy_reduce::{base, valid_barrett, valid_opt},
-    multiplication::valid_shoup,
+    multiplication::{shoup_quotient, valid_shoup},
     serialization,
 };
 use super::{backend::Backend, verified};
@@ -38,18 +38,6 @@ pub struct PolynomialSerializationErrorSpec(crate::error::PolynomialSerializatio
 #[verifier::external_type_specification]
 #[verifier::external_body]
 pub struct RepresentationSpec(crate::rq::Representation);
-
-proof fn shoup_quotient(b: u64, p: u64, word: u64)
-    requires valid_shoup(b, p, word),
-    ensures word as int == b * base() / (p as int),
-{
-    assert(0 <= b * base() - word * p < p) by (nonlinear_arith)
-        requires word * p <= b * base() < (word + 1) * p;
-    vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse_div(
-        b as int * base(), p as int, word as int,
-        b as int * base() - word as int * p as int,
-    );
-}
 
 /// Arithmetic state and the external runtime services it depends on.
 #[derive(Debug)]

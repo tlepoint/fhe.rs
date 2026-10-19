@@ -66,6 +66,18 @@ pub open spec fn valid_shoup(b: u64, p: u64, b_shoup: u64) -> bool {
     &&& b_shoup * p <= b * base() < (b_shoup + 1) * p
 }
 
+pub(crate) proof fn shoup_quotient(b: u64, p: u64, word: u64)
+    requires valid_shoup(b, p, word),
+    ensures word as int == b * base() / (p as int),
+{
+    assert(0 <= b * base() - word * p < p) by (nonlinear_arith)
+        requires word * p <= b * base() < (word + 1) * p;
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse_div(
+        b as int * base(), p as int, word as int,
+        b as int * base() - word as int * p as int,
+    );
+}
+
 proof fn shoup_shift(a: u64)
     ensures ((a as u128) << 64) as int == a * base(),
 {

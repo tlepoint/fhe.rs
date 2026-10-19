@@ -11,7 +11,14 @@ use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::iter::successors;
 
+mod butterflies;
+
+vstd::prelude::verus! {
+
 /// Number-Theoretic Transform operator.
+// The fields are visible to Verus; construction and derived cloning are not
+// verified yet. Butterfly contracts explicitly require the p_twice relation.
+#[verifier::allow(autoderive_clone_without_spec)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
     p: Modulus,
@@ -23,6 +30,8 @@ pub struct NttOperator {
     zetas_inv_shoup: Box<[u64]>,
     size_inv: u64,
     size_inv_shoup: u64,
+}
+
 }
 
 impl NttOperator {
@@ -275,68 +284,6 @@ impl NttOperator {
         r
     }
 
-    /// NTT Butterfly.
-    fn butterfly(&self, x: &mut u64, y: &mut u64, w: u64, w_shoup: u64) {
-        debug_assert!(*x < 4 * self.p.as_u64());
-        debug_assert!(*y < 4 * self.p.as_u64());
-        debug_assert!(w < self.p.as_u64());
-        debug_assert_eq!(self.p.shoup(w), w_shoup);
-
-        *x = Modulus::reduce1(*x, self.p_twice);
-        let t = self.p.lazy_mul_shoup(*y, w, w_shoup);
-        *y = *x + self.p_twice - t;
-        *x += t;
-
-        debug_assert!(*x < 4 * self.p.as_u64());
-        debug_assert!(*y < 4 * self.p.as_u64());
-    }
-
-    /// NTT Butterfly in variable time.
-    unsafe fn butterfly_vt(&self, x: &mut u64, y: &mut u64, w: u64, w_shoup: u64) {
-        debug_assert!(*x < 4 * self.p.as_u64());
-        debug_assert!(*y < 4 * self.p.as_u64());
-        debug_assert!(w < self.p.as_u64());
-        debug_assert_eq!(self.p.shoup(w), w_shoup);
-
-        *x = unsafe { Modulus::reduce1_vt(*x, self.p_twice) };
-        let t = self.p.lazy_mul_shoup(*y, w, w_shoup);
-        *y = *x + self.p_twice - t;
-        *x += t;
-
-        debug_assert!(*x < 4 * self.p.as_u64());
-        debug_assert!(*y < 4 * self.p.as_u64());
-    }
-
-    /// Inverse NTT butterfly.
-    fn inv_butterfly(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
-        debug_assert!(*x < self.p_twice);
-        debug_assert!(*y < self.p_twice);
-        debug_assert!(z < self.p.as_u64());
-        debug_assert_eq!(self.p.shoup(z), z_shoup);
-
-        let t = *x;
-        *x = Modulus::reduce1(*y + t, self.p_twice);
-        *y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
-
-        debug_assert!(*x < self.p_twice);
-        debug_assert!(*y < self.p_twice);
-    }
-
-    /// Inverse NTT butterfly in variable time
-    unsafe fn inv_butterfly_vt(&self, x: &mut u64, y: &mut u64, z: u64, z_shoup: u64) {
-        debug_assert!(*x < self.p_twice);
-        debug_assert!(*y < self.p_twice);
-        debug_assert!(z < self.p.as_u64());
-        debug_assert_eq!(self.p.shoup(z), z_shoup);
-
-        let t = *x;
-        *x = unsafe { Modulus::reduce1_vt(*y + t, self.p_twice) };
-        *y = self.p.lazy_mul_shoup(self.p_twice + t - *y, z, z_shoup);
-
-        debug_assert!(*x < self.p_twice);
-        debug_assert!(*y < self.p_twice);
-    }
-
     /// Returns a 2n-th primitive root modulo p.
     ///
     /// Aborts if p is not prime or n is not a power of 2 that is >= 8.
@@ -374,6 +321,141 @@ impl NttOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Butterfly arithmetic needs no roots of unity or prime modulus. Empty
+    // transform tables let these tests cover every supported modulus shape.
+    fn butterfly_operator(p: u64) -> NttOperator {
+        NttOperator {
+            p: Modulus::new(p).unwrap(),
+            p_twice: 2 * p,
+            size: 0,
+            omegas: Box::default(),
+            omegas_shoup: Box::default(),
+            zetas_inv: Box::default(),
+            zetas_inv_shoup: Box::default(),
+            size_inv: 0,
+            size_inv_shoup: 0,
+        }
+    }
+
+    fn check_butterfly(op: &NttOperator, a: u64, b: u64, w: u64, inverse: bool) {
+        let p = op.p.as_u64();
+        let shoup = (((w as u128) << 64) / p as u128) as u64;
+        let (mut x, mut y) = (a, b);
+        let (mut x_vt, mut y_vt) = (a, b);
+        let (expected_x, expected_y, bound) = if inverse {
+            op.inv_butterfly(&mut x, &mut y, w, shoup);
+            unsafe { op.inv_butterfly_vt(&mut x_vt, &mut y_vt, w, shoup) };
+            (
+                a as i128 + b as i128,
+                (a as i128 - b as i128) * w as i128,
+                2 * p,
+            )
+        } else {
+            op.butterfly(&mut x, &mut y, w, shoup);
+            unsafe { op.butterfly_vt(&mut x_vt, &mut y_vt, w, shoup) };
+            (
+                a as i128 + b as i128 * w as i128,
+                a as i128 - b as i128 * w as i128,
+                4 * p,
+            )
+        };
+        assert!(x < bound && y < bound);
+        assert_eq!(x % p, expected_x.rem_euclid(p as i128) as u64);
+        assert_eq!(y % p, expected_y.rem_euclid(p as i128) as u64);
+        assert_eq!((x, y), (x_vt, y_vt));
+    }
+
+    #[test]
+    fn butterflies_exhaust_small_moduli() {
+        for p in 2..=13 {
+            let op = butterfly_operator(p);
+            for a in 0..4 * p {
+                for b in 0..4 * p {
+                    for w in 0..p {
+                        check_butterfly(&op, a, b, w, false);
+                        if a < 2 * p && b < 2 * p {
+                            check_butterfly(&op, a, b, w, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn butterflies_cover_lazy_boundaries_and_full_width_moduli() {
+        let limit = crate::zq::verified::MODULUS_LIMIT;
+        for p in [2, 3, 4, 17, 1 << 31, (1 << 61) + 1, limit - 2, limit - 1] {
+            let op = butterfly_operator(p);
+            let operands = [
+                0,
+                1,
+                p - 1,
+                p,
+                p + 1,
+                2 * p - 1,
+                2 * p,
+                2 * p + 1,
+                3 * p - 1,
+                3 * p,
+                3 * p + 1,
+                4 * p - 1,
+            ];
+            for a in operands {
+                for b in operands {
+                    for w in [0, 1, p / 2, p - 1] {
+                        check_butterfly(&op, a, b, w, false);
+                        if a < 2 * p && b < 2 * p {
+                            check_butterfly(&op, a, b, w, true);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..1000 {
+            let p = rng.random_range(2..limit);
+            let op = butterfly_operator(p);
+            let w = rng.random_range(0..p);
+            for inverse in [false, true] {
+                let bound = if inverse { 2 * p } else { 4 * p };
+                let a = rng.random_range(0..bound);
+                let b = rng.random_range(0..bound);
+                check_butterfly(&op, a, b, w, inverse);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn butterflies_reject_invalid_operands_and_shoup_words() {
+        type Butterfly = unsafe fn(&NttOperator, &mut u64, &mut u64, u64, u64);
+        let p = 17;
+        let op = butterfly_operator(p);
+        for (butterfly, bound) in [
+            (NttOperator::butterfly as Butterfly, 4 * p),
+            (NttOperator::butterfly_vt as Butterfly, 4 * p),
+            (NttOperator::inv_butterfly as Butterfly, 2 * p),
+            (NttOperator::inv_butterfly_vt as Butterfly, 2 * p),
+        ] {
+            for (a, b, w, shoup) in [
+                (bound, 0, 0, 0),
+                (0, bound, 0, 0),
+                (0, 0, p, 0),
+                (0, 0, 1, 0),
+            ] {
+                assert!(
+                    std::panic::catch_unwind(|| {
+                        let (mut x, mut y) = (a, b);
+                        unsafe { butterfly(&op, &mut x, &mut y, w, shoup) };
+                    })
+                    .is_err()
+                );
+            }
+        }
+    }
 
     #[test]
     fn reduce3_covers_small_inputs_and_boundaries() {
