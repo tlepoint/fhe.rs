@@ -6,7 +6,15 @@
 #[cfg(test)]
 extern crate proptest;
 
+#[cfg(verus_keep_ghost)]
+use vstd::prelude::*;
+
 mod decode_limits;
+pub mod packing;
+pub use packing::{
+    TranscodeError, transcode_bidirectional, transcode_from_bytes, transcode_from_bytes_exact,
+    transcode_to_bytes, transcode_to_bytes_into,
+};
 mod timing;
 pub use decode_limits::{DecodeLimitError, DecodeLimits};
 use num_bigint_dig::{BigUint, ModInverse, prime::probably_prime};
@@ -82,22 +90,6 @@ pub fn sample_vec_cbd<R: RngCore + CryptoRng>(
     Ok(out)
 }
 
-/// Invalid input to a bit-transcoding operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TranscodeError {
-    /// Word widths must lie in 1..=64.
-    InvalidWidth(usize),
-    /// At least one word would be truncated at the requested width.
-    ValueTooWide,
-    /// A computed input or output length cannot be represented by `usize`.
-    LengthOverflow,
-    /// The byte length does not match the requested word count and width.
-    LengthMismatch,
-    /// Unused bits in the last byte must be zero.
-    NonZeroPadding,
-}
-
 impl std::fmt::Display for TranscodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -112,210 +104,6 @@ impl std::fmt::Display for TranscodeError {
     }
 }
 impl std::error::Error for TranscodeError {}
-
-fn validate_width(width: usize) -> Result<(), TranscodeError> {
-    if !(1..=64).contains(&width) {
-        return Err(TranscodeError::InvalidWidth(width));
-    }
-    Ok(())
-}
-
-fn validate_words(values: &[u64], width: usize) -> Result<usize, TranscodeError> {
-    validate_width(width)?;
-    let bits = values
-        .len()
-        .checked_mul(width)
-        .ok_or(TranscodeError::LengthOverflow)?;
-    // Visit every word; the check does not stop at a secret-dependent index.
-    let used = values.iter().fold(0, |used, word| used | word);
-    if used & !(u64::MAX >> (64 - width)) != 0 {
-        return Err(TranscodeError::ValueTooWide);
-    }
-    Ok(bits)
-}
-
-/// Pack words least-significant-bit first, padding the final byte with zeros.
-/// Rejects invalid widths, overflowing lengths, and words that would truncate.
-pub fn transcode_to_bytes(a: &[u64], nbits: usize) -> Result<Vec<u8>, TranscodeError> {
-    let mut out = Vec::new();
-    transcode_to_bytes_into(a, nbits, &mut out)?;
-    Ok(out)
-}
-
-/// Appends packed `nbits`-bit numbers to `out`, padding the final byte with
-/// zeros. Each call starts at a byte boundary and preserves the existing
-/// prefix. Invalid input leaves `out` unchanged, including its allocation.
-pub fn transcode_to_bytes_into(
-    a: &[u64],
-    nbits: usize,
-    out: &mut Vec<u8>,
-) -> Result<(), TranscodeError> {
-    let bits = validate_words(a, nbits)?;
-    out.len()
-        .checked_add(bits.div_ceil(8))
-        .ok_or(TranscodeError::LengthOverflow)?;
-    pack_prevalidated(a, nbits, out);
-    Ok(())
-}
-
-// Width, word range, and output length are checked by the public boundary.
-#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
-fn pack_prevalidated(a: &[u64], nbits: usize, out: &mut Vec<u8>) {
-    let mask = (u64::MAX >> (64 - nbits)) as u128;
-    let nbytes = (a.len() * nbits).div_ceil(8);
-    let start = out.len();
-    out.reserve(nbytes);
-
-    let mut current_index = 0;
-    let mut current_value = 0u128;
-    let mut current_value_nbits = 0;
-    while current_index < a.len() {
-        if current_value_nbits < 8 {
-            let value = a
-                .get(current_index)
-                .expect("current_index is guaranteed to be within bounds");
-            debug_assert!(64 - value.leading_zeros() <= nbits as u32);
-            current_value |= ((*value as u128) & mask) << current_value_nbits;
-            current_value_nbits += nbits;
-            current_index += 1;
-        }
-        while current_value_nbits >= 8 {
-            out.push(current_value as u8);
-            current_value >>= 8;
-            current_value_nbits -= 8;
-        }
-    }
-    if current_value_nbits > 0 {
-        assert!(current_value_nbits < 8);
-        assert_eq!(out.len() - start, nbytes - 1);
-        out.push(current_value as u8)
-    } else {
-        assert_eq!(out.len() - start, nbytes);
-        assert_eq!(current_value, 0);
-    }
-}
-
-/// Interpret every input bit as a stream of `nbits`-bit words,
-/// least-significant bit first. Zero-extend a partial final word. Byte padding
-/// is interpreted as data; use [`transcode_from_bytes_exact`] when the original
-/// word count is known.
-pub fn transcode_from_bytes(b: &[u8], nbits: usize) -> Result<Vec<u64>, TranscodeError> {
-    validate_width(nbits)?;
-    b.len()
-        .checked_mul(8)
-        .ok_or(TranscodeError::LengthOverflow)?;
-    Ok(unpack_prevalidated(b, nbits))
-}
-
-// The checked boundary guarantees a valid width and bit length.
-#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
-fn unpack_prevalidated(b: &[u8], nbits: usize) -> Vec<u64> {
-    let mask = (u64::MAX >> (64 - nbits)) as u128;
-
-    let nelements = (b.len() * 8).div_ceil(nbits);
-    let mut out = Vec::with_capacity(nelements);
-
-    let mut current_value = 0u128;
-    let mut current_value_nbits = 0;
-    let mut current_index = 0;
-    while current_index < b.len() {
-        if current_value_nbits < nbits {
-            let value = b
-                .get(current_index)
-                .expect("current_index is guaranteed to be within bounds");
-            current_value |= (*value as u128) << current_value_nbits;
-            current_value_nbits += 8;
-            current_index += 1;
-        }
-        while current_value_nbits >= nbits {
-            out.push((current_value & mask) as u64);
-            current_value >>= nbits;
-            current_value_nbits -= nbits;
-        }
-    }
-    if current_value_nbits > 0 {
-        assert_eq!(out.len(), nelements - 1);
-        out.push(current_value as u64);
-    } else {
-        assert_eq!(out.len(), nelements);
-        assert_eq!(current_value, 0);
-    }
-    out
-}
-
-/// Decode exactly `count` packed words, rejecting extra/missing bytes and
-/// nonzero padding. This is the inverse of [`transcode_to_bytes`] when the
-/// caller supplies the original word count, including for empty inputs.
-pub fn transcode_from_bytes_exact(
-    b: &[u8],
-    nbits: usize,
-    count: usize,
-) -> Result<Vec<u64>, TranscodeError> {
-    validate_width(nbits)?;
-    let bits = count
-        .checked_mul(nbits)
-        .ok_or(TranscodeError::LengthOverflow)?;
-    if b.len() != bits.div_ceil(8) {
-        return Err(TranscodeError::LengthMismatch);
-    }
-    if !bits.is_multiple_of(8) && b.last().is_some_and(|byte| *byte >> (bits % 8) != 0) {
-        return Err(TranscodeError::NonZeroPadding);
-    }
-    let mut words = transcode_from_bytes(b, nbits)?;
-    words.truncate(count);
-    Ok(words)
-}
-
-/// Transcodes a vector of u64 of `input_nbits`-bit numbers into a vector of u64
-/// of `output_nbits`-bit numbers. Rejects truncation and invalid widths. A
-/// partial final output word is zero-extended; the output does not retain the
-/// bit length.
-pub fn transcode_bidirectional(
-    a: &[u64],
-    input_nbits: usize,
-    output_nbits: usize,
-) -> Result<Vec<u64>, TranscodeError> {
-    validate_words(a, input_nbits)?;
-    validate_width(output_nbits)?;
-    Ok(transcode_words_prevalidated(a, input_nbits, output_nbits))
-}
-
-#[expect(clippy::expect_used, reason = "indices are bounded by input length")]
-fn transcode_words_prevalidated(a: &[u64], input_nbits: usize, output_nbits: usize) -> Vec<u64> {
-    let input_mask = (u64::MAX >> (64 - input_nbits)) as u128;
-    let output_mask = (u64::MAX >> (64 - output_nbits)) as u128;
-    let output_size = (a.len() * input_nbits).div_ceil(output_nbits);
-    let mut out = Vec::with_capacity(output_size);
-
-    let mut current_index = 0;
-    let mut current_value = 0u128;
-    let mut current_value_nbits = 0;
-    while current_index < a.len() {
-        if current_value_nbits < output_nbits {
-            let value = a
-                .get(current_index)
-                .expect("current_index is guaranteed to be within bounds");
-            debug_assert!(64 - value.leading_zeros() <= input_nbits as u32);
-            current_value |= ((*value as u128) & input_mask) << current_value_nbits;
-            current_value_nbits += input_nbits;
-            current_index += 1;
-        }
-        while current_value_nbits >= output_nbits {
-            out.push((current_value & output_mask) as u64);
-            current_value >>= output_nbits;
-            current_value_nbits -= output_nbits;
-        }
-    }
-    if current_value_nbits > 0 {
-        assert!(current_value_nbits < output_nbits);
-        assert_eq!(out.len(), output_size - 1);
-        out.push(current_value as u64)
-    } else {
-        assert_eq!(out.len(), output_size);
-        assert_eq!(current_value, 0);
-    }
-    out
-}
 
 /// Computes the modular multiplicative inverse of `a` modulo `p`. Returns
 /// `None` if `a` is not invertible modulo `p`.
@@ -1987,6 +1775,131 @@ mod tests {
 #[cfg(test)]
 mod checked_transcoding_tests {
     use super::*;
+
+    // Independent oracle: emit one source bit at a time, without a wide buffer.
+    fn reference_words(input: &[u64], input_width: usize, output_width: usize) -> Vec<u64> {
+        let mut result = Vec::new();
+        let mut word = 0u64;
+        let mut offset = 0usize;
+        for value in input {
+            for bit in 0..input_width {
+                word |= ((value >> bit) & 1) << offset;
+                offset += 1;
+                if offset == output_width {
+                    result.push(word);
+                    word = 0;
+                    offset = 0;
+                }
+            }
+        }
+        if offset != 0 {
+            result.push(word);
+        }
+        result
+    }
+
+    #[test]
+    fn every_width_pair_matches_independent_bit_stream() {
+        for input_width in 1..=64 {
+            for len in [0, 1, 2, 3, 7, 8, 9, 17] {
+                let mask = u64::MAX >> (64 - input_width);
+                let input: Vec<_> = (0..len)
+                    .map(|i| match i % 4 {
+                        0 => 0,
+                        1 => mask,
+                        2 => 0xaaaa_aaaa_aaaa_aaaa & mask,
+                        _ => 0x0123_4567_89ab_cdef & mask,
+                    })
+                    .collect();
+                for output_width in 1..=64 {
+                    assert_eq!(
+                        transcode_bidirectional(&input, input_width, output_width).unwrap(),
+                        reference_words(&input, input_width, output_width),
+                        "input width {input_width}, output width {output_width}, length {len}"
+                    );
+                }
+                let bytes = transcode_to_bytes(&input, input_width).unwrap();
+                assert_eq!(
+                    bytes.iter().map(|byte| *byte as u64).collect::<Vec<_>>(),
+                    reference_words(&input, input_width, 8)
+                );
+                let byte_words: Vec<_> = bytes.iter().map(|byte| *byte as u64).collect();
+                for output_width in 1..=64 {
+                    assert_eq!(
+                        transcode_from_bytes(&bytes, output_width).unwrap(),
+                        reference_words(&byte_words, 8, output_width)
+                    );
+                }
+                assert_eq!(
+                    transcode_from_bytes_exact(&bytes, input_width, len).unwrap(),
+                    input
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn append_boundaries_padding_and_error_precedence() {
+        let mut bytes = vec![0xa5];
+        transcode_to_bytes_into(&[1], 1, &mut bytes).unwrap();
+        transcode_to_bytes_into(&[3], 2, &mut bytes).unwrap();
+        assert_eq!(bytes, [0xa5, 1, 3]);
+        let pointer = bytes.as_ptr();
+        let capacity = bytes.capacity();
+        assert_eq!(
+            transcode_to_bytes_into(&[0, 1, 0, 8], 3, &mut bytes),
+            Err(TranscodeError::ValueTooWide)
+        );
+        assert_eq!(bytes, [0xa5, 1, 3]);
+        assert_eq!(bytes.as_ptr(), pointer);
+        assert_eq!(bytes.capacity(), capacity);
+
+        assert_eq!(
+            transcode_bidirectional(&[2], 1, 0),
+            Err(TranscodeError::ValueTooWide)
+        );
+        assert_eq!(
+            transcode_from_bytes_exact(&[], 0, usize::MAX),
+            Err(TranscodeError::InvalidWidth(0))
+        );
+        assert_eq!(
+            transcode_from_bytes_exact(&[0xff], 64, usize::MAX),
+            Err(TranscodeError::LengthOverflow)
+        );
+        assert_eq!(
+            transcode_from_bytes_exact(&[0xff, 0xff], 1, 1),
+            Err(TranscodeError::LengthMismatch)
+        );
+        for data_bits in 1..8 {
+            for padding_bit in data_bits..8 {
+                assert_eq!(
+                    transcode_from_bytes_exact(&[1 << padding_bit], data_bits, 1),
+                    Err(TranscodeError::NonZeroPadding)
+                );
+            }
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn transcoding_matches_bit_reference(
+            input in proptest::collection::vec(proptest::prelude::any::<u64>(), 0..100),
+            input_width in 1usize..=64,
+            output_width in 1usize..=64,
+        ) {
+            let input: Vec<_> = input.into_iter()
+                .map(|x| x & (u64::MAX >> (64 - input_width))).collect();
+            proptest::prop_assert_eq!(
+                transcode_bidirectional(&input, input_width, output_width).unwrap(),
+                reference_words(&input, input_width, output_width)
+            );
+            let bytes = transcode_to_bytes(&input, input_width).unwrap();
+            proptest::prop_assert_eq!(
+                transcode_from_bytes_exact(&bytes, input_width, input.len()).unwrap(),
+                input
+            );
+        }
+    }
 
     #[test]
     fn invalid_inputs_never_truncate_or_modify_output() {
