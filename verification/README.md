@@ -46,6 +46,11 @@ proves all four native NTT butterfly methods, composing one-subtraction
 reduction and lazy Shoup multiplication to establish modular results and
 the bounds on lazy outputs.
 
+[`ntt/predicates.rs`](../crates/fhe-math/src/ntt/predicates.rs) proves NTT
+parameter eligibility and the exact-order criterion for power-of-two roots.
+It checks the production predicates, including arithmetic safety of size
+validation, and reuses the existing primality contract and verified exponentiation.
+
 [`verified/center.rs`](../crates/fhe-math/src/zq/verified/center.rs) proves scalar
 and vector centering, including the signed range, congruence, and midpoint
 behavior for odd and even moduli.
@@ -115,7 +120,7 @@ and patch its `fhe-util` dependency to the extracted package, then run the same
 verification command there. This does not require files from the original checkout.
 
 The expected project results are `65 verified, 0 errors` for `fhe-util` and
-`253 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`252`
+`272 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`271`
 elsewhere). Counts include proof lemmas, local assertions, and loops, not
 just API functions. The first run also checks the pinned `vstd` dependency.
 On x86 Linux, check both reducer implementations:
@@ -482,6 +487,42 @@ establish the explicit `p_twice`, operand, and Shoup preconditions; there is
 no assumed NTT type invariant. These local proofs do not establish the
 correctness or constant-time machine code of a complete transform.
 
+### NTT eligibility and root order
+
+`supports_ntt(p, n)` has no preconditions. Its result equals `ntt_supported`:
+`n >= 8`, `n` is a power of two, `p` is prime, `2n < p`, and
+`p mod (2n) = 1`. It accepts arbitrary `u64` moduli and `usize` sizes;
+the `Modulus` constructor separately enforces the library's 62-bit limit.
+Checking `n <= (p - 1)/2` before narrowing or doubling prevents overflow and
+division by zero. Invalid sizes now return false instead of panicking, and
+both NTT constructors consequently return `None` for those inputs. Previously,
+the largest power-of-two `usize` on a 64-bit target passed the size assertion
+but doubled to zero in the remainder expression.
+
+The single-set-bit implementation is proved equivalent to `vstd`'s recursive
+mathematical `is_pow2`. The public-in-crate wrapper and generic implementation
+are verified; only primality detection uses the existing `Backend::is_prime`
+contract. No new external arithmetic assumptions are introduced.
+
+`NttOperator::is_primitive_root(a, n, p)` requires `a < p`, `2 <= n < p`, and
+power-of-two `n`. Its result equals the mathematical exact-order specification:
+`a^n mod p = 1` and, for every positive `k < n`, `a^k mod p != 1`.
+The two executable exponentiations use `Modulus::pow`'s proved contract.
+The proof shows that their half-exponent check excludes all smaller orders:
+Euclid's algorithm produces a common period dividing both exponents; every
+proper positive divisor of a power of two divides its half. Such a smaller
+period would therefore contradict `a^(n/2) mod p != 1`.
+
+This criterion needs neither primality nor NTT eligibility, so the previous
+debug assertion about a transform of size `n/2` is replaced by the actual
+operand and order requirements. The executable predicate and its assertions
+are verified for composite moduli too. The spec proves both true and false
+answers exactly, rather than only checking the two tested exponents.
+
+These proofs do not establish existence of a primitive root for every eligible
+prime, correctness or success of the bounded `primitive_root` search, or the
+`NttOperator` constructor/invariant and transform loops.
+
 ### Centering
 
 `center(a, p)` requires `2 <= p < 2^62` and `a < p`. It proves the exact
@@ -811,6 +852,20 @@ native NTT round-trip and reference ring-product tests exercise their callers.
 
 ```sh
 cargo test -p fhe-math butterflies
+```
+
+Predicate tests exhaust moduli through 2048 and sizes through 128 for eligibility,
+with independent trial-division primality. Wide-integer boundary checks cover
+every machine-size power of two and its neighbors, full-width moduli, and the
+oversized-size regression. Both native and selected-backend constructors are
+checked for invalid sizes. Root tests exhaust canonical residues, small prime
+and composite moduli, and every applicable power-of-two order against the
+first exponent returning one in repeated modular multiplication. Large-modulus
+cases and orders up to the supported exponent limit cover zero, one, and minus
+one; debug tests reject invalid root-test parameters.
+
+```sh
+cargo test -p fhe-math ntt::predicates
 ```
 
 Subtraction and negation tests exhaust canonical operands for moduli 2 through

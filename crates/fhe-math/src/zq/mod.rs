@@ -5,7 +5,7 @@
     reason = "validated arithmetic and test indices"
 )]
 
-mod backend;
+pub(crate) mod backend;
 mod modulus;
 pub mod primes;
 pub(crate) mod verified;

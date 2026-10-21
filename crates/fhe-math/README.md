@@ -95,6 +95,13 @@ with both outputs below `2p`. Both ordinary and variable-time paths are checked,
 including overflow/underflow safety. These contracts require `p_twice = 2p`
 and valid Shoup twiddles; NTT construction, tables, and transform loops remain
 outside the proof.
+`ntt/predicates.rs` proves `supports_ntt` is exactly the prime/congruence
+eligibility check for power-of-two sizes at least 8. Invalid and oversized
+sizes return false before doubling, so both NTT constructors return `None`
+for them. It also proves `is_primitive_root` detects exact multiplicative
+order `n`: no smaller positive exponent returns one. The power-of-two root
+criterion works for composite moduli too. Primality detection retains its
+existing trusted contract; root search and root existence are not proved here.
 `verified/center.rs` proves scalar and vector centering: each result is
 congruent to its input and satisfies `-p <= 2*result < p`, including the
 midpoint behavior for both odd and even moduli.

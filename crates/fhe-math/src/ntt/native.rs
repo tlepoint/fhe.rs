@@ -51,9 +51,8 @@ impl NttOperator {
 
     /// Create an NTT operator given a modulus for a specific size.
     ///
-    /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
-    /// Returns None if the modulus does not support the NTT for this specific
-    /// size.
+    /// Returns None if the size is not a power of two at least 8, or the
+    /// modulus does not support the NTT for this size.
     #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
         if !super::supports_ntt(p.as_u64(), size) {
@@ -303,18 +302,6 @@ impl NttOperator {
 
         debug_assert!(false, "Couldn't find primitive root");
         0
-    }
-
-    /// Returns whether a is a n-th primitive root of unity.
-    ///
-    /// Aborts if a >= p in debug mode.
-    fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> bool {
-        debug_assert!(a < p.as_u64());
-        debug_assert!(super::supports_ntt(p.as_u64(), n >> 1)); // TODO: This is not exactly the right condition here.
-
-        // A primitive root of unity is such that x^n = 1 mod p, and x^(n/p) != 1 mod p
-        // for all prime p dividing n.
-        (p.pow(a, n as u64) == 1) && (p.pow(a, (n / 2) as u64) != 1)
     }
 }
 

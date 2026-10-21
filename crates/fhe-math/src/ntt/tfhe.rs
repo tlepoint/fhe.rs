@@ -42,9 +42,8 @@ impl NttOperator {
 
     /// Create an NTT operator given a modulus for a specific size.
     ///
-    /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
-    /// Returns None if the modulus does not support the NTT for this specific
-    /// size.
+    /// Returns None if the size is not a power of two at least 8, or the
+    /// modulus does not support the NTT for this size.
     #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
         if !super::supports_ntt(p.as_u64(), size) {

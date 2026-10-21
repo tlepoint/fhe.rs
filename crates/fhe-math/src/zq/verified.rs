@@ -60,6 +60,8 @@ pub(crate) use exponentiation::pow_mod;
 #[path = "verified/inv.rs"]
 pub(super) mod inversion;
 pub(crate) use inversion::inv_mod;
+#[cfg(verus_keep_ghost)]
+pub(crate) use inversion::prime;
 
 #[path = "verified/random.rs"]
 mod sampling;
