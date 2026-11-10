@@ -51,6 +51,12 @@ parameter eligibility and the exact-order criterion for power-of-two roots.
 It checks the production predicates, including arithmetic safety of size
 validation, and reuses the existing primality contract and verified exponentiation.
 
+[`ntt/roots.rs`](../crates/fhe-math/src/ntt/roots.rs) proves that every eligible
+prime has a primitive 2n-th root of unity and that the production search
+returns one. [`ntt/native/construction.rs`](../crates/fhe-math/src/ntt/native/construction.rs)
+proves the native `NttOperator::new`: exact success condition, both twiddle
+tables in bit-reversed order, every Shoup word, and the inverse of the size.
+
 [`verified/center.rs`](../crates/fhe-math/src/zq/verified/center.rs) proves scalar
 and vector centering, including the signed range, congruence, and midpoint
 behavior for odd and even moduli.
@@ -120,7 +126,7 @@ and patch its `fhe-util` dependency to the extracted package, then run the same
 verification command there. This does not require files from the original checkout.
 
 The expected project results are `65 verified, 0 errors` for `fhe-util` and
-`272 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`271`
+`306 verified, 0 errors` for `fhe-math` on macOS or an AVX2 target (`305`
 elsewhere). Counts include proof lemmas, local assertions, and loops, not
 just API functions. The first run also checks the pinned `vstd` dependency.
 On x86 Linux, check both reducer implementations:
@@ -481,11 +487,11 @@ each executable method separately. The shared Shoup quotient lemma also
 justifies the runtime debug check against `Modulus::shoup`.
 
 `NttOperator`'s actual private fields are visible to Verus, and normal builds
-call these same methods. Its constructor, derived cloning, twiddle tables,
-and transform loops are not yet verified. In particular, callers must still
-establish the explicit `p_twice`, operand, and Shoup preconditions; there is
-no assumed NTT type invariant. These local proofs do not establish the
-correctness or constant-time machine code of a complete transform.
+call these same methods. The constructor now establishes these preconditions
+(see below), but derived cloning and the transform loops are not yet verified,
+so the butterflies still state the `p_twice`, operand, and Shoup requirements
+explicitly; there is no assumed NTT type invariant. These local proofs do not
+establish the correctness or constant-time machine code of a complete transform.
 
 ### NTT eligibility and root order
 
@@ -519,9 +525,77 @@ operand and order requirements. The executable predicate and its assertions
 are verified for composite moduli too. The spec proves both true and false
 answers exactly, rather than only checking the two tested exponents.
 
-These proofs do not establish existence of a primitive root for every eligible
-prime, correctness or success of the bounded `primitive_root` search, or the
-`NttOperator` constructor/invariant and transform loops.
+The order argument is a `u64` rather than a `usize`: twice a supported size
+need not fit in a 32-bit `usize`, and Verus checks both pointer widths.
+
+### Primitive root search
+
+`NttOperator::primitive_root(n, p)` requires `ntt_supported(p, n)` and returns
+a canonical `root` with `primitive_root(root, 2n, p)`: exact order `2n`. There
+is no failure result. Previously, 100 unsuccessful pseudorandom attempts ended
+in a debug assertion, or returned zero in release builds.
+
+With `lambda = (p - 1) / (2n)`, every candidate is `g^lambda mod p`. By Fermat's
+little theorem its order divides `2n`, so the verified order test rejects it
+exactly when `g^((p - 1) / 2) = 1`. The proof that some `g` passes is
+Lagrange's bound on polynomial roots, proved here from the divisor-based
+definition of `prime`:
+
+1. Polynomials are integer coefficient sequences evaluated by Horner's rule.
+   The factor theorem `c(x) = (x - r) q(x) + c(r)` holds over the integers,
+   with the partial Horner values at `r` as the quotient's coefficients.
+2. If a polynomial with `d + 1` coefficients vanishes modulo `p` at `d + 1`
+   distinct canonical residues, its leading coefficient is divisible by `p`.
+   The induction divides by one root and cancels the nonzero differences
+   using the existing Bezout cancellation lemma.
+3. `X^m - 1` has leading coefficient one, so for `0 < m < p - 1` one of
+   `1, ..., m + 1` is not an `m`-th root of unity. Take `m = (p - 1) / 2`.
+
+The search keeps its original first phase: 100 candidates from ChaCha8 seeded
+with zero, so the selected roots, and therefore the transform's outputs, are
+unchanged. If all are rejected it now scans `g = 2, 3, ...`. A ghost witness
+from step 3 bounds the scan: each rejected `g` differs from the witness, so
+the loop returns at or before it, which proves termination and success.
+
+**Candidate stream boundary:** the `Candidates` trait has no postcondition.
+Its ChaCha8 implementation is external, but the search checks that each draw
+is below `p` and tests its order, so the result does not depend on the drawn
+values. Only the return of each draw is assumed. Primality still rests on
+the `Backend::is_prime` contract through `ntt_supported`.
+
+### NTT construction
+
+The native `NttOperator::new(p, size)` has no preconditions. It returns `Some`
+exactly when `ntt_supported(p, size)`, so both former `?` exits are proved
+unreachable: `size` and the root are nonzero modulo a prime. The returned
+operator has the given modulus and size (`spec_modulus`, `spec_size`, matching
+the verified `modulus()` and `size()` accessors) and satisfies `valid()`:
+
+* `ntt_supported(p, n)` and `p_twice = 2p`;
+* `root()`, stored at `omegas[n / 2]`, is a primitive `2n`-th root of unity,
+  and `root_inv()`, stored at `zetas_inv[0]`, satisfies `root * root_inv = 1`;
+* `omegas[i] = root^bit_reverse(i)` and
+  `zetas_inv[i] = root_inv^(bit_reverse(i) + 1)` modulo `p`, in canonical form;
+* every entry of both Shoup tables satisfies `valid_shoup` for its twiddle;
+* `n * size_inv = 1` modulo `p`, with its exact Shoup word.
+
+`bit_reverse(i, n)` is defined recursively: the lowest bit of `i` contributes
+`n / 2`, plus the reversal of `i / 2` at size `n / 2`. These are the facts the
+butterflies require of their twiddles and of `p_twice`.
+
+The iterator pipelines became explicit loops with the same results. Powers
+are accumulated with the verified `Modulus::mul`. The permutation table is
+filled in index order from `rev(i) = rev(i / 2) / 2 + (i mod 2) * n / 2`,
+replacing `usize::reverse_bits` and `leading_zeros`, which have no `vstd`
+specification for this use. The tables are stored as `Vec<u64>` instead of
+`Box<[u64]>`, as `vstd` does not specify `Vec::into_boxed_slice`; they are
+allocated with exact capacity.
+
+`valid()` is a predicate established by the constructor, not a type
+invariant: derived `Clone` has no specification, and the butterfly tests
+deliberately build operators with composite moduli and empty tables. These
+proofs do not cover the transform loops, the `tfhe-ntt` backend, or the
+selection between backends.
 
 ### Centering
 
@@ -868,6 +942,22 @@ one; debug tests reject invalid root-test parameters.
 cargo test -p fhe-math ntt::predicates
 ```
 
+Root-search tests compare the selected root with the original seeded search,
+using independent `u128` exponentiation, for sizes 8 through 32768 and moduli
+from 17 to 62 bits. Candidate streams of zeros, ones, and out-of-range words
+force the exhaustive scan, whose result must equal the power of the least
+suitable generator. Every eligible modulus up to 20000 is checked against
+all smaller exponents. Constructor tests compare each field with the tables
+built by the original iterator code, check the `valid()` facts with separate
+oracles (repeated multiplication, a bit-at-a-time reversal, `u128` Shoup
+quotients), compare the permutation with `usize::reverse_bits` through
+size `2^20`, and check success against `supports_ntt` for moduli up to 4000:
+
+```sh
+cargo test -p fhe-math ntt::roots
+cargo test -p fhe-math ntt::native::construction
+```
+
 Subtraction and negation tests exhaust canonical operands for moduli 2 through
 64, cover the largest 62-bit modulus and even/composite moduli, and check all
 four scalar kernels in const expressions. Independent `i128::rem_euclid`
@@ -980,3 +1070,8 @@ omitting the reduction of `p - a` at `a = 0`, and corrupting either the
 16-element block update or the tail update in `sub_vec_vt`.
 Multiplication checks must reject dropping an operand, returning an incorrect
 Shoup word, corrupting the lazy Shoup quotient, or skipping a vector product.
+Root-search checks must reject returning the candidate instead of its power,
+a wrong cofactor or tested order, omitting the range check, and a scan that
+skips a generator. Constructor checks must reject dropping or corrupting the
+bit reversal, shifting either power table by one, a wrong `p_twice`, Shoup
+words taken from the other table, and a `None` for supported parameters.

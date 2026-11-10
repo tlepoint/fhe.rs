@@ -5,95 +5,102 @@
     reason = "performance or example code relies on validated indices"
 )]
 
+#[cfg(verus_keep_ghost)]
+use super::predicates::{ntt_supported, primitive_root};
 use crate::zq::Modulus;
-use itertools::Itertools;
-use rand::{RngExt, SeedableRng};
-use rand_chacha::ChaCha8Rng;
-use std::iter::successors;
+#[cfg(verus_keep_ghost)]
+use crate::zq::verified::valid_shoup;
+#[cfg(verus_keep_ghost)]
+use construction::twiddle_table;
+
+use vstd::prelude::*;
 
 mod butterflies;
+mod construction;
 
-vstd::prelude::verus! {
+verus! {
 
 /// Number-Theoretic Transform operator.
-// The fields are visible to Verus; construction and derived cloning are not
-// verified yet. Butterfly contracts explicitly require the p_twice relation.
+// The constructor establishes `valid`; derived cloning and the transform loops
+// are not verified yet, so butterfly contracts state what they require.
 #[verifier::allow(autoderive_clone_without_spec)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttOperator {
     p: Modulus,
     p_twice: u64,
     size: usize,
-    omegas: Box<[u64]>,
-    omegas_shoup: Box<[u64]>,
-    zetas_inv: Box<[u64]>,
-    zetas_inv_shoup: Box<[u64]>,
+    omegas: Vec<u64>,
+    omegas_shoup: Vec<u64>,
+    zetas_inv: Vec<u64>,
+    zetas_inv_shoup: Vec<u64>,
     size_inv: u64,
     size_inv_shoup: u64,
 }
 
-}
-
 impl NttOperator {
+    /// The modulus of the transform, for specifications.
+    pub closed spec fn spec_modulus(&self) -> u64 {
+        self.p.value()
+    }
+
+    /// The number of coefficients of the transform, for specifications.
+    pub closed spec fn spec_size(&self) -> usize {
+        self.size
+    }
+
+    /// The primitive 2n-th root of unity generating the forward twiddles.
+    pub closed spec fn root(&self) -> int {
+        self.omegas@[self.size as int / 2] as int
+    }
+
+    /// The inverse of the root, generating the inverse twiddles.
+    pub closed spec fn root_inv(&self) -> int {
+        self.zetas_inv@[0] as int
+    }
+
+    /// Everything the constructor establishes about an operator.
+    ///
+    /// With psi = `root()` and n = `spec_size()`, entry i of the forward table
+    /// is psi^bit_reverse(i) and entry i of the inverse table is
+    /// psi^-(bit_reverse(i) + 1), reversing the log2(n) low bits of i. Each
+    /// entry is canonical and paired with its exact Shoup word.
+    pub closed spec fn valid(&self) -> bool {
+        let p = self.p.value();
+        let n = self.size as nat;
+        &&& ntt_supported(p, self.size)
+        &&& self.p_twice == 2 * p
+        &&& self.omegas@.len() == n
+        &&& self.zetas_inv@.len() == n
+        &&& primitive_root(self.root(), 2 * n, p as int)
+        &&& (self.root() * self.root_inv()) % (p as int) == 1
+        &&& twiddle_table(self.omegas@, self.omegas_shoup@, self.root(), 0, p)
+        &&& twiddle_table(self.zetas_inv@, self.zetas_inv_shoup@, self.root_inv(), 1, p)
+        &&& (n * self.size_inv) % (p as int) == 1
+        &&& valid_shoup(self.size_inv, p, self.size_inv_shoup)
+    }
+
     /// Number of coefficients transformed by this operator.
     #[must_use]
     #[cfg(not(feature = "tfhe-ntt"))]
-    pub const fn size(&self) -> usize {
+    pub const fn size(&self) -> (r: usize)
+        ensures r == self.spec_size(),
+    {
         self.size
     }
 
     /// Prime modulus of the transform.
     #[must_use]
     #[cfg(not(feature = "tfhe-ntt"))]
-    pub const fn modulus(&self) -> u64 {
+    pub const fn modulus(&self) -> (r: u64)
+        ensures r == self.spec_modulus(),
+    {
         self.p.as_u64()
     }
+}
 
-    /// Create an NTT operator given a modulus for a specific size.
-    ///
-    /// Returns None if the size is not a power of two at least 8, or the
-    /// modulus does not support the NTT for this size.
-    #[must_use]
-    pub fn new(p: &Modulus, size: usize) -> Option<Self> {
-        if !super::supports_ntt(p.as_u64(), size) {
-            None
-        } else {
-            let size_inv = p.inv(size as u64)?;
+}
 
-            let omega = Self::primitive_root(size, p);
-            let omega_inv = p.inv(omega)?;
-
-            let powers = successors(Some(1u64), |n| Some(p.mul(*n, omega)))
-                .take(size)
-                .collect_vec();
-            let powers_inv = successors(Some(omega_inv), |n| Some(p.mul(*n, omega_inv)))
-                .take(size)
-                .collect_vec();
-
-            let (omegas, zetas_inv): (Vec<u64>, Vec<u64>) = (0..size)
-                .map(|i| {
-                    let j = i.reverse_bits() >> (size.leading_zeros() + 1);
-                    (powers[j], powers_inv[j])
-                })
-                .unzip();
-
-            let omegas_shoup = p.shoup_vec(&omegas);
-            let zetas_inv_shoup = p.shoup_vec(&zetas_inv);
-
-            Some(Self {
-                p: p.clone(),
-                p_twice: p.as_u64() * 2,
-                size,
-                omegas: omegas.into_boxed_slice(),
-                omegas_shoup: omegas_shoup.into_boxed_slice(),
-                zetas_inv: zetas_inv.into_boxed_slice(),
-                zetas_inv_shoup: zetas_inv_shoup.into_boxed_slice(),
-                size_inv,
-                size_inv_shoup: p.shoup(size_inv),
-            })
-        }
-    }
-
+impl NttOperator {
     /// Compute the forward NTT in place.
     /// Aborts if a is not of the size handled by the operator.
     pub fn forward(&self, a: &mut [u64]) {
@@ -282,32 +289,13 @@ impl NttOperator {
         debug_assert!(r < self.p.as_u64() && r == a % self.p.as_u64());
         r
     }
-
-    /// Returns a 2n-th primitive root modulo p.
-    ///
-    /// Aborts if p is not prime or n is not a power of 2 that is >= 8.
-    fn primitive_root(n: usize, p: &Modulus) -> u64 {
-        debug_assert!(super::supports_ntt(p.as_u64(), n));
-
-        let lambda = (p.as_u64() - 1) / (2 * n as u64);
-
-        let mut rng: ChaCha8Rng = SeedableRng::seed_from_u64(0);
-        for _ in 0..100 {
-            let mut root = rng.random_range(0..p.as_u64());
-            root = p.pow(root, lambda);
-            if Self::is_primitive_root(root, 2 * n, p) {
-                return root;
-            }
-        }
-
-        debug_assert!(false, "Couldn't find primitive root");
-        0
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{RngExt, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
 
     // Butterfly arithmetic needs no roots of unity or prime modulus. Empty
     // transform tables let these tests cover every supported modulus shape.
@@ -316,10 +304,10 @@ mod tests {
             p: Modulus::new(p).unwrap(),
             p_twice: 2 * p,
             size: 0,
-            omegas: Box::default(),
-            omegas_shoup: Box::default(),
-            zetas_inv: Box::default(),
-            zetas_inv_shoup: Box::default(),
+            omegas: Vec::new(),
+            omegas_shoup: Vec::new(),
+            zetas_inv: Vec::new(),
+            zetas_inv_shoup: Vec::new(),
             size_inv: 0,
             size_inv_shoup: 0,
         }
