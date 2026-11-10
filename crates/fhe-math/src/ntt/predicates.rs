@@ -25,7 +25,7 @@ use vstd::prelude::*;
 verus! {
 
 /// Parameters for a negacyclic transform with a primitive 2n-th root.
-pub(crate) open spec fn ntt_supported(p: u64, n: usize) -> bool {
+pub open spec fn ntt_supported(p: u64, n: usize) -> bool {
     &&& n >= 8
     &&& is_pow2(n as int)
     &&& prime(p as int)
@@ -34,7 +34,7 @@ pub(crate) open spec fn ntt_supported(p: u64, n: usize) -> bool {
 }
 
 /// Exact multiplicative order, rather than just an n-th root of unity.
-pub(crate) open spec fn primitive_root(a: int, n: nat, p: int) -> bool {
+pub open spec fn primitive_root(a: int, n: nat, p: int) -> bool {
     &&& p > 1
     &&& n > 0
     &&& pow(a, n) % p == 1
@@ -176,7 +176,7 @@ proof fn proper_divisor_divides_half(n: nat, d: nat)
 }
 
 /// For powers of two, the half-exponent check excludes every smaller order.
-proof fn power_of_two_root_criterion(a: int, n: nat, p: int)
+pub(super) proof fn power_of_two_root_criterion(a: int, n: nat, p: int)
     requires p > 1, n >= 2, is_pow2(n as int),
     ensures primitive_root(a, n, p)
         == (pow(a, n) % p == 1 && pow(a, n / 2) % p != 1),
@@ -198,16 +198,19 @@ impl NttOperator {
     ///
     /// Debug builds reject noncanonical a, n < 2, non-power-of-two n, or n >= p.
     /// Neither primality nor NTT eligibility is needed for this criterion.
-    pub(super) fn is_primitive_root(a: u64, n: usize, p: &Modulus) -> (result: bool)
+    ///
+    /// The order is a u64: twice a supported NTT size need not fit in a
+    /// 32-bit usize.
+    pub(super) fn is_primitive_root(a: u64, n: u64, p: &Modulus) -> (result: bool)
         requires a < p.value(), 2 <= n < p.value(), is_pow2(n as int),
         ensures result == primitive_root(a as int, n as nat, p.value() as int),
     {
         let modulus = p.as_u64();
         debug_assert!(a < modulus);
-        debug_assert!(2 <= n && (n as u128) < modulus as u128);
-        debug_assert!(power_of_two(n as u64));
+        debug_assert!(2 <= n && n < modulus);
+        debug_assert!(power_of_two(n));
         proof { power_of_two_root_criterion(a as int, n as nat, modulus as int); }
-        p.pow(a, n as u64) == 1 && p.pow(a, (n / 2) as u64) != 1
+        p.pow(a, n) == 1 && p.pow(a, n / 2) != 1
     }
 }
 
@@ -281,7 +284,7 @@ mod tests {
 
     // Find the first positive exponent returning one using repeated modular
     // multiplication, independently of the two exponentiation checks.
-    fn exact_order_reference(a: u64, n: usize, p: u64) -> bool {
+    fn exact_order_reference(a: u64, n: u64, p: u64) -> bool {
         let mut r = 1;
         for exponent in 1..=n {
             r = ((r as u128 * a as u128) % p as u128) as u64;
@@ -297,7 +300,7 @@ mod tests {
         for p in 2..=128 {
             let modulus = Modulus::new(p).unwrap();
             for n in [2, 4, 8, 16, 32, 64] {
-                if n >= p as usize {
+                if n >= p {
                     continue;
                 }
                 for a in 0..p {
@@ -329,9 +332,9 @@ mod tests {
                     );
                 }
             }
-            for bit in 1..usize::BITS {
-                let n = 1usize << bit;
-                if n as u128 >= p as u128 {
+            for bit in 1..u64::BITS {
+                let n = 1u64 << bit;
+                if n >= p {
                     continue;
                 }
                 assert!(!NttOperator::is_primitive_root(0, n, &modulus));
@@ -352,7 +355,7 @@ mod tests {
             (1, 1),
             (1, 3),
             (1, 17),
-            (1, usize::MAX),
+            (1, u64::MAX),
         ] {
             assert!(std::panic::catch_unwind(|| NttOperator::is_primitive_root(a, n, &p)).is_err());
         }

@@ -71,7 +71,7 @@ proof fn inverse_witness(a: int, p: int) -> (k: int)
 }
 
 /// Cancelling a nonzero factor modulo a prime follows from its Bezout inverse.
-proof fn cancel(a: int, b: int, c: int, p: int)
+pub(crate) proof fn cancel(a: int, b: int, c: int, p: int)
     requires prime(p), 0 < a < p, (a * b) % p == (a * c) % p,
     ensures b % p == c % p,
 {
@@ -220,7 +220,7 @@ proof fn product_nonzero(s: Seq<int>, p: int)
 }
 
 /// Fermat's little theorem from the ordinary divisor-based definition of prime.
-proof fn fermat(a: int, p: int)
+pub(crate) proof fn fermat(a: int, p: int)
     requires prime(p), 0 < a < p,
     ensures int_pow(a, (p - 1) as nat) % p == 1,
 {

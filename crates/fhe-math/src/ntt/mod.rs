@@ -3,6 +3,8 @@
 mod predicates;
 pub(crate) use predicates::supports_ntt;
 
+mod roots;
+
 mod native;
 
 #[cfg(feature = "tfhe-ntt")]
