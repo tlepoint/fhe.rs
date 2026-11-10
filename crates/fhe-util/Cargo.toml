@@ -8,6 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 version = "0.1.2"
 
+[package.metadata.verus]
+verify = true
+
 [lints]
 workspace = true
 
@@ -15,6 +18,7 @@ workspace = true
 num-bigint-dig = { workspace = true, features = ["prime"] }
 num-traits.workspace = true
 rand.workspace = true
+vstd.workspace = true
 
 [dev-dependencies]
 itertools.workspace = true

@@ -25,6 +25,21 @@ zero-extends a partial final word. `transcode_bidirectional` also zero-extends i
 final word and does not retain the original bit count. No helper silently masks
 out-of-range input words.
 
+The five public transcoding functions share a Verus-verified implementation in
+[`src/packing.rs`](src/packing.rs). The proof covers every bit's position, output
+lengths, zero padding, error conditions and precedence, and preservation of the
+existing output on an append error. A separate theorem proves exact decoding
+recovers the original words. The shared loop retains the `u128` bit buffer and
+specializes for byte or word input/output; proof code erases in Cargo builds.
+See the repository's [verification guide](../../verification/README.md) for
+commands and proof boundaries.
+
+The public `fhe_util::packing` module exposes the contracts to downstream
+Verus crates. Cargo Verus verifies this crate and exports its metadata for
+dependent proofs; ordinary Cargo builds erase the ghost code. Source packages
+contain the implementation and proof helpers and need no sibling repository
+checkout.
+
 `sample_vec_cbd` returns the typed `InvalidVariance` error for variances outside
 1..=32. The sampling algorithm and randomness consumption are unchanged.
 

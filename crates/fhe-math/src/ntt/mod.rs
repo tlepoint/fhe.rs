@@ -1,6 +1,7 @@
 //! Number-Theoretic Transform in ZZ_q.
 
-use fhe_util::is_prime;
+mod predicates;
+pub(crate) use predicates::supports_ntt;
 
 mod native;
 
@@ -71,16 +72,6 @@ impl NttOperator {
         unsafe { self.backward_vt(input.as_mut_ptr()) };
         Ok(())
     }
-}
-
-/// Returns whether a modulus p is prime and supports the Number Theoretic
-/// Transform of size n.
-///
-/// Aborts if n is not a power of 2 that is >= 8.
-pub(crate) fn supports_ntt(p: u64, n: usize) -> bool {
-    assert!(n >= 8 && n.is_power_of_two());
-
-    p % ((n as u64) << 1) == 1 && is_prime(p)
 }
 
 #[cfg(test)]

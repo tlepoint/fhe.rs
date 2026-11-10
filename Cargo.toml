@@ -14,6 +14,7 @@ rust-version = "1.91.1"
 missing_docs = "warn"
 unused_imports = "warn"
 unused_must_use = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_keep_ghost)'] }
 
 [workspace.dependencies]
 clap = { version = "^4.6.7", features = ["derive"] }
@@ -38,6 +39,7 @@ rand = "^0.10.3"
 rand_chacha = "^0.10.0"
 sha2 = "^0.11.1"
 thiserror = "^2.0.21"
+vstd = { version = "=0.0.0-2026-10-11-0230", default-features = false, features = ["std"] }
 zeroize = "^1.9.1"
 zeroize_derive = "^1.5.0"
 

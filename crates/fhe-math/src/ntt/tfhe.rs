@@ -42,20 +42,19 @@ impl NttOperator {
 
     /// Create an NTT operator given a modulus for a specific size.
     ///
-    /// Aborts if the size is not a power of 2 that is >= 8 in debug mode.
-    /// Returns None if the modulus does not support the NTT for this specific
-    /// size.
+    /// Returns None if the size is not a power of two at least 8, or the
+    /// modulus does not support the NTT for this size.
     #[must_use]
     pub fn new(p: &Modulus, size: usize) -> Option<Self> {
-        if !super::supports_ntt(p.p, size) {
+        if !super::supports_ntt(p.as_u64(), size) {
             return None;
         }
-        let backend = match Plan::try_new(size, p.p) {
+        let backend = match Plan::try_new(size, p.as_u64()) {
             Some(plan) => Backend::Tfhe(plan),
             None => Backend::Native(native::NttOperator::new(p, size)?),
         };
         Some(Self {
-            modulus: p.p,
+            modulus: p.as_u64(),
             size,
             backend,
         })
